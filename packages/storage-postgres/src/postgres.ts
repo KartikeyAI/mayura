@@ -1,9 +1,9 @@
 import { Pool, type PoolClient } from 'pg';
-import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type ExecutionWaitAggregateStore } from '@mayura/storage-contracts';
+import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphAggregateStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerBackend, type SchedulerSession, schedulerFacade,
-  ScheduledWorkflowDatabase, scheduledFacade, initializeOwnership, ownedRun, writerRequired,
+  ScheduledWorkflowDatabase, scheduledFacade, workflowGraphFacade, initializeOwnership, ownedRun, writerRequired,
   ExecutionWaitDatabase, executionWaitFacade,
 } from '@mayura/storage-sql/host';
 
@@ -34,7 +34,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): ExecutionWaitAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -98,6 +98,7 @@ export function createPostgresStore(options: PostgresStoreOptions): ExecutionWai
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     workflows: scheduledFacade((method,input) => { available(); return workflowsDatabase.execute(method,input); }),
+    workflowGraphs: workflowGraphFacade((method,input) => { available(); return workflowsDatabase.execute(method,input,2); }),
     executionWaits: executionWaitFacade((method,input) => { available(); return executionWaitDatabase.execute(method,input); }),
     initialize: async () => {
       available(false);

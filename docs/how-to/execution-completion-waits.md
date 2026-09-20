@@ -1,6 +1,6 @@
 # Wait for scheduled workflow completion
 
-Use the optional `@mayura/workstream/executions` entry point to persist an `all` join over already-submitted scheduled-v1 workflows. The stream returns terminal metadata, not workflow outputs, prompts or receipts. Every target must use the same configured database, principal/project scope and pinned policy.
+Use the optional `@mayura/workstream/executions` entry point to persist an `all` join over already-submitted scheduled-v1 workflows or scheduled-v2 graphs. The stream returns terminal metadata, not workflow outputs, prompts or receipts. Every target must use the same configured database, principal/project scope and pinned policy.
 
 ```ts
 import { createExecutionWorkStream } from '@mayura/workstream/executions';
@@ -34,6 +34,8 @@ Storage acknowledgments default to a 10-second timeout, with at most 64 actual p
 Concurrent command replies can reflect earlier committed snapshots. The facade validates bounded metadata and pinned identities; it is not a replicated state cache or a substitute for an adapter's transactional integrity checks.
 
 A workflow reference is immutable identity data, not an authorization capability or proof of database identity. Each command is checked against the configured scope and policy. These joins do not suspend nodes inside a workflow graph, own child workflows, propagate cancellation, implement `any`/timers, or provide durable event delivery.
+
+For an actual node that suspends a graph and later feeds downstream work, use the separate [format-3 graph API](workflow-graph-waits.md). External streams and parent-owned graph waits share terminal facts, not mutable wait ownership.
 
 The credential-free [SQLite close/reopen example](../../examples/execution-completion-waits.mjs) closes the stream, worker and database before resuming the target and resolving its persisted wait:
 

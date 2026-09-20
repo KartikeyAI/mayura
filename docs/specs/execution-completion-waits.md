@@ -4,7 +4,7 @@ Status: implemented bounded completion-join slice; current verification is recor
 
 ## 1. Scope and public use
 
-Implement metadata-only `all` joins over **already submitted scheduled-v1 workflow runs**, in the same configured database, verified principal/project scope and pinned policy. Completion means terminal, not necessarily successful: `succeeded`, `failed`, `blocked`, `cancelled`, and `outcome_unknown` all satisfy a target. Waiting/approval/running states do not. Unknown outcomes remain unknown and are never retried by this feature.
+Implement metadata-only `all` joins over **already submitted scheduled-v1 workflow runs or scheduled-v2 graphs**, in the same configured database, verified principal/project scope and pinned policy. The graph extension uses the same exact reference/fact format, with separately versioned source state. Completion means terminal, not necessarily successful: `succeeded`, `failed`, `blocked`, `cancelled`, and `outcome_unknown` all satisfy a target. Waiting/approval/running states do not. Unknown outcomes remain unknown and are never retried by this feature.
 
 ```ts
 const target = await worker.reference(run.id);
@@ -106,4 +106,4 @@ Privileged database writers can consistently forge all copies; integrity checks 
 
 Write failure tests before implementation. Shared real SQLite/PostgreSQL cases cover all five terminal outcomes, references to existing running/approval states, pre-completion registration, reverse ordering, simultaneous completion/registration, scope/policy/definition mismatch, unsupported/malformed references, duplicate/conflicting IDs, whole-target-list validation before wait mutation, restart, idempotent fact materialization, late receipts, cancel/resolve races, two drainers, deterministic finite pages, lifetime caps, no-op event heads, exact immutable metadata and corrupt redundant projections. Add actual process-kill checkpoints proving atomic publication/resolution recovery, plus custom-adapter timeout/lifetime and forged-response rejection tests. Public packed declarations and a credential-free close/reopen example remain required.
 
-Workflow format 2 admits only tool/join nodes. Do not disguise external waits as either. In-graph wait registration/continuation scheduling needs a separately reviewed format-3/profile contract; durable child ownership, propagated cancellation/shared descendant budgets, `any`/timers/future references, notification delivery and full enterprise operation/scale qualification remain unimplemented.
+Workflow format 2 still admits only tool/join nodes. The separately reviewed [format-3 graph contract](workflow-graph-waits.md) adds explicit wait nodes and parent-owned atomic registration/resolution without changing this stream format. Durable child ownership, propagated cancellation/shared descendant budgets, `any`/timers/future references, notification delivery and full enterprise operation/scale qualification remain unimplemented.

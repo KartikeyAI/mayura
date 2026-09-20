@@ -22,12 +22,13 @@ The basic SDK requires no Docker, native database, server or hosted account. [Se
 - [Workflow-as-tool composition](docs/how-to/workflow-composition.md) for explicit approval-free ephemeral graphs, without installing database drivers.
 - Optional SQL-backed workflows, approvals, signals, memory/context foundations and a [standalone leased job ledger](docs/specs/leased-scheduler.md). Explicit [scheduled workflows](docs/scheduled-workflows.md) couple claims, approvals, fixed costs and workflow transitions atomically.
 - [Durable completion waits](docs/how-to/execution-completion-waits.md) over existing scheduled workflows, without keeping a worker or callback alive while waiting.
+- [Versioned workflow graph waits](docs/how-to/workflow-graph-waits.md) with immutable existing-run targets, explicit resumption and metadata-only results before downstream tools or approvals.
 - Local processors and [metered auxiliary guardrails](docs/specs/auxiliary-guardrails.md), including explicit moderation and protected-segment language processing.
 - [Required lifecycle hooks](docs/how-to/lifecycle-hooks.md) with immutable proposals, mediated read/pure-tool actions, shared limits and output withholding.
 - An authenticated Fetch API, browser-safe client and optional [loopback-only Hono/Node host](docs/how-to/local-server.md). This is not production or durable multi-host serving.
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks; it is not mandatory durable audit.
 
-The integrated local checkpoint passes 1,833 tests, strict types, eight credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
+The integrated local checkpoint passes 2,009 tests, strict types, nine credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/graph/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
 
 ## Documentation
 

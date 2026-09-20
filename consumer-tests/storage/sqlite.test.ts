@@ -1,10 +1,13 @@
 import { createSqliteStore, type SqliteStoreOptions } from '@mayura/storage-sqlite';
-import type { ExecutionWaitAggregateStore } from '@mayura/storage-contracts';
+import type { WorkflowGraphAggregateStore } from '@mayura/storage-contracts';
 
 const options: SqliteStoreOptions = { filename: ':memory:' };
-const store: ExecutionWaitAggregateStore = createSqliteStore(options);
+const store: WorkflowGraphAggregateStore = createSqliteStore(options);
+void store.workflowGraphs.inspect({ scope: 'a'.repeat(64), id: 'b'.repeat(64), policyHash: 'c'.repeat(64) }).then(value => {
+  const profile: 'scheduled-v2' = value.profile; void profile;
+});
 // @ts-expect-error A SQLite factory is synchronous, not a promise-returning configuration step.
-const deferred: Promise<ExecutionWaitAggregateStore> = createSqliteStore(options);
+const deferred: Promise<WorkflowGraphAggregateStore> = createSqliteStore(options);
 // @ts-expect-error SQLite filenames are required strings.
 createSqliteStore({ filename: 123 });
 // @ts-expect-error The SQLite-only package does not export PostgreSQL.

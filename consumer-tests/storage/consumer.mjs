@@ -29,7 +29,7 @@ async function exercise(create, reopen) {
   let store = create();
   try {
     stage = 'initialization';
-    await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize();
+    await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.workflowGraphs.initialize(); await store.executionWaits.initialize();
     stage = 'aggregate-transactions';
     const first = await store.create(original); assert.equal(first.created, true);
     const updated = await store.update({ scope: original.scope, id: original.id, expectedVersion: 1, state: { count: 2 }, events: [{ type: 'updated', data: {} }] });
@@ -57,6 +57,15 @@ async function exercise(create, reopen) {
     const stream = { scope: access.scope, streamId: 'joins', policyHash: access.policyHash };
     await store.executionWaits.open(stream);
     assert.equal((await store.executionWaits.register({ ...stream, id: 'release', targets: [target] })).status, 'waiting');
+    const graphManifest = { format: 3, id: 'packed.graph', version: '1', graph: [
+      { id: 'observe', kind: 'wait', dependsOn: [], targets: { kind: 'input', path: [] } },
+    ], result: { kind: 'step', stepId: 'observe', path: [] } };
+    const graph = (await store.workflowGraphs.submit({ manifest: graphManifest, policy, resources: {}, input: [target], idempotencyKey: 'graph' })).snapshot;
+    const graphAccess = { scope: graph.record.scope, id: graph.record.id, policyHash: graph.policyHash };
+    const waitingGraph = await store.workflowGraphs.advance({ ...graphAccess, expectedVersion: graph.record.version, commandId: 'graph-wait' });
+    assert.equal(waitingGraph.profile, 'scheduled-v2'); assert.equal(waitingGraph.record.state.format, 3);
+    assert.equal(waitingGraph.record.state.status, 'waiting'); assert.equal(waitingGraph.jobs.length, 0);
+    assert.equal(waitingGraph.record.state.reservedMicros, 0);
     const advanced = await store.workflows.advance({ ...access, expectedVersion: submitted.record.version, commandId: 'advance' });
     await store.workflows.finalize({ ...access, expectedVersion: advanced.record.version, commandId: 'finalize', validation: 'passed', output: [] });
     const resolved = (await store.executionWaits.drainReady({ ...stream, limit: 1 }))[0];
@@ -64,17 +73,27 @@ async function exercise(create, reopen) {
     assert(!Object.hasOwn(resolved.observations[0], 'output')); assert(Object.isFrozen(resolved.observations[0]));
     stage = 'direct-reopen';
     await store.close(); store = reopen();
-    await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize();
+    await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.workflowGraphs.initialize(); await store.executionWaits.initialize();
     assert.deepEqual((await store.read(original.scope, original.id)).state, { count: 2 });
     assert.equal((await store.scheduler.read({ scope: job.scope, jobId: job.jobId })).state, 'succeeded');
     assert.deepEqual(await store.executionWaits.inspect({ ...stream, id: 'release' }), resolved);
     assert.deepEqual(await store.executionWaits.drainReady({ ...stream, limit: 1 }), []);
     assert.equal((await store.executionWaits.events({ ...stream, after: 0 })).length, 3);
+    assert.deepEqual(await store.workflowGraphs.inspect(graphAccess), waitingGraph);
+    await assert.rejects(store.workflows.inspect(graphAccess), error => error instanceof StorageError);
+    const resumed = await store.workflowGraphs.advance({ ...graphAccess, expectedVersion: waitingGraph.record.version, commandId: 'graph-resume' });
+    assert.deepEqual(resumed.record.state.steps.observe.output, resolved.observations);
+    const finishedGraph = await store.workflowGraphs.finalize({ ...graphAccess, expectedVersion: resumed.record.version, commandId: 'graph-finalize', validation: 'passed', output: resumed.record.state.steps.observe.output });
+    assert.equal(finishedGraph.record.state.status, 'succeeded'); assert.equal(finishedGraph.jobs.length, 0);
+    const graphTarget = { kind: 'scheduled-workflow', runId: graphAccess.id, definitionHash: graph.manifestHash, policyHash: graphAccess.policyHash };
+    assert.equal((await store.executionWaits.register({ ...stream, id: 'graph-release', targets: [graphTarget] })).observations[0].outcome, 'succeeded');
     await store.update({ scope: original.scope, id: original.id, expectedVersion: 2, state: { count: 3 }, events: [{ type: 'reopened', data: {} }] });
     stage = 'reverse-reopen';
     await store.close(); store = create(); await store.initialize();
     assert.deepEqual((await store.read(original.scope, original.id)).state, { count: 3 });
-    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, reopenDirections: 2 };
+    await store.workflowGraphs.initialize();
+    assert.deepEqual((await store.workflowGraphs.inspect(graphAccess)).record, finishedGraph.record);
+    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, reopenDirections: 2 };
   } finally { await store.close(); }
 }
 

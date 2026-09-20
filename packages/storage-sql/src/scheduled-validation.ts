@@ -1,11 +1,12 @@
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
-import { workflowManifest, workflowPolicy, workflowResources, type ScheduledWorkflowStore } from '@mayura/storage-contracts';
+import { workflowManifest, workflowPolicy, workflowResources, workflowGraphManifest, workflowGraphResources, type ScheduledWorkflowStore, type WorkflowGraphStore } from '@mayura/storage-contracts';
 import { claim, fields, hash, immutable, integer, invalid, object, receipt } from './scheduler-validation.js';
 import { identifier } from './validation.js';
 
 export type ScheduledMethod = keyof ScheduledWorkflowStore;
 const writes = new Set<ScheduledMethod>(['attach','requestApproval','approve','prepare','start','complete','abandon','failNode','advance','finalize','cancel','recover']);
-export function scheduledCommand(method: ScheduledMethod, value: unknown): JsonObject {
+export function scheduledCommand(method: ScheduledMethod, value: unknown, profile: 1 | 2 = 1): JsonObject {
+  if (profile === 2 && method === 'attach') invalid();
   const raw = object(value);
   if (method === 'initialize') { fields(raw, []); return raw; }
   const common = method === 'submit' ? [] : ['scope','id','policyHash'];
@@ -16,9 +17,16 @@ export function scheduledCommand(method: ScheduledMethod, value: unknown): JsonO
   switch (method) {
     case 'submit': case 'attach': {
       fields(raw, [...common, 'manifest','policy','resources', ...(method === 'submit' ? ['input','idempotencyKey'] : [])]);
-      const manifest = workflowManifest(raw['manifest']);
-      raw['manifest'] = manifest as unknown as JsonValue; raw['policy'] = workflowPolicy(raw['policy']) as unknown as JsonValue;
-      raw['resources'] = workflowResources(raw['resources'], manifest) as unknown as JsonValue;
+      if (profile === 2) {
+        const manifest = workflowGraphManifest(raw['manifest']);
+        raw['manifest'] = manifest as unknown as JsonValue;
+        raw['resources'] = workflowGraphResources(raw['resources'], manifest) as unknown as JsonValue;
+      } else {
+        const manifest = workflowManifest(raw['manifest']);
+        raw['manifest'] = manifest as unknown as JsonValue;
+        raw['resources'] = workflowResources(raw['resources'], manifest) as unknown as JsonValue;
+      }
+      raw['policy'] = workflowPolicy(raw['policy']) as unknown as JsonValue;
       if (method === 'submit') { input(); const key = identifier(raw['idempotencyKey'], 'Submission key'); if (key.length > 128) invalid(); }
       break;
     }
@@ -54,4 +62,18 @@ export function scheduledFacade(request: (method: ScheduledMethod, input: JsonOb
     complete: value => call('complete',value), abandon: value => call('abandon',value), failNode: value => call('failNode',value),
     advance: value => call('advance',value), finalize: value => call('finalize',value), cancel: value => call('cancel',value), recover: value => call('recover',value),
   } satisfies ScheduledWorkflowStore);
+}
+
+/** Separate opt-in capability; legacy facades never admit graph manifests or an attach migration. */
+export function workflowGraphFacade(request: (method: keyof WorkflowGraphStore, input: JsonObject) => Promise<unknown>): WorkflowGraphStore {
+  const call = async <T>(method: keyof WorkflowGraphStore, input: unknown): Promise<T> => {
+    const result = await request(method, scheduledCommand(method, input, 2)); return result === undefined ? undefined as T : immutable(result) as T;
+  };
+  return Object.freeze({
+    initialize: () => call<void>('initialize', {}), submit: value => call('submit', value), inspect: value => call('inspect', value),
+    requestApproval: value => call('requestApproval', value), approve: value => call('approve', value), prepare: value => call('prepare', value),
+    claim: value => call('claim', value), renew: value => call('renew', value), start: value => call('start', value), recordReceipt: value => call('recordReceipt', value),
+    complete: value => call('complete', value), abandon: value => call('abandon', value), failNode: value => call('failNode', value),
+    advance: value => call('advance', value), finalize: value => call('finalize', value), cancel: value => call('cancel', value), recover: value => call('recover', value),
+  } satisfies WorkflowGraphStore);
 }

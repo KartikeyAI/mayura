@@ -147,6 +147,7 @@ async function main() {
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
     ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
     ['executions', ['@mayura/workstream'], 'optional-executions.test.ts'],
+    ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -198,6 +199,7 @@ async function main() {
   };
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
+  result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

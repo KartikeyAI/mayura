@@ -37,8 +37,9 @@ Credentials stay in trusted server-side configuration. There is no automatic key
 | One bounded agent | `@mayura/runtime` + tools and a model adapter | Explicitly non-durable. |
 | Parallel independent tools | `invokeBatch` from `@mayura/tools` | Shared budget, bounded concurrency; resource keys are per-batch, not distributed locks. |
 | Restartable tool graph and approvals | `@mayura/workflows` + selected SQLite/PostgreSQL adapter | Current conservative engine never automatically replays an uncertain effect. |
-| Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or workflow wait node integration yet. |
+| Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
 | Existing scheduled-run completion joins | `@mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |
+| Wait inside a scheduled workflow | `@mayura/workflows/graphs` + selected storage | [Format-3 graphs](how-to/workflow-graph-waits.md) pin existing references at submission; explicit driving resumes without holding a waiting worker. |
 | Native content checks | `@mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
 | Runtime-owned moderation | `defineModerationGuard` with agent guards | [Shared limits and protected output-check capacity](how-to/managed-guardrails.md); model verdicts remain fallible. |
 | Required lifecycle control | `defineHook` + `defineAgent({ hooks })` | [Four awaited stages](how-to/lifecycle-hooks.md), no transforms or permission escalation; action tools use the owning run's broker. |

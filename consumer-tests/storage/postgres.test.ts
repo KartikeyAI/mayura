@@ -1,10 +1,13 @@
 import { createPostgresStore, type PostgresStoreOptions } from '@mayura/storage-postgres';
-import type { ExecutionWaitAggregateStore } from '@mayura/storage-contracts';
+import type { WorkflowGraphAggregateStore } from '@mayura/storage-contracts';
 
 const options: PostgresStoreOptions = { connectionString: 'postgresql://example.invalid/db', schema: 'app' };
-const store: ExecutionWaitAggregateStore = createPostgresStore(options);
+const store: WorkflowGraphAggregateStore = createPostgresStore(options);
+void store.workflowGraphs.inspect({ scope: 'a'.repeat(64), id: 'b'.repeat(64), policyHash: 'c'.repeat(64) }).then(value => {
+  const profile: 'scheduled-v2' = value.profile; void profile;
+});
 // @ts-expect-error PostgreSQL factories stay synchronous.
-const deferred: Promise<ExecutionWaitAggregateStore> = createPostgresStore(options);
+const deferred: Promise<WorkflowGraphAggregateStore> = createPostgresStore(options);
 // @ts-expect-error Connections require an explicit string.
 createPostgresStore({ connectionString: 123 });
 // @ts-expect-error The PostgreSQL-only package does not export SQLite.
