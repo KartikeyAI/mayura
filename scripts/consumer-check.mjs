@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
+import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -495,7 +496,8 @@ async function main() {
     noUnusedParameters: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: [],
   }, include: ['consumer.ts', 'base-hooks.test.ts'] }, null, 2));
   const typecheckStarted = performance.now();
-  await runNode([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
+  const types = await runNode([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false', '--listFiles'], application);
+  const typeFileCount = assertConsumerTypeFiles({ output: types.stdout, application, compilerPath: tsc });
   const typecheckMs = performance.now() - typecheckStarted;
   const executionStarted = performance.now();
   // Only packed-consumer execution is isolated. Maintainer package-manager/compiler tooling intentionally is not.
@@ -511,9 +513,10 @@ async function main() {
   const result = {
     status: 'passed', node: process.version, platform: process.platform, architecture: process.arch,
     output, packages: reports, frameworkTarballBytes: frameworkBytes, installedPackageCount: installed.size,
-    installMs, typecheckMs, executionMs, importMs: execution.importMs,
+    installMs, typecheckMs, typeFileCount, executionMs, importMs: execution.importMs,
     checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'atomic-budget-bundles', 'transformed-child-contracts', 'lifecycle-hook-authoring-and-execution', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
   };
+  result.checks.push('no-ancestor-declaration-fallback');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));
 }

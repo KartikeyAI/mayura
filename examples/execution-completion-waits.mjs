@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage';
+import { createSqliteStore } from '@mayura/storage-sqlite';
 import { defineTool } from '@mayura/tools';
 import { createScheduledWorkflowRuntime, defineWorkflow } from '@mayura/workflows';
 import { createExecutionWorkStream } from '@mayura/workstream/executions';

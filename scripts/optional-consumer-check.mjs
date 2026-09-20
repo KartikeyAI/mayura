@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
 import { gunzipSync } from 'node:zlib';
+import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -165,12 +166,13 @@ async function main() {
       strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true,
       noUnusedParameters: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: [],
     }, include: ['consumer.ts'] }, null, 2));
-    await run([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
+    const types = await run([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false', '--listFiles'], application);
+    const typeFileCount = assertConsumerTypeFiles({ output: types.stdout, application, compilerPath: tsc });
     if (name !== 'browser') {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
-      assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, execution });
+      assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
       const builtins = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
@@ -188,13 +190,14 @@ async function main() {
       const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
     checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'managed-shared-definition-identity', 'managed-single-permit-budget', 'managed-observer-four-model-calls', 'mediated-control-hooks', 'hook-action-evidence', 'explicit-trusted-host-entries', 'no-managed-provider-native-dependencies', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
   };
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
+  result.checks.push('no-ancestor-declaration-fallback');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

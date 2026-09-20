@@ -1,4 +1,5 @@
-import { createPostgresStore, createSqliteStore } from '../../dist/index.js';
+import { createPostgresStore } from '@mayura/storage-postgres';
+import { createSqliteStore } from '@mayura/storage-sqlite';
 
 // Dedicated test subprocess: stop at a confirmed durable boundary, then the parent kills it.
 try {

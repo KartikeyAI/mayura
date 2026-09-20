@@ -13,6 +13,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Durable execution](specs/durable-execution.md) — storage and recovery contract.
 - [Storage aggregates](specs/storage-aggregate.md) — transactional persistence building block.
 - [Driver-free storage contracts](adr/0005-driver-free-storage-contracts.md) — custom adapter interfaces without installing reference database drivers.
+- [Choose a storage installation](how-to/storage-installation.md) and [package boundary decision](adr/0006-isolated-sql-installations.md) — selected SQLite/PostgreSQL adapters with one shared engine and a compatible both-adapter facade.
 - [Standalone leased scheduler](specs/leased-scheduler.md) — expiring claims, fences and resource quarantine for separate jobs.
 - [Scheduled workflows](scheduled-workflows.md), [atomic contract](specs/scheduled-workflows.md) and [paired SQL tests](testing-scheduled-workflows.md) — opt-in workflow/job/budget ownership without automatic legacy migration.
 - [Initial durable engine](adr/0002-initial-durable-engine.md) — implemented subset and recovery limitations.
@@ -34,11 +35,12 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Crash-recovery testing](testing-process-recovery.md) — forced process termination evidence.
 - [Packed consumer validation](dx-validation.md) — public imports, types and source navigation.
 - [Optional-package qualification](specs/optional-package-qualification.md) — isolated offline browser, local host/observer and driver-free workflow installations.
+- [Selected-storage qualification](specs/storage-package-qualification.md) — actual SQLite-only, PostgreSQL-only and compatibility archives, native worker proof and declaration-file isolation.
 - [Technology qualification](technology-qualification.md) — exact pins and verified environments.
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 1,820 tests; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 1,833 tests; all V01–V22 enterprise release gates remain open.
 
 ## Distribution
 

@@ -14,6 +14,7 @@ Set the test-process environment variable. In PowerShell:
 $env:MAYURA_TEST_POSTGRES_URL = 'postgresql://mayura:mayura_local_test_only@127.0.0.1:55258/mayura'
 pnpm typecheck
 pnpm test
+pnpm test:consumer:storage
 ```
 
 In a POSIX shell:
@@ -31,3 +32,5 @@ docker compose -f compose.test.yaml down
 If port 55258 is occupied, stop the conflicting fixture deliberately or choose another localhost port and update the URL. Never stop unrelated containers or prune global Docker data. A fresh machine may need to download the pinned image. Pinning is not a vulnerability audit; see [technology qualification](technology-qualification.md).
 
 CI uses a separate ephemeral service. SQLite tests use isolated temporary files. Process/client restart is tested; engine/host crash consistency and backup/restore still need the broader release matrix.
+
+`pnpm test:consumer:storage` additionally installs real local archives into fresh SQLite-only, PostgreSQL-only and compatibility consumers, with lifecycle scripts and registry access disabled. When the explicit test URL is present, the two PostgreSQL-capable profiles create/drop only their own generated `mayura_packed_…` schemas. Without it, their database execution is reported as skipped, not qualified; the SQLite native-worker profile can still run. Generated archives, installed consumers and SQLite fixture files stay under an ignored `.artifacts/storage-consumer-*` directory for inspection.

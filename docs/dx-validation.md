@@ -36,6 +36,8 @@ The check:
 
 The fixture model is deterministic and credential-free. It does not perform inference or prove model quality. Live-provider qualification is a separate opt-in gate; no fake successful fallback is used here.
 
+The base, optional and selected-storage gates also inspect the compiler's actual `--listFiles` graph. Every input must resolve inside the installed consumer or the selected TypeScript standard-library directory; ancestor workspace declarations and junction escapes are rejected. This is independent of runtime module hooks and catches imported type dependencies that `types: []` does not exclude.
+
 The base gate also compiles and executes independent lifecycle-hook fixtures against the installed SDK. They verify stage-specific inference and negative access to private handlers/accounts, genuine definitions, a hidden read-tool catalog, exact grants/shared accounting and one-slot progress. Hook authoring does not add guardrails, observability, server or provider packages to the base installation. The optional managed/observer profile separately verifies actual hook event interoperability.
 
 ## Source and debugger navigation
@@ -68,6 +70,6 @@ Individual subprocesses have a 30-second timeout, and the test suite bounds the 
 - Validate editor UI navigation across the supported tooling matrix, API reference links, package provenance, licensing, and published-package upgrade/migration fixtures.
 - Conduct first-time-developer walkthroughs and measure time to first successful agent and error recovery.
 - Expand [optional-package qualification](specs/optional-package-qualification.md), which already covers client bundling and host/observer/driver-free workflow installations, to live browsers and the remaining OS/package-manager matrix. The base runtime is not advertised as a browser sandbox.
-- Repeat the gate for concrete storage, memory, and Code Mode installation profiles without adding them to the basic dependency graph.
+- Concrete selected-storage profiles have a separate `pnpm test:consumer:storage` gate: actual SQLite-only, PostgreSQL-only and compatibility archives, strict types without driver ambient declarations, exact transitive closures, scripts-disabled native worker loading and explicit PostgreSQL execution/skip reporting. Remaining OS/architecture/package-manager coverage, memory and Code Mode profiles still require qualification.
 
 Passing this narrow gate demonstrates the recorded packed-consumer behavior. It does not imply that planned durable workflows, enterprise deployment, security reviews, or all other release requirements are complete.

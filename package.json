@@ -12,6 +12,7 @@
     "check": "pnpm typecheck && pnpm test",
     "test:consumer": "node scripts/consumer-check.mjs",
     "test:consumer:optional": "node scripts/optional-consumer-check.mjs",
+    "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs"
   },
@@ -26,6 +27,8 @@
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*",
     "@mayura/storage": "workspace:*",
+    "@mayura/storage-sqlite": "workspace:*",
+    "@mayura/storage-postgres": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",

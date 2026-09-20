@@ -14,7 +14,7 @@ pnpm check
 pnpm example
 ```
 
-The basic SDK requires no Docker, native database, server or hosted account. Storage adapters are separate packages. Docker is used only for integration testing/deployment profiles that select it.
+The basic SDK requires no Docker, native database, server or hosted account. [Select SQLite or PostgreSQL explicitly](docs/how-to/storage-installation.md); existing `@mayura/storage` imports remain a both-adapter compatibility option. Docker is used only for integration testing/deployment profiles that select it.
 
 ## Current development slices
 
@@ -27,7 +27,7 @@ The basic SDK requires no Docker, native database, server or hosted account. Sto
 - An authenticated Fetch API, browser-safe client and optional [loopback-only Hono/Node host](docs/how-to/local-server.md). This is not production or durable multi-host serving.
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks; it is not mandatory durable audit.
 
-The integrated local checkpoint passes 1,820 tests, strict types, eight credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
+The integrated local checkpoint passes 1,833 tests, strict types, eight credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
 
 ## Documentation
 

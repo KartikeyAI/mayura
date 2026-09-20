@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import type { JsonObject } from '@mayura/core';
-import { createSqliteStore } from '../dist/index.js';
+import { createSqliteStore } from '@mayura/storage-sqlite';
 import { schedulerConformance } from './scheduler-conformance.js';
 
 schedulerConformance('SQLite', async () => {

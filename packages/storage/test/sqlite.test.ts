@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, it } from 'vitest';
-import { createSqliteStore } from '../dist/index.js';
+import { createSqliteStore } from '@mayura/storage-sqlite';
 import { aggregateConformance } from './conformance.js';
 
 aggregateConformance('SQLite', async () => {

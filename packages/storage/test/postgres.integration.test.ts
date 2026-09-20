@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
-import { createPostgresStore } from '../dist/index.js';
+import { createPostgresStore } from '@mayura/storage-postgres';
 import { aggregateConformance } from './conformance.js';
 
 const connectionString = process.env['MAYURA_TEST_POSTGRES_URL'];

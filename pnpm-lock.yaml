@@ -26,6 +26,12 @@ importers:
       '@mayura/storage':
         specifier: workspace:*
         version: link:packages/storage
+      '@mayura/storage-postgres':
+        specifier: workspace:*
+        version: link:packages/storage-postgres
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:packages/storage-sqlite
       '@mayura/testing':
         specifier: workspace:*
         version: link:packages/testing
@@ -166,12 +172,19 @@ importers:
 
   packages/storage:
     dependencies:
-      '@mayura/core':
-        specifier: workspace:*
-        version: link:../core
       '@mayura/storage-contracts':
         specifier: workspace:*
         version: link:../storage-contracts
+      '@mayura/storage-postgres':
+        specifier: workspace:*
+        version: link:../storage-postgres
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
+    devDependencies:
+      '@mayura/storage-sql':
+        specifier: workspace:*
+        version: link:../storage-sql
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -184,6 +197,39 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/storage-postgres:
+    dependencies:
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+      '@mayura/storage-sql':
+        specifier: workspace:*
+        version: link:../storage-sql
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+
+  packages/storage-sql:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+
+  packages/storage-sqlite:
+    dependencies:
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+      '@mayura/storage-sql':
+        specifier: workspace:*
+        version: link:../storage-sql
+      better-sqlite3:
+        specifier: 13.0.3
+        version: 13.0.3
 
   packages/testing:
     dependencies:

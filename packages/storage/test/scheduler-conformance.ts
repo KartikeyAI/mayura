@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonObject } from '@mayura/core';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import type { Claim, JobReservation, SchedulerAggregateStore, SchedulerStore } from '../dist/index.js';
+import type { Claim, JobReservation, SchedulerAggregateStore, SchedulerStore } from '@mayura/storage-contracts';
 
 export interface SchedulerFixture {
   store: SchedulerAggregateStore;

@@ -1,9 +1,8 @@
 import Database from 'better-sqlite3';
 import { Pool } from 'pg';
-import { createPostgresStore, createSqliteStore } from '../../dist/index.js';
-import { SchedulerDatabase } from '../../dist/scheduler-database.js';
-import { ScheduledWorkflowDatabase } from '../../dist/scheduled-database.js';
-import { ExecutionWaitDatabase } from '../../dist/execution-wait-database.js';
+import { createPostgresStore } from '@mayura/storage-postgres';
+import { createSqliteStore } from '@mayura/storage-sqlite';
+import { SchedulerDatabase, ScheduledWorkflowDatabase, ExecutionWaitDatabase } from '@mayura/storage-sql/host';
 
 // Only this disposable test process has transaction checkpoints. Production has no failpoint.
 async function checkpoint() {

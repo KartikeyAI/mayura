@@ -6,7 +6,9 @@ import Database from 'better-sqlite3';
 import { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonObject } from '@mayura/core';
-import { createPostgresStore, createSqliteStore, type Claim, type JobReservation, type SchedulerAggregateStore } from '../dist/index.js';
+import { createPostgresStore } from '@mayura/storage-postgres';
+import { createSqliteStore } from '@mayura/storage-sqlite';
+import type { Claim, JobReservation, SchedulerAggregateStore } from '@mayura/storage-contracts';
 
 interface Fixture {
   readonly store: SchedulerAggregateStore;

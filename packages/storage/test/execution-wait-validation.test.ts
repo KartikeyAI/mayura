@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ExecutionCompletion, ExecutionRef, ExecutionWaitSnapshot } from '@mayura/storage-contracts';
-import { executionWaitFacade } from '../src/execution-wait-validation.js';
+import { executionWaitFacade } from '@mayura/storage-sql/host';
 
 const key = { scope: 'a'.repeat(64), streamId: 'release.joins', policyHash: 'b'.repeat(64) };
 function reference(index = 1): ExecutionRef { return { kind: 'scheduled-workflow', runId: index.toString(16).padStart(64, '0'), definitionHash: 'c'.repeat(64), policyHash: key.policyHash }; }

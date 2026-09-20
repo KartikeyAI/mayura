@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createCommand, nextCounter, submissionDigest } from '../src/validation.js';
-import type { CreateRecord } from '../src/contracts.js';
+import { createCommand, nextCounter, submissionDigest } from '@mayura/storage-sql/host';
+import type { CreateRecord } from '@mayura/storage-contracts';
 
 describe('storage submission encoding', () => {
   const command = (): CreateRecord => ({

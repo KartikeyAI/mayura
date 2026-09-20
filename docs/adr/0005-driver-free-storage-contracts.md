@@ -8,7 +8,7 @@ Move the existing aggregate/scheduler interfaces and the single shared `StorageE
 
 Workflows, WorkStream and native memory consume only these interfaces/error values at runtime. They depend on the contract package rather than the concrete SQLite/PostgreSQL package. Their SQL conformance fixtures select `@mayura/storage` as a development dependency. Custom adapter authors can implement the contracts without installing either reference driver. Workflow composition becomes a genuinely driver-free optional import/install profile.
 
-The existing reference-adapter package still contains both drivers; separate SQLite-only/PostgreSQL-only distributions remain a later packaging boundary. No persisted format, factory option, data, runtime policy, or schema migration changes. The base SDK and browser client dependency graphs remain unchanged.
+At this decision's initial delivery the reference-adapter package still contained both drivers. [ADR 0006](0006-isolated-sql-installations.md) subsequently separates selected SQLite/PostgreSQL installations while retaining the original facade. Neither packaging change modifies persisted formats, factory options, data, runtime policy or schema migrations. The base SDK and browser client dependency graphs remain unchanged.
 
 ## Verification
 

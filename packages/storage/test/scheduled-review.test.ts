@@ -1,9 +1,7 @@
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { workflowState, type ScheduledWorkflowSnapshot, type WorkflowManifest, type WorkflowPolicyManifest } from '@mayura/storage-contracts';
-import { ScheduledWorkflowDatabase } from '../src/scheduled-database.js';
-import { scheduledFacade } from '../src/scheduled-validation.js';
-import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from '../src/scheduler-database.js';
+import { ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from '@mayura/storage-sql/host';
 
 /** Real transactional SQLite with only the internal storage-clock query made deterministic. */
 function fixture() {

@@ -1,8 +1,20 @@
 # @mayura/storage
 
-Optional SQLite/PostgreSQL persistence for Mayura. The base SDK does not require this native/database package.
+Compatibility facade for both Mayura SQL adapters. Development preview; not enterprise-qualified or published.
 
-`createSqliteStore({filename})` and `createPostgresStore({connectionString, schema?})` expose the same aggregate operations: `initialize`, `create`, `read`, `update`, `events`, and `close`. Updates use compare-and-set versions and append their events in the same transaction. Identical create retries compare the original submission, not its later mutable state. SQLite uses a dedicated storage-owning worker, WAL and full synchronization; PostgreSQL uses a bounded pool and transactional row locks.
+Existing imports remain supported:
+
+```ts
+import { createSqliteStore, createPostgresStore, StorageError } from '@mayura/storage';
+```
+
+This package deliberately installs both selected adapters. New applications that need only one database should use `@mayura/storage-sqlite` or `@mayura/storage-postgres` and import common types/errors from `@mayura/storage-contracts`. Those explicit packages export the identical factory functions used here.
+
+The shared SQL engine is implemented once in `@mayura/storage-sql`. There is no persisted-format migration when changing this import to a selected adapter: use the same SQLite file or PostgreSQL schema. Driver-free SDK, workflows, WorkStream and custom storage consumers do not acquire SQL dependencies unless an adapter is explicitly installed.
+
+Factory creation is synchronous; applications own `initialize()` and `close()`. Aggregate, scheduler, scheduled-workflow and completion-wait interfaces remain unchanged. Real-database and isolated package checks establish the current local evidence, not universal native compatibility or full enterprise qualification.
+
+Both factories expose `initialize`, `create`, `read`, `update`, `events` and `close`. Updates use compare-and-set versions and append their events in the same transaction. Identical create retries compare the original submission, not its later mutable state. SQLite uses a dedicated storage-owning worker, WAL and full synchronization; PostgreSQL uses a bounded pool and transactional row locks.
 
 ## Experimental standalone scheduler
 
@@ -36,8 +48,8 @@ The lifecycle is `reserve → claim → start → recordReceipt → complete`. O
 
 `renew` cannot revive an expired generation. `cancel` and `recover` release never-started work; started uncertain work is never made ready again. Its resource holds remain quarantined. `recordReceipt` retains late/conflicting evidence independently from output disclosure; `receipts`, `read` and `events` do not execute work or renew a lease. `complete` requires known evidence and an already-admitted output from trusted application code.
 
-This is a **trusted application-side ledger**, not an authentication service, financial budget account, tool broker, complete worker service or fencing wrapper for the existing workflow runtime. Do not expose these methods directly to a model or untrusted client. In particular, obtaining a claim and then calling ordinary `AggregateStore.update` does not fence that update. Workflow integration is deliberately not enabled.
+This is a **trusted application-side ledger**, not an authentication service, financial budget account, tool broker, complete worker service or fencing wrapper for arbitrary workflow writes. Do not expose these methods directly to a model or untrusted client. Obtaining a standalone claim and then calling ordinary `AggregateStore.update` does not fence that update. Explicit `store.workflows` enrollment instead uses a separate atomic scheduled-workflow reducer and blocks ordinary writes to owned runs.
 
-The first slice has hard bounds: 128 claim generations, 32 resource keys, 16 evidence records per generation, 64 successful control commands, 4 KiB intent, 64 KiB output and one MiB internal job state. Leases are 1–300 seconds. There is no automatic uncertain-effect retry, quarantine clearance or history compaction. An open store can retain late evidence; closing it or losing the process can leave an unknown result requiring later reconciliation.
+The standalone job ledger has hard bounds: 128 claim generations, 32 resource keys, 16 evidence records per generation, 64 successful control commands, 4 KiB intent, 64 KiB output and one MiB internal job state. Leases are 1–300 seconds. There is no automatic uncertain-effect retry, quarantine clearance or history compaction. An open store can retain late evidence; closing it or losing the process can leave an unknown result requiring later reconciliation.
 
-See [aggregate contract](../../docs/specs/storage-aggregate.md) and [scheduler specification](../../docs/specs/leased-scheduler.md) for exact transactional, retry, clock, scope and qualification boundaries.
+In the source checkout, see the [aggregate contract](../../docs/specs/storage-aggregate.md) and [scheduler specification](../../docs/specs/leased-scheduler.md) for exact transactional, retry, clock, scope and qualification boundaries.

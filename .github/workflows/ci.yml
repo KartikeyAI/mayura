@@ -25,6 +25,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:consumer:optional
+      - run: pnpm test:consumer:storage
       - run: pnpm example
       - run: node examples/agent-orchestration.mjs
       - run: node examples/workflow-composition.mjs
@@ -60,3 +61,4 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm typecheck
       - run: pnpm test:integration
+      - run: pnpm test:consumer:storage

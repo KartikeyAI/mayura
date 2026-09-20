@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AggregateStore, CreateRecord } from '../src/contracts.js';
+import type { AggregateStore, CreateRecord } from '@mayura/storage-contracts';
 import type { JsonObject } from '@mayura/core';
 
 export interface StoreFixture {

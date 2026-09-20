@@ -9,9 +9,10 @@ import type { WorkflowFixture } from './fixtures.js';
 
 // Fault instrumentation deliberately reuses the reference adapter's installed drivers.
 // The workflows package retains only its existing optional test dependency on storage.
-const storageRequire = createRequire(import.meta.resolve('@mayura/storage'));
-const Database = storageRequire('better-sqlite3') as typeof DatabaseType;
-const { Pool } = storageRequire('pg') as typeof import('pg');
+const sqliteRequire = createRequire(import.meta.resolve('@mayura/storage-sqlite'));
+const postgresRequire = createRequire(import.meta.resolve('@mayura/storage-postgres'));
+const Database = sqliteRequire('better-sqlite3') as typeof DatabaseType;
+const { Pool } = postgresRequire('pg') as typeof import('pg');
 
 /** Raw SQL is test-only fault instrumentation, scoped to one disposable fixture. */
 export interface ScheduledFixture extends WorkflowFixture {

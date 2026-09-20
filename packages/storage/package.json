@@ -19,9 +19,9 @@
     "node": ">=24.14.1 <25"
   },
   "dependencies": {
-    "@mayura/core": "workspace:*",
     "@mayura/storage-contracts": "workspace:*",
-    "better-sqlite3": "13.0.3",
-    "pg": "8.23.0"
-  }
+    "@mayura/storage-sqlite": "workspace:*",
+    "@mayura/storage-postgres": "workspace:*"
+  },
+  "devDependencies": { "@mayura/storage-sql": "workspace:*", "better-sqlite3": "13.0.3", "pg": "8.23.0" }
 }

@@ -5,7 +5,8 @@ import { join, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
 import { Pool } from 'pg';
 import type { ExecutionWaitAggregateStore } from '@mayura/storage-contracts';
-import { createPostgresStore, createSqliteStore } from '../dist/index.js';
+import { createPostgresStore } from '@mayura/storage-postgres';
+import { createSqliteStore } from '@mayura/storage-sqlite';
 
 /** Disposable real databases. SQL access is test-only fault instrumentation. */
 export interface ExecutionWaitFixture {
