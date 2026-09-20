@@ -1,2 +1,3 @@
-export { defineAgent, type AgentDefinition, type AgentOptions, type AgentOutput } from './agent.js';
-export { createRuntime, type Runtime, type RuntimeOptions, type RuntimeLimits } from './runtime.js';
+export { defineAgent, assertAgent, type AgentDefinition, type AgentOptions, type AgentOutput } from './agent.js';
+export { createRuntime, type Runtime, type RuntimeOptions, type RuntimeLimits, type RunInspection } from './runtime.js';
+export { agentAsTool, type ChildOptions, type AgentToolOptions } from './composition.js';

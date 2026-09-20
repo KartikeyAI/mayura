@@ -1,5 +1,6 @@
-import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type JsonValue, type Outcome } from '@mayura/core';
+import { MayuraError, assertBudget, assertPositiveInteger, freezeJson, jsonValue, validate, type JsonValue, type Outcome } from '@mayura/core';
 import { assertTool, invokeTool, type AnyTool, type InvokeToolContext } from './index.js';
+import { snapshotToolContextBindings } from './context.js';
 
 /** Literal-input call in a finite dependency graph. Resource keys are trusted application declarations. */
 export interface BatchCall {
@@ -72,7 +73,8 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
     throw new MayuraError('INVALID_CONFIG', 'A batch requires valid options and 1–128 calls.');
   }
   text(options.runId, 'runId'); text(options.scope?.principalId, 'scope.principalId'); text(options.scope?.projectId, 'scope.projectId');
-  if (!(options.signal instanceof AbortSignal) || !(options.budget instanceof Budget)) throw new MayuraError('INVALID_CONFIG', 'An AbortSignal and shared execution Budget are required.');
+  if (!(options.signal instanceof AbortSignal)) throw new MayuraError('INVALID_CONFIG', 'An AbortSignal is required.');
+  assertBudget(options.budget);
   if (!Array.isArray(options.permissions?.allow) || options.permissions.allow.length > 4096) throw new MayuraError('INVALID_CONFIG', 'Permissions must contain a bounded grant list.');
   for (const grant of options.permissions.allow) text(grant, 'grant', 384);
   const permissions = Object.freeze({ allow: Object.freeze([...options.permissions.allow]) });
@@ -83,6 +85,9 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
   const parentSignal = options.signal;
   const beforeDispatch = options.beforeDispatch;
   const onExecutionReceipt = options.onExecutionReceipt;
+  const contextBindings = snapshotToolContextBindings(options.contextBindings);
+  const acquireExecution = options.acquireExecution;
+  if (acquireExecution !== undefined && typeof acquireExecution !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireExecution must be a function.');
   if (beforeDispatch !== undefined && typeof beforeDispatch !== 'function') throw new MayuraError('INVALID_CONFIG', 'beforeDispatch must be a function.');
   if (onExecutionReceipt !== undefined && typeof onExecutionReceipt !== 'function') throw new MayuraError('INVALID_CONFIG', 'onExecutionReceipt must be a function.');
   const concurrency = options.concurrency ?? 4;
@@ -175,6 +180,8 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
       const execution = invokeTool(call.tool, call.input, {
         runId, callId: call.id, scope, permissions, budget, signal: controller.signal, maxOutputBytes,
         ...(onExecutionReceipt ? { onExecutionReceipt } : {}),
+        contextBindings,
+        ...(acquireExecution ? { acquireExecution } : {}),
         beforeDispatch: async processed => {
           if (canonical(processed) !== call.candidate) throw new MayuraError('CONFLICT', 'Processed batch input changed after preflight.');
           if (beforeDispatch) await beforeDispatch(processed);

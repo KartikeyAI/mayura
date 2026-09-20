@@ -1,5 +1,5 @@
 import { MayuraError, jsonValue, type JsonObject, type Scope } from '@mayura/core';
-import { StorageError, type StoredRecord } from '@mayura/storage';
+import { StorageError, type StoredRecord } from '@mayura/storage-contracts';
 import type { MemoryEntry, MemoryListOptions, MemoryRecord, MemoryStore, MemoryStoreOptions, MemoryTombstone } from './contracts.js';
 import { MAX_AGGREGATE_BYTES, MAX_RECORDS, SENSITIVITIES, activeRecord, allowedKeys, exactKeys, immutable, integer, memoryId, object, parseEntry, sensitivity, sha256, text } from './validation.js';
 

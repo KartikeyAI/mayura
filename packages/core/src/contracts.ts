@@ -17,9 +17,14 @@ export interface ExecutionReceipt {
   readonly execution: 'not_started' | 'succeeded' | 'failed' | 'unknown';
   readonly disclosure: 'released' | 'withheld';
 }
+/** Run-qualified evidence: call identifiers alone are not unique across descendants. */
+export interface ExecutionEvidence {
+  readonly runId: string;
+  readonly receipt: ExecutionReceipt;
+}
 export type Outcome<T> =
-  | { readonly status: 'succeeded'; readonly output: T; readonly receipt?: ExecutionReceipt }
-  | { readonly status: 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown'; readonly error: PublicError; readonly receipt?: ExecutionReceipt };
+  | { readonly status: 'succeeded'; readonly output: T; readonly receipt?: ExecutionReceipt; readonly evidence?: readonly ExecutionEvidence[] }
+  | { readonly status: 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown'; readonly error: PublicError; readonly receipt?: ExecutionReceipt; readonly evidence?: readonly ExecutionEvidence[] };
 export interface RunEvent {
   readonly runId: string;
   readonly sequence: number;

@@ -266,7 +266,9 @@ export function workstreamConformance(name: string, factory: () => Promise<WorkS
       expect(await value.signal({ id: 'signal-0', name: 'ready', value: 0 })).toMatchObject({ sequence: 1, value: 0 });
       expect(await allSignals(value)).toHaveLength(256);
       expect(await value.events()).toEqual(before);
-    });
+    // This correctness fixture intentionally commits/fsyncs all 256 public transitions.
+    // Allow shared CI disk contention; this is not a throughput qualification benchmark.
+    }, 30_000);
 
     it('enforces 128 retained waits, preserving completed and cancelled definitions', async () => {
       const value = await initialized();

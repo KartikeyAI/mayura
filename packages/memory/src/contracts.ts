@@ -1,5 +1,5 @@
 import type { JsonObject, Permissions, Scope } from '@mayura/core';
-import type { AggregateStore } from '@mayura/storage';
+import type { AggregateStore } from '@mayura/storage-contracts';
 
 export type MemorySensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
 export type MemoryCategory = 'fact' | 'preference' | 'decision' | 'procedure' | 'episode';

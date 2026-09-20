@@ -1,13 +1,15 @@
 import { Worker } from 'node:worker_threads';
-import { StorageError, type AggregateStore, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode } from './contracts.js';
+import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode } from './contracts.js';
 import { createCommand, updateCommand, identifier, cursor } from './validation.js';
+import { schedulerFacade } from './scheduler-validation.js';
+import type { SchedulerAggregateStore } from './scheduler-contracts.js';
 
 export interface SqliteStoreOptions { readonly filename: string }
 interface Pending { resolve(value: unknown): void; reject(error: Error): void }
 interface Response { id: number; result?: unknown; error?: { code: StorageErrorCode; message: string } }
 
 /** Creates an optional SQLite adapter with one database-owning worker and a bounded IPC queue. */
-export function createSqliteStore(options: SqliteStoreOptions): AggregateStore {
+export function createSqliteStore(options: SqliteStoreOptions): SchedulerAggregateStore {
   if (typeof options.filename !== 'string' || options.filename.length === 0 || options.filename.includes('\0')) {
     throw new StorageError('INVALID_INPUT', 'SQLite filename must be nonempty and contain no null characters.');
   }
@@ -46,6 +48,7 @@ export function createSqliteStore(options: SqliteStoreOptions): AggregateStore {
   };
 
   return {
+    scheduler: schedulerFacade((method, input) => request('scheduler', [method, input])),
     initialize: () => request<void>('initialize', []),
     create: async (command: CreateRecord) => request<{ record: StoredRecord; created: boolean }>('create', [createCommand(command)]),
     read: async (scope, id) => request<StoredRecord | undefined>('read', [identifier(scope, 'Scope'), identifier(id, 'Record ID')]),

@@ -22,7 +22,7 @@ if (result.status === "succeeded") {
 }
 ```
 
-Callbacks and processors are trusted application code. Cooperative deadlines bound awaited work and stop new dispatch; this package cannot hard-kill synchronous JavaScript, constrain imports, or prevent a callback from making its own external calls. Native helpers do not make network calls or incur model charges. Model-assisted moderation, language detection/translation, injection classifiers, and their budgeted broker integrations are not implemented here.
+Callbacks and processors are trusted application code. Cooperative deadlines bound awaited work and stop new dispatch; this package cannot hard-kill synchronous JavaScript, constrain imports, or prevent a callback from making its own external calls. The deterministic helpers below make no network calls or model charges. Separate, explicitly configured auxiliary helpers now provide metered model evaluation, moderation and language processing; automatic runtime provisioning and general injection classifiers are not implemented. See [auxiliary guardrails](auxiliary-guardrails.md).
 
 ## Content identity and authorization barrier
 
@@ -44,6 +44,16 @@ The pipeline freezes its processor/guard registry at construction and captures c
 
 Redaction labels and protected literals are supplied by the application, never read from ambient prompts or credentials. Their contents do not appear in error messages, block callbacks, or guard evidence. Redaction changes values before checks; guards inspect the actual redacted candidate, not a stale original.
 
+## Explicit auxiliary model helpers
+
+`createAuxiliaryCheck` validates an original/admitted input and complete output against supplied schemas, using an explicitly configured model, exact model grant and genuine caller-supplied `Budget`. It retains original/admitted content and digest-bound evidence on success. Known usage settles even when the model envelope is malformed or completes after cancellation; unknown usage remains reserved. It does not create credit, retry, invoke tools, follow continuation state or discover credentials.
+
+`detectAndTranslate` is a content processor for application-classified `prose`/`protected` segments. It meters detection and translation separately, keeps protected segments out of both requests, preserves originals and exact segment mappings, and reports low-confidence preservation without inventing a translation. Applications must classify exact code, identifiers, paths and secrets before this boundary; plain text is not automatically safe prose.
+
+`createModerationGuard` is a required guard backed by a typed auxiliary decision. Unavailable or malformed evaluation never becomes approval. Parallel moderation checks must share the owning account; invoking its explicit `evaluate` and `check` methods separately performs and charges separate calls. Moderation and translation remain fallible model outputs, not validated meaning or comprehensive prompt-injection prevention.
+
+Local destination-aware egress guards run before auxiliary dispatch. Post-disclosure moderation cannot undo an earlier request. The application still owns runtime account/identity/permission/operation-limit wiring and content retention; these helpers are not an automatic runtime middleware layer. The [auxiliary contract](auxiliary-guardrails.md) defines limits, evidence and late-settlement behavior.
+
 ## Block handling
 
 An optional `onBlocked` callback receives only safe boundary/run/call metadata, candidate version/digest, and a stable error code. It receives neither content, protected literals, reasons, nor raw exceptions. Callback failures remain fail-closed and are sanitized. Callback execution shares the pipeline's remaining deadline; a deadline or cancellation may prevent notification. This is a bounded notification facility, not a durable violation-delivery guarantee.
@@ -52,8 +62,8 @@ An optional `onBlocked` callback receives only safe boundary/run/call metadata, 
 
 `releaseBatches(source, pipeline, context, options)` consumes a trusted asynchronous source of text chunks. It concatenates complete bounded batches and passes each batch through the same pipeline before yielding an admitted snapshot. It never yields the raw source chunks. Limits bound chunk count per batch, UTF-8 batch size, batch count, and total stream duration; oversized chunks fail without releasing them. Cancellation requests source cleanup and does not imply the source's external work was undone.
 
-Each batch is independently admitted. A later block cannot retract earlier released batches. A protected span split across batches can evade a batch-local recognizer. Applications requiring whole-response safety must buffer and guard the whole response instead. There is no claim of semantic moderation, global transcript safety, or provider-token/currency enforcement in this batch helper.
+Each batch is independently admitted. A later block cannot retract earlier released batches. A protected span split across batches can evade a batch-local recognizer. Applications requiring whole-response safety must buffer and guard the whole response instead. The batch helper itself supplies no semantic moderation or provider-token/currency enforcement; any explicitly attached auxiliary guard uses its separately supplied account and remains subject to these cross-batch disclosure limits.
 
 ## Verification gates
 
-Tests cover deep immutability, canonical fingerprints, version progression, registry snapshots, complete parallel guard barriers, malformed/accessor verdicts, sanitized block callbacks, hanging processors/guards/callbacks, external cancellation, normalized-role stripping, recognizer matches and known false positives/negatives, transformed-candidate checks, and bounded release that does not expose a rejected raw batch. Packed/browser/runtime matrix qualification remains a separate stable-release gate.
+Tests cover deep immutability, canonical fingerprints, version progression, registry snapshots, complete parallel guard barriers, malformed/accessor verdicts, sanitized block callbacks, hanging processors/guards/callbacks, external cancellation, normalized-role stripping, recognizer matches and known false positives/negatives, transformed-candidate checks, and bounded release that does not expose a rejected raw batch. Auxiliary fake-model tests add genuine-account admission, exact/unknown/late usage, local egress denial, protected-span preservation, segment mappings and moderation failures. These cases are included in the integrated local checkpoint; broader browser/runtime and live semantic-quality qualification remain separate release gates.

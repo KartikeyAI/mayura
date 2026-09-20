@@ -1,12 +1,14 @@
 import {
   assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, ModelInvocationError, publicError, validate,
-  type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
+  type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
   type Outcome, type Permissions, type RunHandle, type Schema, type Scope,
 } from '@mayura/core';
 import { invokeTool, type AnyTool } from '@mayura/tools';
 import { assertAgent, isIdentifier, type AgentDefinition } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
 import { modelCost, modelResponse } from './response.js';
+import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
+import { OperationPermits } from './permits.js';
 
 /** All bounds are finite; model/token/cost declarations do not turn trusted callbacks into a sandbox. */
 export interface RuntimeLimits {
@@ -20,7 +22,11 @@ export interface RuntimeLimits {
   readonly maxOutputTokens?: number;
   readonly maxCostMicros?: number;
   readonly maxEventRetention?: number;
+  /** Concurrent root admissions; descendants have separate bounded capacity. */
   readonly maxConcurrentRuns?: number;
+  readonly maxDescendantRuns?: number;
+  readonly maxDepth?: number;
+  readonly maxConcurrentOperations?: number;
 }
 export interface RuntimeOptions {
   readonly profile: 'ephemeral';
@@ -31,6 +37,8 @@ export interface RuntimeOptions {
 export interface Runtime {
   readonly profile: 'ephemeral';
   submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
+  spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
+  inspect(handle: RunHandle<unknown>): RunInspection;
   /** Stop admissions, request cancellation, and wait for accepted runs to reach a terminal outcome. */
   close(): Promise<void>;
 }
@@ -39,10 +47,12 @@ const defaults: Required<RuntimeLimits> = Object.freeze({
   maxSteps: 16, maxModelCalls: 16, maxToolCalls: 64, maxDurationMs: 60_000,
   maxInputBytes: 1_048_576, maxOutputBytes: 1_048_576, maxContextBytes: 2_097_152,
   maxOutputTokens: 4_096, maxCostMicros: 0, maxEventRetention: 256, maxConcurrentRuns: 32,
+  maxDescendantRuns: 64, maxDepth: 8, maxConcurrentOperations: 32,
 });
 
 function limitsFor(options: RuntimeLimits | undefined): Required<RuntimeLimits> {
   const result = { ...defaults, ...options };
+  if (Object.keys(result).some((key) => !(key in defaults))) throw new MayuraError('INVALID_CONFIG', 'Unknown runtime limit.');
   for (const [key, value] of Object.entries(result)) {
     if (key === 'maxCostMicros') {
       if (!Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_CONFIG', 'maxCostMicros must be a non-negative safe integer.');
@@ -50,6 +60,10 @@ function limitsFor(options: RuntimeLimits | undefined): Required<RuntimeLimits> 
   }
   if (result.maxDurationMs > 2_147_483_647 || !Number.isSafeInteger(result.maxModelCalls + result.maxToolCalls)) {
     throw new MayuraError('INVALID_CONFIG', 'Runtime limits exceed the supported counter or timer range.');
+  }
+  if (result.maxDepth > 32 || result.maxDescendantRuns > 1023 || result.maxConcurrentOperations > 1024
+    || result.maxConcurrentRuns > 1024 || result.maxModelCalls > 4096 || result.maxToolCalls > 4096) {
+    throw new MayuraError('INVALID_CONFIG', 'Runtime tree or operation limits exceed supported bounds.');
   }
   return Object.freeze(result);
 }
@@ -77,53 +91,168 @@ function outcomeFor(error: unknown): Outcome<never> {
   return Object.freeze({ status, error: Object.freeze(safe) });
 }
 
-/** Create a process-local runtime. This profile promises neither restart recovery nor hard process isolation. */
-export function createRuntime(options: RuntimeOptions): Runtime {
-  if (options.profile !== 'ephemeral') throw new MayuraError('UNSUPPORTED_PROFILE', 'Only the explicit ephemeral profile is supported by this runtime.');
-  const limits = limitsFor(options.limits);
-  const suppliedGrants = options.permissions?.allow ?? [];
-  if (!Array.isArray(suppliedGrants) || suppliedGrants.length > 4096 || suppliedGrants.some((grant) => typeof grant !== 'string' || grant.length === 0 || grant.length > 256)) {
+
+export interface RunInspection {
+  readonly id: string;
+  readonly rootId: string;
+  readonly parentId?: string;
+  readonly agentId: string;
+  readonly status: 'running' | Outcome<unknown>['status'];
+  readonly budget: ReturnType<Budget['snapshot']>;
+  readonly runs: readonly { readonly id: string; readonly parentId?: string; readonly agentId: string; readonly status: 'running' | Outcome<unknown>['status'] }[];
+  readonly evidence: readonly ExecutionEvidence[];
+}
+interface RunState {
+  readonly id: string;
+  readonly agent: AgentDefinition;
+  readonly parent: RunState | undefined;
+  readonly root: RunState;
+  readonly depth: number;
+  readonly deadline: number;
+  readonly limits: Required<RuntimeLimits>;
+  readonly permissions: Permissions;
+  readonly budget: Budget;
+  readonly operations: OperationPermits;
+  readonly controller: AbortController;
+  readonly handle: RunHandle<unknown>;
+  readonly children: RunState[];
+  readonly receipts: Map<string, ExecutionReceipt>;
+  accepting: boolean;
+  status: 'running' | Outcome<unknown>['status'];
+  descendants: number;
+  modelCalls: number;
+  toolCalls: number;
+}
+function permissionsFor(supplied: Permissions | undefined, required = false): Permissions {
+  const allow = supplied?.allow ?? (required ? undefined : []);
+  if (!Array.isArray(allow) || allow.length > 4096 || allow.some((grant) => typeof grant !== 'string' || grant.length === 0 || grant.length > 256)) {
     throw new MayuraError('INVALID_CONFIG', 'Permissions must be an explicit list of bounded capability names.');
   }
-  const permissions: Permissions = Object.freeze({ allow: Object.freeze([...new Set(suppliedGrants)]) });
-  const grants = new Set(permissions.allow);
+  return Object.freeze({ allow: Object.freeze([...new Set(allow)]) });
+}
+function ancestors(state: RunState): RunState[] {
+  const path: RunState[] = [];
+  for (let current: RunState | undefined = state; current; current = current.parent) path.push(current);
+  return path;
+}
+function subtree(state: RunState): RunState[] { return [state, ...state.children.flatMap(subtree)]; }
+function evidenceFor(state: RunState): readonly ExecutionEvidence[] {
+  return Object.freeze(subtree(state).flatMap((run) => [...run.receipts.values()].map((receipt) => Object.freeze({ runId: run.id, receipt }))));
+}
+/** Preserve known late evidence when a stale cancellation snapshot still says unknown. */
+function record(state: RunState, receipt: ExecutionReceipt): void {
+  const old = state.receipts.get(receipt.callId);
+  const execution = old && ['succeeded', 'failed'].includes(old.execution) && !['succeeded', 'failed'].includes(receipt.execution)
+    ? old.execution : receipt.execution;
+  state.receipts.set(receipt.callId, Object.freeze({ ...receipt, execution }));
+}
+function checkCalls(state: RunState, kind: 'model' | 'tool', count: number): void {
+  for (const current of ancestors(state)) {
+    const remaining = kind === 'model' ? current.limits.maxModelCalls - current.modelCalls : current.limits.maxToolCalls - current.toolCalls;
+    if (count > remaining) throw new MayuraError('LIMIT_EXCEEDED', 'An ancestor execution-call limit was reached.');
+  }
+}
+function countCall(state: RunState, kind: 'model' | 'tool'): void {
+  for (const current of ancestors(state)) {
+    if (kind === 'model') current.modelCalls++; else current.toolCalls++;
+  }
+}
+
+/** Process-local structured concurrency. No restart recovery or hard callback isolation is promised. */
+export function createRuntime(options: RuntimeOptions): Runtime {
+  if (options.profile !== 'ephemeral') throw new MayuraError('UNSUPPORTED_PROFILE', 'Only the explicit ephemeral profile is supported by this runtime.');
+  const rootLimits = limitsFor(options.limits);
+  const rootPermissions = permissionsFor(options.permissions);
   const suppliedScope = options.scope ?? { principalId: 'local', projectId: 'default' };
   if (!isIdentifier(suppliedScope.principalId) || !isIdentifier(suppliedScope.projectId)) {
     throw new MayuraError('INVALID_CONFIG', 'Scope requires bounded principal and project identifiers.');
   }
-  const scope = Object.freeze({ principalId: suppliedScope.principalId, projectId: suppliedScope.projectId });
+  const scope: Scope = Object.freeze({ principalId: suppliedScope.principalId, projectId: suppliedScope.projectId });
   const active = new Map<string, RunHandle<unknown>>();
+  const states = new WeakMap<object, RunState>();
+  const operations = new OperationPermits(rootLimits.maxConcurrentOperations, Math.min(65536, rootLimits.maxConcurrentRuns * (rootLimits.maxDescendantRuns + 1)));
+  let activeRoots = 0;
   let closed = false;
+  const lookup = (handle: RunHandle<unknown>): RunState => {
+    const state = states.get(handle);
+    if (!state) throw new MayuraError('PERMISSION_DENIED', 'A genuine handle from this runtime is required.');
+    return state;
+  };
+  const admitChild = <I extends Schema, O extends Schema>(
+    parent: RunState, agent: AgentDefinition<I, O>, input: unknown, child: ChildOptions, inputAdmitted = false, signal?: AbortSignal,
+  ): RunHandle<InferOutput<O>> => {
+    if (Date.now() >= parent.deadline && !parent.controller.signal.aborted) parent.controller.abort(new MayuraError('TIMEOUT', 'The parent deadline elapsed.'));
+    if (closed || !parent.accepting || parent.status !== 'running' || parent.controller.signal.aborted || signal?.aborted) {
+      throw new MayuraError('CONFLICT', 'The parent no longer accepts child execution.');
+    }
+    assertAgent(agent);
+    if (!parent.permissions.allow.includes('agent:delegate')) throw new MayuraError('PERMISSION_DENIED', 'Child delegation is not authorized.');
+    const path = ancestors(parent);
+    if (path.some((item) => item.agent === agent || item.agent.id === agent.id)) throw new MayuraError('CONFLICT', 'Recursive agent ancestry is not supported.');
+    if (path.some((item) => item.descendants >= item.limits.maxDescendantRuns) || parent.depth + 1 > parent.limits.maxDepth) {
+      throw new MayuraError('LIMIT_EXCEEDED', 'The descendant or depth limit was reached.');
+    }
+    const limits = limitsFor({ ...parent.limits, ...child.limits });
+    if (limits.maxConcurrentRuns !== parent.limits.maxConcurrentRuns) throw new MayuraError('INVALID_CONFIG', 'maxConcurrentRuns controls root admission only.');
+    if (parent.depth + 1 > limits.maxDepth) throw new MayuraError('LIMIT_EXCEEDED', 'The child depth ceiling was reached.');
+    if (Object.entries(limits).some(([key, value]) => value > parent.limits[key as keyof RuntimeLimits])) {
+      throw new MayuraError('INVALID_CONFIG', 'Child limits cannot exceed parent ceilings.');
+    }
+    const requested = permissionsFor(child.permissions, true);
+    const permissions = permissionsFor({ allow: requested.allow.filter((grant) => parent.permissions.allow.includes(grant)) });
+    return start(agent, input, limits, permissions, parent, inputAdmitted, signal);
+  };
 
-  const submit = <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: { readonly input: InferInput<I> }): RunHandle<InferOutput<O>> => {
+  const start = <I extends Schema, O extends Schema>(
+    agent: AgentDefinition<I, O>, suppliedInput: unknown, limits: Required<RuntimeLimits>, permissions: Permissions,
+    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal,
+  ): RunHandle<InferOutput<O>> => {
     if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot accept new runs.');
     assertAgent(agent);
-    if (active.size >= limits.maxConcurrentRuns) throw new MayuraError('LIMIT_EXCEEDED', 'The runtime concurrent-run limit is reached.');
+    if (!parent && activeRoots >= rootLimits.maxConcurrentRuns) throw new MayuraError('LIMIT_EXCEEDED', 'The runtime concurrent-root limit is reached.');
     let input: JsonValue;
-    try { input = freezeJson(jsonValue(submission.input, { maxBytes: limits.maxInputBytes })); }
+    try { input = freezeJson(jsonValue(suppliedInput, { maxBytes: limits.maxInputBytes })); }
     catch { throw new MayuraError('INVALID_INPUT', 'Submitted input must satisfy the JSON and size limits.'); }
     const id = crypto.randomUUID();
     const controller = new AbortController();
     const events = new EventBuffer(id, limits.maxEventRetention);
-    const budget = new Budget(limits.maxCostMicros, limits.maxModelCalls + limits.maxToolCalls);
+    const budget = parent ? parent.budget.fork({ id, maxCostMicros: limits.maxCostMicros, maxCalls: limits.maxModelCalls + limits.maxToolCalls })
+      : new Budget(limits.maxCostMicros, limits.maxModelCalls + limits.maxToolCalls);
+    const grants = new Set(permissions.allow);
     const tools = new Map(agent.tools.map((tool) => [tool.id, tool]));
     const callIds = new Set<string>();
-    let toolCalls = 0;
-    let modelCalls = 0;
     let terminal = false;
     let settle!: (result: Outcome<InferOutput<O>>) => void;
     const result = new Promise<Outcome<InferOutput<O>>>((resolve) => { settle = resolve; });
+    const deadline = Math.min(Date.now() + limits.maxDurationMs, parent?.deadline ?? Infinity);
     const timer = setTimeout(() => {
       if (!terminal) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed; no new work will be dispatched.'));
-    }, limits.maxDurationMs);
+    }, Math.max(0, deadline - Date.now()));
     const handle: RunHandle<InferOutput<O>> = Object.freeze({
       id, profile: 'ephemeral', result: () => result,
       observe: (observerOptions?: { readonly after?: number; readonly signal?: AbortSignal }) => events.observe(observerOptions),
       cancel: () => { if (!terminal && !controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'Run cancellation was requested.')); },
     });
+    const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
+    const state = { id, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
+      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0 } as unknown as RunState;
+    Object.defineProperty(state, 'root', { value: parent?.root ?? state });
+    const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
+    const relayExternal = (): void => { if (!controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'The composing invocation was cancelled.')); };
+    parent?.controller.signal.addEventListener('abort', relayParent, { once: true });
+    externalSignal?.addEventListener('abort', relayExternal, { once: true });
+    if (parent?.controller.signal.aborted) relayParent();
+    if (externalSignal?.aborted) relayExternal();
+    // Closing admissions never releases unknown charges; callback settlement remains valid.
+    controller.signal.addEventListener('abort', () => { state.accepting = false; budget.close(); }, { once: true });
+    if (parent) { parent.children.push(state); for (const item of ancestors(parent)) item.descendants++; }
+    else activeRoots++;
+    states.set(handle, state);
     active.set(id, handle);
-
-    const checkCancelled = (): void => { if (controller.signal.aborted) throw controller.signal.reason; };
+    const checkCancelled = (): void => {
+      if (Date.now() >= deadline && !controller.signal.aborted) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed.'));
+      if (controller.signal.aborted) throw controller.signal.reason;
+    };
     const guard = async (checks: readonly Guard[], value: JsonValue, boundary: 'input' | 'output', callId: string): Promise<void> => {
       const verdicts = await cancellable(() => Promise.all(checks.map(async (check) => {
         try {
@@ -147,9 +276,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     };
 
     const execute = async (): Promise<Outcome<InferOutput<O>>> => {
-      events.emit('run.started', { profile: 'ephemeral' });
+      events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}) });
       checkCancelled();
-      const validated = await cancellable(() => validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes }), controller.signal);
+      const validated = await cancellable(() => inputAdmitted ? input : validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes }), controller.signal);
       const approvedInput = freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes }));
       await guard(agent.guards.input, approvedInput, 'input', 'input');
       const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
@@ -157,17 +286,19 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       for (let step = 0; step < limits.maxSteps; step++) {
         checkCancelled();
         if (!grants.has(`model:${agent.model.id}`)) throw new MayuraError('PERMISSION_DENIED', 'The model adapter is not authorized.');
-        if (modelCalls >= limits.maxModelCalls) throw new MayuraError('LIMIT_EXCEEDED', 'The model-call limit was reached.');
+        checkCalls(state, 'model', 1);
         // Freeze a bounded copy: a provider cannot mutate history or the tool registry between checks.
         const snapshot = freezeJson(jsonValue(messages, { maxBytes: limits.maxContextBytes })) as unknown as readonly ModelMessage[];
         const modelTools = agent.tools.map((tool) => Object.freeze({ id: tool.id, description: tool.description,
           ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: freezeJson(jsonValue(tool.inputJsonSchema)) as typeof tool.inputJsonSchema }),
         }));
         const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
-        const reservation = budget.reserve(agent.model.maxCostMicros);
-        modelCalls++;
-        events.emit('model.started', { step, modelCall: modelCalls });
-        const rawResponse = await cancellable(async () => {
+        const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
+          checkCancelled();
+          checkCalls(state, 'model', 1);
+          const reservation = budget.reserve(agent.model.maxCostMicros);
+          countCall(state, 'model');
+          events.emit('model.started', { step, modelCall: state.modelCalls });
           let raw;
           try { raw = await agent.model.generate(Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens })); }
           catch (error) {
@@ -178,7 +309,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           // The callback may complete after cooperative cancellation; it cannot re-open disclosure.
           reservation.settle(modelCost(raw));
           return raw;
-        }, controller.signal);
+        }), controller.signal);
         checkCancelled();
         const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
         continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
@@ -186,11 +317,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         if (response.type === 'final') {
           const output = await cancellable(() => validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes }), controller.signal);
           const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
-          await guard(agent.guards.output, approvedOutput, 'output', `model.${modelCalls}`);
+          await guard(agent.guards.output, approvedOutput, 'output', `model.${state.modelCalls}`);
           checkCancelled();
           return Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> });
         }
-        if (response.calls.length > limits.maxToolCalls - toolCalls) throw new MayuraError('LIMIT_EXCEEDED', 'The tool-call limit was reached.');
+        checkCalls(state, 'tool', response.calls.length);
         // Admit every member before starting the first effect. Unknown or duplicate calls reject the batch.
         let batchCost = 0;
         for (const call of response.calls) {
@@ -209,12 +340,21 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         messages.push({ role: 'assistant', calls: response.calls });
         for (const call of response.calls) {
           checkCancelled();
-          toolCalls++;
+          checkCalls(state, 'tool', 1);
+          countCall(state, 'tool');
           events.emit('tool.started', { callId: call.id, toolId: call.toolId });
           let outcome = await invokeTool(tools.get(call.toolId)!, call.input, {
             runId: id, callId: call.id, scope, signal: controller.signal, permissions, budget,
             maxOutputBytes: limits.maxOutputBytes,
+            onExecutionReceipt: async (receipt) => { record(state, receipt); },
+            ...(isAgentTool(tools.get(call.toolId)!) ? {
+              contextBindings: [childGateway.bind(Object.freeze({
+                spawn: (childAgent: AgentDefinition, childInput: unknown, childOptions: ChildOptions, signal: AbortSignal) =>
+                  admitChild(state, childAgent, childInput, childOptions, true, signal),
+              }))],
+            } : { acquireExecution: (signal: AbortSignal) => runOperations.acquire(signal) }),
           });
+          if (outcome.receipt) record(state, outcome.receipt);
           if (outcome.status === 'cancelled' && controller.signal.aborted && controller.signal.reason instanceof MayuraError && controller.signal.reason.code === 'TIMEOUT') {
             outcome = { ...outcome, status: 'failed', error: publicError(controller.signal.reason) };
           }
@@ -229,7 +369,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           catch (error) {
             const blocked = outcomeFor(error);
             events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: blocked.status, execution: 'succeeded', disclosure: 'withheld' });
-            return { ...blocked, ...(outcome.receipt ? { receipt: Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) } : {}) };
+            const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
+            if (receipt) record(state, receipt);
+            return { ...blocked, ...(receipt ? { receipt } : {}) };
           }
           events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status, execution: 'succeeded', disclosure: 'released' });
           messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: toolOutput });
@@ -238,21 +380,51 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       throw new MayuraError('LIMIT_EXCEEDED', 'The agent step limit was reached.');
     };
 
+
     queueMicrotask(() => {
-      void execute().catch(outcomeFor).then((outcome) => {
+      void execute().catch(outcomeFor).then(async (candidate) => {
+        state.accepting = false;
+        // Accepted descendants remain required even if the parent's model has already finished.
+        if (candidate.status !== 'succeeded' && !controller.signal.aborted) {
+          controller.abort(new MayuraError('CANCELLED', 'Parent execution ended before its required children.'));
+        }
+        const children = await Promise.all(state.children.map((child) => child.handle.result()));
+        let outcome: Outcome<InferOutput<O>> = candidate;
+        if (outcome.status === 'succeeded' && controller.signal.aborted) outcome = outcomeFor(controller.signal.reason);
+        const unknown = children.find((child) => child.status === 'outcome_unknown');
+        const failed = children.find((child) => child.status !== 'succeeded');
+        if (unknown) outcome = unknown;
+        else if (failed && (outcome.status === 'succeeded' || outcome.error.code === 'TOOL_FAILED')) outcome = failed;
+        if (state.children.length > 0) outcome = { ...outcome, evidence: evidenceFor(state) };
         terminal = true;
+        state.status = outcome.status;
+        budget.close();
         clearTimeout(timer);
+        parent?.controller.signal.removeEventListener('abort', relayParent);
+        externalSignal?.removeEventListener('abort', relayExternal);
         events.emit('run.completed', { status: outcome.status, ...budget.snapshot() });
         events.finish();
         active.delete(id);
+        if (!parent) activeRoots--;
         settle(Object.freeze(outcome));
       });
     });
     return handle;
   };
-
   return Object.freeze({
-    profile: 'ephemeral', submit,
+    profile: 'ephemeral',
+    submit: <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: { readonly input: InferInput<I> }) =>
+      start(agent, submission.input, rootLimits, rootPermissions),
+    spawn: <I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, submission: ChildOptions & { readonly input: InferInput<I> }) =>
+      admitChild(lookup(parent), agent, submission.input, submission),
+    inspect: (handle: RunHandle<unknown>): RunInspection => {
+      const state = lookup(handle);
+      return Object.freeze({ id: state.id, rootId: state.root.id, ...(state.parent ? { parentId: state.parent.id } : {}),
+        agentId: state.agent.id, status: state.status, budget: state.budget.snapshot(),
+        runs: Object.freeze(subtree(state).map((run) => Object.freeze({ id: run.id, ...(run.parent ? { parentId: run.parent.id } : {}), agentId: run.agent.id, status: run.status }))),
+        evidence: evidenceFor(state),
+      });
+    },
     close: async (): Promise<void> => {
       closed = true;
       const runs = [...active.values()];

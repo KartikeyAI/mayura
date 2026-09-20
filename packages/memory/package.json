@@ -7,5 +7,6 @@
   "files": ["dist", "src/**/*.ts", "README.md"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=24.14.1 <25" },
-  "dependencies": { "@mayura/core": "workspace:*", "@mayura/storage": "workspace:*" }
+  "dependencies": { "@mayura/core": "workspace:*", "@mayura/storage-contracts": "workspace:*" },
+  "devDependencies": { "@mayura/storage": "workspace:*" }
 }

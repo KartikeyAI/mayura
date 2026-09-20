@@ -30,7 +30,7 @@ The check:
 5. Verifies the complete dependency tree contains only those six packages. Browser automation, database drivers, sandbox binaries, provider SDKs, and telemetry exporters are absent.
 6. Runs a strict TypeScript consumer compile against the installed declarations, including `exactOptionalPropertyTypes`, unchecked-index checking, and positive/negative type fixtures. This catches errors that ordinary Vitest transpilation does not type-check.
 7. Exercises Zod inference, input/output transformations, submit input checking, success-result narrowing, hidden tool executors, and rejected invalid type assignments through public exports.
-8. Executes an independent ESM first-agent fixture, verifies the actual tool result reaches the next scripted-model call, observes completion, and tests default-deny behavior. Private package subpath imports must fail.
+8. Executes an independent ESM first-agent/required-child fixture, verifies the actual tool result reaches the next scripted-model call, observes completion, and tests default-deny behavior. A Node module-resolution preloader bounds both the execution and debugger fixtures to their installed application, resolving real paths and rejecting ancestor workspace/source fallback. Explicit forbidden ancestor-package/source imports prove those paths cannot rescue an incomplete archive. Private package subpath imports must fail. This test boundary permits Node builtins and is not an untrusted-code sandbox.
 9. Verifies every shipped JavaScript/declaration source map resolves to an actual packaged TypeScript source, with no external/build-machine path dependency. JavaScript maps' embedded source content must exactly match that source. A separate Node process with source maps enabled must produce a real framework error stack pointing to its installed TypeScript file.
 10. Records local installation, type-check, fresh-process import, and execution duration together with Node/OS/architecture and archive size. These measurements are evidence from one environment, not cross-platform performance claims.
 
@@ -65,7 +65,7 @@ Individual subprocesses have a 30-second timeout, and the test suite bounds the 
 - Execute a real-provider tutorial with explicit credentials, permissions, and spending limits.
 - Validate editor UI navigation across the supported tooling matrix, API reference links, package provenance, licensing, and published-package upgrade/migration fixtures.
 - Conduct first-time-developer walkthroughs and measure time to first successful agent and error recovery.
-- Verify browser-client entry points separately when those packages exist; the base runtime is not advertised as a browser sandbox.
-- Repeat the gate for optional storage, memory, server, and Code Mode installation profiles without adding them to the basic dependency graph.
+- Expand [optional-package qualification](specs/optional-package-qualification.md), which already covers client bundling and host/observer/driver-free workflow installations, to live browsers and the remaining OS/package-manager matrix. The base runtime is not advertised as a browser sandbox.
+- Repeat the gate for concrete storage, memory, and Code Mode installation profiles without adding them to the basic dependency graph.
 
 Passing this narrow gate demonstrates the recorded packed-consumer behavior. It does not imply that planned durable workflows, enterprise deployment, security reviews, or all other release requirements are complete.

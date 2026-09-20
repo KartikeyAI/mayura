@@ -2,6 +2,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { storageError, StorageError, type CreateRecord, type UpdateRecord } from './contracts.js';
 import { SqliteDatabase } from './sqlite-database.js';
 import { identifier, cursor } from './validation.js';
+import type { SchedulerMethod } from './scheduler-validation.js';
 
 interface Request { id: number; method: string; args: unknown[] }
 const port = parentPort;
@@ -9,8 +10,10 @@ if (!port) throw new Error('SQLite storage worker requires a parent channel.');
 let database: SqliteDatabase | undefined;
 let initialized = false;
 
-// Synchronous SQLite operations execute serially on this worker, never on the application's event loop.
-port.on('message', (request: Request) => {
+// Serialize entire requests: scheduler transactions contain awaited internal SQL steps.
+// Letting a second message enter halfway through one would break transaction ownership.
+let serial = Promise.resolve();
+port.on('message', (request: Request) => { serial = serial.then(async () => {
   try {
     let result: unknown;
     if (request.method === 'initialize') {
@@ -24,6 +27,7 @@ port.on('message', (request: Request) => {
     } else {
       if (!initialized || !database) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize storage before accessing records.');
       switch (request.method) {
+        case 'scheduler': result = await database.schedulerCommand(request.args[0] as SchedulerMethod, request.args[1]); break;
         case 'create': result = database.create(request.args[0] as CreateRecord); break;
         case 'update': result = database.update(request.args[0] as UpdateRecord); break;
         case 'read': result = database.read(identifier(request.args[0], 'Scope'), identifier(request.args[1], 'Record ID')); break;
@@ -37,4 +41,4 @@ port.on('message', (request: Request) => {
     const safe = storageError(error);
     port.postMessage({ id: request.id, error: { code: safe.code, message: safe.message } });
   }
-});
+}); });

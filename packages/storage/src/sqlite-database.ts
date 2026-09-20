@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import type { StoredEvent, StoredRecord, CreateRecord, UpdateRecord } from './contracts.js';
 import { StorageError } from './contracts.js';
 import { createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';
+import { SchedulerDatabase, type SchedulerSession } from './scheduler-database.js';
+import type { SchedulerMethod } from './scheduler-validation.js';
 
 interface Row {
   scope: string; id: string; idempotency_key: string; definition_hash: string;
@@ -18,7 +20,23 @@ function record(row: Row): StoredRecord {
 /** Internal synchronous database: instantiated only inside the dedicated storage worker. */
 export class SqliteDatabase {
   private readonly db: Database.Database;
-  constructor(private readonly filename: string) { this.db = new Database(filename, { timeout: 5_000 }); }
+  private readonly scheduler: SchedulerDatabase;
+  constructor(private readonly filename: string) {
+    this.db = new Database(filename, { timeout: 5_000 });
+    const session: SchedulerSession = { query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
+      const statement = this.db.prepare(sql);
+      if (statement.reader) return statement.all(...parameters) as T[];
+      statement.run(...parameters); return [];
+    } };
+    this.scheduler = new SchedulerDatabase({ dialect: 'sqlite', prefix: '', transaction: async body => {
+      // The owning worker serializes complete requests, including these awaited pure SQL steps.
+      this.db.exec('BEGIN IMMEDIATE');
+      try { const result = await body(session); this.db.exec('COMMIT'); return result; }
+      catch (error) { try { this.db.exec('ROLLBACK'); } catch { /* Preserve the original failure. */ } throw error; }
+    } });
+  }
+
+  schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
 
   initialize(): void {
     const journal = this.db.pragma('journal_mode = WAL', { simple: true });

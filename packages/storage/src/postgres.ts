@@ -1,7 +1,10 @@
 import { Pool, type PoolClient } from 'pg';
-import type { AggregateStore, CreateRecord, StoredRecord, StoredEvent, UpdateRecord } from './contracts.js';
+import type { CreateRecord, StoredRecord, StoredEvent, UpdateRecord } from './contracts.js';
 import { StorageError, storageError } from './contracts.js';
 import { createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE } from './validation.js';
+import { SchedulerDatabase } from './scheduler-database.js';
+import { schedulerFacade } from './scheduler-validation.js';
+import type { SchedulerAggregateStore } from './scheduler-contracts.js';
 
 export interface PostgresStoreOptions { readonly connectionString: string; readonly schema?: string }
 interface Row {
@@ -30,7 +33,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): AggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): SchedulerAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -79,7 +82,16 @@ export function createPostgresStore(options: PostgresStoreOptions): AggregateSto
     }
   };
 
+  const schedulerDatabase = new SchedulerDatabase({ dialect: 'postgres', prefix: `${prefix}.`, transaction: body => transaction(client => body({
+    query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
+      let ordinal = 0;
+      // Scheduler SQL uses only positional ? placeholders, never interpolated application text.
+      const result = await client.query(sql.replace(/\?/g, () => `$${++ordinal}`), [...parameters]);
+      return result.rows as T[];
+    },
+  })) });
   return {
+    scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

@@ -1,6 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
-import { StorageError, type AggregateStore, type StoredRecord } from '@mayura/storage';
+import { StorageError, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
 
 type StepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped';

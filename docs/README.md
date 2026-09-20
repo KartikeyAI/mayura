@@ -8,23 +8,32 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Technical proposal](mayura-technical-proposal.md) — proposed technology boundaries.
 - [Quickstart](quickstart.md) — credential-free first agent and progressive adoption.
 - [First-agent API](specs/first-agent-api.md) — public developer journey.
+- [Child-agent how-to](how-to/agent-orchestration.md) and [orchestration contract](specs/agent-orchestration.md) — direct children and agents as tools, with shared authority/accounting.
+- [Workflow composition how-to](how-to/workflow-composition.md) and [ephemeral contract](specs/ephemeral-workflow-composition.md) — driver-free finite graphs through the same execution boundary.
 - [Durable execution](specs/durable-execution.md) — storage and recovery contract.
 - [Storage aggregates](specs/storage-aggregate.md) — transactional persistence building block.
+- [Driver-free storage contracts](adr/0005-driver-free-storage-contracts.md) — custom adapter interfaces without installing reference database drivers.
+- [Standalone leased scheduler](specs/leased-scheduler.md) — expiring claims, fences, resource quarantine and the still-unimplemented workflow integration boundary.
 - [Initial durable engine](adr/0002-initial-durable-engine.md) — implemented subset and recovery limitations.
 - [Tool batches](specs/tool-batches.md) — dependency-aware bounded parallel execution.
 - [Processors and guardrails](specs/processors.md) — immutable content and disclosure barriers.
+- [Auxiliary model guardrails](specs/auxiliary-guardrails.md) — metered evaluation, moderation and source-preserving language processing.
 - [Model provider contract](specs/model-provider-contract.md) — optional adapter and private protocol state.
 - [WorkStream](specs/workstream.md) — durable scoped signals and wait registration.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
+- [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
+- [Local-server how-to](how-to/local-server.md), [Node host contract](specs/node-local-host.md) and [host-adapter decision](adr/0004-http-protocol-before-host-adapter.md) — optional loopback-only Hono hosting.
+- [Native observability](specs/native-observability.md) — bounded metadata subscriptions, uncertain coverage, counters and optional isolated delivery.
 - [Docker tests](testing-docker.md) — disposable PostgreSQL fixture.
 - [Crash-recovery testing](testing-process-recovery.md) — forced process termination evidence.
 - [Packed consumer validation](dx-validation.md) — public imports, types and source navigation.
+- [Optional-package qualification](specs/optional-package-qualification.md) — isolated offline browser, local host/observer and driver-free workflow installations.
 - [Technology qualification](technology-qualification.md) — exact pins and verified environments.
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 932 tests; all V01–V22 enterprise release gates remain open.
 
 ## Distribution
 

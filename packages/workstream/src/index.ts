@@ -1,5 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
-import { StorageError, type AggregateStore, type StoredEvent, type StoredEventInput, type StoredRecord } from '@mayura/storage';
+import { StorageError, type AggregateStore, type StoredEvent, type StoredEventInput, type StoredRecord } from '@mayura/storage-contracts';
 
 export interface SignalRecord { readonly id: string; readonly name: string; readonly value: JsonValue; readonly sequence: number }
 export interface WaitCondition { readonly id: string; readonly name: string; readonly after?: number }

@@ -24,7 +24,11 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:consumer:optional
       - run: pnpm example
+      - run: node examples/agent-orchestration.mjs
+      - run: node examples/workflow-composition.mjs
+      - run: node examples/local-server.mjs
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -155,7 +155,7 @@ function inspectSourceMaps(files) {
   return { maps, sources: referencedSources.size };
 }
 
-const consumerTypes = `import { Budget, type Outcome, defineTool, invokeTool, type ToolOutput, createRuntime, defineAgent } from '@mayura/sdk';
+const consumerTypes = `import { Budget, type Outcome, defineTool, invokeTool, type ToolOutput, createRuntime, defineAgent, agentAsTool } from '@mayura/sdk';
 import { scriptedModel } from '@mayura/testing';
 import { z } from 'zod';
 
@@ -215,6 +215,52 @@ if (transformedResult.status === 'succeeded') {
   void length;
 }
 await runtime.close();
+
+const child = defineAgent({
+  id: 'typed-child', version: '1', instructions: 'Count admitted characters.', tools: [],
+  input: z.string().transform((value) => value.length),
+  output: z.number().transform((length) => ({ length })),
+  model: scriptedModel([{ type: 'final', output: 4, usage: { costMicros: 0 } }]),
+});
+const childTool = agentAsTool(child, {
+  id: 'text.child', description: 'Delegate a bounded length calculation.',
+  permissions: { allow: ['model:scripted'] }, limits: { maxCostMicros: 0 },
+});
+const typedChildOutput: ToolOutput<typeof childTool> = { length: 4 };
+// @ts-expect-error Composition preserves transformed output, not the schema's pre-transform number.
+const invalidChildOutput: ToolOutput<typeof childTool> = 4;
+// @ts-expect-error Transformed output fields retain their inferred scalar types.
+const invalidChildField: ToolOutput<typeof childTool> = { length: 'four' };
+void typedChildOutput; void invalidChildOutput; void invalidChildField;
+const parent = defineAgent({
+  id: 'typed-parent', version: '1', instructions: 'Parent.', tools: [],
+  input: z.string(), output: z.number(),
+  model: scriptedModel([{ type: 'final', output: 1, usage: { costMicros: 0 } }]),
+});
+const family = createRuntime({ profile: 'ephemeral', permissions: { allow: ['agent:delegate', 'model:scripted'] } });
+const parentHandle = family.submit(parent, { input: 'parent' });
+const childHandle = family.spawn(parentHandle, child, { input: 'test', permissions: { allow: ['model:scripted'] } });
+const childResult = await childHandle.result();
+const typedChildResult: Outcome<{ length: number }> = childResult;
+void typedChildResult;
+if (childResult.status === 'succeeded') {
+  const length: number = childResult.output.length;
+  // @ts-expect-error Child results preserve the transformed structured output.
+  const invalidLength: string = childResult.output.length;
+  void length; void invalidLength;
+}
+const inspection = family.inspect(parentHandle);
+const spent: number | string = inspection.budget.spentMicros;
+void spent;
+if (false) {
+  // @ts-expect-error Child submission uses the schema's original string input domain.
+  family.spawn(parentHandle, child, { input: 4, permissions: { allow: ['model:scripted'] } });
+  // @ts-expect-error Explicit child authority is required.
+  family.spawn(parentHandle, child, { input: 'test' });
+  // @ts-expect-error Inspection evidence is immutable.
+  inspection.evidence.push({});
+}
+await family.close();
 `;
 
 const consumerRuntime = `import assert from 'node:assert/strict';
@@ -239,7 +285,13 @@ for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura
 }
 await assert.rejects(import('@mayura/tools/dist/index.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 await assert.rejects(import('@mayura/runtime/src/index.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+await assert.rejects(import('@mayura/runtime/dist/composition.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 await assert.rejects(import('@mayura/sdk/src/index.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+// Optional workspace dependencies and existing files outside this application cannot rescue a broken base install.
+await assert.rejects(import('@mayura/client'), { code: 'ERR_MODULE_NOT_FOUND' });
+await assert.rejects(import(new URL('../outside-consumer.mjs', import.meta.url).href), { code: 'ERR_MODULE_NOT_FOUND' });
+assert.equal(globalThis.__mayuraOutsideConsumerExecuted, undefined);
+assert.equal('childGateway' in sdk, false);
 let invocations = 0;
 const tool = defineTool({
   id: 'math.add', version: '1.0.0', description: 'Add finite numbers.',
@@ -271,7 +323,52 @@ const denied = await invokeTool(tool, { left: 1, right: 2 }, {
 assert.equal(denied.status, 'blocked');
 assert.equal(invocations, 1);
 await runtime.close();
-console.log(JSON.stringify({ status: 'passed', importMs, events: events.length, toolInvocations: invocations }));
+
+let childModelCalls = 0;
+const child = defineAgent({
+  id: 'length-child', version: '1', instructions: 'PRIVATE_CHILD_INSTRUCTIONS', tools: [],
+  input: z.string().transform((value) => value.length),
+  output: z.number().transform((length) => ({ length })),
+  model: scriptedModel([(request) => {
+    childModelCalls++;
+    assert.equal(request.messages[0].role, 'user');
+    assert.equal(request.messages[0].content, 6);
+    assert.equal(request.continuation, undefined);
+    return { type: 'final', output: request.messages[0].content, usage: { costMicros: 0 } };
+  }]),
+});
+const childTool = sdk.agentAsTool(child, {
+  id: 'text.child', description: 'Count characters in a required child.',
+  permissions: { allow: ['model:scripted'] }, limits: { maxCostMicros: 0 },
+});
+const parent = defineAgent({
+  id: 'length-parent', version: '1', instructions: 'PRIVATE_PARENT_INSTRUCTIONS', tools: [childTool],
+  input: z.string(), output: z.object({ length: z.number() }),
+  model: scriptedModel([
+    (request) => ({ type: 'tool_calls', calls: [{ id: 'delegate-1', toolId: 'text.child', input: request.messages[0].content }], usage: { costMicros: 0 } }),
+    (request) => {
+      const result = request.messages.at(-1);
+      assert.equal(result.role, 'tool');
+      assert.deepEqual(result.result, { length: 6 });
+      return { type: 'final', output: result.result, usage: { costMicros: 0 } };
+    },
+  ]),
+});
+const family = createRuntime({ profile: 'ephemeral', permissions: { allow: ['agent:delegate', 'model:scripted', 'tool:text.child'] },
+  limits: { maxConcurrentOperations: 1, maxConcurrentRuns: 1, maxCostMicros: 0 } });
+try {
+  const composedRun = family.submit(parent, { input: 'Mayura' });
+  const composedResult = await composedRun.result();
+  assert.equal(composedResult.status, 'succeeded');
+  assert.deepEqual(composedResult.output, { length: 6 });
+  const inspection = family.inspect(composedRun);
+  assert.equal(inspection.runs.length, 2);
+  assert.equal(inspection.runs[1].parentId, composedRun.id);
+  assert.deepEqual(inspection.budget, { spentMicros: 0, reservedMicros: 0, calls: 4 });
+  assert(!JSON.stringify(inspection).includes('PRIVATE'));
+  assert.equal(childModelCalls, 1);
+} finally { await family.close(); }
+console.log(JSON.stringify({ status: 'passed', importMs, events: events.length, toolInvocations: invocations, childModelCalls }));
 `;
 
 const consumerDebugger = `import assert from 'node:assert/strict';
@@ -356,6 +453,9 @@ async function main() {
   await writeFile(join(application, 'consumer.ts'), consumerTypes);
   await writeFile(join(application, 'consumer.mjs'), consumerRuntime);
   await writeFile(join(application, 'debugger.mjs'), consumerDebugger);
+  await writeFile(join(output, 'outside-consumer.mjs'), 'globalThis.__mayuraOutsideConsumerExecuted = true;\n');
+  const preload = join(application, 'module-isolation.mjs');
+  await writeFile(preload, await readFile(join(workspace, 'consumer-tests', 'module-isolation.mjs')));
   await writeFile(join(application, 'tsconfig.json'), JSON.stringify({ compilerOptions: {
     target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
     strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true,
@@ -365,9 +465,10 @@ async function main() {
   await runNode([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
   const typecheckMs = performance.now() - typecheckStarted;
   const executionStarted = performance.now();
-  const execution = JSON.parse((await runNode([join(application, 'consumer.mjs')], application)).stdout);
+  // Only packed-consumer execution is isolated. Maintainer package-manager/compiler tooling intentionally is not.
+  const execution = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, join(application, 'consumer.mjs')], application)).stdout);
   const executionMs = performance.now() - executionStarted;
-  const debuggerResult = JSON.parse((await runNode(['--enable-source-maps', join(application, 'debugger.mjs')], application)).stdout);
+  const debuggerResult = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, '--enable-source-maps', join(application, 'debugger.mjs')], application)).stdout);
   assert.equal(debuggerResult.sourceMappedStack, true, 'The actual Node debugger stack did not resolve to shipped TypeScript.');
   const frameworkBytes = reports.reduce((sum, item) => sum + item.tarballBytes, 0);
   assert(frameworkBytes <= 512 * 1024, 'Combined compressed base package budget exceeded.');
@@ -376,7 +477,7 @@ async function main() {
     status: 'passed', node: process.version, platform: process.platform, architecture: process.arch,
     output, packages: reports, frameworkTarballBytes: frameworkBytes, installedPackageCount: installed.size,
     installMs, typecheckMs, executionMs, importMs: execution.importMs,
-    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack'],
+    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'transformed-child-contracts', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
   };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));

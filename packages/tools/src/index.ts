@@ -1,6 +1,7 @@
 import {
   assertPositiveInteger,
   assertSchema,
+  assertBudget,
   Budget,
   freezeJson,
   jsonValue,
@@ -20,6 +21,8 @@ import {
 } from '@mayura/core';
 
 export { invokeBatch, type BatchCall, type InvokeBatchOptions, type BatchCallResult, type SkippedBatchOutcome } from './batch.js';
+export { createToolContextSlot, type ToolContextSlot, type ToolContextBinding } from './context.js';
+import { attachToolContext, type ToolContextBinding } from './context.js';
 
 /** Authoring contract. Executors are trusted application code, not sandboxed callbacks. */
 export interface ToolOptions<I extends Schema, O extends Schema> {
@@ -57,6 +60,10 @@ export interface InvokeToolContext extends ExecutionContext {
   readonly permissions: Permissions;
   readonly budget: Budget;
   readonly maxOutputBytes?: number;
+  /** Opaque trusted extension bindings; never copied into observable metadata or messages. */
+  readonly contextBindings?: readonly ToolContextBinding[];
+  /** Trusted operation limiter. Queuing conveys no permission; admission is rechecked afterward. */
+  readonly acquireExecution?: (signal: AbortSignal) => Promise<() => void>;
   /** Trusted admission recheck for persisted claims/digests; cannot alter input or grant authority. */
   readonly beforeDispatch?: (validatedInput: JsonValue) => Promise<void>;
   /** Trusted mandatory persistence seam, not an observational or authorization hook. */
@@ -179,10 +186,12 @@ export async function invokeTool<T extends AnyTool>(
     text(options.scope?.principalId, 'scope.principalId', 256);
     text(options.scope?.projectId, 'scope.projectId', 256);
     if (!(options.signal instanceof AbortSignal)) throw new MayuraError('INVALID_CONFIG', 'An AbortSignal is required.');
-    if (!(options.budget instanceof Budget)) throw new MayuraError('INVALID_CONFIG', 'A shared execution Budget is required.');
+    assertBudget(options.budget);
     if (!Array.isArray(options.permissions?.allow) || options.permissions.allow.length > 4096) throw new MayuraError('INVALID_CONFIG', 'Permissions must be a bounded grant list.');
     const grants = new Set(options.permissions.allow.map((grant) => { text(grant, 'grant', 384); return grant; }));
     const budget = options.budget;
+    const acquireExecution = options.acquireExecution;
+    if (acquireExecution !== undefined && typeof acquireExecution !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireExecution must be a function.');
     const beforeDispatch = options.beforeDispatch;
     if (beforeDispatch !== undefined && typeof beforeDispatch !== 'function') throw new MayuraError('INVALID_CONFIG', 'beforeDispatch must be a function.');
     const onExecutionReceipt = options.onExecutionReceipt;
@@ -199,6 +208,7 @@ export async function invokeTool<T extends AnyTool>(
       signal,
     });
     const executionContext = context;
+    attachToolContext(executionContext, options.contextBindings);
     const registration = registered;
     const abortError = (): MayuraError => new MayuraError(abortKind, abortKind === 'TIMEOUT' ? 'Tool execution exceeded its deadline.' : 'Tool execution was cancelled.');
     const assertActive = (): void => { if (signal.aborted) throw abortError(); };
@@ -238,12 +248,31 @@ export async function invokeTool<T extends AnyTool>(
       assertActive();
       await barrier(registration.inputGuards, parsedInput, 'input');
       assertActive();
-      if (beforeDispatch) {
-        try { await beforeDispatch(parsedInput); }
-        catch { throw new MayuraError('PERMISSION_DENIED', 'Tool admission could not be verified against its current execution claim.'); }
-        assertActive();
+      let releaseExecution: (() => void) | undefined;
+      if (acquireExecution) {
+        try {
+          const release = await acquireExecution(signal);
+          if (typeof release !== 'function') throw new Error();
+          releaseExecution = () => {
+            try { release(); }
+            catch { throw new MayuraError('TOOL_FAILED', 'The execution scheduler could not release its admission.'); }
+          };
+        } catch {
+          assertActive();
+          throw new MayuraError('TOOL_FAILED', 'The execution scheduler could not admit this operation.');
+        }
       }
-      const reservation = budget.reserve(tool.costMicros);
+      let reservation;
+      try {
+        assertActive();
+        if (beforeDispatch) {
+          try { await beforeDispatch(parsedInput); }
+          catch { throw new MayuraError('PERMISSION_DENIED', 'Tool admission could not be verified against its current execution claim.'); }
+          assertActive();
+        }
+        reservation = budget.reserve(tool.costMicros);
+      }
+      catch (error) { releaseExecution?.(); throw error; }
       dispatched = true;
       const persistReceipt = async (): Promise<void> => {
         const knownReceipt = receipt('withheld');
@@ -255,7 +284,12 @@ export async function invokeTool<T extends AnyTool>(
         }
       };
       let rawOutput: unknown;
-      try { rawOutput = await registration.execute(parsedInput, executionContext); }
+      let releaseFailure: unknown;
+      try {
+        rawOutput = await registration.execute(parsedInput, executionContext);
+        execution = 'succeeded';
+        reservation.settle(tool.costMicros);
+      }
       catch {
         execution = tool.effects === 'none' ? 'failed' : 'unknown';
         if (tool.effects === 'none') reservation.settle(tool.costMicros);
@@ -263,12 +297,15 @@ export async function invokeTool<T extends AnyTool>(
         assertActive();
         throw new MayuraError('TOOL_FAILED', 'The tool executor failed; raw exception details are withheld.');
       }
+      finally {
+        try { releaseExecution?.(); }
+        catch (error) { releaseFailure = error; }
+      }
       // A deadline withholds disclosure, not evidence. Late completion must still settle
       // known usage and persist its receipt without changing an already-returned outcome.
-      execution = 'succeeded';
-      reservation.settle(tool.costMicros);
       await persistReceipt();
       assertActive();
+      if (releaseFailure) throw releaseFailure;
       const parsedOutput = freezeJson(jsonValue(await validate(tool.output, rawOutput, 'output', { maxBytes: maxOutputBytes }), { maxBytes: maxOutputBytes }));
       assertActive();
       await barrier(registration.outputGuards, parsedOutput, 'output');

@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Bound concurrent native/SQL/packed-consumer fixtures on developer machines and CI.
+    maxWorkers: 4,
     testTimeout: 10_000,
     hookTimeout: 15_000,
     projects: [

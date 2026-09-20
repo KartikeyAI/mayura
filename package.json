@@ -11,6 +11,7 @@
     "test": "node node_modules/vitest/vitest.mjs run",
     "check": "pnpm typecheck && pnpm test",
     "test:consumer": "node scripts/consumer-check.mjs",
+    "test:consumer:optional": "node scripts/optional-consumer-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs"
   },
@@ -20,6 +21,9 @@
     "@mayura/tools": "workspace:*",
     "@mayura/runtime": "workspace:*",
     "@mayura/testing": "workspace:*",
+    "@mayura/client": "workspace:*",
+    "@mayura/server-node": "workspace:*",
+    "@mayura/workflows": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",

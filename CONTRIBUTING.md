@@ -4,7 +4,7 @@ This repository is an unreleased development checkout. Public contribution intak
 
 ## Local development
 
-Use Node 24.14.1 and pnpm 10.17.1. Run `pnpm install --frozen-lockfile --ignore-scripts`, `pnpm typecheck`, `pnpm test`, and `pnpm example`. Run SQL integration tests with an isolated PostgreSQL database specified by `MAYURA_TEST_POSTGRES_URL`. Test credentials must never be production credentials.
+Use Node 24.14.1 and pnpm 10.17.1. Run `pnpm install --frozen-lockfile --ignore-scripts`, `pnpm typecheck`, `pnpm test`, `pnpm test:consumer:optional`, and `pnpm example`. The main suite includes the packed base SDK gate; the separate optional gate tests clean browser/host/workflow installations. Run SQL integration tests with an isolated PostgreSQL database specified by `MAYURA_TEST_POSTGRES_URL`. Test credentials must never be production credentials.
 
 ## Change requirements
 

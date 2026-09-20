@@ -1,0 +1,194 @@
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { builtinModules } from 'node:module';
+import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
+import { runInNewContext } from 'node:vm';
+import { gunzipSync } from 'node:zlib';
+
+const exec = promisify(execFile);
+const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows'];
+const expectedDependencies = {
+  core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
+  sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
+  'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
+  'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
+};
+
+function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
+function environment() {
+  const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'COREPACK_HOME']);
+  return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase()))),
+    COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_ignore_scripts: 'true',
+    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
+  };
+}
+function cli(kind) {
+  const configured = process.env[`MAYURA_${kind.toUpperCase()}_CLI`];
+  const nodeShebang = path => {
+    const buffer = Buffer.alloc(256); let descriptor;
+    try { descriptor = openSync(path, 'r'); return /^#![^\r\n]*\bnode\b/.test(buffer.subarray(0, readSync(descriptor, buffer, 0, buffer.length, 0)).toString('utf8')); }
+    catch { return false; }
+    finally { if (descriptor !== undefined) closeSync(descriptor); }
+  };
+  const valid = path => {
+    try { return isAbsolute(path) && existsSync(path) && statSync(path).isFile()
+      && (/\.(?:js|cjs|mjs)$/i.test(path) || nodeShebang(path)); }
+    catch { return false; }
+  };
+  if (configured) { assert(valid(configured), `MAYURA_${kind.toUpperCase()}_CLI must name an existing absolute JavaScript CLI.`); return realpathSync(configured); }
+  const directories = [...new Set([dirname(process.execPath), ...(process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean).map(value => value.replace(/^"|"$/g, ''))])];
+  const suffixes = kind === 'npm' ? ['npm/bin/npm-cli.js'] : ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'];
+  const candidates = suffixes.flatMap(suffix => directories.flatMap(directory => [join(directory, 'node_modules', suffix), resolve(directory, '..', 'lib', 'node_modules', suffix)]));
+  const invocation = process.env.npm_execpath;
+  if (invocation && new RegExp(`(?:^|[\\/])${kind}(?:-cli)?\\.(?:js|cjs)$`, 'i').test(invocation)) candidates.unshift(invocation);
+  for (const directory of directories) {
+    try { const executable = realpathSync(join(directory, kind)); if (valid(executable)) candidates.push(executable); } catch { /* Inspect another installed CLI candidate. */ }
+  }
+  const found = candidates.find(valid); assert(found, `Set MAYURA_${kind.toUpperCase()}_CLI to a local JavaScript entry point.`); return realpathSync(found);
+}
+async function run(args, cwd, timeout = 30_000) {
+  try { return await exec(process.execPath, args, { cwd, env: environment(), timeout, maxBuffer: 8 * 1024 * 1024, windowsHide: true }); }
+  catch (error) { throw new Error(`Optional consumer command failed: ${args.slice(1, 3).join(' ')}\n${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}`); }
+}
+
+/** Read bounded archive members without extracting links, paths or executing lifecycle hooks. */
+function archive(bytes) {
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 }); const files = new Map(); let cursor = 0;
+  while (cursor + 512 <= tar.length) {
+    const header = tar.subarray(cursor, cursor + 512); if (header.every(byte => byte === 0)) break;
+    const field = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
+    const name = [field(345, 155), field(0, 100)].filter(Boolean).join('/'); const size = Number.parseInt(field(124, 12).trim(), 8); const type = field(156, 1);
+    assert(Number.isSafeInteger(size) && size >= 0 && cursor + 512 + size <= tar.length, 'Invalid archive size.');
+    assert(['', '0', '5'].includes(type) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
+    if (type !== '5') { const path = name.slice(8); assert(!files.has(path), 'Duplicate archive member.'); files.set(path, tar.subarray(cursor + 512, cursor + 512 + size)); }
+    cursor += 512 + Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+function inspectMayura(shortName, files) {
+  const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+  assert.equal(manifest.name, `@mayura/${shortName}`);
+  assert.deepEqual(Object.keys(manifest.dependencies ?? {}).sort(), expectedDependencies[shortName], 'Optional package dependency closure changed; review it explicitly.');
+  assert(!manifest.optionalDependencies && !manifest.peerDependencies && !manifest.scripts && !manifest.bin, 'Mayura distribution needs explicit optional/lifecycle review.');
+  for (const version of Object.values(manifest.dependencies ?? {})) assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into archive.');
+  let maps = 0;
+  for (const [path, bytes] of files) {
+    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
+    assert(!/\.(?:test|spec)\.ts$/.test(path) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
+    if (!path.startsWith('dist/') || !/\.(?:js|d\.ts)$/.test(path)) continue;
+    const directives = [...bytes.toString('utf8').matchAll(/^\/\/# sourceMappingURL=([^\r\n]+)$/gm)];
+    assert.equal(directives.length, 1); const reference = directives[0][1];
+    assert(!reference.includes(':') && !reference.includes('\\') && !posix.isAbsolute(reference));
+    const mapPath = posix.normalize(posix.join(posix.dirname(path), reference)); assert.equal(mapPath, `${path}.map`);
+    const map = JSON.parse(files.get(mapPath).toString('utf8')); assert.equal(map.version, 3); assert.equal(map.sourceRoot ?? '', ''); assert.equal(map.file, posix.basename(path));
+    assert(Array.isArray(map.sources) && map.sources.length > 0);
+    for (const [index, source] of map.sources.entries()) {
+      assert(typeof source === 'string' && !source.includes(':') && !source.includes('\\') && !posix.isAbsolute(source));
+      const target = posix.normalize(posix.join(posix.dirname(mapPath), source));
+      assert(/^src\/[A-Za-z0-9_./-]+\.ts$/.test(target) && !target.split('/').includes('..') && files.has(target), 'Map target escaped shipped sources.');
+      if (path.endsWith('.js')) assert.equal(map.sourcesContent?.[index], files.get(target).toString('utf8'), 'Rebuild stale JavaScript before packing.');
+    }
+    maps++;
+  }
+  assert(maps > 0); return { manifest, maps };
+}
+
+async function main() {
+  const npm = cli('npm'); const pnpm = cli('pnpm'); const tsc = join(workspace, 'node_modules', 'typescript', 'bin', 'tsc');
+  assert(existsSync(tsc), 'Install/build the workspace first.');
+  const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
+  const canonicalRoot = await realpath(artifactRoot); assert(inside(workspace, canonicalRoot), 'Artifacts must remain in the canonical workspace.');
+  const output = await mkdtemp(join(canonicalRoot, 'optional-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
+  const packages = new Map(); const reports = [];
+  for (const shortName of names) {
+    const directory = join(workspace, 'packages', shortName); assert(existsSync(join(directory, 'dist', 'index.js')), 'Build all optional packages first.');
+    const destination = join(tarballs, `${shortName}.tgz`); await run([pnpm, 'pack', '--out', destination], directory);
+    const bytes = await readFile(destination); const files = archive(bytes); const { manifest, maps } = inspectMayura(shortName, files);
+    packages.set(manifest.name, { archive: pathToFileURL(destination).href, manifest });
+    reports.push({ name: manifest.name, version: manifest.version, tarballBytes: bytes.length, files: files.size, maps });
+  }
+  const host = packages.get('@mayura/server-node').manifest;
+  for (const name of ['hono', '@hono/node-server']) {
+    const directory = await realpath(join(workspace, 'packages', 'server-node', 'node_modules', name));
+    const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(host.dependencies[name], original.version, 'Host dependency must be pinned to the packed installed version.');
+    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/g, '-')}.tgz`); await run([pnpm, 'pack', '--out', destination], directory);
+    const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+    assert.equal(manifest.name, name); assert.equal(manifest.version, original.version);
+    assert.deepEqual(manifest.dependencies ?? {}, {}); assert.deepEqual(manifest.optionalDependencies ?? {}, {});
+    assert.deepEqual(manifest.peerDependencies ?? {}, name === '@hono/node-server' ? { hono: '^4' } : {});
+    packages.set(name, { archive: pathToFileURL(destination).href, manifest });
+    reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
+  }
+  const closure = roots => {
+    const result = new Set(); const visit = name => {
+      if (result.has(name)) return; result.add(name); const pkg = packages.get(name); assert(pkg, `Unqualified dependency: ${name}`);
+      for (const dependency of Object.keys(pkg.manifest.dependencies ?? {})) visit(dependency);
+      for (const dependency of Object.keys(pkg.manifest.peerDependencies ?? {})) visit(dependency);
+    };
+    roots.forEach(visit); return result;
+  };
+  assert.deepEqual([...closure(['@mayura/sdk'])].sort(), ['@mayura/core', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
+  const profiles = [];
+  for (const [name, roots, fixture] of [
+    ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
+    ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing'], 'optional-node.test.ts'],
+    ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
+  ]) {
+    const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
+    const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
+    const overrides = Object.fromEntries([...allowed].map(name => [name, packages.get(name).archive]));
+    await writeFile(join(application, 'package.json'), JSON.stringify({ name: `mayura-optional-${name}-consumer`, version: '1.0.0', private: true, type: 'module', dependencies, overrides }, null, 2));
+    const cache = join(output, `${name}-npm-cache`); const installStart = performance.now();
+    await run([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--userconfig', npmConfig, '--cache', cache], application);
+    const installMs = performance.now() - installStart;
+    const tree = JSON.parse((await run([npm, 'ls', '--all', '--json', '--offline', '--userconfig', npmConfig, '--cache', cache], application)).stdout);
+    const installed = new Set(); const collect = tree => { for (const [name, child] of Object.entries(tree.dependencies ?? {})) { assert(allowed.has(name), `Unexpected installed dependency: ${name}`); installed.add(name); collect(child); } }; collect(tree);
+    assert.deepEqual([...installed].sort(), [...allowed].sort());
+    const root = await realpath(application);
+    for (const name of installed) assert(inside(root, await realpath(join(application, 'node_modules', name))), 'Installed package is a workspace symlink.');
+    await writeFile(join(application, 'consumer.ts'), await readFile(join(workspace, 'consumer-tests', fixture)));
+    await writeFile(join(application, 'tsconfig.json'), JSON.stringify({ compilerOptions: {
+      target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
+      strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true,
+      noUnusedParameters: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: [],
+    }, include: ['consumer.ts'] }, null, 2));
+    await run([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
+    if (name !== 'browser') {
+      await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', `optional-${name}.test.mjs`)));
+      await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
+      const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
+      assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, execution });
+    } else {
+      const { build } = await import('vite'); const included = new Set();
+      const builtins = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
+      const built = await build({ configFile: false, root: application, logLevel: 'silent', plugins: [{
+        name: 'mayura-browser-import-boundary',
+        resolveId(source) { assert(!builtins.has(source) && !source.startsWith('node:'), 'Browser package requested a Node builtin.'); },
+        moduleParsed(info) { assert(!info.id.startsWith('\0') && inside(root, info.id), `Browser module escaped installed consumer: ${info.id}`); included.add(info.id); },
+      }], build: { write: false, minify: false, sourcemap: false, lib: { entry: join(application, 'consumer.ts'), formats: ['iife'], name: 'OptionalBrowserConsumer' } } });
+      const chunks = (Array.isArray(built) ? built.flatMap(value => value.output) : built.output).filter(chunk => chunk.type === 'chunk');
+      assert.equal(chunks.length, 1); assert.equal(chunks[0].imports.length, 0); assert.equal(chunks[0].dynamicImports.length, 0);
+      assert(included.size >= 2 && [...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/')), 'Bundler did not include the installed client.');
+      const code = chunks[0].code; assert(!code.includes('__vite-browser-external'), 'Browser bundle contains a Node compatibility shim.');
+      const context = { TextEncoder, TextDecoder, URL, AbortController, setTimeout, clearTimeout };
+      runInNewContext(code, context, { timeout: 1_000 });
+      const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
+      assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
+      await writeFile(join(application, 'browser-bundle.js'), code);
+      profiles.push({ name, installedPackageCount: installed.size, installMs, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true });
+    }
+  }
+  const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
+    checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
+  };
+  await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
+}
+
+await main();
