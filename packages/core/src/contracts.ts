@@ -29,7 +29,8 @@ export interface RunEvent {
   readonly runId: string;
   readonly sequence: number;
   readonly timestamp: string;
-  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed' | 'run.completed' | 'events.gap';
+  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
+    | 'hook.started' | 'hook.completed' | 'run.completed' | 'events.gap';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RunHandle<T> {

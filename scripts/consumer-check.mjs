@@ -483,6 +483,8 @@ async function main() {
   }
   await writeFile(join(application, 'consumer.ts'), consumerTypes);
   await writeFile(join(application, 'consumer.mjs'), consumerRuntime);
+  await writeFile(join(application, 'base-hooks.test.ts'), await readFile(join(workspace, 'consumer-tests', 'base-hooks.test.ts')));
+  await writeFile(join(application, 'base-hooks.test.mjs'), await readFile(join(workspace, 'consumer-tests', 'base-hooks.test.mjs')));
   await writeFile(join(application, 'debugger.mjs'), consumerDebugger);
   await writeFile(join(output, 'outside-consumer.mjs'), 'globalThis.__mayuraOutsideConsumerExecuted = true;\n');
   const preload = join(application, 'module-isolation.mjs');
@@ -491,13 +493,15 @@ async function main() {
     target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
     strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true,
     noUnusedParameters: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: [],
-  }, include: ['consumer.ts'] }, null, 2));
+  }, include: ['consumer.ts', 'base-hooks.test.ts'] }, null, 2));
   const typecheckStarted = performance.now();
   await runNode([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
   const typecheckMs = performance.now() - typecheckStarted;
   const executionStarted = performance.now();
   // Only packed-consumer execution is isolated. Maintainer package-manager/compiler tooling intentionally is not.
   const execution = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, join(application, 'consumer.mjs')], application)).stdout);
+  const hooks = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, join(application, 'base-hooks.test.mjs')], application)).stdout);
+  assert.equal(hooks.status, 'passed', 'Packed SDK lifecycle hooks did not execute through their owning runtime.');
   const executionMs = performance.now() - executionStarted;
   const debuggerResult = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, '--enable-source-maps', join(application, 'debugger.mjs')], application)).stdout);
   assert.equal(debuggerResult.sourceMappedStack, true, 'The actual Node debugger stack did not resolve to shipped TypeScript.');
@@ -508,7 +512,7 @@ async function main() {
     status: 'passed', node: process.version, platform: process.platform, architecture: process.arch,
     output, packages: reports, frameworkTarballBytes: frameworkBytes, installedPackageCount: installed.size,
     installMs, typecheckMs, executionMs, importMs: execution.importMs,
-    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'atomic-budget-bundles', 'transformed-child-contracts', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
+    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'atomic-budget-bundles', 'transformed-child-contracts', 'lifecycle-hook-authoring-and-execution', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
   };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));

@@ -36,6 +36,8 @@ The check:
 
 The fixture model is deterministic and credential-free. It does not perform inference or prove model quality. Live-provider qualification is a separate opt-in gate; no fake successful fallback is used here.
 
+The base gate also compiles and executes independent lifecycle-hook fixtures against the installed SDK. They verify stage-specific inference and negative access to private handlers/accounts, genuine definitions, a hidden read-tool catalog, exact grants/shared accounting and one-slot progress. Hook authoring does not add guardrails, observability, server or provider packages to the base installation. The optional managed/observer profile separately verifies actual hook event interoperability.
+
 ## Source and debugger navigation
 
 The five base package manifests include vetted `src/**/*.ts` files alongside `dist`. Public package exports are unchanged: including open-source implementation for debugging does not add an importable private API. TypeScript declaration maps now have on-disk targets inside the installed package, and JavaScript maps carry inline source content for debugger display.

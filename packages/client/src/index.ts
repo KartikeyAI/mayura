@@ -17,7 +17,8 @@ export interface RemoteSnapshot {
 }
 export interface ClientEvent {
   readonly runId: string; readonly sequence: number; readonly timestamp: string;
-  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed' | 'run.completed' | 'events.gap';
+  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
+    | 'hook.started' | 'hook.completed' | 'run.completed' | 'events.gap';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RemoteRun {
@@ -47,7 +48,25 @@ export class ClientError extends Error {
 }
 const encoder = new TextEncoder();
 const statuses: readonly string[] = ['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
-const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'run.completed', 'events.gap'];
+const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed', 'run.completed', 'events.gap'];
+const hookFields = ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt'] as const;
+const hookStages: readonly string[] = ['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease'];
+const hookStatuses: readonly string[] = ['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'];
+/** Hook observations have an exact content-free schema; the browser never admits hook arguments or messages. */
+function hookMetadata(metadata: Record<string, unknown>, completed: boolean): void {
+  const required = completed ? [...hookFields, 'status'] : hookFields;
+  if (Object.keys(metadata).length !== required.length || required.some(key => !Object.hasOwn(metadata, key))) throw new ClientError('INVALID_STREAM');
+  for (const key of ['hookId', 'hookVersion']) {
+    if (typeof metadata[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(metadata[key] as string)) throw new ClientError('INVALID_STREAM');
+  }
+  const stage = metadata['stage']; const invocation = metadata['invocationId']; const step = metadata['step'];
+  if (typeof stage !== 'string' || !hookStages.includes(stage)
+    || typeof invocation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(invocation)
+    || typeof step !== 'number' || !Number.isSafeInteger(step) || step < 0 || (stage === 'beforeExecution' && step !== 0)
+    || metadata['attempt'] !== 1 || (completed && (typeof metadata['status'] !== 'string' || !hookStatuses.includes(metadata['status'] as string)))) {
+    throw new ClientError('INVALID_STREAM');
+  }
+}
 function fail(): never { throw new ClientError('INVALID_RESPONSE'); }
 function record(value: unknown): Record<string, unknown> { if (typeof value !== 'object' || value === null || Array.isArray(value)) return fail(); return value as Record<string, unknown>; }
 function text(value: unknown, maximum = 256): string { if (typeof value !== 'string' || value.length === 0 || value.length > maximum) return fail(); return value; }
@@ -233,6 +252,7 @@ export function createClient(options: ClientOptions): MayuraClient {
               if (!eventTypes.includes(event) || raw['type'] !== event || raw['runId'] !== id || String(sequence) !== eventId || sequence <= cursor) throw new ClientError('INVALID_STREAM');
               const metadata = record(raw['metadata']);
               if (Object.keys(metadata).length > 64 || Object.values(metadata).some(value => !['string', 'number', 'boolean'].includes(typeof value))) throw new ClientError('INVALID_STREAM');
+              if (event === 'hook.started' || event === 'hook.completed') hookMetadata(metadata, event === 'hook.completed');
               if (event === 'events.gap') {
                 if (metadata['from'] !== cursor + 1 || metadata['to'] !== sequence
                   || !Number.isSafeInteger(metadata['from']) || !Number.isSafeInteger(metadata['to']) || (metadata['to'] as number) < (metadata['from'] as number)) throw new ClientError('INVALID_STREAM');

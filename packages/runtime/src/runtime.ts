@@ -12,12 +12,16 @@ import { modelCost, modelFailureCost, modelResponse } from './response.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
 import { OperationPermits } from './permits.js';
 import { evaluateManagedGuard } from './managed-guards.js';
+import { readHookDefinition, type HookEvent } from './hooks.js';
+import { evaluateHook } from './hook-execution.js';
 
 /** All bounds are finite; model/token/cost declarations do not turn trusted callbacks into a sandbox. */
 export interface RuntimeLimits {
   readonly maxSteps?: number;
   readonly maxModelCalls?: number;
   readonly maxToolCalls?: number;
+  /** Actual required lifecycle callback admissions, separate from model/tool charges. */
+  readonly maxHookCalls?: number;
   readonly maxDurationMs?: number;
   readonly maxInputBytes?: number;
   readonly maxOutputBytes?: number;
@@ -47,7 +51,7 @@ export interface Runtime {
 }
 
 const defaults: Required<RuntimeLimits> = Object.freeze({
-  maxSteps: 16, maxModelCalls: 16, maxToolCalls: 64, maxDurationMs: 60_000,
+  maxSteps: 16, maxModelCalls: 16, maxToolCalls: 64, maxHookCalls: 128, maxDurationMs: 60_000,
   maxInputBytes: 1_048_576, maxOutputBytes: 1_048_576, maxContextBytes: 2_097_152,
   maxOutputTokens: 4_096, maxCostMicros: 0, maxEventRetention: 256, maxConcurrentRuns: 32,
   maxDescendantRuns: 64, maxDepth: 8, maxConcurrentOperations: 32,
@@ -65,7 +69,7 @@ function limitsFor(options: RuntimeLimits | undefined): Required<RuntimeLimits> 
     throw new MayuraError('INVALID_CONFIG', 'Runtime limits exceed the supported counter or timer range.');
   }
   if (result.maxDepth > 32 || result.maxDescendantRuns > 1023 || result.maxConcurrentOperations > 1024
-    || result.maxConcurrentRuns > 1024 || result.maxModelCalls > 4096 || result.maxToolCalls > 4096) {
+    || result.maxConcurrentRuns > 1024 || result.maxModelCalls > 4096 || result.maxToolCalls > 4096 || result.maxHookCalls > 4096) {
     throw new MayuraError('INVALID_CONFIG', 'Runtime tree or operation limits exceed supported bounds.');
   }
   return Object.freeze(result);
@@ -125,6 +129,7 @@ interface RunState {
   descendants: number;
   modelCalls: number;
   toolCalls: number;
+  hookCalls: number;
   heldModelCalls: number;
   heldToolCalls: number;
   readonly bundles: Set<CallBundle>;
@@ -276,7 +281,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
     const state = { id, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
-      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0,
+      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
       heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
     const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
@@ -293,9 +298,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     else activeRoots++;
     states.set(handle, state);
     active.set(id, handle);
-    const checkCancelled = (): void => {
+    const checkCancelled = (signal: AbortSignal = controller.signal): void => {
       if (Date.now() >= deadline && !controller.signal.aborted) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed.'));
       if (controller.signal.aborted) throw controller.signal.reason;
+      if (signal.aborted) throw signal.reason;
     };
     const managed = (checks: readonly AgentGuard[]) => checks.flatMap(check => {
       const descriptor = readManagedGuardDefinition(check);
@@ -312,24 +318,27 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const definitions = requiredChecks(agent.guards.output);
       return reserveCalls(state, [{ kind, maxCostMicros }, ...definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))]);
     };
-    const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[]): Promise<void> => {
+    const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<void> => {
+      checkCancelled(signal);
       const definitions = managed(checks);
       const local = checks.filter(check => !readManagedGuardDefinition(check)) as readonly Guard[];
-      const verdicts = await cancellable(() => Promise.all(local.map(check => runOperations.run(controller.signal, async () => {
+      const verdicts = await cancellable(() => Promise.all(local.map(check => runOperations.run(signal, async () => {
         try {
-          const verdict = await check.check(value, Object.freeze({ runId: id, callId, scope, signal: controller.signal, boundary }));
+          checkCancelled(signal);
+          const verdict = await check.check(value, Object.freeze({ runId: id, callId, scope, signal, boundary }));
           const decision = verdict?.decision;
           if (decision !== 'allow' && decision !== 'block') throw new Error();
           // Read adapter-owned properties inside the redaction boundary; do not retain a mutable verdict.
           return decision;
         }
         catch { throw new MayuraError('GUARD_UNAVAILABLE', 'A required guard could not complete its check.'); }
-      }))), controller.signal);
+      }))), signal);
+      checkCancelled(signal);
       if (verdicts.some((decision) => decision !== 'allow')) {
         throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this content.');
       }
       if (definitions.length === 0) return;
-      checkCancelled(); requiredChecks(checks);
+      requiredChecks(checks);
       const owned = held === undefined ? reserveCalls(state, definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))) : undefined;
       const entries = held ?? owned!.entries;
       try {
@@ -338,35 +347,141 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           const entry = entries[index]!;
           const metadata = { purpose: 'guardrail', modelId: descriptor.model.id, checkId: descriptor.id, checkVersion: descriptor.version, boundary, callId } as const;
           return evaluateManagedGuard({ descriptor, candidate: value,
-            context: Object.freeze({ runId: id, callId, scope, signal: controller.signal, boundary }), limits, operations: runOperations,
-            assertActive: checkCancelled,
+            context: Object.freeze({ runId: id, callId, scope, signal, boundary }), limits, operations: runOperations,
+            assertActive: () => checkCancelled(signal),
             start: () => {
-              checkCancelled();
+              checkCancelled(signal);
               if (!grants.has(`model:${descriptor.model.id}`)) throw new MayuraError('PERMISSION_DENIED', 'The managed guard model destination is not authorized.');
               return consumeCall(state, entry, 'model');
             },
             onStarted: () => { events.emit('model.started', { ...metadata, modelCall: state.modelCalls }); },
             onCompleted: (decision: 'allow' | 'block') => { events.emit('model.completed', { ...metadata, response: 'final', decision }); },
           });
-        })), controller.signal);
+        })), signal);
         const rejected = results.find(result => result.status === 'rejected');
         if (rejected?.status === 'rejected') throw rejected.reason;
-        checkCancelled();
+        checkCancelled(signal);
       } finally { owned?.close(); }
     };
 
-    const preflight = async (tool: AnyTool, rawInput: JsonValue): Promise<void> => {
+    const preflight = async (tool: AnyTool, rawInput: JsonValue, signal: AbortSignal = controller.signal): Promise<void> => {
+      checkCancelled(signal);
       const required = [`tool:${tool.id}`, ...tool.capabilities, ...(tool.effects === 'none' ? [] : [`effect:${tool.effects}`])];
       if (required.some((grant) => !grants.has(grant))) throw new MayuraError('PERMISSION_DENIED', 'The requested tool is not authorized.');
-      await cancellable(() => validate(tool.input, rawInput, 'input', { maxBytes: limits.maxInputBytes }), controller.signal);
+      await cancellable(() => runOperations.run(signal, async () => {
+        checkCancelled(signal);
+        return await validate(tool.input, rawInput, 'input', { maxBytes: limits.maxInputBytes });
+      }), signal);
+      checkCancelled(signal);
+    };
+
+    const hooks = async (event: HookEvent, step: number | null, signal: AbortSignal = controller.signal): Promise<Exclude<Outcome<never>, { status: 'succeeded' }> | undefined> => {
+      for (const handle of agent.hooks) {
+        if (handle.stage !== event.stage) continue;
+        checkCancelled(signal);
+        const descriptor = readHookDefinition(handle)!;
+        const invocationId = crypto.randomUUID();
+        const metadata = { hookId: handle.id, hookVersion: handle.version, stage: handle.stage, invocationId, step: step ?? 0, attempt: 1 };
+        const failure = await evaluateHook({ descriptor, event,
+          context: Object.freeze({ runId: id, rootId: state.root.id, ...(parent ? { parentId: parent.id } : {}),
+            agentId: agent.id, scope, invocationId, hookId: handle.id, hookVersion: handle.version, step, attempt: 1 }),
+          signal, operations: runOperations, assertActive: () => checkCancelled(signal),
+          onStarted: () => {
+            checkCancelled(signal);
+            const path = ancestors(state);
+            if (path.some(account => account.hookCalls >= account.limits.maxHookCalls)) {
+              throw new MayuraError('LIMIT_EXCEEDED', 'An ancestor lifecycle-hook call limit was reached.');
+            }
+            // No callback/await between the ancestor check and historical admission.
+            for (const account of path) account.hookCalls++;
+            events.emit('hook.started', metadata);
+          },
+          onCompleted: status => events.emit('hook.completed', { ...metadata, status }),
+          preflight,
+          invoke: (tool, input, callId, actionSignal) => invokeRunTool(tool, input, callId, step ?? 0, actionSignal, false),
+          allocateCallId: index => {
+            const callId = `hook:${invocationId}:${index}`;
+            if (callIds.has(callId)) throw new MayuraError('CONFLICT', 'Hook invocation identifiers must be unique.');
+            callIds.add(callId); return callId;
+          },
+        });
+        if (failure) return failure;
+      }
+      checkCancelled(signal); return undefined;
+    };
+
+    /** Ordinary proposals and hook actions share the same broker, exact account and output barriers. */
+    const invokeRunTool = async (tool: AnyTool, rawInput: JsonValue, callId: string, step: number,
+      signal: AbortSignal = controller.signal, withHooks = true): Promise<Outcome<JsonValue>> => {
+      checkCancelled(signal);
+      // Model envelopes are validated JSON but not frozen. Do not expose their live history
+      // objects to callbacks or let a proposal hook rewrite the later executor's arguments.
+      const input = freezeJson(jsonValue(rawInput, { maxBytes: limits.maxInputBytes }));
+      const toolBundle = operationBundle('tool', tool.costMicros);
+      try {
+        if (withHooks) {
+          const failure = await hooks(Object.freeze({ stage: 'beforeToolCall', phase: 'proposal',
+            proposal: Object.freeze({ callId, toolId: tool.id, input }) }), step, signal);
+          if (failure) return failure;
+        }
+        checkCancelled(signal);
+        consumeCall(state, toolBundle.entries[0]!, 'tool');
+        events.emit('tool.started', { callId, toolId: tool.id });
+        let outcome = await invokeTool(tool, input, {
+          runId: id, callId, scope, signal, permissions, budget,
+          budgetBinding: bindToolBudgetTicket(tool, toolBundle.entries[0]!.ticket, { budget, runId: id, callId, scope, signal }),
+          maxOutputBytes: limits.maxOutputBytes,
+          acquireCallback: (callbackSignal: AbortSignal) => runOperations.acquire(callbackSignal),
+          onExecutionReceipt: async receipt => { record(state, receipt); },
+          ...(isAgentTool(tool) ? {
+            contextBindings: [childGateway.bind(Object.freeze({
+              spawn: (childAgent: AgentDefinition, childInput: unknown, childOptions: ChildOptions, childSignal: AbortSignal) =>
+                admitChild(state, childAgent, childInput, childOptions, true, childSignal),
+            }))],
+          } : { acquireExecution: (executionSignal: AbortSignal) => runOperations.acquire(executionSignal) }),
+        });
+        if (outcome.receipt) record(state, outcome.status === 'succeeded'
+          ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : outcome.receipt);
+        if (outcome.status === 'cancelled' && signal.aborted && signal.reason instanceof MayuraError && signal.reason.code === 'TIMEOUT') {
+          outcome = { ...outcome, status: 'failed', error: publicError(signal.reason) };
+        }
+        if (outcome.status !== 'succeeded') {
+          events.emit('tool.completed', { callId, toolId: tool.id, status: outcome.status,
+            ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}) });
+          return outcome;
+        }
+        const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
+        let failure: Exclude<Outcome<never>, { status: 'succeeded' }> | undefined;
+        try {
+          await guard(agent.guards.output, toolOutput, 'output', callId, toolBundle.entries.slice(1), signal);
+          if (withHooks) failure = await hooks(Object.freeze({ stage: 'beforeOutputRelease', source: 'tool', callId,
+            toolId: tool.id, candidate: toolOutput }), step, signal);
+          if (!failure) checkCancelled(signal);
+        } catch (error) { failure = outcomeFor(error) as Exclude<Outcome<never>, { status: 'succeeded' }>; }
+        if (failure) {
+          events.emit('tool.completed', { callId, toolId: tool.id, status: failure.status, execution: 'succeeded', disclosure: 'withheld' });
+          const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
+          if (receipt) record(state, receipt);
+          // An uncertain hook action owns the primary failure receipt. The original known
+          // success remains withheld in the run-qualified evidence rather than replacing it.
+          return { ...failure, ...(!failure.receipt && receipt ? { receipt } : {}) };
+        }
+        if (outcome.receipt) record(state, outcome.receipt);
+        events.emit('tool.completed', { callId, toolId: tool.id, status: 'succeeded', execution: 'succeeded', disclosure: 'released' });
+        return Object.freeze({ ...outcome, output: toolOutput });
+      } finally { toolBundle.close(); }
     };
 
     const execute = async (): Promise<Outcome<InferOutput<O>>> => {
       events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}) });
       checkCancelled();
-      const validated = await cancellable(() => inputAdmitted ? input : validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes }), controller.signal);
+      const validated = inputAdmitted ? input : await cancellable(() => runOperations.run(controller.signal, async () => {
+        checkCancelled(); return await validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes });
+      }), controller.signal);
       const approvedInput = freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes }));
       await guard(agent.guards.input, approvedInput, 'input', 'input');
+      const inputFailure = await hooks(Object.freeze({ stage: 'beforeExecution', input: approvedInput }), null);
+      if (inputFailure) return inputFailure;
       const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
       let continuation: JsonValue | undefined;
       for (let step = 0; step < limits.maxSteps; step++) {
@@ -381,6 +496,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
         const primaryBundle = operationBundle('model', agent.model.maxCostMicros);
         try {
+          // A content-only projection: private instructions and provider continuation never
+          // enter hook context. These immutable fields are the same ones sent to the adapter.
+          const modelFailure = await hooks(Object.freeze({ stage: 'beforeModelCall', purpose: 'primary', modelId: agent.model.id,
+            request: Object.freeze({ messages: requestData.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens }) }), step);
+          if (modelFailure) return modelFailure;
           const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
             checkCancelled();
             const reservation = consumeCall(state, primaryBundle.entries[0]!, 'model');
@@ -402,9 +522,15 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
           events.emit('model.completed', { step, response: response.type });
           if (response.type === 'final') {
-            const output = await cancellable(() => validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes }), controller.signal);
+            const output = await cancellable(() => runOperations.run(controller.signal, async () => {
+              checkCancelled(); return await validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes });
+            }), controller.signal);
             const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
-            await guard(agent.guards.output, approvedOutput, 'output', `model.${state.modelCalls}`, primaryBundle.entries.slice(1));
+            const callId = `model.${state.modelCalls}`;
+            await guard(agent.guards.output, approvedOutput, 'output', callId, primaryBundle.entries.slice(1));
+            const outputFailure = await hooks(Object.freeze({ stage: 'beforeOutputRelease', source: 'agent',
+              callId, candidate: approvedOutput }), step);
+            if (outputFailure) return outputFailure;
             checkCancelled();
             return Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> });
           }
@@ -429,46 +555,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           for (const call of response.calls) callIds.add(call.id);
           messages.push({ role: 'assistant', calls: response.calls });
           for (const call of response.calls) {
-            checkCancelled();
-            const tool = tools.get(call.toolId)!;
-            const toolBundle = operationBundle('tool', tool.costMicros);
-            try {
-              consumeCall(state, toolBundle.entries[0]!, 'tool');
-              events.emit('tool.started', { callId: call.id, toolId: call.toolId });
-              let outcome = await invokeTool(tool, call.input, {
-                runId: id, callId: call.id, scope, signal: controller.signal, permissions, budget,
-                budgetBinding: bindToolBudgetTicket(tool, toolBundle.entries[0]!.ticket, { budget, runId: id, callId: call.id, scope, signal: controller.signal }),
-                maxOutputBytes: limits.maxOutputBytes,
-                onExecutionReceipt: async (receipt) => { record(state, receipt); },
-                ...(isAgentTool(tools.get(call.toolId)!) ? {
-                  contextBindings: [childGateway.bind(Object.freeze({
-                    spawn: (childAgent: AgentDefinition, childInput: unknown, childOptions: ChildOptions, signal: AbortSignal) =>
-                      admitChild(state, childAgent, childInput, childOptions, true, signal),
-                  }))],
-                } : { acquireExecution: (signal: AbortSignal) => runOperations.acquire(signal) }),
-              });
-              if (outcome.receipt) record(state, outcome.receipt);
-              if (outcome.status === 'cancelled' && controller.signal.aborted && controller.signal.reason instanceof MayuraError && controller.signal.reason.code === 'TIMEOUT') {
-                outcome = { ...outcome, status: 'failed', error: publicError(controller.signal.reason) };
-              }
-              if (outcome.status !== 'succeeded') {
-                events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status,
-                  ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}),
-                });
-                return outcome;
-              }
-              const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
-              try { await guard(agent.guards.output, toolOutput, 'output', call.id, toolBundle.entries.slice(1)); }
-              catch (error) {
-                const blocked = outcomeFor(error);
-                events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: blocked.status, execution: 'succeeded', disclosure: 'withheld' });
-                const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
-                if (receipt) record(state, receipt);
-                return { ...blocked, ...(receipt ? { receipt } : {}) };
-              }
-              events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status, execution: 'succeeded', disclosure: 'released' });
-              messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: toolOutput });
-            } finally { toolBundle.close(); }
+            const outcome = await invokeRunTool(tools.get(call.toolId)!, call.input, call.id, step);
+            if (outcome.status !== 'succeeded') return outcome;
+            messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output });
           }
         } finally { primaryBundle.close(); }
       }
@@ -490,7 +579,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const failed = children.find((child) => child.status !== 'succeeded');
         if (unknown) outcome = unknown;
         else if (failed && (outcome.status === 'succeeded' || outcome.error.code === 'TOOL_FAILED')) outcome = failed;
-        if (state.children.length > 0) outcome = { ...outcome, evidence: evidenceFor(state) };
+        if (state.children.length > 0 || agent.hooks.length > 0) outcome = { ...outcome, evidence: evidenceFor(state) };
         terminal = true;
         state.status = outcome.status;
         for (const bundle of state.bundles) bundle.close();

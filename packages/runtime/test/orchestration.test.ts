@@ -302,24 +302,30 @@ describe('composition, scheduler ownership and privacy', () => {
 
   it('does not hold partial ancestor capacity while a narrower branch waits for its permit', async () => {
     const active = deferred<void>(); const completion = deferred<ModelResponse>();
-    const waitingInput = deferred<void>(); const unrelatedInput = deferred<void>();
-    const gatedSchema = (gate: Promise<void>): Schema<number> => ({ '~standard': {
-      version: 1, vendor: 'orchestration-test', validate: async (value) => { await gate; return { value: value as number }; },
-    } });
+    const waitingInputs = vi.fn(value => ({ value: value as number }));
+    const admittedSchema: Schema<number> = { '~standard': { version: 1, vendor: 'orchestration-test', validate: waitingInputs } };
+    const waitingModels = vi.fn(async () => final(1, 1));
     const unrelated = vi.fn(async () => final());
     const engine = runtime({ maxConcurrentOperations: 2 });
     const parent = engine.submit(agent('parent'), { input: 1 });
     const middle = engine.spawn(parent, agent('middle'), { input: 1, permissions, limits: { maxConcurrentOperations: 1 } });
     engine.spawn(middle, agent('active', model(() => { active.resolve(); return completion.promise; })), { input: 1, permissions });
-    engine.spawn(middle, agent('waiting', model(), { input: gatedSchema(waitingInput.promise) }), { input: 1, permissions });
-    engine.spawn(parent, agent('unrelated', model(unrelated), { input: gatedSchema(unrelatedInput.promise) }), { input: 1, permissions });
-    await active.promise;
-    waitingInput.resolve(); await nextTurn();
-    unrelatedInput.resolve(); await nextTurn(); await nextTurn();
-    const unrelatedBeforeRelease = unrelated.mock.calls.length;
-    completion.resolve(final());
-    expect(await parent.result()).toMatchObject({ status: 'succeeded' });
-    expect(unrelatedBeforeRelease).toBe(1);
+    engine.spawn(middle, agent('waiting-left', model(waitingModels, 1), { input: admittedSchema }), { input: 1, permissions });
+    engine.spawn(middle, agent('waiting-right', model(waitingModels, 1), { input: admittedSchema }), { input: 1, permissions });
+    engine.spawn(parent, agent('unrelated', model(unrelated)), { input: 1, permissions });
+    try {
+      await active.promise; await nextTurn(); await nextTurn();
+      // All schemas are finite and have settled. Two actual model requests now wait
+      // on the occupied middle branch, without reserving the remaining root slot.
+      expect(waitingInputs).toHaveBeenCalledTimes(2);
+      expect(waitingModels).not.toHaveBeenCalled();
+      expect(engine.inspect(parent).budget.reservedMicros).toBe(2); // Both model bundles are admitted, not still validating inputs.
+      expect(unrelated).toHaveBeenCalledTimes(1);
+      completion.resolve(final());
+      expect(await parent.result()).toMatchObject({ status: 'succeeded' });
+      expect(waitingModels).toHaveBeenCalledTimes(2);
+      expect(engine.inspect(parent).budget).toMatchObject({ spentMicros: 2, reservedMicros: 0 });
+    } finally { completion.resolve(final()); }
   });
 
   it('completes nested agent tools with one execution slot and a single admitted root', async () => {

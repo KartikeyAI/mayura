@@ -1,6 +1,7 @@
 import { assertSchema, jsonValue, MayuraError, type Guard, type ManagedGuardDefinition, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
 import { readManagedGuardDefinition, snapshotLocalGuards } from '@mayura/core/host';
 import { assertTool, type AnyTool } from '@mayura/tools';
+import { snapshotHooks, type HookDefinition } from './hooks.js';
 
 export type AgentGuard = Guard | ManagedGuardDefinition;
 
@@ -14,6 +15,7 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly input: Schema<InferInput<I>, InferOutput<I>>;
   readonly output: Schema<InferInput<O>, InferOutput<O>>;
   readonly guards: { readonly input: readonly AgentGuard[]; readonly output: readonly AgentGuard[] };
+  readonly hooks: readonly HookDefinition[];
 }
 
 export type AgentOutput<A extends AgentDefinition> = InferOutput<A['output']>;
@@ -26,6 +28,7 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
   readonly input: I;
   readonly output: O;
   readonly guards?: { readonly input?: readonly AgentGuard[]; readonly output?: readonly AgentGuard[] };
+  readonly hooks?: readonly HookDefinition[];
 }
 
 const definitions = new WeakSet<object>();
@@ -61,6 +64,19 @@ function snapshotGuards(guards: readonly AgentGuard[]): readonly AgentGuard[] {
 function snapshotSchema<S extends Schema>(schema: S): Schema<InferInput<S>, InferOutput<S>> {
   const standard = schema['~standard'];
   return Object.freeze({ '~standard': Object.freeze({ version: 1 as const, vendor: standard.vendor, validate: standard.validate.bind(standard) }) }) as Schema<InferInput<S>, InferOutput<S>>;
+}
+
+/** Do not execute a newly introduced hooks accessor while capturing the agent configuration. */
+function agentHooks(options: object): readonly HookDefinition[] {
+  try {
+    const field = Object.getOwnPropertyDescriptor(options, 'hooks');
+    if (!field) {
+      if ('hooks' in options) throw new Error();
+      return snapshotHooks([]);
+    }
+    if (!field.enumerable || !('value' in field)) throw new Error();
+    return snapshotHooks(field.value === undefined ? [] : field.value);
+  } catch { throw new MayuraError('INVALID_CONFIG', 'Agent hooks must be an own data configuration containing genuine hook definitions.'); }
 }
 
 /** Define an agent without opening connections, executing tools, or selecting a hidden provider. */
@@ -105,6 +121,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     input: snapshotSchema(options.input),
     output: snapshotSchema(options.output),
     guards: Object.freeze({ input: snapshotGuards(options.guards?.input ?? []), output: snapshotGuards(options.guards?.output ?? []) }),
+    hooks: agentHooks(options),
   });
   definitions.add(definition);
   return definition;

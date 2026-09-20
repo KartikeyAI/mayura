@@ -70,6 +70,8 @@ export interface InvokeToolContext extends ExecutionContext {
   readonly contextBindings?: readonly ToolContextBinding[];
   /** Trusted operation limiter. Queuing conveys no permission; admission is rechecked afterward. */
   readonly acquireExecution?: (signal: AbortSignal) => Promise<() => void>;
+  /** Trusted callback limiter; each schema/guard retains its permit until its actual promise settles. */
+  readonly acquireCallback?: (signal: AbortSignal) => Promise<() => void>;
   /** Trusted admission recheck for persisted claims/digests; cannot alter input or grant authority. */
   readonly beforeDispatch?: (validatedInput: JsonValue) => Promise<void>;
   /** Trusted mandatory persistence seam, not an observational or authorization hook. */
@@ -91,7 +93,7 @@ function snapshotInvocation(value: InvokeToolContext): InvokeToolContext {
     if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
     const fields = Object.getOwnPropertyDescriptors(value);
     const required = ['runId', 'callId', 'scope', 'signal', 'permissions', 'budget'];
-    const optional = ['maxOutputBytes', 'contextBindings', 'acquireExecution', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
+    const optional = ['maxOutputBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
     if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || ![...required, ...optional].includes(key))
       || required.some(key => !fields[key])) throw new Error();
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -216,6 +218,7 @@ export async function invokeTool<T extends AnyTool>(
   let registered: Registration | undefined;
   let persistenceStarted = false;
   let persistenceConfirmed = false;
+  let hasCallbackLimiter = false;
   const receipt = (disclosure: ExecutionReceipt['disclosure']): ExecutionReceipt | undefined => context && registered
     ? Object.freeze({ callId: context.callId, toolId: tool.id, execution, disclosure })
     : undefined;
@@ -236,6 +239,9 @@ export async function invokeTool<T extends AnyTool>(
     const budget = options.budget;
     const acquireExecution = options.acquireExecution;
     if (acquireExecution !== undefined && typeof acquireExecution !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireExecution must be a function.');
+    const acquireCallback = options.acquireCallback;
+    if (acquireCallback !== undefined && typeof acquireCallback !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireCallback must be a function.');
+    hasCallbackLimiter = acquireCallback !== undefined;
     const beforeDispatch = options.beforeDispatch;
     if (beforeDispatch !== undefined && typeof beforeDispatch !== 'function') throw new MayuraError('INVALID_CONFIG', 'beforeDispatch must be a function.');
     const onExecutionReceipt = options.onExecutionReceipt;
@@ -275,22 +281,49 @@ export async function invokeTool<T extends AnyTool>(
     });
     timer = setTimeout(() => { if (!signal.aborted) { abortKind = 'TIMEOUT'; controller?.abort(); } }, tool.timeoutMs);
 
+    /**
+     * Logical broker cancellation must not release an actual pending callback's capacity.
+     * A late permit is instead released without dispatch; this promise owns its permit
+     * independently of the outer timeout race, and never nests another acquisition.
+     */
+    const callback = async <R>(operation: () => R | PromiseLike<R>): Promise<R> => {
+      assertActive();
+      let release: (() => void) | undefined;
+      if (acquireCallback) {
+        try {
+          const admitted = await acquireCallback(signal);
+          if (typeof admitted !== 'function') throw new Error();
+          release = admitted;
+        } catch {
+          assertActive();
+          throw new MayuraError('TOOL_FAILED', 'The callback scheduler could not admit this operation.');
+        }
+      }
+      try { assertActive(); return await operation(); }
+      finally {
+        if (release) {
+          try { release(); }
+          catch { throw new MayuraError('TOOL_FAILED', 'The callback scheduler could not release its admission.'); }
+        }
+      }
+    };
+
     const barrier = async (guards: readonly Guard[], value: JsonValue, boundary: 'input' | 'output'): Promise<void> => {
       assertActive();
-      const verdicts = await Promise.all(guards.map(async (guard) => {
+      const verdicts = await Promise.all(guards.map(guard => callback(async () => {
         try {
           const verdict = await guard.check(value, Object.freeze({ ...executionContext, boundary }));
           const decision = verdict?.decision;
           if (decision !== 'allow' && decision !== 'block') throw new Error();
           return decision;
         } catch { throw new MayuraError('GUARD_UNAVAILABLE', 'A required guard could not establish a safe verdict.'); }
-      }));
+      })));
       assertActive();
       if (verdicts.includes('block')) throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this operation or output.');
     };
 
     const work = async (): Promise<Outcome<ToolOutput<T>>> => {
-      const parsedInput = freezeJson(jsonValue(await validate(tool.input, inputSnapshot, 'input')));
+      const parsedInput = freezeJson(jsonValue(await callback(() => validate(tool.input, inputSnapshot, 'input'))));
       assertActive();
       await barrier(registration.inputGuards, parsedInput, 'input');
       assertActive();
@@ -352,7 +385,7 @@ export async function invokeTool<T extends AnyTool>(
       await persistReceipt();
       assertActive();
       if (releaseFailure) throw releaseFailure;
-      const parsedOutput = freezeJson(jsonValue(await validate(tool.output, rawOutput, 'output', { maxBytes: maxOutputBytes }), { maxBytes: maxOutputBytes }));
+      const parsedOutput = freezeJson(jsonValue(await callback(() => validate(tool.output, rawOutput, 'output', { maxBytes: maxOutputBytes })), { maxBytes: maxOutputBytes }));
       assertActive();
       await barrier(registration.outputGuards, parsedOutput, 'output');
       assertActive();
@@ -380,5 +413,8 @@ export async function invokeTool<T extends AnyTool>(
     if (timer !== undefined) clearTimeout(timer);
     if (externalSignal && relayAbort) externalSignal.removeEventListener('abort', relayAbort);
     if (controller && rejectOnAbort) controller.signal.removeEventListener('abort', rejectOnAbort);
+    // A rejected parallel barrier may leave waiters even when the deadline did not fire.
+    // Cancel queued host admissions, but their actual callbacks keep their own permits.
+    if (hasCallbackLimiter) controller?.abort();
   }
 }

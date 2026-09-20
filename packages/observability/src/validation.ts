@@ -34,6 +34,20 @@ function managedModel(metadata: JsonObject, completed: boolean): boolean {
   return true;
 }
 
+/** Hooks add correlation-only events, not model/tool counters or arbitrary callback output. */
+function hook(metadata: JsonObject, completed: boolean): void {
+  keys(metadata, ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt', ...(completed ? ['status'] : [])]);
+  for (const key of ['hookId', 'hookVersion']) {
+    if (typeof metadata[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(metadata[key] as string)) throw new Error();
+  }
+  const stage = metadata['stage']; const invocation = metadata['invocationId'];
+  if (typeof stage !== 'string' || !['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease'].includes(stage)
+    || typeof invocation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(invocation)
+    || metadata['attempt'] !== 1 || (stage === 'beforeExecution' && metadata['step'] !== 0)) throw new Error();
+  integer(metadata['step']);
+  if (completed && !['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'].includes(metadata['status'] as string)) throw new Error();
+}
+
 /** Strict metadata allowlists are the export boundary; rejected input is never retained. */
 export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
   try {
@@ -72,6 +86,8 @@ export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
         }
         break;
       }
+      case 'hook.started': hook(metadata, false); break;
+      case 'hook.completed': hook(metadata, true); break;
       case 'run.completed':
         keys(metadata, ['status', 'spentMicros', 'reservedMicros', 'calls']);
         status(metadata['status']); cost(metadata['spentMicros']); integer(metadata['reservedMicros']); integer(metadata['calls']); break;

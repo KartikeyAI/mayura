@@ -29,6 +29,8 @@ Only bounded plain-JSON `RunEvent` envelopes with exact envelope keys, canonical
 | Managed `model.completed` | same guardrail identity/boundary metadata, `response: final`, `decision: allow/block`; no categories or `step` |
 | `tool.started` | bounded `callId`, `toolId` |
 | `tool.completed` | `callId`, `toolId`, terminal outcome `status`; optional paired `execution`/`disclosure` receipt fields |
+| `hook.started` | bounded `hookId`/`hookVersion`, exact control stage, canonical UUIDv4 `invocationId`, nonnegative `step` and literal `attempt: 1` |
+| `hook.completed` | same hook metadata plus `status: continued/blocked/failed/cancelled/outcome_unknown`; no content or action arguments |
 | `run.completed` | terminal outcome `status`, exact `spentMicros`, nonnegative `reservedMicros` and `calls` |
 | `events.gap` | positive inclusive `from`/`to`, where `to` equals event sequence |
 
@@ -37,6 +39,8 @@ Messages, inputs, tool arguments/results, code, system prompts, provider payload
 ## Counters, gaps, and uncertainty
 
 Counters describe events actually observed, not inferred missing work. Sequence discontinuities and explicit source gaps retain bounded range evidence and exact missing-event counts. Duplicate/replayed sequences do not add execution counts or reenter the sink. Invalid events stop that subscription and add only a rejection count, never their content. A terminal status is learned only from `run.completed`; source end alone is not success. Inspection distinguishes last observed status, active observation, terminal evidence, and complete/partial/unknown history coverage.
+
+Control-hook events contribute to total accepted events, not a dedicated hook metric or model/tool count. `beforeExecution` requires metadata step 0, distinguished by the stage; callback context uses null. A failed control hook is not a terminal run event by itself. Other stages use the actual current zero-based reasoning step without consuming another step.
 
 Tool outcomes with unknown execution or `outcome_unknown` remain explicit unknown counts. Missing execution receipt fields are counted separately, not interpreted as `not_started` or free. Cost is the latest reported snapshot, including retained reservations and exact decimal-string spending beyond the safe-integer range; absence is unreported, not zero. Late provider settlement may occur after the runtime's final event, so this observer does not claim current invoice completeness or repair missing billing evidence.
 

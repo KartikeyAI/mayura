@@ -116,8 +116,11 @@ describe('managed accounting independent review', () => {
     const runtime = createRuntime({ profile: 'ephemeral', scope, permissions,
       limits: { maxCostMicros: 1, maxModelCalls: 2, maxConcurrentOperations: 1, maxDurationMs: 1_000 } });
     try {
-      const root = runtime.submit(parent, { input: 'value' }); await entered;
-      const first = runtime.spawn(root, cancelled, { input: 'value', permissions }); await nextTurn();
+      const root = runtime.submit(parent, { input: 'value' });
+      // Admit both finite input schemas before the root model owns the sole operation
+      // slot. The child can then reserve its managed-check ticket while queued for it.
+      const first = runtime.spawn(root, cancelled, { input: 'value', permissions });
+      await entered; await nextTurn();
       expect(runtime.inspect(root).budget).toEqual({ spentMicros: 0, reservedMicros: 1, calls: 1 });
       first.cancel(); expect((await first.result()).status).toBe('cancelled');
       expect(runtime.inspect(root).budget).toEqual({ spentMicros: 0, reservedMicros: 0, calls: 1 });
