@@ -46,6 +46,8 @@ function checkScheduledAdapter(store: ScheduledWorkflowAggregateStore): void {
   });
   const profile: 'scheduled-v1' = scheduled.profile;
   void profile;
+  const reference = scheduled.reference('a'.repeat(64));
+  void reference.then(value => { const kind: 'scheduled-workflow' = value.kind; void kind; });
   void scheduled.submit(definition, { input: 'abc', idempotencyKey: 'original-input' });
   // @ts-expect-error Scheduled submission accepts the original schema input, not its transformed value.
   void scheduled.submit(definition, { input: 3, idempotencyKey: 'invalid-input' });

@@ -24,6 +24,8 @@
     "@mayura/client": "workspace:*",
     "@mayura/server-node": "workspace:*",
     "@mayura/workflows": "workspace:*",
+    "@mayura/workstream": "workspace:*",
+    "@mayura/storage": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",

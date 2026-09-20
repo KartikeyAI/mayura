@@ -24,6 +24,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Shared budgets](how-to/shared-budgets.md) — atomic future-call reservations and genuine single-use tickets; [managed guardrail integration](specs/runtime-managed-guardrails.md) has a separate acceptance contract.
 - [Model provider contract](specs/model-provider-contract.md) — optional adapter and private protocol state.
 - [WorkStream](specs/workstream.md) — durable scoped signals and wait registration.
+- [Execution completion waits](how-to/execution-completion-waits.md) and [transaction contract](specs/execution-completion-waits.md) — finite metadata joins over existing scheduled workflows, with restart and explicit unknown outcomes.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
@@ -37,7 +38,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 1,581 tests; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 1,820 tests; all V01–V22 enterprise release gates remain open.
 
 ## Distribution
 

@@ -22,3 +22,16 @@ node node_modules/vitest/vitest.mjs run packages/workflows/test/process-recovery
 The suite requires a supported Node.js runtime, a working optional SQLite adapter, and permission to spawn/terminate its own child processes. It does not require Docker, PostgreSQL, provider credentials, or network access. Its SQLite database and controlled artifact live in a uniquely created operating-system temporary directory. Cleanup resolves and verifies that exact directory before recursive removal and terminates all owned children first.
 
 These tests establish real process-crash behavior at three controlled boundaries on the tested host. They do not establish power-loss durability, disk-corruption recovery, distributed worker leases, provider-side idempotency, or equivalent process-kill evidence for PostgreSQL. `recoverAbandoned` remains an explicit trusted operator action after abandonment has been established; no automatic lease-reclaim guarantee is implied.
+
+## Scheduled completion facts and waits
+
+The separate `packages/storage/test/execution-waits-conformance.ts` suite adds four process-kill boundaries **on each real SQL adapter**:
+
+| Boundary | Recovery requirement |
+| --- | --- |
+| Terminal aggregate/owner changes and completion-fact insert, before transaction commit | All source changes and the fact roll back together; the wait remains pending. |
+| Terminal source transaction committed | The terminal source and its single immutable completion fact survive process loss. |
+| Resolved wait and journal insert, before transaction commit | The original waiting snapshot and journal survive; a later finite drain resolves it once. |
+| Resolution transaction committed | The version-2 resolved snapshot and exactly one resolution event survive; subsequent drains are empty. |
+
+Precommit checkpoints use actual reducer code and actual SQLite/PostgreSQL connections with a test-owned backend that pauses after the relevant SQL insert. There is no production failpoint. After-commit checkpoints use the public adapter. Parents kill only their own children, await exit, and inspect/continue through public storage. This is transaction/process-loss evidence, not power-loss or full distributed operation qualification. See [completion-wait semantics](specs/execution-completion-waits.md) and [Docker testing](testing-docker.md) for PostgreSQL setup.

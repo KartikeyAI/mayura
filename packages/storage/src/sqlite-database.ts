@@ -7,6 +7,8 @@ import type { SchedulerMethod } from './scheduler-validation.js';
 import { ScheduledWorkflowDatabase } from './scheduled-database.js';
 import type { ScheduledMethod } from './scheduled-validation.js';
 import { writerRequired } from './aggregate-session.js';
+import { ExecutionWaitDatabase } from './execution-wait-database.js';
+import type { ExecutionWaitMethod } from '@mayura/storage-contracts';
 
 interface Row {
   scope: string; id: string; idempotency_key: string; definition_hash: string;
@@ -25,6 +27,7 @@ export class SqliteDatabase {
   private readonly db: Database.Database;
   private readonly scheduler: SchedulerDatabase;
   private readonly workflows: ScheduledWorkflowDatabase;
+  private readonly executionWaits: ExecutionWaitDatabase;
   constructor(private readonly filename: string) {
     this.db = new Database(filename, { timeout: 5_000 });
     const session: SchedulerSession = { query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
@@ -40,10 +43,12 @@ export class SqliteDatabase {
     } };
     this.scheduler = new SchedulerDatabase(backend);
     this.workflows = new ScheduledWorkflowDatabase(backend,this.scheduler);
+    this.executionWaits = new ExecutionWaitDatabase(backend,this.workflows);
   }
 
   schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
   workflowsCommand(method: ScheduledMethod, input: unknown): Promise<unknown> { return this.workflows.execute(method,input); }
+  executionWaitsCommand(method: ExecutionWaitMethod, input: unknown): Promise<unknown> { return this.executionWaits.execute(method,input); }
 
   initialize(): void {
     const journal = this.db.pragma('journal_mode = WAL', { simple: true });

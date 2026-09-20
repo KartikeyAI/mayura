@@ -29,6 +29,10 @@ jobs:
       - run: node examples/agent-orchestration.mjs
       - run: node examples/workflow-composition.mjs
       - run: node examples/local-server.mjs
+      - run: node packages/workflows/examples/scheduled-workflow.mjs
+      - run: node examples/managed-guardrails.mjs
+      - run: node examples/lifecycle-hooks.mjs
+      - run: node examples/execution-completion-waits.mjs
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20

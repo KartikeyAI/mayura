@@ -1,9 +1,9 @@
 import { Budget, MayuraError, assertPositiveInteger, validate, type ExecutionReceipt, type JsonValue, type Schema, type InferInput } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import {
-  StorageError, workflowPolicy, workflowResources, workflowState, workflowOutputs,
+  StorageError, executionRef, workflowPolicy, workflowResources, workflowState, workflowOutputs,
   type Claim, type ScheduledWrite, type ScheduledWorkflowAggregateStore, type ScheduledWorkflowSnapshot,
-  type ScheduledWorkflowStore, type WorkflowResourcePlan,
+  type ScheduledWorkflowStore, type WorkflowResourcePlan, type ExecutionRef,
 } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowDefinition } from './definition.js';
 import type { WorkflowRuntimeOptions, WorkflowSnapshot, VerifiedHuman } from './runtime.js';
@@ -28,6 +28,8 @@ export interface ScheduledWorkflowRuntime {
   submit<I extends Schema, O extends Schema>(definition: WorkflowDefinition<I, O>, command: { readonly input: InferInput<I>; readonly idempotencyKey: string }): Promise<WorkflowSnapshot>;
   attach(definition: AnyWorkflow, id: string): Promise<WorkflowSnapshot>;
   inspect(id: string): Promise<WorkflowSnapshot>;
+  /** Scoped immutable identity data, not a capability or proof of backend identity. */
+  reference(id: string): Promise<ExecutionRef>;
   events(id: string, after?: number): ReturnType<ScheduledWorkflowAggregateStore['events']>;
   runUntilSettled(definition: AnyWorkflow, id: string): Promise<WorkflowSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowSnapshot>;
@@ -326,6 +328,11 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
       return scheduledSnapshot(current.record);
     },
     async inspect(id) { open(); return scheduledSnapshot((await load(id)).record); },
+    async reference(id) {
+      open(); const current = await load(id); open();
+      return executionRef({ kind: 'scheduled-workflow', runId: current.record.id,
+        definitionHash: current.record.definitionHash, policyHash: current.policyHash });
+    },
     async events(id, after = 0) {
       open(); access(id);
       if (!Number.isSafeInteger(after) || after < 0) throw new MayuraError('INVALID_INPUT', 'A non-negative event cursor is required.');

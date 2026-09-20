@@ -23,6 +23,9 @@ importers:
       '@mayura/server-node':
         specifier: workspace:*
         version: link:packages/server-node
+      '@mayura/storage':
+        specifier: workspace:*
+        version: link:packages/storage
       '@mayura/testing':
         specifier: workspace:*
         version: link:packages/testing
@@ -32,6 +35,9 @@ importers:
       '@mayura/workflows':
         specifier: workspace:*
         version: link:packages/workflows
+      '@mayura/workstream':
+        specifier: workspace:*
+        version: link:packages/workstream
       '@types/better-sqlite3':
         specifier: 9.6.0
         version: 9.6.0

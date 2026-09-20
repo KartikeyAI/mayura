@@ -1,0 +1,25 @@
+# @mayura/workstream
+
+Optional finite, durable waits for Mayura applications. Development preview; not enterprise-qualified or published.
+
+The root export provides scoped signal-based WorkStreams. The separate `@mayura/workstream/executions` export provides metadata-only `all` joins over already-submitted scheduled workflow references:
+
+```ts
+import { createExecutionWorkStream } from '@mayura/workstream/executions';
+
+const target = await worker.reference(run.id);
+const stream = createExecutionWorkStream({
+  store, scope, policyHash: target.policyHash, streamId: 'release-joins',
+});
+await stream.initialize();
+await stream.register({ id: 'release', targets: [target] });
+await stream.drainReady({ limit: 16 });
+const result = await stream.inspect('release');
+await stream.close();
+```
+
+The application supplies initialized storage, verified scope and a pinned policy. References are data, not authorization capabilities. Closing a facade does not close application-owned storage or cancel persisted work. Applications explicitly invoke finite drains; no worker slot, polling loop or per-wait promise survives a command.
+
+A resolved join means every target is terminal, not necessarily successful. Inspect each observation's `outcome`; `outcome_unknown` stays unknown. Results contain no workflow output, input, receipts or errors. Read authorized source evidence separately. This export does not add workflow graph suspension, durable child orchestration, timers or notifications.
+
+The package depends only on core and driver-free storage contracts. Selecting the optional reference `@mayura/storage` package installs its SQLite and PostgreSQL drivers; a custom adapter does not require either driver. The complete checkout includes Markdown guides, shared real-database conformance tests and a credential-free close/reopen example.

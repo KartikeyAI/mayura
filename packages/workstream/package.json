@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=24.14.1 <25" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./executions": { "types": "./dist/executions.d.ts", "import": "./dist/executions.js" }
+  },
   "files": ["dist", "src/**/*.ts", "README.md"],
   "sideEffects": false,
   "dependencies": { "@mayura/core": "workspace:*", "@mayura/storage-contracts": "workspace:*" },

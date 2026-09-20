@@ -5,7 +5,7 @@ import {
   workflowManifest, workflowPolicy, workflowResources, workflowState,
   type Claim, type EvidenceDisposition, type JobRecord, type ScheduledWorkflowSnapshot, type SchedulerEvidence,
   type WorkflowFormat2State, type WorkflowFormat2Step, type WorkflowManifest, type WorkflowManifestNode,
-  type WorkflowPolicyManifest, type WorkflowResourcePlan,
+  type WorkflowPolicyManifest, type WorkflowResourcePlan, type ExecutionRef, type ExecutionCompletion,
 } from '@mayura/storage-contracts';
 import { StorageError, type StoredEventInput } from './contracts.js';
 import { aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql,
@@ -14,6 +14,7 @@ import { ResourceBusy, SchedulerDatabase, type SchedulerBackend, type SchedulerS
 import { fields, hash, integer, object } from './scheduler-validation.js';
 import { scheduledCommand, type ScheduledMethod } from './scheduled-validation.js';
 import { createCommand, identifier, nextCounter } from './validation.js';
+import { checkCompletion, initializeCompletions } from './execution-completions.js';
 
 interface Journal { id: string; digest: string; version: number; operation: string }
 interface Owner {
@@ -109,7 +110,8 @@ export class ScheduledWorkflowDatabase {
     for (const [nodeId,step] of Object.entries(state.steps)) if (step.candidateHash !== null && !links.some(link => link.node_id === nodeId)) failed();
     clock.value = await storageClock(tx,this.backend,clock.value);
     const run = { row,owner,ownerRow,state,jobs,clock,events };
-    await this.checkProjection(tx,run); return run;
+    await this.checkProjection(tx,run);
+    await checkCompletion(tx,this.backend,row,policyHash,state.status,false); return run;
   }
   /** Independently derive effect facts and accounting from the attempt ledger, never from aggregate claims. */
   private async checkProjection(tx: SchedulerSession,run: LockedRun): Promise<void> {
@@ -183,6 +185,7 @@ export class ScheduledWorkflowDatabase {
     run.row = await writeAggregate(tx,this.backend,run.row,next,run.events,run.clock.value);
     run.ownerRow.aggregate_version = run.row.version; run.ownerRow.data = JSON.stringify(object(run.owner));
     await tx.query(`UPDATE ${this.table('owners')} SET aggregate_version = ?, data = ? WHERE scope = ? AND aggregate_id = ?`,[run.row.version,run.ownerRow.data,run.row.scope,run.row.id]);
+    await checkCompletion(tx,this.backend,run.row,run.ownerRow.policy_hash,run.state.status,true);
     run.events.length = 0;
   }
   private node(run: LockedRun,id: string): ToolNode {
@@ -297,10 +300,21 @@ export class ScheduledWorkflowDatabase {
     await this.backend.transaction(async tx => {
       if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:scheduled-schema:${this.backend.prefix}`]);
       await initializeOwnership(tx,this.backend);
+      await initializeCompletions(tx,this.backend);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('jobs')} (scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, node_id TEXT NOT NULL, job_id TEXT NOT NULL,
         PRIMARY KEY(scope,aggregate_id,node_id), UNIQUE(scope,job_id), FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table('owners')}(scope,aggregate_id),
         FOREIGN KEY(scope,job_id) REFERENCES ${this.backend.prefix}mayura_scheduler_jobs(scope,job_id))`);
     }); this.initialized = true;
+  }
+  /** Internal finite maintenance; validates the full enrolled source before publishing old terminal state. */
+  async materializeCompletion(scope: string, reference: ExecutionRef): Promise<ExecutionCompletion | undefined> {
+    if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize scheduled workflow storage first.');
+    return this.backend.transaction(async tx => {
+      const run = await this.load(tx,scope,reference.runId,reference.policyHash);
+      if (!run) throw new StorageError('NOT_FOUND','Workflow was not found in this scope.');
+      if (run.row.definition_hash !== reference.definitionHash) conflict();
+      return checkCompletion(tx,this.backend,run.row,reference.policyHash,run.state.status,true);
+    });
   }
   private async enroll(tx: SchedulerSession,row: AggregateRow,input: JsonObject,now: number): Promise<LockedRun> {
     const manifest = input['manifest'] as unknown as WorkflowManifest; const policy = input['policy'] as unknown as WorkflowPolicyManifest;

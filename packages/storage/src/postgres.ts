@@ -4,10 +4,12 @@ import { StorageError, storageError } from './contracts.js';
 import { createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE } from './validation.js';
 import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
 import { schedulerFacade } from './scheduler-validation.js';
-import type { ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
+import type { ExecutionWaitAggregateStore } from '@mayura/storage-contracts';
 import { ScheduledWorkflowDatabase } from './scheduled-database.js';
 import { scheduledFacade } from './scheduled-validation.js';
 import { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
+import { ExecutionWaitDatabase } from './execution-wait-database.js';
+import { executionWaitFacade } from './execution-wait-validation.js';
 
 export interface PostgresStoreOptions { readonly connectionString: string; readonly schema?: string }
 interface Row {
@@ -36,7 +38,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): ScheduledWorkflowAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): ExecutionWaitAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -96,9 +98,11 @@ export function createPostgresStore(options: PostgresStoreOptions): ScheduledWor
   const backend: SchedulerBackend = { dialect:'postgres',prefix:`${prefix}.`,transaction:body => transaction(client => body(session(client))) };
   const schedulerDatabase = new SchedulerDatabase(backend);
   const workflowsDatabase = new ScheduledWorkflowDatabase(backend,schedulerDatabase);
+  const executionWaitDatabase = new ExecutionWaitDatabase(backend,workflowsDatabase);
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     workflows: scheduledFacade((method,input) => { available(); return workflowsDatabase.execute(method,input); }),
+    executionWaits: executionWaitFacade((method,input) => { available(); return executionWaitDatabase.execute(method,input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {
