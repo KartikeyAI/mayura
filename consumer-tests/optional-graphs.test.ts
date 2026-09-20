@@ -1,5 +1,6 @@
 import type { Schema } from '@mayura/core';
-import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery } from '@mayura/workflows/graphs';
+import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery, createWorkflowGraphCoordinator,
+  type WorkflowGraphCatalogEntry, type WorkflowGraphPageReport } from '@mayura/workflows/graphs';
 import { createScheduledWorkflowRuntime, createWorkflowRuntime } from '@mayura/workflows';
 import { workflowAsAgent } from '@mayura/workflows/ephemeral';
 import type { WorkflowGraphAggregateStore, WorkflowGraphDiscoveryAggregateStore, ScheduledWorkflowAggregateStore, ExecutionRef } from '@mayura/storage-contracts';
@@ -28,6 +29,36 @@ async function verify(store: WorkflowGraphDiscoveryAggregateStore, legacyStore: 
   // @ts-expect-error A plain run ID is not a context-bound cursor.
   await discovery.scan({ cursor: 'a'.repeat(64) });
   await discovery.close();
+  const definitions: readonly WorkflowGraphCatalogEntry[] = [{ definition: graph }];
+  const coordinator = createWorkflowGraphCoordinator({ ...discoveryOptions, workerId: 'coordinator', definitions });
+  const report: WorkflowGraphPageReport = await coordinator.runPage({ limit: 2 });
+  if (report.status === 'completed') {
+    if (report.nextCursor) await coordinator.runPage({ cursor: report.nextCursor });
+    // @ts-expect-error A completed page does not carry a retry checkpoint.
+    void report.retryCursor;
+  } else {
+    await coordinator.runPage({ cursor: report.retryCursor });
+    // @ts-expect-error An interrupted page must not expose an advancing cursor.
+    void report.nextCursor;
+  }
+  for (const outcome of report.outcomes) {
+    if (outcome.kind === 'observed') { const version: number = outcome.version; void version; }
+    else if (outcome.kind === 'skipped') { const reason: 'unregistered_definition' = outcome.reason; void reason; }
+    else if (outcome.kind === 'failed') { const code: string = outcome.code; void code; }
+    // @ts-expect-error Reports contain no workflow payloads.
+    void outcome.output;
+    // @ts-expect-error Outcome identities are immutable.
+    outcome.reference.runId = 'c'.repeat(64);
+  }
+  // @ts-expect-error A coordinator needs the separate discovery capability.
+  createWorkflowGraphCoordinator({ ...discoveryOptions, store: graphOnlyStore, workerId: 'coordinator', definitions });
+  // @ts-expect-error Resources are registered per definition, never globally inferred.
+  createWorkflowGraphCoordinator({ ...discoveryOptions, workerId: 'coordinator', definitions, resources: {} });
+  // @ts-expect-error No human approval API is exposed by coordination.
+  coordinator.approve({});
+  // @ts-expect-error Coordination cannot submit an independent run.
+  coordinator.submit(graph, { input: 'new', idempotencyKey: 'new' });
+  await coordinator.close();
   void profile; void runtime.submit(graph, { input: 'original', idempotencyKey: 'one' });
   void runtime.runUntilSettled(graph, 'a'.repeat(64)); void runtime.reference('a'.repeat(64));
   // @ts-expect-error Submission takes the original schema input, not the admitted target object.

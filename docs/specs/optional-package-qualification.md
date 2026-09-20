@@ -18,6 +18,8 @@ The gate packs current built packages and installs their actual archives into fr
 
    This same profile checks the optional graph-discovery factory: explicit capability types, immutable metadata-only candidates, context-bound cursor types, a terminal-only full page that still advances, explicit final empty-page continuation and close without closing application storage. Discovery adds no driver or sixth workflow dependency.
 
+   The registered coordinator is exercised in this same installation: a genuine catalog, unknown-definition skip without inspection, frozen observed metadata, terminal-only pages, sanitized interruption with the original retry cursor, explicit retry and close without owning storage. Negative declarations reject missing discovery capability, global resources, submit/approve methods and access to the wrong report's cursor. Its private source entry stays inaccessible. These facade tests do not substitute for paired SQL recovery, shared-capacity or process-kill tests.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

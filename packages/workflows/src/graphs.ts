@@ -8,6 +8,8 @@ export { defineWorkflowGraph, type WorkflowGraphDefinition, type WorkflowGraphOp
   type WorkflowGraphNode, type WorkflowGraphTargetBinding, type WorkflowGraphOutput } from './graph-definition.js';
 export { createWorkflowGraphDiscovery, type WorkflowGraphDiscovery, type WorkflowGraphDiscoveryOptions,
   type WorkflowGraphDiscoveryCandidate, type WorkflowGraphDiscoveryCursor, type WorkflowGraphDiscoveryPage } from './graph-discovery.js';
+export { createWorkflowGraphCoordinator, type WorkflowGraphCoordinator, type WorkflowGraphCoordinatorOptions,
+  type WorkflowGraphCatalogEntry, type WorkflowGraphPageReport, type WorkflowGraphCandidateOutcome } from './graph-coordinator.js';
 
 export interface WorkflowGraphSnapshot extends Omit<WorkflowSnapshot, 'steps'> {
   readonly steps: Readonly<Record<string, Readonly<WorkflowGraphFormat3Step>>>;

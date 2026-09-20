@@ -1,6 +1,6 @@
 # Finite registered graph continuation coordinator
 
-Status: reviewed next-slice design; not implemented or qualified. Builds on [graph discovery](workflow-graph-discovery.md) and [versioned graph waits](workflow-graph-waits.md). It is not durable child orchestration or a background worker fleet.
+Status: implemented and exercised in the local development preview; not enterprise-qualified. Builds on [graph discovery](workflow-graph-discovery.md) and [versioned graph waits](workflow-graph-waits.md). See the [developer guide](../how-to/workflow-graph-coordinator.md) and [verification ledger](../development-status.md). It is not durable child orchestration or a background worker fleet.
 
 ## Purpose and authority
 
@@ -17,6 +17,8 @@ Expose `runPage({ cursor?, limit? })` and `close()` from the graph entry point. 
 All registered definitions share **one** scheduled driver and its actual active-handler/job/run/storage accounting. Do not create one worker per catalog entry: an uncertain handler from one definition must still occupy capacity while the next definition is considered. The private driver eagerly validates and seeds immutable per-definition enrollments keyed by genuine definition identity; unregistered identities have no fallback. Existing public runtime/resource-plan behavior remains unchanged. Discovery has its own bounded adapter acknowledgement capacity; neither facade may release a timed-out adapter slot before actual settlement. Document those separate storage callback bounds rather than advertising a new combined distributed quota or universal accounting of arbitrary asynchronous schema callbacks.
 
 Return a frozen discriminated metadata-only report. A `completed` page contains `examined`, discovery `nextCursor` and ordered outcomes. An `interrupted` page contains `examined`, the original `retryCursor`, a sanitized stop code and ordered outcomes; it has no advancing `nextCursor`. Every discovered candidate has exactly one outcome: `observed` with exact reference/post-drive version/status, `skipped` with reference and `unregistered_definition`, `failed` with reference and safe code, or `not_attempted` with reference. Reports contain no input, output, receipt, job or raw error details. Completion means the page was processed, not that every run succeeded.
+
+The catalog option is named `definitions`. Reports discriminate on `status`, contain an `outcomes` array, and interrupted reports expose their safe stop code as `code`. Outcomes discriminate on `kind`; unknown-definition outcomes expose `reason: 'unregistered_definition'`. A failed candidate has its own `code`. Error codes come only from a closed public allowlist; unknown or hostile exceptions map to `STORAGE_UNAVAILABLE` without executing exception getters or serialization callbacks. The original retry cursor is an owned snapshot captured before any asynchronous call.
 
 After successful discovery, stop on the first driver failure; preserve earlier observations, report the failed candidate and mark later candidates unattempted. Invalid commands, overlapping calls and discovery failure reject before any candidate dispatch. An interrupted page directs the caller to retry its original cursor or restart a sweep, never skip to the failed page's end cursor. Earlier durable commits remain; local page failure is never permission to replay external effects.
 

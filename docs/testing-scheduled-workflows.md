@@ -58,6 +58,14 @@ Unforced query-plan checks provision the index before enrolling 1,025 genuine ow
 
 The credential-free `examples/workflow-graph-discovery.mjs` closes and reopens storage, finds unfinished parents without retaining their IDs and explicitly resumes through a trusted definition registry. Its finite page budget belongs to the application; no background polling or automatic dispatch is added. See the [discovery contract](specs/workflow-graph-discovery.md).
 
+## Registered graph continuation
+
+The paired `graph-coordinator.sqlite.test.ts` and `graph-coordinator.postgres.integration.test.ts` entry points run the same 16 cases per adapter through the public coordinator and real storage. Distinct registered definitions retain their exact resource plans across reopen, unknown definitions remain untouched until a new catalog and fresh sweep, and interrupted pages preserve the original retry cursor after earlier durable commits. A lost final acknowledgement is injected after the real database commit; retry never repeats those effects.
+
+The suite checks one shared job slot across definitions and pages while a timed-out handler remains unsettled, independent-root money limits, waiting/ready progress at one job, competing coordinators, stale cancelled hints, exact grants/resources/policy and externally verified approval. Close interrupts local driving without cancelling durable roots or their targets; late receipts still settle known cost while withholding late output. Two actual child-process kills stop after the first candidate's finalization and before its successor starts, then reopen and continue without replaying the first effect.
+
+Public/custom-adapter tests independently exercise catalog bounds and immutable snapshots, one-page admission, malformed responses, safe errors, timeout capacity and close/publication boundaries. The driver-free packed consumer and `examples/workflow-graph-coordinator.mjs` cover adoption separately. These checks qualify this finite facade locally, not automatic polling, a distributed fleet or durable child ownership. See the [coordinator contract](specs/workflow-graph-coordinator.md).
+
 ## Evidence still required
 
 The integrated suite and conservative format-2 checks above are now local evidence toward the scheduled-workflow gate; keep the full release qualification open. The owned-process checkpoints do not exhaust every instruction/transaction interruption, hardware power-loss scenario or ambiguous provider response. Old adapter binary deployment, provider-side fencing and a production worker fleet also need separate operational qualification. Started effects are never automatically replayed; resource quarantine has no automatic clearance in this profile.

@@ -173,6 +173,11 @@ async function main() {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
+      if (name === 'graphs') {
+        assert.equal(execution.finiteCoordinator, true);
+        assert.equal(execution.unknownDefinitionSkipped, true);
+        assert.equal(execution.interruptedRetryCursor, true);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -201,6 +206,7 @@ async function main() {
   result.checks.push('no-ancestor-declaration-fallback');
   result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
+  result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

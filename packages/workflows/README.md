@@ -19,4 +19,6 @@ Scheduled execution admits at most 64 KiB per input/output, uses storage-clock l
 
 The same graphs entry also exports `createWorkflowGraphDiscovery` with the separately optional `WorkflowGraphDiscoveryStore` capability. It returns bounded scope/policy-pinned pages of nonterminal graph metadata, not dispatch authority or readiness guarantees. Cursors count terminal owners too; pages are not a stable snapshot. Applications own their definition registry, page budget and explicit continuation calls. No polling service or projection backfill is added.
 
+`createWorkflowGraphCoordinator` adds explicit registered continuation over that capability: 1–32 trusted definitions and their exact resource plans share one driver across finite, sequential candidate pages. Frozen metadata reports distinguish completed pages from interrupted pages carrying the original retry cursor. Unknown definitions are skipped without dispatch. No submit/approve interface, background polling, fleet ownership or pooled cross-run monetary budget is added.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.

@@ -69,9 +69,12 @@ interface ScheduledDriverRuntime {
   recoverExpired(id: string): Promise<ScheduledPublicSnapshot>;
   close(): Promise<void>;
 }
+/** Internal catalog input only; public runtimes retain their single resource-plan option. */
+interface ScheduledGraphCatalogEntry { readonly definition: AnyWorkflowGraph; readonly resources: WorkflowResourcePlan }
 
 /** Shared finite worker engine. Only exact profile compilers, decoders and capabilities vary. */
-export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions | WorkflowGraphRuntimeOptions, profile: ScheduledProfile): ScheduledDriverRuntime {
+export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions | WorkflowGraphRuntimeOptions, profile: ScheduledProfile,
+  catalog?: readonly ScheduledGraphCatalogEntry[]): ScheduledDriverRuntime {
   const { store } = options;
   let api: DriverStoreControls;
   let read: ScheduledWorkflowAggregateStore['read'];
@@ -172,15 +175,15 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     }
     throw new MayuraError('CONFLICT', 'Scheduled contention exceeded the bounded retry limit.');
   };
-  const compileEnrollment = (definition: DriverDefinition) => {
+  const compileEnrollment = (definition: DriverDefinition, resources: WorkflowResourcePlan = resourceInput) => {
     if (profile === 'scheduled-v2') {
       const manifest = graphManifest(definition as AnyWorkflowGraph);
       if (digest('mayura:workflow:v2', manifest) !== definition.digest) throw new MayuraError('INVALID_CONFIG', 'Workflow graph metadata does not match its registered definition.');
-      return { manifest, policy, resources: workflowGraphResources(resourceInput, manifest) };
+      return { manifest, policy, resources: workflowGraphResources(resources, manifest) };
     }
     const manifest = scheduledManifest(definition as AnyWorkflow);
     if (digest('mayura:workflow:v1', manifest) !== definition.digest) throw new MayuraError('INVALID_CONFIG', 'Workflow metadata does not match its registered definition.');
-    return { manifest, policy, resources: workflowResources(resourceInput, manifest) };
+    return { manifest, policy, resources: workflowResources(resources, manifest) };
   };
   const enrollments = new WeakMap<DriverDefinition, { readonly registered: ReturnType<typeof compileEnrollment>; readonly resourceHash: string }>();
   const enrollment = (definition: DriverDefinition) => {
@@ -189,12 +192,22 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     assertDefinition(definition);
     let known = enrollments.get(definition);
     if (!known) {
+      if (catalog !== undefined) throw new MayuraError('INVALID_CONFIG', 'This graph definition is not registered in the immutable worker catalog.');
       const registered = Object.freeze(compileEnrollment(definition));
       known = { registered, resourceHash: digest('mayura:workflow-resources:v1', registered.resources) };
       enrollments.set(definition, known);
     }
     return known.registered;
   };
+  if (catalog !== undefined) {
+    if (profile !== 'scheduled-v2') throw new MayuraError('INVALID_CONFIG', 'Catalog enrollment requires the graph worker profile.');
+    for (const entry of catalog) {
+      assertDefinition(entry.definition);
+      if (enrollments.has(entry.definition)) throw new MayuraError('INVALID_CONFIG', 'Duplicate worker catalog definition.');
+      const registered = Object.freeze(compileEnrollment(entry.definition, entry.resources));
+      enrollments.set(entry.definition, { registered, resourceHash: digest('mayura:workflow-resources:v1', registered.resources) });
+    }
+  }
   const matches = (definition: DriverDefinition, current: ScheduledStoredSnapshot): void => {
     const registered = enrollment(definition);
     if (current.manifestHash !== definition.digest || current.record.definitionHash !== definition.digest
