@@ -1,0 +1,54 @@
+name: Mayura qualification
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: mayura-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  consumers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.14.1
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm example
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+        env:
+          POSTGRES_USER: mayura
+          POSTGRES_PASSWORD: mayura_ci_test_only
+          POSTGRES_DB: mayura
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U mayura"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.14.1
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck
+      - run: pnpm test:integration

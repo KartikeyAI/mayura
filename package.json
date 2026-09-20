@@ -1,0 +1,33 @@
+{
+  "name": "mayura-workspace",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": { "node": ">=24.14.1 <25" },
+  "scripts": {
+    "build": "node node_modules/typescript/bin/tsc --build",
+    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json",
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "check": "pnpm typecheck && pnpm test",
+    "test:consumer": "node scripts/consumer-check.mjs",
+    "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
+    "example": "node examples/first-agent.mjs"
+  },
+  "devDependencies": {
+    "@mayura/sdk": "workspace:*",
+    "@mayura/core": "workspace:*",
+    "@mayura/tools": "workspace:*",
+    "@mayura/runtime": "workspace:*",
+    "@mayura/testing": "workspace:*",
+    "@types/node": "24.13.6",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/pg": "8.23.1",
+    "fast-check": "4.10.1",
+    "pg": "8.23.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "vitest": "5.0.1",
+    "zod": "4.6.5"
+  }
+}

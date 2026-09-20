@@ -1,0 +1,19 @@
+name: mayura-conformance
+services:
+  postgres:
+    image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    environment:
+      POSTGRES_USER: mayura
+      POSTGRES_PASSWORD: mayura_local_test_only
+      POSTGRES_DB: mayura
+    ports:
+      - "127.0.0.1:55258:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mayura -d mayura"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    labels:
+      io.mayura.purpose: integration-test

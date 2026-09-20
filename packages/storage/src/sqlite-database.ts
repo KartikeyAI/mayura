@@ -1,0 +1,111 @@
+import Database from 'better-sqlite3';
+import type { StoredEvent, StoredRecord, CreateRecord, UpdateRecord } from './contracts.js';
+import { StorageError } from './contracts.js';
+import { createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';
+
+interface Row {
+  scope: string; id: string; idempotency_key: string; definition_hash: string;
+  submission_digest: string; version: number; event_sequence: number; state: string;
+}
+
+function record(row: Row): StoredRecord {
+  return {
+    scope: row.scope, id: row.id, idempotencyKey: row.idempotency_key,
+    definitionHash: row.definition_hash, version: row.version, state: storedObject(JSON.parse(row.state)),
+  };
+}
+
+/** Internal synchronous database: instantiated only inside the dedicated storage worker. */
+export class SqliteDatabase {
+  private readonly db: Database.Database;
+  constructor(private readonly filename: string) { this.db = new Database(filename, { timeout: 5_000 }); }
+
+  initialize(): void {
+    const journal = this.db.pragma('journal_mode = WAL', { simple: true });
+    this.db.pragma('synchronous = FULL');
+    this.db.pragma('foreign_keys = ON');
+    if ((this.filename !== ':memory:' && journal !== 'wal') || this.db.pragma('synchronous', { simple: true }) !== 2 || this.db.pragma('foreign_keys', { simple: true }) !== 1) {
+      throw new StorageError('STORAGE_UNAVAILABLE', 'SQLite durability settings could not be enabled.');
+    }
+    this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS mayura_storage_meta (version INTEGER PRIMARY KEY CHECK(version = 1));
+        INSERT OR IGNORE INTO mayura_storage_meta (version) VALUES (1);
+        CREATE TABLE IF NOT EXISTS mayura_aggregates (
+          scope TEXT NOT NULL, id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+          definition_hash TEXT NOT NULL, submission_digest TEXT NOT NULL,
+          version INTEGER NOT NULL CHECK(version > 0), event_sequence INTEGER NOT NULL CHECK(event_sequence >= 0),
+          state TEXT NOT NULL, PRIMARY KEY(scope, id), UNIQUE(scope, idempotency_key)
+        );
+        CREATE TABLE IF NOT EXISTS mayura_events (
+          scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, sequence INTEGER NOT NULL CHECK(sequence > 0),
+          type TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL,
+          PRIMARY KEY(scope, aggregate_id, sequence),
+          FOREIGN KEY(scope, aggregate_id) REFERENCES mayura_aggregates(scope, id)
+        );
+      `);
+      const versions = this.db.prepare('SELECT version FROM mayura_storage_meta').all() as { version: number }[];
+      if (versions.length !== 1 || versions[0]?.version !== 1) throw new StorageError('STORAGE_UNAVAILABLE', 'Unsupported storage schema version.');
+    }).immediate();
+  }
+
+  private row(scope: string, id: string): Row | undefined {
+    return this.db.prepare('SELECT * FROM mayura_aggregates WHERE scope = ? AND id = ?').get(scope, id) as Row | undefined;
+  }
+
+  read(scope: string, id: string): StoredRecord | undefined {
+    const row = this.row(scope, id);
+    return row ? record(row) : undefined;
+  }
+
+  create(raw: CreateRecord): { record: StoredRecord; created: boolean } {
+    const input = createCommand(raw);
+    const digest = submissionDigest(input);
+    return this.db.transaction(() => {
+      const existing = this.db.prepare('SELECT * FROM mayura_aggregates WHERE scope = ? AND idempotency_key = ?')
+        .get(input.scope, input.idempotencyKey) as Row | undefined;
+      if (existing) {
+        if (existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'Idempotency key already belongs to a different submission.');
+        return { record: record(existing), created: false };
+      }
+      if (this.row(input.scope, input.id)) throw new StorageError('CONFLICT', 'Record ID already exists in this scope.');
+      this.db.prepare(`INSERT INTO mayura_aggregates
+        (scope, id, idempotency_key, definition_hash, submission_digest, version, event_sequence, state)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
+        .run(input.scope, input.id, input.idempotencyKey, input.definitionHash, digest, input.events.length, JSON.stringify(input.state));
+      this.append(input.scope, input.id, 0, input.events);
+      const inserted = this.row(input.scope, input.id);
+      if (!inserted) throw new StorageError('STORAGE_UNAVAILABLE', 'Created record is unavailable.');
+      return { record: record(inserted), created: true };
+    }).immediate();
+  }
+
+  update(raw: UpdateRecord): StoredRecord {
+    const input = updateCommand(raw);
+    return this.db.transaction(() => {
+      const current = this.row(input.scope, input.id);
+      if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+      if (current.version !== input.expectedVersion) throw new StorageError('CONFLICT', 'Record version has changed.');
+      this.db.prepare('UPDATE mayura_aggregates SET state = ?, version = ?, event_sequence = ? WHERE scope = ? AND id = ?')
+        .run(JSON.stringify(input.state), nextCounter(current.version, 1), nextCounter(current.event_sequence, input.events.length), input.scope, input.id);
+      this.append(input.scope, input.id, current.event_sequence, input.events);
+      const updated = this.row(input.scope, input.id);
+      if (!updated) throw new StorageError('STORAGE_UNAVAILABLE', 'Updated record is unavailable.');
+      return record(updated);
+    }).immediate();
+  }
+
+  private append(scope: string, id: string, sequence: number, events: CreateRecord['events']): void {
+    const insert = this.db.prepare('INSERT INTO mayura_events (scope, aggregate_id, sequence, type, data, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    const timestamp = new Date().toISOString();
+    for (const [index, event] of events.entries()) insert.run(scope, id, nextCounter(sequence, index + 1), event.type, JSON.stringify(event.data), timestamp);
+  }
+
+  events(scope: string, id: string, after: number): StoredEvent[] {
+    const rows = this.db.prepare('SELECT sequence, type, data, created_at FROM mayura_events WHERE scope = ? AND aggregate_id = ? AND sequence > ? ORDER BY sequence LIMIT ?')
+      .all(scope, id, after, EVENT_PAGE_SIZE) as { sequence: number; type: string; data: string; created_at: string }[];
+    return rows.map((row) => ({ sequence: row.sequence, type: row.type, data: storedObject(JSON.parse(row.data)), createdAt: row.created_at }));
+  }
+
+  close(): void { this.db.close(); }
+}

@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/tools" },
+    { "path": "packages/runtime" },
+    { "path": "packages/testing" },
+    { "path": "packages/storage" },
+    { "path": "packages/workflows" },
+    { "path": "packages/guardrails" },
+    { "path": "packages/provider-openai" },
+    { "path": "packages/workstream" },
+    { "path": "packages/context" },
+    { "path": "packages/memory" },
+    { "path": "packages/sdk" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@mayura/consumer-tests",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mayura/core": "workspace:*",
+    "@mayura/tools": "workspace:*",
+    "@mayura/runtime": "workspace:*",
+    "@mayura/testing": "workspace:*"
+  }
+}

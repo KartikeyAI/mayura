@@ -1,0 +1,8 @@
+import { describe } from 'vitest';
+import { workstreamConformance } from './conformance.js';
+import { postgresFixture } from './fixtures.js';
+
+const connectionString = process.env['MAYURA_TEST_POSTGRES_URL'];
+describe.skipIf(!connectionString)('PostgreSQL WorkStream integration', () => {
+  workstreamConformance('PostgreSQL', () => postgresFixture(connectionString!));
+});
