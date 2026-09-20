@@ -1,8 +1,9 @@
 import { jsonValue, type ExecutionReceipt, type JsonObject } from '@mayura/core';
-import { StorageError, type StoredEvent } from './contracts.js';
+import { StorageError, type StoredEvent, type StoredEventInput } from './contracts.js';
 import type { Claim, CompleteJobCommand, EvidenceDisposition, JobKey, JobRecord, JobReservation, ReceiptCommand, SchedulerEvidence } from './scheduler-contracts.js';
 import { canonical, fields, hash, integer, object, reservation, schedulerCommand, schedulerDigest, type SchedulerMethod } from './scheduler-validation.js';
 import { identifier, nextCounter } from './validation.js';
+import { loadAggregate, lockRunIdentity, ownedRun, writerRequired } from './aggregate-session.js';
 
 /** Internal parameterized SQL seam; implementations own a real short transaction. */
 export interface SchedulerSession { query<T>(sql: string, parameters?: readonly unknown[]): Promise<readonly T[]> }
@@ -29,7 +30,7 @@ interface Row {
 const STALE = Symbol('stale');
 const terminal = new Set(['succeeded','failed','blocked','cancelled','outcome_unknown']);
 const eventTypes = new Set(['job.reserved','job.cancelled','job.lease_expired','job.renewed','job.started','job.completed','job.claimed','job.receipt_recorded','job.recovered']);
-class ResourceBusy extends StorageError { constructor() { super('CONFLICT', 'A scheduler resource is already held.'); } }
+export class ResourceBusy extends StorageError { constructor() { super('CONFLICT', 'A scheduler resource is already held.'); } }
 function failure(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored scheduler state failed integrity validation.'); }
 function conflict(): never { throw new StorageError('CONFLICT', 'Scheduler identity or committed command content conflicts.'); }
 function limit(): never { throw new StorageError('LIMIT_EXCEEDED', 'The bounded scheduler history or counter limit was reached.'); }
@@ -112,7 +113,23 @@ function decode(row: Row): Data {
 /** Shared state machine; there are no application callbacks inside these transactions. */
 export class SchedulerDatabase {
   private initialized = false;
-  constructor(private readonly backend: SchedulerBackend) {}
+  constructor(private readonly backend: SchedulerBackend, private readonly integration?: { runId: string; jobId?: string; events: StoredEventInput[]; clock: { value: number }; admissionExpiresAt?: number }) {}
+  /** Internal finite-operation seam. The caller owns the real transaction and aggregate-first locks. */
+  inSession(tx: SchedulerSession, runId: string, events: StoredEventInput[], jobId?: string, clock = { value: 0 }, admissionExpiresAt?: number): SchedulerDatabase {
+    if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize scheduler storage before integrated use.');
+    const child = new SchedulerDatabase({ ...this.backend, transaction: body => body(tx) }, { runId, events, clock, ...(jobId === undefined ? {} : { jobId }), ...(admissionExpiresAt === undefined ? {} : { admissionExpiresAt }) });
+    child.initialized = true; return child;
+  }
+  private async access(tx: SchedulerSession, key: JobKey, mutation: boolean): Promise<string | undefined> {
+    const hint = (await tx.query<{ run_id: string }>(`SELECT run_id FROM ${this.table('jobs')} WHERE scope = ? AND job_id = ?`, [key.scope, key.jobId]))[0];
+    if (!hint) return undefined;
+    if (this.integration) { if (hint.run_id !== this.integration.runId || (this.integration.jobId !== undefined && key.jobId !== this.integration.jobId)) failure(); }
+    else {
+      await loadAggregate(tx, this.backend, key.scope, hint.run_id);
+      if (mutation && await ownedRun(tx, this.backend, key.scope, hint.run_id)) writerRequired();
+    }
+    return hint.run_id;
+  }
   private table(name: string): string { return `${this.backend.prefix}mayura_scheduler_${name}`; }
   private lock(skip = false): string { return this.backend.dialect === 'postgres' ? ` FOR UPDATE${skip ? ' SKIP LOCKED' : ''}` : ''; }
   private async clock(tx: SchedulerSession, floor = 0): Promise<number> {
@@ -122,7 +139,9 @@ export class SchedulerDatabase {
     const rows = await tx.query<{ now_ms: number | string }>(sql);
     const now = Number(rows[0]?.now_ms);
     if (!Number.isSafeInteger(now) || now < 0) failure();
-    return Math.max(floor, now);
+    const observed = Math.max(floor, now, this.integration?.clock.value ?? 0);
+    if (this.integration) this.integration.clock.value = observed;
+    return observed;
   }
   private async load(tx: SchedulerSession, key: JobKey, locked = false, skip = false): Promise<Data | undefined> {
     const rows = await tx.query<Row>(`SELECT * FROM ${this.table('jobs')} WHERE scope = ? AND job_id = ?${locked ? this.lock(skip) : ''}`, [key.scope, key.jobId]);
@@ -139,6 +158,7 @@ export class SchedulerDatabase {
   }
   private async append(tx: SchedulerSession, data: Data, type: string, now: number): Promise<void> {
     const job = data.job;
+    if (this.integration) { this.integration.events.push({ type, data: { nodeId: job.nodeId, jobId: job.jobId, fence: job.fence, state: job.state } }); return; }
     await tx.query(`INSERT INTO ${this.table('heads')} (scope, run_id, sequence) VALUES (?, ?, 0) ON CONFLICT DO NOTHING`, [job.scope, job.runId]);
     const rows = await tx.query<{ sequence: number | string }>(`SELECT sequence FROM ${this.table('heads')} WHERE scope = ? AND run_id = ?${this.lock()}`, [job.scope, job.runId]);
     const current = Number(rows[0]?.sequence); if (!Number.isSafeInteger(current) || current < 0) failure();
@@ -248,12 +268,18 @@ export class SchedulerDatabase {
     const token = input['claim'] as unknown as Claim | undefined;
     const key = token ?? input as unknown as JobKey;
     const result = await this.backend.transaction(async tx => {
+      const runHint = await this.access(tx, key, method !== 'read' && method !== 'receipts');
       // A row lock gives metadata inspection a coherent job/resource projection under READ COMMITTED.
       const data = await this.load(tx, key, true);
       if (!data) { if (method === 'read') return undefined; throw new StorageError('NOT_FOUND', 'Job was not found in this scope.'); }
+      if (data.job.runId !== runHint) failure();
       if (method === 'read') return data.job;
       if (method === 'receipts') return data.attempts.find(attempt => attempt.fence === input['fence'])?.evidence ?? [];
       const now = await this.clock(tx, data.lastClockMs);
+      // Integrated review authority is tested at exactly the same post-lock instant as the lease.
+      // The outer finite reducer commits its never-started expiry disposition before surfacing stale.
+      if ((method === 'start' || method === 'renew') && data.job.startedAtMs === null
+        && this.integration?.admissionExpiresAt !== undefined && this.integration.admissionExpiresAt <= now) return STALE;
       if (method === 'cancel') {
         if (this.journal(data, input['commandId'] as string, { operation: method, ...input })) return data.job;
         if (!terminal.has(data.job.state)) {
@@ -304,6 +330,12 @@ export class SchedulerDatabase {
 
   private async reserve(input: JobReservation): Promise<unknown> {
     return this.backend.transaction(async tx => {
+      if (this.integration) { if (input.runId !== this.integration.runId) failure(); }
+      else {
+        await lockRunIdentity(tx, this.backend, input.scope, input.runId);
+        await loadAggregate(tx, this.backend, input.scope, input.runId);
+        if (await ownedRun(tx, this.backend, input.scope, input.runId)) writerRequired();
+      }
       const now = await this.clock(tx); const digest = schedulerDigest('reservation', input);
       const j: Mutable<JobRecord> = {
         scope: input.scope, jobId: input.jobId, runId: input.runId, nodeId: input.nodeId, invocationId: input.invocationId,
@@ -336,14 +368,17 @@ export class SchedulerDatabase {
         AND NOT EXISTS (SELECT 1 FROM ${this.table('requests')} wanted JOIN ${this.table('requests')} owned ON owned.scope = wanted.scope AND owned.resource_key = wanted.resource_key
           JOIN ${this.table('jobs')} owner ON owner.scope = owned.scope AND owner.job_id = owned.job_id
           WHERE wanted.scope = j.scope AND wanted.job_id = j.job_id AND owner.job_id <> j.job_id AND owner.state IN ('leased','started','outcome_unknown'))
-        ORDER BY j.due_at, j.job_id LIMIT 128${this.backend.dialect === 'postgres' ? ' FOR UPDATE OF j SKIP LOCKED' : ''}`, [input.scope, now, now]);
+        ${this.integration ? 'AND j.run_id = ?' + (this.integration.jobId === undefined ? '' : ' AND j.job_id = ?') : `AND NOT EXISTS (SELECT 1 FROM ${this.backend.prefix}mayura_workflow_owners w WHERE w.scope = j.scope AND w.aggregate_id = j.run_id)`}
+        ORDER BY j.due_at, j.job_id LIMIT 128`, [input.scope, now, now, ...(this.integration ? [this.integration.runId, ...(this.integration.jobId === undefined ? [] : [this.integration.jobId])] : [])]);
     });
     const result: { job: JobRecord; claim: Claim }[] = [];
     for (const candidate of candidates) {
       if (result.length >= input.limit) break;
       try {
         const claimed = await this.backend.transaction(async tx => {
+          const runHint = await this.access(tx, { scope: input.scope, jobId: candidate.job_id }, true);
           const data = await this.load(tx, { scope: input.scope, jobId: candidate.job_id }, true, true); if (!data || data.job.state !== 'ready') return undefined;
+          if (data.job.runId !== runHint) failure();
           const j = data.job; const now = await this.clock(tx, data.lastClockMs);
           if (j.cancelRequested || j.dueAtMs > now || (j.deadlineAtMs !== null && j.deadlineAtMs <= now)) return undefined;
           if (j.fence >= 128) return undefined;
@@ -359,13 +394,15 @@ export class SchedulerDatabase {
             const held = await tx.query<{ resource_key: string }>(`INSERT INTO ${this.table('resources')} (scope, resource_key, job_id, fence, disposition) VALUES (?, ?, ?, ?, 'held') ON CONFLICT DO NOTHING RETURNING resource_key`, [j.scope, resource, j.jobId, fence]);
             if (held.length === 0) throw new ResourceBusy();
           }
+          const claimedAt = await this.clock(tx, now);
+          if (j.deadlineAtMs !== null && j.deadlineAtMs <= claimedAt) throw new ResourceBusy();
           j.state = 'leased'; j.workerId = input.workerId; j.fence = fence; j.leaseRevoked = false;
-          j.leaseUntilMs = Math.min(nextCounter(now, input.leaseMs), j.deadlineAtMs ?? Number.MAX_SAFE_INTEGER);
-          data.attempts.push({ fence, workerId: input.workerId, claimedAtMs: now, leaseUntilMs: j.leaseUntilMs, startedAtMs: null, ended: null, evidence: [] });
-          await this.save(tx, data, 'job.claimed', now); return { job: j, claim: this.token(data) };
+          j.leaseUntilMs = Math.min(nextCounter(claimedAt, input.leaseMs), j.deadlineAtMs ?? Number.MAX_SAFE_INTEGER);
+          data.attempts.push({ fence, workerId: input.workerId, claimedAtMs: claimedAt, leaseUntilMs: j.leaseUntilMs, startedAtMs: null, ended: null, evidence: [] });
+          await this.save(tx, data, 'job.claimed', claimedAt); return { job: j, claim: this.token(data) };
         });
         if (claimed) result.push(claimed);
-      } catch (error) { if (!(error instanceof ResourceBusy)) throw error; }
+      } catch (error) { if (this.integration || !(error instanceof ResourceBusy)) throw error; }
     }
     return result;
   }
@@ -394,13 +431,17 @@ export class SchedulerDatabase {
   private async recover(input: { scope: string; limit: number }): Promise<unknown> {
     const candidates = await this.backend.transaction(async tx => {
       const now = await this.clock(tx);
-      return tx.query<{ job_id: string }>(`SELECT job_id FROM ${this.table('jobs')} WHERE scope = ? AND state IN ('ready','leased','started')
-        AND (revoked = 1 OR lease_until <= ? OR deadline_at <= ?) ORDER BY job_id LIMIT ?${this.lock(true)}`, [input.scope, now, now, input.limit]);
+      return tx.query<{ job_id: string }>(`SELECT j.job_id FROM ${this.table('jobs')} j WHERE j.scope = ? AND j.state IN ('ready','leased','started')
+        AND (j.revoked = 1 OR j.lease_until <= ? OR j.deadline_at <= ?)
+        ${this.integration ? 'AND j.run_id = ?' + (this.integration.jobId === undefined ? '' : ' AND j.job_id = ?') : `AND NOT EXISTS (SELECT 1 FROM ${this.backend.prefix}mayura_workflow_owners w WHERE w.scope = j.scope AND w.aggregate_id = j.run_id)`}
+        ORDER BY j.job_id LIMIT ?`, [input.scope, now, now, ...(this.integration ? [this.integration.runId, ...(this.integration.jobId === undefined ? [] : [this.integration.jobId])] : []), input.limit]);
     });
     const result: JobRecord[] = [];
     for (const key of candidates) {
       const recovered = await this.backend.transaction(async tx => {
+        const runHint = await this.access(tx, { scope: input.scope, jobId: key.job_id }, true);
         const data = await this.load(tx, { scope: input.scope, jobId: key.job_id }, true, true); if (!data || terminal.has(data.job.state)) return undefined;
+        if (data.job.runId !== runHint) failure();
         const j = data.job; const now = await this.clock(tx, data.lastClockMs);
         const deadline = j.deadlineAtMs !== null && j.deadlineAtMs <= now;
         if (!deadline && !j.leaseRevoked && (j.leaseUntilMs === null || j.leaseUntilMs > now)) return undefined;

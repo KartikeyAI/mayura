@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { assertSchema, freezeJson, jsonValue, MayuraError, type InferInput, type InferOutput, type JsonObject, type JsonValue, type Schema } from '@mayura/core';
 import { assertTool, type AnyTool } from '@mayura/tools';
+import { workflowHashMaterial } from '@mayura/storage-contracts';
 
 export type Binding =
   | { readonly kind: 'literal'; readonly value: JsonValue }
@@ -31,12 +32,7 @@ export function assertWorkflow(definition: AnyWorkflow): void {
 
 /** Canonical, sorted-key JSON encoding, domain-separated before SHA-256. */
 export function digest(domain: string, value: unknown): string {
-  function canonical(item: JsonValue): string {
-    if (item === null || typeof item !== 'object') return JSON.stringify(item);
-    if (Array.isArray(item)) return `[${item.map(canonical).join(',')}]`;
-    return `{${Object.keys(item).sort().map(key => `${JSON.stringify(key)}:${canonical(item[key]!)}`).join(',')}}`;
-  }
-  return createHash('sha256').update(`${domain}\n${canonical(jsonValue(value))}`, 'utf8').digest('hex');
+  return createHash('sha256').update(workflowHashMaterial(domain, value), 'utf8').digest('hex');
 }
 
 function checkedBinding(binding: Binding, ids: Set<string>): Binding {

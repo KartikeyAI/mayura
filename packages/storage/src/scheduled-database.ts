@@ -1,0 +1,499 @@
+import { createHash } from 'node:crypto';
+import { jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
+import {
+  assertWorkflowStateMatchesManifest, initialWorkflowState, mergeWorkflowReceipt, workflowHashMaterial,
+  workflowManifest, workflowPolicy, workflowResources, workflowState,
+  type Claim, type EvidenceDisposition, type JobRecord, type ScheduledWorkflowSnapshot, type SchedulerEvidence,
+  type WorkflowFormat2State, type WorkflowFormat2Step, type WorkflowManifest, type WorkflowManifestNode,
+  type WorkflowPolicyManifest, type WorkflowResourcePlan,
+} from '@mayura/storage-contracts';
+import { StorageError, type StoredEventInput } from './contracts.js';
+import { aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql,
+  storageClock, storedInteger, writeAggregate, type AggregateRow } from './aggregate-session.js';
+import { ResourceBusy, SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
+import { fields, hash, integer, object } from './scheduler-validation.js';
+import { scheduledCommand, type ScheduledMethod } from './scheduled-validation.js';
+import { createCommand, identifier, nextCounter } from './validation.js';
+
+interface Journal { id: string; digest: string; version: number; operation: string }
+interface Owner {
+  format: 1; manifest: WorkflowManifest; policy: WorkflowPolicyManifest; resources: WorkflowResourcePlan;
+  clockFloor: number; commands: Journal[];
+}
+interface OwnerRow {
+  scope: string; aggregate_id: string; profile: number; aggregate_version: number | string;
+  definition_hash: string; policy_hash: string; resource_hash: string; data: string;
+}
+interface Link { node_id: string; job_id: string }
+interface LockedRun {
+  row: AggregateRow; owner: Owner; ownerRow: OwnerRow; state: WorkflowFormat2State;
+  jobs: JobRecord[]; clock: { value: number }; events: StoredEventInput[];
+}
+type ToolNode = Extract<WorkflowManifestNode, { kind: 'tool' }>;
+const terminalSteps = new Set(['succeeded','failed','blocked','unknown','skipped']);
+const terminalRuns = new Set(['succeeded','failed','blocked','outcome_unknown','cancelled']);
+const STALE = Symbol('scheduled-stale');
+const REVIEW_EXPIRED = Symbol('scheduled-review-expired');
+function failed(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored scheduled workflow failed integrity validation.'); }
+function conflict(): never { throw new StorageError('CONFLICT', 'Scheduled workflow state or command content changed.'); }
+function limited(): never { throw new StorageError('LIMIT_EXCEEDED', 'Scheduled workflow history or output limit was reached.'); }
+function digest(domain: string, value: unknown): string { return createHash('sha256').update(workflowHashMaterial(domain, value)).digest('hex'); }
+function same(a: unknown, b: unknown): boolean { return workflowHashMaterial('compare', a) === workflowHashMaterial('compare', b); }
+
+/** Finite integrated reducer. Every mutation uses its caller-owned connection/transaction. */
+export class ScheduledWorkflowDatabase {
+  private initialized = false;
+  constructor(private readonly backend: SchedulerBackend, private readonly scheduler: SchedulerDatabase) {}
+  private table(name: 'owners' | 'jobs'): string { return `${this.backend.prefix}mayura_workflow_${name}`; }
+  private hashEnrollment(manifest: WorkflowManifest, policy: WorkflowPolicyManifest, resources: WorkflowResourcePlan) {
+    return { scope: digest('mayura:scope:v1',policy.scope), definition: digest('mayura:workflow:v1',manifest),
+      policy: digest('mayura:policy:v1',policy), resources: digest('mayura:workflow-resources:v1',resources) };
+  }
+  private decode(row: OwnerRow, aggregate: AggregateRow): Owner {
+    try {
+      if (Number(row.profile) !== 1 || row.scope !== aggregate.scope || row.aggregate_id !== aggregate.id || storedInteger(row.aggregate_version) !== storedInteger(aggregate.version)) failed();
+      const raw = object(JSON.parse(row.data)); fields(raw,['format','manifest','policy','resources','clockFloor','commands']);
+      if (raw['format'] !== 1) failed(); integer(raw['clockFloor']);
+      const manifest = workflowManifest(raw['manifest']); const policy = workflowPolicy(raw['policy']); const resources = workflowResources(raw['resources'],manifest);
+      if (!same(manifest,raw['manifest']) || !same(policy,raw['policy']) || !same(resources,raw['resources'])) failed();
+      const hashes = this.hashEnrollment(manifest,policy,resources);
+      if (hashes.scope !== aggregate.scope || hashes.definition !== aggregate.definition_hash || hashes.definition !== row.definition_hash || hashes.policy !== row.policy_hash || hashes.resources !== row.resource_hash) failed();
+      if (!Array.isArray(raw['commands']) || raw['commands'].length > 1024) failed();
+      const ids = new Set<string>(); let lastVersion = 0;
+      for (const entry of raw['commands']) {
+        const command = object(entry); fields(command,['id','digest','version','operation']);
+        const id = identifier(command['id'],'Stored command'); if (ids.has(id)) failed(); ids.add(id);
+        hash(command['digest']); identifier(command['operation'],'Stored operation'); integer(command['version'],1,storedInteger(aggregate.version));
+        if ((command['version'] as number) <= lastVersion) failed(); lastVersion = command['version'] as number;
+      }
+      return { format: 1, manifest, policy, resources, clockFloor: raw['clockFloor'] as number, commands: raw['commands'] as unknown as Journal[] };
+    } catch { return failed(); }
+  }
+  private checkedState(row: AggregateRow, owner: Owner): WorkflowFormat2State {
+    try {
+      const state = workflowState(aggregateRecord(row)); assertWorkflowStateMatchesManifest(state,owner.manifest);
+      const hashes = this.hashEnrollment(owner.manifest,owner.policy,owner.resources);
+      if (state.definition !== hashes.definition || state.policy !== hashes.policy || state.maxCostMicros !== owner.policy.maxCostMicros) failed();
+      jsonValue(state.input,{maxBytes:owner.policy.maxOutputBytes}); jsonValue(state.output,{maxBytes:owner.policy.maxOutputBytes});
+      for (const step of Object.values(state.steps)) jsonValue(step.output,{maxBytes:owner.policy.maxOutputBytes});
+      return state;
+    } catch { return failed(); }
+  }
+  private async load(tx: SchedulerSession, scope: string, id: string, policyHash: string, skip = false): Promise<LockedRun | undefined> {
+    const row = await loadAggregate(tx,this.backend,scope,id,skip);
+    if (!row) { if (skip) return undefined; throw new StorageError('NOT_FOUND','Workflow was not found in this scope.'); }
+    const ownerRow = (await tx.query<OwnerRow>(`SELECT * FROM ${this.table('owners')} WHERE scope = ? AND aggregate_id = ?`,[scope,id]))[0];
+    if (!ownerRow) throw new StorageError('SCHEDULED_WRITER_REQUIRED','The run is not enrolled in scheduled execution.');
+    const owner = this.decode(ownerRow,row); if (ownerRow.policy_hash !== policyHash) conflict();
+    const state = this.checkedState(row,owner);
+    // Lock every bounded owned job before touching any resource. Controls can safely visit them in any order afterwards.
+    const jobRows = await tx.query<{ job_id: string }>(`SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ? ORDER BY job_id${lockSql(this.backend)}`,[scope,id]);
+    // A control command may release several jobs' holds: acquire those rows in one global key order.
+    await tx.query(`SELECT resource_key FROM ${this.backend.prefix}mayura_scheduler_resources WHERE scope = ? AND job_id IN (SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ?) ORDER BY resource_key${lockSql(this.backend)}`,[scope,scope,id]);
+    const links = await tx.query<Link>(`SELECT node_id, job_id FROM ${this.table('jobs')} WHERE scope = ? AND aggregate_id = ? ORDER BY job_id`,[scope,id]);
+    if (links.length > 128 || links.length !== jobRows.length || links.some((link,index) => link.job_id !== jobRows[index]?.job_id)) failed();
+    const events: StoredEventInput[] = []; const clock = { value: owner.clockFloor }; const jobs: JobRecord[] = [];
+    const local = this.scheduler.inSession(tx,id,events,undefined,clock);
+    for (const link of links) {
+      const job = await local.execute('read',{scope,jobId:link.job_id}) as JobRecord | undefined;
+      const node = owner.manifest.graph.find(node => node.id === link.node_id); const step = state.steps[link.node_id];
+      if (!job || !node || node.kind !== 'tool' || !step || job.nodeId !== node.id || job.runId !== id
+        || job.definitionHash !== row.definition_hash || job.candidateHash !== step.candidateHash
+        || job.intent['toolId'] !== node.tool || job.intent['callId'] !== `${id}/${step.callId}`
+        || job.intent['policyHash'] !== policyHash || !same(job.resourceKeys,owner.resources[node.id])) failed();
+      if (job.state === 'succeeded' && (step.status !== 'succeeded' || !same(step.output,job.output) || !same(step.receipt,job.receipt))) failed();
+      if (['ready','leased'].includes(job.state) && !['pending','approved'].includes(step.status)) failed();
+      if (job.state === 'started' && step.status !== 'dispatching') failed();
+      jobs.push(job);
+    }
+    for (const [nodeId,step] of Object.entries(state.steps)) if (step.candidateHash !== null && !links.some(link => link.node_id === nodeId)) failed();
+    clock.value = await storageClock(tx,this.backend,clock.value);
+    const run = { row,owner,ownerRow,state,jobs,clock,events };
+    await this.checkProjection(tx,run); return run;
+  }
+  /** Independently derive effect facts and accounting from the attempt ledger, never from aggregate claims. */
+  private async checkProjection(tx: SchedulerSession,run: LockedRun): Promise<void> {
+    try {
+      let spent = 0;
+      for (const node of run.owner.manifest.graph) {
+        const step = run.state.steps[node.id]!; const job = run.jobs.find(item => item.nodeId === node.id);
+        if (!job) {
+          if (step.candidateHash !== null || step.receipt !== null || step.costReserved !== 0 || step.status === 'dispatching' || step.status === 'unknown') failed();
+          if (node.kind === 'tool' && step.status === 'succeeded') failed();
+          if (node.kind === 'join' && step.status === 'succeeded' && !same(step.output,node.dependsOn.map(id => run.state.steps[id]!.output))) failed();
+          continue;
+        }
+        if (node.kind !== 'tool' || step.candidateHash === null) failed();
+        const allowed: Record<JobRecord['state'], readonly string[]> = {
+          ready: [node.approval ? 'approved' : 'pending'], leased: [node.approval ? 'approved' : 'pending'],
+          started: ['dispatching'], succeeded: ['succeeded'], failed: ['failed'], blocked: ['blocked'],
+          cancelled: ['skipped','failed','blocked'], outcome_unknown: ['unknown'],
+        };
+        if (!allowed[job.state].includes(step.status) || (node.approval && !step.approval?.humanId)) failed();
+        let projected: ExecutionReceipt | null = null;
+        if (job.fence > 0) {
+          const evidence = await this.local(tx,run).execute('receipts',{scope:run.row.scope,jobId:job.jobId,fence:job.fence}) as SchedulerEvidence[];
+          for (const item of evidence) if (item.disposition !== 'conflicting') projected = mergeWorkflowReceipt(projected,item.receipt);
+        }
+        if (projected && job.state === 'succeeded') projected = { ...projected,disclosure:'released' };
+        if (!same(projected,step.receipt)) failed();
+        const known = projected !== null && projected.execution !== 'unknown';
+        const expectedReservation = known || (job.startedAtMs === null && ['cancelled','blocked'].includes(job.state)) ? 0 : node.costMicros;
+        if (step.costReserved !== expectedReservation) failed();
+        if (known && projected && projected.execution !== 'not_started') spent = nextCounter(spent,node.costMicros);
+      }
+      if (spent !== run.state.spentMicros || (['succeeded','failed','blocked','outcome_unknown'].includes(run.state.status)
+        && Object.values(run.state.steps).some(step => !terminalSteps.has(step.status)))) failed();
+    } catch { failed(); }
+  }
+  private snapshot(run: LockedRun): ScheduledWorkflowSnapshot {
+    return { record: aggregateRecord(run.row), profile:'scheduled-v1', manifestHash:run.ownerRow.definition_hash,
+      policyHash:run.ownerRow.policy_hash, resourceHash:run.ownerRow.resource_hash, jobs:run.jobs };
+  }
+  private local(tx: SchedulerSession, run: LockedRun, jobId?: string, admissionExpiresAt?: number): SchedulerDatabase {
+    return this.scheduler.inSession(tx,run.row.id,run.events,jobId,run.clock,admissionExpiresAt);
+  }
+  private replaceJob(run: LockedRun, job: JobRecord): void {
+    const index = run.jobs.findIndex(item => item.jobId === job.jobId); if (index < 0) run.jobs.push(job); else run.jobs[index] = job;
+    run.jobs.sort((a,b) => a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0);
+  }
+  private semantic(method: ScheduledMethod, input: JsonObject): string {
+    const value = { ...input }; delete value['expectedVersion'];
+    if (value['claim']) { const token = { ...value['claim'] as JsonObject }; delete token['leaseUntilMs']; value['claim'] = token; }
+    return digest('mayura:scheduled-command:v1',{ operation:method,...value });
+  }
+  private retry(run: LockedRun, method: ScheduledMethod, input: JsonObject): boolean {
+    if (input['commandId'] === undefined) return false;
+    const previous = run.owner.commands.find(item => item.id === input['commandId']);
+    if (!previous) return false; if (previous.digest !== this.semantic(method,input) || previous.operation !== method) conflict(); return true;
+  }
+  private journal(run: LockedRun, method: ScheduledMethod, input: JsonObject): void {
+    if (input['commandId'] === undefined) return;
+    if (run.owner.commands.length >= 1024) limited();
+    run.owner.commands.push({ id:input['commandId'] as string,digest:this.semantic(method,input),version:nextCounter(storedInteger(run.row.version),1),operation:method });
+  }
+  private async save(tx: SchedulerSession, run: LockedRun, method?: ScheduledMethod, input?: JsonObject, event?: StoredEventInput): Promise<void> {
+    if (method && input) this.journal(run,method,input);
+    if (event) run.events.push(event);
+    if (run.events.length === 0) run.events.push({type:'workflow.control',data:{operation:method ?? 'projection'}});
+    run.owner.clockFloor = run.clock.value;
+    const next = jsonValue(run.state) as JsonObject;
+    this.checkedState({ ...run.row,state:JSON.stringify(next) },run.owner);
+    await this.checkProjection(tx,run);
+    run.row = await writeAggregate(tx,this.backend,run.row,next,run.events,run.clock.value);
+    run.ownerRow.aggregate_version = run.row.version; run.ownerRow.data = JSON.stringify(object(run.owner));
+    await tx.query(`UPDATE ${this.table('owners')} SET aggregate_version = ?, data = ? WHERE scope = ? AND aggregate_id = ?`,[run.row.version,run.ownerRow.data,run.row.scope,run.row.id]);
+    run.events.length = 0;
+  }
+  private node(run: LockedRun,id: string): ToolNode {
+    const node = run.owner.manifest.graph.find(node => node.id === id); if (!node || node.kind !== 'tool') conflict(); return node;
+  }
+  private ready(run: LockedRun,node: WorkflowManifestNode): void {
+    if (terminalRuns.has(run.state.status) || node.dependsOn.some(id => run.state.steps[id]?.status !== 'succeeded')) conflict();
+  }
+  private unprepared(run: LockedRun,node: ToolNode): WorkflowFormat2Step {
+    this.ready(run,node); const step = run.state.steps[node.id]!;
+    if (run.jobs.some(job => job.nodeId === node.id) || !['pending','waiting','approved'].includes(step.status) || step.receipt || step.costReserved || step.candidateHash) conflict();
+    return step;
+  }
+  private authorized(run: LockedRun,node: ToolNode): boolean {
+    return [`tool:${node.tool}`,...node.capabilities,...(node.effects === 'none' ? [] : [`effect:${node.effects}`])].every(grant => run.owner.policy.permissions.includes(grant));
+  }
+  private candidate(run: LockedRun,node: ToolNode,input: JsonValue,expiresAt: number | null): string {
+    try { jsonValue(input,{maxBytes:run.owner.policy.maxOutputBytes}); }
+    catch { throw new StorageError('INVALID_INPUT','Candidate input exceeds the pinned workflow limit.'); }
+    return digest('mayura:approval:v1',{runId:run.row.id,nodeId:node.id,tool:node.tool,toolVersion:node.toolVersion,input,policy:run.ownerRow.policy_hash,expiresAt});
+  }
+  private refund(run: LockedRun,step: WorkflowFormat2Step,executed = false): void {
+    run.state.reservedMicros -= step.costReserved;
+    if (executed) run.state.spentMicros = nextCounter(run.state.spentMicros,step.costReserved);
+    step.costReserved = 0;
+  }
+  private async refreshJob(tx: SchedulerSession,run: LockedRun,jobId: string): Promise<JobRecord> {
+    const job = await this.local(tx,run).execute('read',{scope:run.row.scope,jobId}) as JobRecord | undefined;
+    if (!job) failed(); this.replaceJob(run,job); return job;
+  }
+  private job(run: LockedRun,input: JsonObject): JobRecord {
+    const token = input['claim'] as unknown as Claim | undefined; const id = token?.jobId ?? input['jobId'];
+    if (token && token.scope !== run.row.scope) conflict();
+    const job = run.jobs.find(job => job.jobId === id); if (!job) conflict(); return job;
+  }
+  private mirrorJob(run: LockedRun,job: JobRecord): void {
+    const step = run.state.steps[job.nodeId]!;
+    if (job.state === 'outcome_unknown') { step.status = 'unknown'; step.output = null; }
+    else if (job.state === 'cancelled' && job.startedAtMs === null) { if (!terminalSteps.has(step.status)) step.status = 'skipped'; this.refund(run,step); }
+    else if (job.state === 'blocked' && job.startedAtMs === null) { step.status = 'blocked'; this.refund(run,step); }
+  }
+  private async cancelJob(tx: SchedulerSession,run: LockedRun,job: JobRecord,commandId: string): Promise<JobRecord> {
+    const result = await this.local(tx,run).execute('cancel',{scope:run.row.scope,jobId:job.jobId,commandId}) as JobRecord;
+    this.replaceJob(run,result); this.mirrorJob(run,result); return result;
+  }
+  private expiredReview(run: LockedRun,job: JobRecord): boolean {
+    const node = this.node(run,job.nodeId); const review = run.state.steps[node.id]!.approval;
+    return node.approval && (!review || review.expiresAt <= run.clock.value);
+  }
+  /** Leave room for every future receipt, review identity and control counter before releasing output.
+   * A full aggregate must never prevent cancellation or settlement of an already-started effect.
+   * Control characters deliberately bound JSON escaping for a maximum-size verified human identity.
+   */
+  private admitsOutput(run: LockedRun,value: JsonValue,nodeId?: string): boolean {
+    try {
+      const output = jsonValue(value,{maxBytes:run.owner.policy.maxOutputBytes});
+      const steps: WorkflowFormat2State['steps'] = {};
+      for (const node of run.owner.manifest.graph) {
+        const step = { ...run.state.steps[node.id]!,output:node.id === nodeId ? output : run.state.steps[node.id]!.output };
+        if (node.kind === 'tool') {
+          step.status = 'dispatching'; step.candidateHash = 'f'.repeat(64); step.costReserved = Number.MAX_SAFE_INTEGER;
+          step.receipt = {callId:`${run.row.id}/${step.callId}`,toolId:node.tool,execution:'not_started',disclosure:'withheld'};
+          step.approval = node.approval ? {digest:'f'.repeat(64),expiresAt:Number.MAX_SAFE_INTEGER,humanId:'\u0001'.repeat(256)} : null;
+        } else step.status = 'succeeded';
+        steps[node.id] = step;
+      }
+      // This is a size/depth/node-count projection only, not a persistable execution state.
+      jsonValue({...run.state,status:'outcome_unknown',steps,spentMicros:Number.MAX_SAFE_INTEGER,reservedMicros:Number.MAX_SAFE_INTEGER,
+        output:nodeId === undefined ? output : run.state.output});
+      return true;
+    } catch { return false; }
+  }
+  private async blockExpiredReview(tx: SchedulerSession,run: LockedRun,job: JobRecord): Promise<boolean> {
+    if (job.startedAtMs !== null || !['ready','leased'].includes(job.state) || !this.expiredReview(run,job)) return false;
+    await this.cancelJob(tx,run,job,`review-expired:${job.jobId}`); run.state.steps[job.nodeId]!.status = 'blocked';
+    run.events.push({type:'approval.expired',data:{nodeId:job.nodeId}}); return true;
+  }
+  private async observeReviewExpiry(tx: SchedulerSession,run: LockedRun,nodeId: string): Promise<void> {
+    const job = run.jobs.find(item => item.nodeId === nodeId);
+    if (job) await this.blockExpiredReview(tx,run,job);
+    if (run.events.length === 0 && run.clock.value > run.owner.clockFloor) run.events.push({type:'approval.expiry_observed',data:{nodeId}});
+    // A rejected approval is not journaled as a successful command. Its monotonic observation is
+    // nevertheless durable, so wall-clock rollback cannot make the same expired digest live again.
+    if (run.events.length > 0) await this.save(tx,run);
+  }
+  private advance(run: LockedRun): void {
+    if (terminalRuns.has(run.state.status)) return;
+    for (let pass = 0; pass < run.owner.manifest.graph.length; pass++) {
+      let changed = false;
+      for (const node of run.owner.manifest.graph) {
+        const step = run.state.steps[node.id]!;
+        if (!['pending','waiting','approved'].includes(step.status) || run.jobs.some(job => job.nodeId === node.id)) continue;
+        const dependencies = node.dependsOn.map(id => run.state.steps[id]!);
+        if (dependencies.some(step => terminalSteps.has(step.status) && step.status !== 'succeeded')) {
+          step.status = 'skipped'; changed = true; run.events.push({type:'step.skipped',data:{nodeId:node.id}});
+        } else if (node.kind === 'join' && dependencies.every(step => step.status === 'succeeded')) {
+          const output = dependencies.map(step => step.output);
+          if (this.admitsOutput(run,output,node.id)) { step.output = output; step.status = 'succeeded'; run.events.push({type:'step.completed',data:{nodeId:node.id}}); }
+          else { step.output = null; step.status = 'failed'; run.events.push({type:'step.failed',data:{nodeId:node.id,reason:'OUTPUT_LIMIT'}}); }
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    const steps = Object.values(run.state.steps);
+    if (steps.every(step => terminalSteps.has(step.status)) && !steps.every(step => step.status === 'succeeded')) {
+      run.state.status = steps.some(step => step.status === 'unknown') ? 'outcome_unknown' : steps.some(step => step.status === 'blocked') ? 'blocked' : 'failed';
+    } else run.state.status = steps.some(step => step.status === 'waiting') && !steps.some(step => step.status === 'dispatching') ? 'waiting' : 'running';
+  }
+  private async initialize(): Promise<void> {
+    if (this.initialized) return; await this.scheduler.execute('initialize',{});
+    await this.backend.transaction(async tx => {
+      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:scheduled-schema:${this.backend.prefix}`]);
+      await initializeOwnership(tx,this.backend);
+      await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('jobs')} (scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, node_id TEXT NOT NULL, job_id TEXT NOT NULL,
+        PRIMARY KEY(scope,aggregate_id,node_id), UNIQUE(scope,job_id), FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table('owners')}(scope,aggregate_id),
+        FOREIGN KEY(scope,job_id) REFERENCES ${this.backend.prefix}mayura_scheduler_jobs(scope,job_id))`);
+    }); this.initialized = true;
+  }
+  private async enroll(tx: SchedulerSession,row: AggregateRow,input: JsonObject,now: number): Promise<LockedRun> {
+    const manifest = input['manifest'] as unknown as WorkflowManifest; const policy = input['policy'] as unknown as WorkflowPolicyManifest;
+    const resources = input['resources'] as unknown as WorkflowResourcePlan; const hashes = this.hashEnrollment(manifest,policy,resources);
+    if (hashes.scope !== row.scope || hashes.definition !== row.definition_hash) conflict();
+    const existingState = workflowState(aggregateRecord(row));
+    if (existingState.policy !== hashes.policy || existingState.maxCostMicros !== policy.maxCostMicros) conflict();
+    const owner: Owner = {format:1,manifest,policy,resources,clockFloor:now,commands:[]}; const state = this.checkedState(row,owner);
+    if (state.status !== 'running' || state.spentMicros !== 0 || state.reservedMicros !== 0 || state.output !== null || Object.values(state.steps).some(step => step.status !== 'pending' || step.receipt !== null || step.approval !== null || step.candidateHash !== null || step.costReserved !== 0 || step.output !== null)) conflict();
+    if ((await tx.query(`SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ? LIMIT 1`,[row.scope,row.id])).length) conflict();
+    const ownerRow: OwnerRow = {scope:row.scope,aggregate_id:row.id,profile:1,aggregate_version:row.version,definition_hash:hashes.definition,policy_hash:hashes.policy,resource_hash:hashes.resources,data:JSON.stringify(object(owner))};
+    await tx.query(`INSERT INTO ${this.table('owners')} (scope,aggregate_id,profile,aggregate_version,definition_hash,policy_hash,resource_hash,data) VALUES (?,?,1,?,?,?,?,?)`,[row.scope,row.id,row.version,hashes.definition,hashes.policy,hashes.resources,ownerRow.data]);
+    return {row,owner,ownerRow,state,jobs:[],clock:{value:now},events:[]};
+  }
+  private async submit(input: JsonObject): Promise<unknown> {
+    const manifest = input['manifest'] as unknown as WorkflowManifest; const policy = input['policy'] as unknown as WorkflowPolicyManifest; const resources = input['resources'] as unknown as WorkflowResourcePlan;
+    const hashes = this.hashEnrollment(manifest,policy,resources); const key = input['idempotencyKey'] as string;
+    const id = digest('mayura:run-id:v1',{scope:hashes.scope,submissionKey:key}); jsonValue(input['input'],{maxBytes:policy.maxOutputBytes});
+    const state = initialWorkflowState(manifest,input['input']!,hashes.definition,hashes.policy,policy.maxCostMicros);
+    return this.backend.transaction(async tx => {
+      await lockRunIdentity(tx,this.backend,hashes.scope,id); await loadAggregate(tx,this.backend,hashes.scope,id);
+      const now = await storageClock(tx,this.backend);
+      const created = await createAggregate(tx,this.backend,createCommand({scope:hashes.scope,id,idempotencyKey:key,definitionHash:hashes.definition,state:jsonValue(state) as JsonObject,events:[{type:'run.created',data:{}}]}),now);
+      if (!created.created) {
+        const run = await this.load(tx,hashes.scope,id,hashes.policy); if (!run || run.ownerRow.resource_hash !== hashes.resources) conflict();
+        return {snapshot:this.snapshot(run),created:false};
+      }
+      const run = await this.enroll(tx,created.row,input,now); await this.save(tx,run,undefined,undefined,{type:'workflow.enrolled',data:{profile:'scheduled-v1'}});
+      return {snapshot:this.snapshot(run),created:true};
+    });
+  }
+  async execute(method: ScheduledMethod,value: unknown): Promise<unknown> {
+    const input = scheduledCommand(method,value);
+    if (method === 'initialize') return this.initialize();
+    if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize scheduled workflow storage before use.');
+    if (method === 'submit') return this.submit(input);
+    if (method === 'claim') return this.claim(input);
+    const result = await this.backend.transaction(async tx => {
+      const scope = input['scope'] as string; const id = input['id'] as string; const policyHash = input['policyHash'] as string;
+      let run: LockedRun;
+      if (method === 'attach') {
+        await lockRunIdentity(tx,this.backend,scope,id); const row = await loadAggregate(tx,this.backend,scope,id);
+        if (!row) throw new StorageError('NOT_FOUND','Workflow was not found in this scope.');
+        const exists = (await tx.query(`SELECT aggregate_id FROM ${this.table('owners')} WHERE scope = ? AND aggregate_id = ?`,[scope,id])).length > 0;
+        if (exists) { const previous = await this.load(tx,scope,id,policyHash); if (!previous || !this.retry(previous,method,input)) conflict(); return this.snapshot(previous); }
+        if (storedInteger(row.version) !== input['expectedVersion']) conflict();
+        const hashes = this.hashEnrollment(input['manifest'] as unknown as WorkflowManifest,input['policy'] as unknown as WorkflowPolicyManifest,input['resources'] as unknown as WorkflowResourcePlan);
+        if (hashes.policy !== policyHash) conflict();
+        run = await this.enroll(tx,row,input,await storageClock(tx,this.backend));
+        await this.save(tx,run,method,input,{type:'workflow.enrolled',data:{profile:'scheduled-v1'}}); return this.snapshot(run);
+      }
+      run = (await this.load(tx,scope,id,policyHash))!;
+      const originalState = JSON.stringify(run.state);
+      if (method === 'inspect') return this.snapshot(run);
+      if (this.retry(run,method,input)) return method === 'start' ? {status:'already_started',snapshot:this.snapshot(run)} : this.snapshot(run);
+      if (input['expectedVersion'] !== undefined && input['expectedVersion'] !== storedInteger(run.row.version)) conflict();
+      if (method === 'recordReceipt') {
+        const job = this.job(run,input); const result = await this.local(tx,run).execute('recordReceipt',{scope,jobId:job.jobId,fence:input['fence'],evidenceId:input['evidenceId'],receipt:input['receipt']}) as {disposition:EvidenceDisposition;job:JobRecord};
+        if (run.events.length === 0) return this.snapshot(run);
+        this.replaceJob(run,result.job); const step = run.state.steps[job.nodeId]!; const receipt = input['receipt'] as unknown as ExecutionReceipt;
+        if (result.disposition !== 'conflicting') {
+          step.receipt = mergeWorkflowReceipt(step.receipt,receipt);
+          if (receipt.execution !== 'unknown' && step.costReserved > 0) this.refund(run,step,receipt.execution !== 'not_started');
+        }
+        this.mirrorJob(run,result.job); await this.save(tx,run); return this.snapshot(run);
+      }
+      if (method === 'requestApproval' || method === 'approve' || method === 'prepare' || method === 'failNode') {
+        const node = this.node(run,input['nodeId'] as string); const previous = run.state.steps[node.id]!;
+        const expired = node.approval && previous.approval !== null && previous.approval.expiresAt <= run.clock.value;
+        if (expired && method !== 'failNode' && (method !== 'requestApproval' || run.jobs.some(job => job.nodeId === node.id))) {
+          await this.observeReviewExpiry(tx,run,node.id); return REVIEW_EXPIRED;
+        }
+        const step = this.unprepared(run,node);
+        if (method === 'requestApproval') {
+          if (!node.approval || !this.authorized(run,node)) conflict();
+          if (step.approval && step.approval.expiresAt > run.clock.value && step.approval.digest === this.candidate(run,node,input['input']!,step.approval.expiresAt)) return this.snapshot(run);
+          let expiresAt: number; let candidate: string;
+          try { expiresAt = nextCounter(run.clock.value,run.owner.policy.approvalTtlMs); candidate = this.candidate(run,node,input['input']!,expiresAt); }
+          catch (error) { if (!expired) throw error; await this.observeReviewExpiry(tx,run,node.id); return REVIEW_EXPIRED; }
+          step.approval = {digest:candidate,expiresAt,humanId:null}; step.status = 'waiting'; run.state.status = 'waiting';
+        } else if (method === 'approve') {
+          if (!node.approval || step.status !== 'waiting' || !step.approval || step.approval.digest !== input['digest'] || step.approval.expiresAt <= run.clock.value) conflict();
+          step.approval.humanId = input['humanId'] as string; step.status = 'approved'; run.state.status = 'running';
+        } else if (method === 'failNode') { step.status = input['outcome'] as 'failed'|'blocked'; }
+        else {
+          if (!this.authorized(run,node)) conflict();
+          const expiresAt = node.approval ? step.approval?.expiresAt ?? 0 : null; const candidate = this.candidate(run,node,input['input']!,expiresAt);
+          if (node.approval && (step.status !== 'approved' || !step.approval?.humanId || step.approval.digest !== candidate || step.approval.expiresAt <= run.clock.value)) conflict();
+          if (node.costMicros > run.state.maxCostMicros - run.state.spentMicros - run.state.reservedMicros) { step.status = 'blocked'; }
+          else {
+            const jobId = digest('mayura:workflow-job:v1',{scope,id,nodeId:node.id});
+            const job = (await this.local(tx,run).execute('reserve',{scope,jobId,reservationKey:jobId,runId:id,nodeId:node.id,invocationId:`${id}/${step.callId}`,definitionHash:run.ownerRow.definition_hash,candidateHash:candidate,
+              intent:{toolId:node.tool,callId:`${id}/${step.callId}`,policyHash},resourceKeys:run.owner.resources[node.id]!,delayMs:0}) as {job:JobRecord}).job;
+            await tx.query(`INSERT INTO ${this.table('jobs')} (scope,aggregate_id,node_id,job_id) VALUES (?,?,?,?)`,[scope,id,node.id,jobId]);
+            step.candidateHash = candidate; step.costReserved = node.costMicros; run.state.reservedMicros = nextCounter(run.state.reservedMicros,node.costMicros);
+            this.replaceJob(run,job);
+          }
+        }
+        await this.save(tx,run,method,input,{type:method === 'requestApproval' ? 'approval.requested' : method === 'approve' ? 'approval.resolved' : method === 'prepare' ? 'step.prepared' : 'step.failed',data:{nodeId:node.id}});
+        return this.snapshot(run);
+      }
+      if (method === 'start' || method === 'renew' || method === 'complete' || method === 'abandon') {
+        const job = this.job(run,input); const token = input['claim'] as unknown as Claim; const step = run.state.steps[job.nodeId]!; const node = this.node(run,job.nodeId);
+        const admissionExpiresAt = node.approval ? step.approval?.expiresAt ?? 0 : undefined;
+        if (method !== 'renew' && terminalRuns.has(run.state.status)) conflict();
+        if (await this.blockExpiredReview(tx,run,job)) { await this.save(tx,run); return STALE; }
+        try {
+          if (method === 'renew') {
+            const renewed = await this.local(tx,run,job.jobId,admissionExpiresAt).execute('renew',{claim:token,leaseMs:input['leaseMs']}) as Claim;
+            await this.refreshJob(tx,run,job.jobId); await this.save(tx,run); return renewed;
+          }
+          if (method === 'start') {
+            if (!this.authorized(run,node) || this.candidate(run,node,input['input']!,node.approval ? step.approval?.expiresAt ?? 0 : null) !== step.candidateHash) conflict();
+            this.ready(run,node);
+            if (node.approval && (step.status !== 'approved' && step.status !== 'dispatching' || !step.approval?.humanId || step.approval.expiresAt <= run.clock.value)) conflict();
+            const started = await this.local(tx,run,job.jobId,admissionExpiresAt).execute('start',{claim:token,candidateHash:step.candidateHash}) as {status:'started'|'already_started';job:JobRecord};
+            this.replaceJob(run,started.job);
+            if (started.status === 'already_started') return {status:'already_started',snapshot:this.snapshot(run)};
+            step.status = 'dispatching'; run.state.status = 'running'; await this.save(tx,run,method,input,{type:'step.dispatching',data:{nodeId:node.id}});
+            return {status:'started',snapshot:this.snapshot(run)};
+          }
+          if (method === 'abandon') {
+            // A live renewal validates the precise never-started token without manufacturing a start marker.
+            if (job.startedAtMs !== null || job.state !== 'leased') conflict();
+            await this.local(tx,run,job.jobId,admissionExpiresAt).execute('renew',{claim:token,leaseMs:1000});
+            await this.cancelJob(tx,run,job,digest('mayura:scheduled-internal-command:v1',{operation:'abandon',commandId:input['commandId']})); step.status = input['outcome'] as 'failed'|'blocked';
+          } else {
+            if (step.status !== 'dispatching') conflict();
+            const outputAllowed = input['outcome'] !== 'succeeded' || this.admitsOutput(run,input['output']!,node.id);
+            const outcome = outputAllowed ? input['outcome'] as 'succeeded'|'failed'|'blocked' : 'blocked';
+            const completed = await this.local(tx,run).execute('complete',{claim:token,commandId:input['commandId'],evidenceId:input['evidenceId'],outcome,output:outcome === 'succeeded' ? input['output'] : null}) as JobRecord;
+            this.replaceJob(run,completed); step.receipt = completed.receipt; step.status = outcome; step.output = completed.output;
+            if (!outputAllowed) run.events.push({type:'step.output_blocked',data:{nodeId:node.id,reason:'OUTPUT_LIMIT'}});
+            if (step.costReserved > 0 && step.receipt && step.receipt.execution !== 'unknown') this.refund(run,step,step.receipt.execution !== 'not_started');
+          }
+          await this.save(tx,run,method,input,{type:'step.completed',data:{nodeId:node.id,outcome:step.status}}); return this.snapshot(run);
+        } catch (error) {
+          if (!(error instanceof StorageError) || error.code !== 'STALE_CLAIM') throw error;
+          await this.blockExpiredReview(tx,run,job);
+          if (run.events.length > 0) { this.mirrorJob(run,await this.refreshJob(tx,run,job.jobId)); await this.save(tx,run); }
+          return STALE;
+        }
+      }
+      if (method === 'cancel') {
+        if (!terminalRuns.has(run.state.status)) {
+          run.state.status = 'cancelled'; run.state.output = null;
+          for (const job of [...run.jobs]) await this.cancelJob(tx,run,job,digest('mayura:scheduled-internal-command:v1',{operation:'cancel',commandId:input['commandId']}));
+          for (const [nodeId,step] of Object.entries(run.state.steps)) if (!run.jobs.some(job => job.nodeId === nodeId) && !terminalSteps.has(step.status)) step.status = 'skipped';
+        }
+      } else if (method === 'recover') {
+        for (const job of [...run.jobs]) {
+          if (await this.blockExpiredReview(tx,run,job)) continue;
+          const recovered = await this.local(tx,run,job.jobId).execute('recover',{scope,limit:1}) as JobRecord[];
+          for (const item of recovered) { this.replaceJob(run,item); this.mirrorJob(run,item); }
+        }
+        this.advance(run);
+      } else if (method === 'advance') this.advance(run);
+      else if (method === 'finalize') {
+        if (terminalRuns.has(run.state.status) || Object.values(run.state.steps).some(step => step.status !== 'succeeded') || run.state.reservedMicros !== 0) conflict();
+        if (input['validation'] === 'passed' && this.admitsOutput(run,input['output']!)) { run.state.output = input['output']!; run.state.status = 'succeeded'; }
+        else { run.state.output = null; run.state.status = 'failed'; }
+      } else conflict();
+      // A no-op is not a committed transition, so it consumes neither a version nor a command journal entry.
+      if (run.events.length === 0 && JSON.stringify(run.state) === originalState) return this.snapshot(run);
+      await this.save(tx,run,method,input,{type:method === 'cancel' ? 'run.cancelled' : method === 'finalize' ? 'run.completed' : 'workflow.advanced',data:{status:run.state.status}});
+      return this.snapshot(run);
+    });
+    if (result === STALE) throw new StorageError('STALE_CLAIM','Scheduled ownership expired or no longer permits the transition.');
+    if (result === REVIEW_EXPIRED) throw new StorageError('CONFLICT','The approval expired; request a new review before admission.');
+    return result;
+  }
+  private async claim(input: JsonObject): Promise<unknown> {
+    const scope = input['scope'] as string; const id = input['id'] as string; const policy = input['policyHash'] as string;
+    const hints = await this.backend.transaction(async tx => { const run = await this.load(tx,scope,id,policy); return run?.jobs.filter(job => job.state === 'ready').map(job => job.jobId) ?? []; });
+    const results: {job:JobRecord;claim:Claim}[] = [];
+    for (const jobId of hints) {
+      if (results.length >= (input['limit'] as number)) break;
+      try {
+        const result = await this.backend.transaction(async tx => {
+          // This is an explicit run request, not a global queue scan: skipping its busy aggregate
+          // can make every cooperating worker return while eligible work is still ready.
+          const run = await this.load(tx,scope,id,policy); if (!run || terminalRuns.has(run.state.status)) return undefined;
+          const job = run.jobs.find(job => job.jobId === jobId); if (!job || job.state !== 'ready') return undefined;
+          if (await this.blockExpiredReview(tx,run,job)) { await this.save(tx,run); return undefined; }
+          const claims = await this.local(tx,run,jobId).execute('claim',{scope,workerId:input['workerId'],limit:1,leaseMs:input['leaseMs']}) as {job:JobRecord;claim:Claim}[];
+          if (!claims[0]) return undefined; this.replaceJob(run,claims[0].job);
+          // Resource acquisition can wait; recheck review expiry using the scheduler's post-lock clock.
+          if (await this.blockExpiredReview(tx,run,claims[0].job)) { await this.save(tx,run); return undefined; }
+          await this.save(tx,run); return claims[0];
+        });
+        if (result) results.push(result);
+      } catch (error) { if (!(error instanceof ResourceBusy)) throw error; }
+    }
+    return results;
+  }
+}

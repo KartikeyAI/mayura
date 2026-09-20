@@ -1,16 +1,10 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
-import { StorageError, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
+import { StorageError, workflowState, workflowOutputs, mergeWorkflowReceipt,
+  type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
+  type WorkflowFormat2Status as Status, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
 
-type StepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped';
-interface Approval { digest: string; expiresAt: number; humanId: string | null }
-interface Step { kind: 'tool' | 'join'; status: StepStatus; callId: string; output: JsonValue; receipt: ExecutionReceipt | null; approval: Approval | null; costReserved: number; candidateHash: string | null }
-type Status = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
-interface State {
-  format: 2; definition: string; policy: string; input: JsonValue; status: Status;
-  steps: Record<string, Step>; maxCostMicros: number; spentMicros: number; reservedMicros: number; output: JsonValue;
-}
 export interface WorkflowSnapshot {
   readonly id: string; readonly version: number; readonly status: Status;
   readonly steps: Readonly<Record<string, Readonly<Step>>>;
@@ -26,8 +20,6 @@ export interface WorkflowRuntimeOptions {
   readonly verifyHuman?: (credential: unknown) => Promise<VerifiedHuman>;
 }
 const terminalSteps = new Set<StepStatus>(['succeeded', 'failed', 'blocked', 'unknown', 'skipped']);
-const statuses = new Set<Status>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const stepStatuses = new Set<StepStatus>(['pending', 'waiting', 'approved', 'dispatching', ...terminalSteps]);
 
 /** Bounds trusted async callbacks; it cannot terminate synchronous JavaScript or undo effects. */
 async function bounded<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -40,35 +32,8 @@ async function bounded<T>(operation: () => Promise<T>, timeoutMs: number): Promi
 }
 
 function stateFrom(record: StoredRecord): State {
-  const hash = (item: unknown): item is string => typeof item === 'string' && /^[a-f0-9]{64}$/.test(item);
-  const bad = (): never => { throw new MayuraError('CONFLICT', 'Stored workflow state failed integrity validation.'); };
-  let value: State;
-  try { value = jsonValue(record.state) as unknown as State; } catch { return bad(); }
-  if (!value || value.format !== 2 || !statuses.has(value.status) || !value.steps || Array.isArray(value.steps) || typeof value.steps !== 'object' || !hash(value.definition) || !hash(value.policy) || !Object.hasOwn(value, 'input') || !Object.hasOwn(value, 'output') || Object.keys(value).some(key => !['format','definition','policy','input','status','steps','maxCostMicros','spentMicros','reservedMicros','output'].includes(key))) bad();
-  for (const amount of [value.maxCostMicros, value.spentMicros, value.reservedMicros]) if (!Number.isSafeInteger(amount) || amount < 0) throw new MayuraError('CONFLICT', 'Stored workflow budget is invalid.');
-  const entries = Object.entries(value.steps);
-  if (entries.length === 0 || entries.length > 128) bad();
-  let reserved = 0;
-  for (const [id, step] of entries) {
-    if (!step || (step.kind !== 'tool' && step.kind !== 'join') || !stepStatuses.has(step.status) || step.callId !== `step:${id}` || !Number.isSafeInteger(step.costReserved) || step.costReserved < 0 || !Object.hasOwn(step, 'output') || Object.keys(step).some(key => !['kind','status','callId','output','receipt','approval','costReserved','candidateHash'].includes(key))) bad();
-    if (step.candidateHash !== null && !hash(step.candidateHash)) bad();
-    if (step.approval !== null) {
-      if (!step.approval || !hash(step.approval.digest) || !Number.isSafeInteger(step.approval.expiresAt) || step.approval.expiresAt <= 0 || (step.approval.humanId !== null && (typeof step.approval.humanId !== 'string' || !step.approval.humanId.length || step.approval.humanId.length > 256))) bad();
-    }
-    if (step.status === 'approved' && (!step.approval || !step.approval.humanId)) bad();
-    if (step.receipt !== null) {
-      if (!step.receipt || step.receipt.callId !== `${record.id}/${step.callId}` || typeof step.receipt.toolId !== 'string' || !['not_started','succeeded','failed','unknown'].includes(step.receipt.execution) || !['released','withheld'].includes(step.receipt.disclosure)) bad();
-    }
-    if (step.status !== 'succeeded' && step.output !== null) bad();
-    if (step.kind === 'join' && (step.receipt !== null || step.approval !== null || step.candidateHash !== null || step.costReserved !== 0)) bad();
-    if (step.status === 'succeeded' && (step.costReserved !== 0 || (step.kind === 'tool' && (step.receipt?.execution !== 'succeeded' || step.receipt.disclosure !== 'released' || !step.candidateHash)))) bad();
-    reserved += step.costReserved;
-    if (!Number.isSafeInteger(reserved)) bad();
-  }
-  if (reserved !== value.reservedMicros || value.spentMicros > value.maxCostMicros - value.reservedMicros) bad();
-  if (value.status === 'succeeded' && entries.some(([, step]) => step.status !== 'succeeded')) bad();
-  if (value.status !== 'succeeded' && value.output !== null) bad();
-  return value;
+  try { return workflowState(record); }
+  catch { throw new MayuraError('CONFLICT', 'Stored workflow state failed integrity validation.'); }
 }
 
 /** External storage diagnostics never cross the workflow's public error boundary. */
@@ -93,15 +58,12 @@ function snapshot(record: StoredRecord): WorkflowSnapshot {
 
 /** Known evidence is monotonic; stale cancellation snapshots cannot turn success back into unknown. */
 function mergeReceipt(previous: ExecutionReceipt | null, incoming: ExecutionReceipt): ExecutionReceipt {
-  if (previous && previous.execution !== 'unknown') {
-    if (incoming.execution === 'unknown') return previous;
-    if (previous.execution !== incoming.execution) throw new MayuraError('CONFLICT', 'Conflicting known execution evidence requires reconciliation.');
-    if (previous.disclosure === 'released') return previous;
-  }
-  return incoming;
+  try { return mergeWorkflowReceipt(previous, incoming); }
+  catch { throw new MayuraError('CONFLICT', 'Conflicting known execution evidence requires reconciliation.'); }
 }
 function outputs(state: State): Record<string, JsonValue> {
-  return Object.fromEntries(Object.entries(state.steps).filter(([, step]) => step.status === 'succeeded').map(([id, step]) => [id, step.output]));
+  try { return workflowOutputs(state); }
+  catch { throw new MayuraError('CONFLICT', 'Stored workflow output failed integrity validation.'); }
 }
 function initialState(definition: AnyWorkflow, input: JsonValue, policy: string, maxCostMicros: number): State {
   return { format: 2, definition: definition.digest, policy, input, status: 'running', maxCostMicros, spentMicros: 0, reservedMicros: 0, output: null,

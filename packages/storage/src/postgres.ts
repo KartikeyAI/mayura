@@ -2,9 +2,12 @@ import { Pool, type PoolClient } from 'pg';
 import type { CreateRecord, StoredRecord, StoredEvent, UpdateRecord } from './contracts.js';
 import { StorageError, storageError } from './contracts.js';
 import { createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE } from './validation.js';
-import { SchedulerDatabase } from './scheduler-database.js';
+import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
 import { schedulerFacade } from './scheduler-validation.js';
-import type { SchedulerAggregateStore } from './scheduler-contracts.js';
+import type { ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
+import { ScheduledWorkflowDatabase } from './scheduled-database.js';
+import { scheduledFacade } from './scheduled-validation.js';
+import { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
 
 export interface PostgresStoreOptions { readonly connectionString: string; readonly schema?: string }
 interface Row {
@@ -33,7 +36,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): SchedulerAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): ScheduledWorkflowAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -82,16 +85,20 @@ export function createPostgresStore(options: PostgresStoreOptions): SchedulerAgg
     }
   };
 
-  const schedulerDatabase = new SchedulerDatabase({ dialect: 'postgres', prefix: `${prefix}.`, transaction: body => transaction(client => body({
+  const session = (client: PoolClient): SchedulerSession => ({
     query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
       let ordinal = 0;
       // Scheduler SQL uses only positional ? placeholders, never interpolated application text.
       const result = await client.query(sql.replace(/\?/g, () => `$${++ordinal}`), [...parameters]);
       return result.rows as T[];
     },
-  })) });
+  });
+  const backend: SchedulerBackend = { dialect:'postgres',prefix:`${prefix}.`,transaction:body => transaction(client => body(session(client))) };
+  const schedulerDatabase = new SchedulerDatabase(backend);
+  const workflowsDatabase = new ScheduledWorkflowDatabase(backend,schedulerDatabase);
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
+    workflows: scheduledFacade((method,input) => { available(); return workflowsDatabase.execute(method,input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {
@@ -115,6 +122,7 @@ export function createPostgresStore(options: PostgresStoreOptions): SchedulerAgg
             PRIMARY KEY(scope, aggregate_id, sequence),
             FOREIGN KEY(scope, aggregate_id) REFERENCES ${aggregates}(scope, id)
           )`);
+          await initializeOwnership(session(client),backend);
         }).then(() => { initialized = true; }).catch((error: unknown) => { initializePromise = undefined; throw error; });
       }
       await initializePromise;
@@ -155,6 +163,7 @@ export function createPostgresStore(options: PostgresStoreOptions): SchedulerAgg
         const selected = await client.query<Row>(`SELECT * FROM ${aggregates} WHERE scope = $1 AND id = $2 FOR UPDATE`, [input.scope, input.id]);
         const current = selected.rows[0];
         if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+        if (await ownedRun(session(client),backend,input.scope,input.id)) writerRequired();
         const version = integer(current.version);
         const sequence = integer(current.event_sequence);
         if (version !== input.expectedVersion) throw new StorageError('CONFLICT', 'Record version has changed.');

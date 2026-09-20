@@ -1,0 +1,55 @@
+# Opt-in scheduled workflows
+
+Status: implemented experimental opt-in slice, with bounded public conformance on both reference SQL adapters. Existing conservative format-2 runs remain supported; this is not an automatic migration or a complete enterprise release. See the [adoption guide](../scheduled-workflows.md) and [test evidence](../testing-scheduled-workflows.md).
+
+## Architecture and scope
+
+`createScheduledWorkflowRuntime` uses the same finite `defineWorkflow` graph, schema/tool broker and format-2 aggregate as the conservative driver, plus an explicit `ScheduledWorkflowStore` capability on the reference SQL adapters. A bounded storage sidecar pins the graph manifest, policy and per-node resource plan. New submissions create the aggregate and sidecar atomically. Explicit attachment is restricted initially to pristine format-2 runs: every step pending, no approval, candidate, receipt, output or reservation. Original submission digests, definition/policy hashes and history are never rewritten. Unsupported adapters fail explicitly; there is no unfenced fallback.
+
+The shared driver-free storage-contract package owns pure format-2 validation/projection helpers. Adapters own short transactions, row locks, storage time, claims and atomic event writes. Runtime owns schema/guard/human-verifier callbacks outside transactions. No public command accepts replacement state, events, arbitrary SQL, transaction callbacks, a clock, or a cost supplied by a handler.
+
+The first profile supports finite tools, dependency joins, explicit resource names, approval, cancellation, late evidence and conservative recovery. It does not add durable agent children, detached work, external queues, dynamic resource inference, loops, compensation, policy migration, provider reconciliation or universal exactly-once effects.
+
+## Ownership and transaction order
+
+All paths lock the aggregate before its owned job(s), then resources in canonical order. The current adapters reject ordinary `AggregateStore.update` on enrolled runs. Standalone scheduler mutations/claims cannot change enrolled jobs or insert jobs into an enrolled run. These checks also apply after lock waits; a preliminary selection is only a hint. Old workflow drivers using the current adapter fail closed before dispatch. This is not protection against privileged direct SQL or unsupported old adapter binaries; deployment upgrades must drain those writers.
+
+An internal transaction-scoped scheduler seam reuses the existing validated job state machine without opening a nested transaction. Integrated transitions append to the aggregate's canonical event sequence in the same commit as their state, budget and job changes. Never merge independently numbered scheduler history into that sequence. No model, handler, guard, verifier or network call runs while database locks are held.
+
+Storage-authority time is sampled after locks. Admission requires the exact live job fence/worker, unexpired lease, unchanged pinned policy, unconsumed exact approval when required, current candidate and complete resource ownership. Stale result commits cannot update workflow output. Renewals preserve sticky revocation; a backwards wall clock cannot resurrect observed expiry.
+
+## Finite commands
+
+- `submit`: derive the same legacy run/submission identities from the validated input, graph and policy; atomically create aggregate plus ownership. Same key/content retries acknowledge existing ownership. A conflicting profile/resource plan is not silently adopted.
+- `attach`: pin ownership on an explicitly supplied pristine existing aggregate/version, append an ownership event, and retain its original submission identity. No imported caller-time approval becomes scheduled authorization.
+- `requestApproval` / `approve`: derive candidate/expiry using locked storage time and accept only the exact current review digest and verified human identity. Credentials never persist. No budget/job is held solely while awaiting a human.
+- `prepare`: check ready dependencies, permissions, exact validated input/candidate, approval and fixed pinned cost. Insert the immutable node job and reserve that amount in the existing aggregate atomically. Format 2 has no prepared status: the step remains pending/approved until start; its candidate/reservation and sidecar job link prevent a second prepare.
+- `claim` / `renew`: claim only this run's prepared eligible jobs, respect every resource hold and policy/cancellation predicate, and use the same ownership generation rules as the standalone scheduler. Claim is not dispatch permission.
+- `start`: commit both job start and step dispatching plus approval consumption. Only a fresh, acknowledged `started` result grants one local dispatch; a duplicate or lost acknowledgement never does. Revalidation after an aggregate-version conflict never repeats a handler.
+- `recordReceipt`: retain bounded attempt-qualified evidence and settle the fixed reserved cost once in the same transaction. Known succeeded/failed execution charges it, proven not-started releases it, unknown retains it. Late evidence remains factual after cancellation/expiry but grants no output, continuation, resource release or replay. Contradictory evidence is retained without overwriting an earlier known fact.
+- `complete`: require live ownership and matching persisted known evidence. Only successful completion accepts already-validated output and releases disclosure; failure/block withhold output while preserving the actual effect receipt. A stable command retry acknowledges the commit, never grants another dispatch.
+- `abandon`: while still owning a never-started claim, record a bounded failed/blocked pre-dispatch disposition and release its unspent reservation. If persistent start succeeded before the broker's final local cancellation/budget check, use the independent proven-not-started receipt and blocked completion instead; never clear the start marker for retry.
+- `failNode`, `advance`, `finalize`: finite pre-dispatch failures, deterministic joins/skips/status, and exact-version final output admission. None may overwrite an active attempt, reserved cost or known receipt. Final schema validation runs outside the transaction; the commit rechecks all required steps and version.
+- `cancel` / `recover`: cancellation is sticky; never-started work can release resources/reservations, while started work becomes unknown/quarantined and can only accept late evidence. Expired never-started leases can reclaim the same prepared job without reserving twice. Started invocations are never automatically replayed.
+
+Stable command/evidence deduplication precedes optimistic-version checks for already committed identical retries. Semantic digests exclude the retry's informational expected version, but include operation, pinned policy and substantive input. Reusing an ID with changed content conflicts. Uncommitted failed preconditions are not journaled as successful operations. Journals and evidence have explicit finite caps and no silent eviction; renewal/claim counters remain separately bounded.
+
+Pure no-op `advance`, `recover` and already-terminal `cancel` do not append history or retain command IDs. Only state-changing commands consume the 1,024-entry ownership journal. Repeated finite drains while waiting must not exhaust history merely by inspecting unchanged work. Explicit-run claim waits for the bounded aggregate lock and rechecks state; queue-style skip-locked selection could otherwise make every contending worker relinquish a still-ready job.
+
+## Deliberate first-profile limits
+
+Policy and resource maps are immutable after enrollment; changing them requires a future explicit migration, not a replacement-state write. Resources are exact identities scoped by the current principal/project-derived storage scope. Two different principals do not automatically share a resource lock; project-wide infrastructure requires a deliberately shared service authority until a separately qualified project-resource contract exists.
+
+Each node has one immutable preparation candidate in this slice. If its approval expires after preparation, cancel/block the never-started job and release its reservation; require a new submission rather than silently minting a replacement approval/job identity. Waiting approvals with no prepared job may request a fresh review. Explicit never-started re-preparation generations are later work.
+
+The scheduled profile exposes a maximum of 64 KiB for admitted node/final output (and defaults its input/output boundary to that limit), matching the job ledger; it never advertises the conservative driver's 1 MiB output default. Graph/aggregate/sidecar and event bounds apply independently. Worker concurrency and lease renewal are finite and local; this is not an always-on fleet service.
+
+The aggregate remains bounded to 1 MiB. Before admitting output, project the worst-case remaining control/receipt metadata so that future cancellation and late known accounting still fit. Oversized joins fail, successful tool effects with inadmissible output complete blocked/withheld, and inadmissible final output completes failed; none erase actual receipts/cost or create automatic replay. Rejected approval/prepare attempts that observe expiry commit that monotonic clock observation before returning conflict, without journaling a successful approval, so clock rollback cannot resurrect the old digest.
+
+Definition/version hashes attest declared metadata, not the bytes of a tool handler, schema or guard. Applications must deploy stable versioned definitions and trusted adapters. Cancellation/close is cooperative; local fencing cannot retract a transmitted external request. Successful effects whose output was withheld remain visibly successful effects, not failed or unexecuted actions.
+
+Worker adapter waits have a finite configurable deadline and close cancellation. Timed-out/cancelled underlying adapter promises retain a separately bounded pending-operation slot until actual settlement. Late commit acknowledgements cannot authorize local dispatch. Independent evidence persistence may finish after shutdown while caller-owned storage remains available; no hard termination of trusted JavaScript or exactly-once external operation is claimed.
+
+## Required evidence
+
+Public runtime conformance on real SQLite and PostgreSQL: atomic submit/attach races against legacy writers; closure of every standalone-scheduler bypass; one reservation under retries/contention; stale fences and approval expiry after lock waits; current worker completion despite unrelated node version changes; lost start acknowledgement; pre-start local failure; successful effect followed by blocked output; late known cost without output resurrection; cross-run resource exclusion/quarantine; independent work progress; cancellation/control/finalization races; sidecar/link corruption and unsupported versions; canonical aggregate event sequencing; process termination after start/receipt/completion; unchanged conservative format-2 conformance.

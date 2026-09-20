@@ -1,9 +1,9 @@
 import { type Schema } from '@mayura/core';
 import { defineTool, type ToolOutput } from '@mayura/tools';
 import { createRuntime } from '@mayura/runtime';
-import { defineWorkflow, type WorkflowOutput } from '@mayura/workflows';
+import { createScheduledWorkflowRuntime, defineWorkflow, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { StorageError, type AggregateStore } from '@mayura/storage-contracts';
+import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
 const input: Schema<string, number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'string' ? { value: value.length } : { issues: [] } } };
@@ -38,4 +38,19 @@ if (false) {
 const error: StorageError = new StorageError('CONFLICT', 'Safe fixture conflict.');
 const contract: Pick<AggregateStore, 'close'> = { close: async () => {} };
 void error; void contract;
+// Compiles against the published-shape atomic capability without installing any SQL driver.
+function checkScheduledAdapter(store: ScheduledWorkflowAggregateStore): void {
+  const scheduled = createScheduledWorkflowRuntime({ store, workerId: 'consumer',
+    scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: ['tool:consumer.double'] },
+    policyVersion: '1', maxCostMicros: 0, storageTimeoutMs: 1_000, maxPendingStorageOperations: 8,
+  });
+  const profile: 'scheduled-v1' = scheduled.profile;
+  void profile;
+  void scheduled.submit(definition, { input: 'abc', idempotencyKey: 'original-input' });
+  // @ts-expect-error Scheduled submission accepts the original schema input, not its transformed value.
+  void scheduled.submit(definition, { input: 3, idempotencyKey: 'invalid-input' });
+  // @ts-expect-error Generic aggregate access does not provide atomic scheduled execution.
+  createScheduledWorkflowRuntime({ store: contract, workerId: 'consumer', scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+}
+void checkScheduledAdapter;
 await runtime.close();

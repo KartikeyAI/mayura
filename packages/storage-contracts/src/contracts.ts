@@ -46,7 +46,8 @@ export interface AggregateStore {
 
 export type StorageErrorCode =
   | 'INVALID_INPUT' | 'CONFLICT' | 'NOT_FOUND' | 'STORAGE_UNAVAILABLE'
-  | 'STORE_CLOSED' | 'STORE_NOT_INITIALIZED' | 'QUEUE_FULL' | 'STALE_CLAIM' | 'LIMIT_EXCEEDED';
+  | 'STORE_CLOSED' | 'STORE_NOT_INITIALIZED' | 'QUEUE_FULL' | 'STALE_CLAIM' | 'LIMIT_EXCEEDED'
+  | 'SCHEDULED_WRITER_REQUIRED';
 
 /** Stable errors intentionally omit driver messages, SQL and connection credentials. */
 export class StorageError extends Error {

@@ -13,7 +13,8 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Durable execution](specs/durable-execution.md) — storage and recovery contract.
 - [Storage aggregates](specs/storage-aggregate.md) — transactional persistence building block.
 - [Driver-free storage contracts](adr/0005-driver-free-storage-contracts.md) — custom adapter interfaces without installing reference database drivers.
-- [Standalone leased scheduler](specs/leased-scheduler.md) — expiring claims, fences, resource quarantine and the still-unimplemented workflow integration boundary.
+- [Standalone leased scheduler](specs/leased-scheduler.md) — expiring claims, fences and resource quarantine for separate jobs.
+- [Scheduled workflows](scheduled-workflows.md), [atomic contract](specs/scheduled-workflows.md) and [paired SQL tests](testing-scheduled-workflows.md) — opt-in workflow/job/budget ownership without automatic legacy migration.
 - [Initial durable engine](adr/0002-initial-durable-engine.md) — implemented subset and recovery limitations.
 - [Tool batches](specs/tool-batches.md) — dependency-aware bounded parallel execution.
 - [Processors and guardrails](specs/processors.md) — immutable content and disclosure barriers.
@@ -33,7 +34,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 932 tests; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 1,159 tests; all V01–V22 enterprise release gates remain open.
 
 ## Distribution
 

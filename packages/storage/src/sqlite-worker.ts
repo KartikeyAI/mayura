@@ -3,6 +3,7 @@ import { storageError, StorageError, type CreateRecord, type UpdateRecord } from
 import { SqliteDatabase } from './sqlite-database.js';
 import { identifier, cursor } from './validation.js';
 import type { SchedulerMethod } from './scheduler-validation.js';
+import type { ScheduledMethod } from './scheduled-validation.js';
 
 interface Request { id: number; method: string; args: unknown[] }
 const port = parentPort;
@@ -28,6 +29,7 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
       if (!initialized || !database) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize storage before accessing records.');
       switch (request.method) {
         case 'scheduler': result = await database.schedulerCommand(request.args[0] as SchedulerMethod, request.args[1]); break;
+        case 'workflows': result = await database.workflowsCommand(request.args[0] as ScheduledMethod, request.args[1]); break;
         case 'create': result = database.create(request.args[0] as CreateRecord); break;
         case 'update': result = database.update(request.args[0] as UpdateRecord); break;
         case 'read': result = database.read(identifier(request.args[0], 'Scope'), identifier(request.args[1], 'Record ID')); break;

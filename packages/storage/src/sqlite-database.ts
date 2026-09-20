@@ -2,8 +2,11 @@ import Database from 'better-sqlite3';
 import type { StoredEvent, StoredRecord, CreateRecord, UpdateRecord } from './contracts.js';
 import { StorageError } from './contracts.js';
 import { createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';
-import { SchedulerDatabase, type SchedulerSession } from './scheduler-database.js';
+import { SchedulerDatabase, type SchedulerSession, type SchedulerBackend } from './scheduler-database.js';
 import type { SchedulerMethod } from './scheduler-validation.js';
+import { ScheduledWorkflowDatabase } from './scheduled-database.js';
+import type { ScheduledMethod } from './scheduled-validation.js';
+import { writerRequired } from './aggregate-session.js';
 
 interface Row {
   scope: string; id: string; idempotency_key: string; definition_hash: string;
@@ -21,6 +24,7 @@ function record(row: Row): StoredRecord {
 export class SqliteDatabase {
   private readonly db: Database.Database;
   private readonly scheduler: SchedulerDatabase;
+  private readonly workflows: ScheduledWorkflowDatabase;
   constructor(private readonly filename: string) {
     this.db = new Database(filename, { timeout: 5_000 });
     const session: SchedulerSession = { query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
@@ -28,15 +32,18 @@ export class SqliteDatabase {
       if (statement.reader) return statement.all(...parameters) as T[];
       statement.run(...parameters); return [];
     } };
-    this.scheduler = new SchedulerDatabase({ dialect: 'sqlite', prefix: '', transaction: async body => {
+    const backend: SchedulerBackend = { dialect: 'sqlite', prefix: '', transaction: async body => {
       // The owning worker serializes complete requests, including these awaited pure SQL steps.
       this.db.exec('BEGIN IMMEDIATE');
       try { const result = await body(session); this.db.exec('COMMIT'); return result; }
       catch (error) { try { this.db.exec('ROLLBACK'); } catch { /* Preserve the original failure. */ } throw error; }
-    } });
+    } };
+    this.scheduler = new SchedulerDatabase(backend);
+    this.workflows = new ScheduledWorkflowDatabase(backend,this.scheduler);
   }
 
   schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
+  workflowsCommand(method: ScheduledMethod, input: unknown): Promise<unknown> { return this.workflows.execute(method,input); }
 
   initialize(): void {
     const journal = this.db.pragma('journal_mode = WAL', { simple: true });
@@ -60,6 +67,12 @@ export class SqliteDatabase {
           type TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL,
           PRIMARY KEY(scope, aggregate_id, sequence),
           FOREIGN KEY(scope, aggregate_id) REFERENCES mayura_aggregates(scope, id)
+        );
+        CREATE TABLE IF NOT EXISTS mayura_workflow_owners (
+          scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, profile INTEGER NOT NULL CHECK(profile > 0),
+          aggregate_version BIGINT NOT NULL CHECK(aggregate_version > 0), definition_hash TEXT NOT NULL,
+          policy_hash TEXT NOT NULL, resource_hash TEXT NOT NULL, data TEXT NOT NULL,
+          PRIMARY KEY(scope, aggregate_id), FOREIGN KEY(scope, aggregate_id) REFERENCES mayura_aggregates(scope, id)
         );
       `);
       const versions = this.db.prepare('SELECT version FROM mayura_storage_meta').all() as { version: number }[];
@@ -103,6 +116,7 @@ export class SqliteDatabase {
     return this.db.transaction(() => {
       const current = this.row(input.scope, input.id);
       if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+      if (this.db.prepare('SELECT aggregate_id FROM mayura_workflow_owners WHERE scope = ? AND aggregate_id = ?').get(input.scope,input.id)) writerRequired();
       if (current.version !== input.expectedVersion) throw new StorageError('CONFLICT', 'Record version has changed.');
       this.db.prepare('UPDATE mayura_aggregates SET state = ?, version = ?, event_sequence = ? WHERE scope = ? AND id = ?')
         .run(JSON.stringify(input.state), nextCounter(current.version, 1), nextCounter(current.event_sequence, input.events.length), input.scope, input.id);

@@ -2,6 +2,8 @@
 
 Status: experimental standalone storage implementation, 2026-09-20. **Integrated workflow fencing and full V03 qualification are not claimed.**
 
+Later additive slice: [scheduled workflows](scheduled-workflows.md) now implement explicit atomic workflow ownership using this ledger. The standalone operations documented here remain distinct: obtaining an ordinary scheduler claim does not enroll a workflow. Full V03 qualification remains open.
+
 Governing requirements: [durable execution §§4–7](durable-execution.md), [aggregate storage](storage-aggregate.md), [plan V02/V03/V12](../create-mayura-agentic-framework-plan.md), and [current workflow boundary](../adr/0002-initial-durable-engine.md).
 
 ## 1. Decision and bounded delivery
