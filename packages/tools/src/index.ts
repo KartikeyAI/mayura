@@ -10,6 +10,7 @@ import {
   type Effect,
   type ExecutionContext,
   type ExecutionReceipt,
+  type PublicError,
   type Guard,
   type InferInput,
   type InferOutput,
@@ -19,10 +20,13 @@ import {
   type Permissions,
   type Schema,
 } from '@mayura/core';
+import { snapshotLocalGuards } from '@mayura/core/host';
 
 export { invokeBatch, type BatchCall, type InvokeBatchOptions, type BatchCallResult, type SkippedBatchOutcome } from './batch.js';
 export { createToolContextSlot, type ToolContextSlot, type ToolContextBinding } from './context.js';
 import { attachToolContext, type ToolContextBinding } from './context.js';
+import { claimToolBudgetTicket, type ToolBudgetTicketBinding } from './budget-binding.js';
+export type { ToolBudgetTicketBinding } from './budget-binding.js';
 
 /** Authoring contract. Executors are trusted application code, not sandboxed callbacks. */
 export interface ToolOptions<I extends Schema, O extends Schema> {
@@ -59,6 +63,8 @@ export type ToolOutput<T extends AnyTool> = InferOutput<T['output']>;
 export interface InvokeToolContext extends ExecutionContext {
   readonly permissions: Permissions;
   readonly budget: Budget;
+  /** Trusted-host pre-reserved invocation; still subject to every ordinary broker admission check. */
+  readonly budgetBinding?: ToolBudgetTicketBinding;
   readonly maxOutputBytes?: number;
   /** Opaque trusted extension bindings; never copied into observable metadata or messages. */
   readonly contextBindings?: readonly ToolContextBinding[];
@@ -78,6 +84,50 @@ interface Registration {
 
 const registrations = new WeakMap<object, Registration>();
 const identifier = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
+
+/** Capture the complete invocation envelope before identity checks; accessors cannot swap a checked account. */
+function snapshotInvocation(value: InvokeToolContext): InvokeToolContext {
+  try {
+    if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
+    const fields = Object.getOwnPropertyDescriptors(value);
+    const required = ['runId', 'callId', 'scope', 'signal', 'permissions', 'budget'];
+    const optional = ['maxOutputBytes', 'contextBindings', 'acquireExecution', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
+    if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || ![...required, ...optional].includes(key))
+      || required.some(key => !fields[key])) throw new Error();
+    const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const [key, descriptor] of Object.entries(fields)) {
+      if (!descriptor.enumerable || !('value' in descriptor)) throw new Error();
+      if (descriptor.value !== undefined || required.includes(key)) result[key] = descriptor.value;
+    }
+    const scope = jsonValue(result['scope'], { maxBytes: 2_048 });
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope) || Object.keys(scope).length !== 2
+      || !Object.hasOwn(scope, 'principalId') || !Object.hasOwn(scope, 'projectId')) throw new Error();
+    const permissions = jsonValue(result['permissions'], { maxBytes: 2_097_152 });
+    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)
+      || Object.keys(permissions).length !== 1 || !Object.hasOwn(permissions, 'allow')) throw new Error();
+    result['scope'] = freezeJson(scope); result['permissions'] = freezeJson(permissions);
+    return Object.freeze(result) as unknown as InvokeToolContext;
+  } catch { throw new MayuraError('INVALID_CONFIG', 'Tool invocation requires a plain data configuration with explicit scope, grants and accounting.'); }
+}
+
+const errorMessages = {
+  INVALID_CONFIG: 'Tool invocation configuration is invalid.', INVALID_INPUT: 'Tool input did not pass its admission boundary.',
+  INVALID_OUTPUT: 'Tool output did not pass its disclosure boundary.', INVALID_JSON: 'Tool data must be bounded plain JSON.',
+  PERMISSION_DENIED: 'Tool invocation was not authorized.', BUDGET_EXCEEDED: 'The execution budget could not admit or settle this tool.',
+  LIMIT_EXCEEDED: 'A tool execution limit was reached.', CANCELLED: 'Tool execution was cancelled.', TIMEOUT: 'Tool execution exceeded its deadline.',
+  TOOL_FAILED: 'The tool executor failed; raw exception details are withheld.', GUARD_BLOCKED: 'A required guard withheld this operation or output.',
+  GUARD_UNAVAILABLE: 'A required guard could not establish a verdict.', CONFLICT: 'The tool invocation authority is no longer available.',
+} as const;
+/** Even configuration/reflection exceptions that imitate framework errors never supply public text. */
+function safeToolFailure(error: unknown): PublicError {
+  let code: keyof typeof errorMessages = 'INVALID_CONFIG';
+  try {
+    const descriptor = error instanceof MayuraError ? Object.getOwnPropertyDescriptor(error, 'code') : undefined;
+    const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    if (typeof value === 'string' && Object.hasOwn(errorMessages, value)) code = value as keyof typeof errorMessages;
+  } catch { /* Hostile exception objects cannot control diagnostics. */ }
+  return { code, message: errorMessages[code] };
+}
 
 /** Rejects forged or foreign-instance tool metadata before any model or effect dispatch. */
 export function assertTool(tool: AnyTool): void {
@@ -104,14 +154,7 @@ function snapshotSchema<S extends Schema>(schema: S): Schema<InferInput<S>, Infe
 }
 
 function snapshotGuards(guards: readonly Guard[] = []): readonly Guard[] {
-  if (!Array.isArray(guards) || guards.length > 32) {
-    throw new MayuraError('INVALID_CONFIG', 'A guard boundary supports at most 32 guards.');
-  }
-  return Object.freeze(guards.map((guard) => {
-    text(guard?.id, 'guard.id', 128);
-    if (typeof guard.check !== 'function') throw new MayuraError('INVALID_CONFIG', 'A guard check is required.');
-    return Object.freeze({ id: guard.id, check: guard.check.bind(guard) });
-  }));
+  return snapshotLocalGuards(guards);
 }
 
 /** Defines a tool once; all supported invocation paths use invokeTool's policy boundary. */
@@ -178,6 +221,7 @@ export async function invokeTool<T extends AnyTool>(
     : undefined;
 
   try {
+    options = snapshotInvocation(options);
     assertTool(tool);
     registered = registrations.get(tool);
     if (!registered) throw new MayuraError('INVALID_CONFIG', 'Tool was not created by this tools package instance.');
@@ -208,6 +252,8 @@ export async function invokeTool<T extends AnyTool>(
       signal,
     });
     const executionContext = context;
+    const startReservation = options.budgetBinding === undefined ? undefined
+      : claimToolBudgetTicket(options.budgetBinding, tool, { ...executionContext, budget, signal: externalSignal });
     attachToolContext(executionContext, options.contextBindings);
     const registration = registered;
     const abortError = (): MayuraError => new MayuraError(abortKind, abortKind === 'TIMEOUT' ? 'Tool execution exceeded its deadline.' : 'Tool execution was cancelled.');
@@ -270,7 +316,7 @@ export async function invokeTool<T extends AnyTool>(
           catch { throw new MayuraError('PERMISSION_DENIED', 'Tool admission could not be verified against its current execution claim.'); }
           assertActive();
         }
-        reservation = budget.reserve(tool.costMicros);
+        reservation = startReservation ? startReservation() : budget.reserve(tool.costMicros);
       }
       catch (error) { releaseExecution?.(); throw error; }
       dispatched = true;
@@ -324,9 +370,7 @@ export async function invokeTool<T extends AnyTool>(
     const unknown = (execution === 'unknown' && tool.effects !== 'none') || (persistenceStarted && !persistenceConfirmed);
     const safeError = unknown
       ? { code: 'OUTCOME_UNKNOWN' as const, message: 'The external operation may have occurred. Reconcile its outcome before retrying.' }
-      : error instanceof MayuraError
-        ? error.toJSON()
-        : { code: 'INVALID_CONFIG' as const, message: 'Tool invocation configuration is invalid.' };
+      : safeToolFailure(error);
     const status = unknown ? 'outcome_unknown' as const
       : safeError.code === 'CANCELLED' ? 'cancelled' as const
         : ['PERMISSION_DENIED', 'GUARD_BLOCKED', 'GUARD_UNAVAILABLE', 'BUDGET_EXCEEDED'].includes(safeError.code) ? 'blocked' as const : 'failed' as const;

@@ -1,5 +1,8 @@
-import { assertSchema, jsonValue, MayuraError, type Guard, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
+import { assertSchema, jsonValue, MayuraError, type Guard, type ManagedGuardDefinition, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
+import { readManagedGuardDefinition, snapshotLocalGuards } from '@mayura/core/host';
 import { assertTool, type AnyTool } from '@mayura/tools';
+
+export type AgentGuard = Guard | ManagedGuardDefinition;
 
 /** An immutable agent definition; executable adapters remain trusted application code. */
 export interface AgentDefinition<I extends Schema = Schema, O extends Schema = Schema> {
@@ -10,7 +13,7 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly tools: readonly AnyTool[];
   readonly input: Schema<InferInput<I>, InferOutput<I>>;
   readonly output: Schema<InferInput<O>, InferOutput<O>>;
-  readonly guards: { readonly input: readonly Guard[]; readonly output: readonly Guard[] };
+  readonly guards: { readonly input: readonly AgentGuard[]; readonly output: readonly AgentGuard[] };
 }
 
 export type AgentOutput<A extends AgentDefinition> = InferOutput<A['output']>;
@@ -22,7 +25,7 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
   readonly tools: readonly AnyTool[];
   readonly input: I;
   readonly output: O;
-  readonly guards?: { readonly input?: readonly Guard[]; readonly output?: readonly Guard[] };
+  readonly guards?: { readonly input?: readonly AgentGuard[]; readonly output?: readonly AgentGuard[] };
 }
 
 const definitions = new WeakSet<object>();
@@ -33,16 +36,26 @@ export function isIdentifier(value: unknown): value is string {
   return typeof value === 'string' && identifier.test(value);
 }
 
-function snapshotGuards(guards: readonly Guard[]): readonly Guard[] {
-  if (!Array.isArray(guards) || guards.length > 32) throw new MayuraError('INVALID_CONFIG', 'A guard boundary supports at most 32 guards.');
-  const seen = new Set<string>();
-  return Object.freeze(guards.map((guard) => {
-    if (!isIdentifier(guard.id) || seen.has(guard.id) || typeof guard.check !== 'function') {
-      throw new MayuraError('INVALID_CONFIG', 'Guards require unique bounded identifiers and check functions.');
+function snapshotGuards(guards: readonly AgentGuard[]): readonly AgentGuard[] {
+  try {
+    if (!Array.isArray(guards)) throw new Error();
+    const fields = Object.getOwnPropertyDescriptors(guards);
+    const length = Object.getOwnPropertyDescriptor(guards, 'length');
+    if (!length || !('value' in length) || !Number.isSafeInteger(length.value) || length.value < 0 || length.value > 32
+      || Reflect.ownKeys(fields).length !== length.value + 1) throw new Error();
+    const seen = new Set<string>(); const result: AgentGuard[] = [];
+    for (let index = 0; index < length.value; index++) {
+      const entry = fields[String(index)];
+      if (!entry || !('value' in entry)) throw new Error();
+      const guard: unknown = entry.value;
+      const descriptor = readManagedGuardDefinition(guard);
+      const captured = descriptor ? guard as ManagedGuardDefinition : snapshotLocalGuards([guard as Guard])[0]!;
+      if (!isIdentifier(captured.id) || seen.has(captured.id)) throw new Error();
+      seen.add(captured.id);
+      result.push(captured); // Preserve genuine managed identity; never clone its authority.
     }
-    seen.add(guard.id);
-    return Object.freeze({ id: guard.id, check: guard.check.bind(guard) });
-  }));
+    return Object.freeze(result);
+  } catch { throw new MayuraError('INVALID_CONFIG', 'Guards require a dense data list of unique local callbacks or genuinely registered managed definitions.'); }
 }
 
 function snapshotSchema<S extends Schema>(schema: S): Schema<InferInput<S>, InferOutput<S>> {

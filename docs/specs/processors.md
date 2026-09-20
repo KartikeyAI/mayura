@@ -22,7 +22,7 @@ if (result.status === "succeeded") {
 }
 ```
 
-Callbacks and processors are trusted application code. Cooperative deadlines bound awaited work and stop new dispatch; this package cannot hard-kill synchronous JavaScript, constrain imports, or prevent a callback from making its own external calls. The deterministic helpers below make no network calls or model charges. Separate, explicitly configured auxiliary helpers now provide metered model evaluation, moderation and language processing; automatic runtime provisioning and general injection classifiers are not implemented. See [auxiliary guardrails](auxiliary-guardrails.md).
+Callbacks and processors are trusted application code. Cooperative deadlines bound awaited work and stop new dispatch; this package cannot hard-kill synchronous JavaScript, constrain imports, or prevent a callback from making its own external calls. The deterministic helpers below make no network calls or model charges. Separate, explicitly configured auxiliary helpers now provide metered model evaluation, moderation and language processing; those helpers remain explicitly caller-wired. Separate [runtime-managed moderation](runtime-managed-guardrails.md) now binds definition-only checks to actual ephemeral runs. General injection classifiers are not implemented. See [auxiliary guardrails](auxiliary-guardrails.md).
 
 ## Content identity and authorization barrier
 

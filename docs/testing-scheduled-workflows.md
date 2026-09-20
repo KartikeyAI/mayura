@@ -1,6 +1,6 @@
 # Scheduled workflow conformance
 
-Status: local conformance verified on 2026-09-20. The shared suite passed **44 cases on SQLite and 44 on real PostgreSQL**, 88 total, in one paired run. Strict test typechecking passed. The existing conservative workflow, review-regression and process-recovery suites also passed 68 cases across four files. These are bounded local results, not a complete enterprise release or independent security audit.
+Status: local conformance verified on 2026-09-20. The shared suite passed **47 cases on SQLite and 47 on real PostgreSQL**, 94 total, in one paired run. Strict test typechecking passed. The existing conservative workflow, review-regression and process-recovery suites also passed 68 cases across four files. These are bounded local results, not a complete enterprise release or independent security audit.
 
 The [scheduled workflow contract](specs/scheduled-workflows.md) is exercised through `createScheduledWorkflowRuntime` using actual SQLite and PostgreSQL adapters. One shared suite lives in `packages/workflows/test/scheduled-conformance.ts`; the two backend entry points run the same assertions.
 
@@ -32,8 +32,11 @@ Without that environment variable the PostgreSQL entry point is skipped, not pas
 - Pre-dispatch guard refusal, successful effects followed by schema/guard/size refusal, and final-schema failure without erasing step evidence.
 - Sticky cancellation, independently retained late successful receipts, cost settlement without output resurrection, resource quarantine and unrelated-resource progress.
 - Lost prepare/start/complete acknowledgements, lease renewal, pre-start lease expiry and approval expiry after immutable preparation.
+- Lease loss or cancellation during receipt persistence retains known evidence without retrying an ineligible completion. Pending heartbeats drain before final version checks to prevent self-induced contention.
 - Real owned-process termination after persistent start, successful receipt and successful completion; reopening the runtime never replays the logical invocation.
 - Sidecar version/unknown-field corruption, missing job links, fabricated within-budget spending and phantom dispatch receipts are rejected before further dispatch or disclosure.
+
+Ordinary cases use the production-default three-second lease. Explicit temporal cases retain one-second leases and deliberate lock waits; their assertions require stale claims to cause zero effects before a replacement obtains a fresh fence. These settings exercise authority and recovery, not host throughput guarantees.
 
 The transport-failure wrappers call the real storage command and then deliberately lose its response. They do not replace transaction semantics with an in-memory mock. Controlled deferred handlers represent cooperative and late-returning application code; no real infrastructure changes, provider requests or credentials are involved.
 

@@ -143,6 +143,7 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
     let token = originalClaim;
     let dispatchSignal = controller.signal;
     let renewal: ReturnType<typeof setTimeout> | undefined;
+    let renewing: Promise<void> | undefined;
     let finished = false; let acquired = false; let handlerSettled = false; let logicalSettled = false; let released = false;
     const releaseSlot = (): void => {
       if (!released && logicalSettled && (!acquired || handlerSettled)) { released = true; slots--; }
@@ -150,10 +151,24 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
     const scheduleRenewal = (): void => {
       if (finished || controller.signal.aborted) return;
       renewal = setTimeout(() => {
-        void scheduledStorage(() => api.renew({ ...access(id), claim: token, leaseMs }))
-          .then(next => { if (!finished && !controller.signal.aborted) { token = scheduledClaim(next, originalClaim); scheduleRenewal(); } })
+        renewing = scheduledStorage(() => api.renew({ ...access(id), claim: token, leaseMs }))
+          .then(next => { if (!controller.signal.aborted) { token = scheduledClaim(next, originalClaim); scheduleRenewal(); } })
           .catch(() => { controller.abort(); });
       }, Math.max(100, Math.floor(leaseMs / 3)));
+    };
+    const stopRenewal = async (): Promise<void> => {
+      // A renewal commits the same aggregate version that completion compares.
+      // Stop future heartbeats and drain its bounded adapter wait before final CAS;
+      // otherwise this worker can repeatedly invalidate its own completion read.
+      finished = true;
+      if (renewal) clearTimeout(renewal);
+      await renewing;
+    };
+    const ownsJob = (current: ScheduledWorkflowSnapshot, state: 'leased' | 'started'): boolean => {
+      const job = current.jobs.find(item => item.jobId === jobId);
+      return !terminal.has(workflowState(current.record).status) && job?.state === state
+        && job.fence === originalClaim.fence && job.workerId === originalClaim.workerId
+        && !job.cancelRequested && !job.leaseRevoked;
     };
     const record = async (receipt: ExecutionReceipt): Promise<string> => {
       const withheld = Object.freeze({ ...receipt, disclosure: 'withheld' as const });
@@ -190,7 +205,10 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
       if (currentJob.startedAtMs === null) {
         // Worker shutdown hands never-started leases back to expiry/recovery, not a run cancellation.
         if (!closed && currentJob.state === 'leased') {
-          await write(id, command => api.abandon({ ...command, claim: token, outcome: result.status === 'failed' ? 'failed' : 'blocked' }));
+          await stopRenewal();
+          await write(id, (command, latest) => ownsJob(latest, 'leased')
+            ? api.abandon({ ...command, claim: token, outcome: result.status === 'failed' ? 'failed' : 'blocked' })
+            : Promise.resolve(latest));
         }
         return;
       }
@@ -198,9 +216,16 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
       const evidenceId = await scheduledCallback(() => record(result.receipt!), storageTimeoutMs, shutdown.signal);
       if (result.receipt.execution === 'unknown') return;
       const outcome = result.status === 'succeeded' ? 'succeeded' : result.receipt.execution === 'failed' ? 'failed' : 'blocked';
-      await write(id, command => api.complete({ ...command, claim: token, evidenceId, outcome,
-        output: result.status === 'succeeded' ? safeScheduledJson(result.output, policy.maxOutputBytes, 'output') : null,
-      }));
+      await stopRenewal();
+      await write(id, (command, latest) => {
+        // Receipt persistence, cancellation or recovery may have committed lost
+        // authority. That is not a version conflict: retain the known evidence and
+        // withheld output without retrying a permanently ineligible completion.
+        if (!ownsJob(latest, 'started')) return Promise.resolve(latest);
+        return api.complete({ ...command, claim: token, evidenceId, outcome,
+          output: result.status === 'succeeded' ? safeScheduledJson(result.output, policy.maxOutputBytes, 'output') : null,
+        });
+      });
     } catch (error) {
       // Lost authority never causes a handler replay or a generic aggregate replacement.
       if (!isStorageCode(error, 'STALE_CLAIM') && !isStorageCode(error, 'CONFLICT')) throw error;

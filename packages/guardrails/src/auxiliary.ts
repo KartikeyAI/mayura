@@ -3,6 +3,7 @@ import { assertBudget, assertPositiveInteger, assertSchema, Budget, freezeJson, 
   type Outcome, type Permissions, type Schema, type Scope,
 } from '@mayura/core';
 import { boundedText, Deadline, snapshotContext } from './pipeline.js';
+import { snapshotLocalGuards } from '@mayura/core/host';
 
 export interface AuxiliaryLimits {
   readonly timeoutMs?: number;
@@ -137,8 +138,7 @@ export function createAuxiliaryCheck<I extends Schema, O extends Schema>(options
     const limits = Object.freeze({ ...defaults, ...object(jsonValue(options.limits ?? {}, { maxBytes: 1_024 })) as AuxiliaryLimits });
     for (const [key, value] of Object.entries(limits)) { if (!Object.hasOwn(defaults, key)) throw new Error(); assertPositiveInteger(value, key); }
     if (limits.timeoutMs > 2_147_483_647) throw new Error();
-    const supplied = options.egressGuards ?? [];
-    if (!Array.isArray(supplied) || supplied.length > 32) throw new Error();
+    const supplied = snapshotLocalGuards(options.egressGuards ?? []);
     const ids = new Set<string>();
     const egressGuards = Object.freeze(supplied.map(guard => {
       boundedText(guard.id, 'egressGuard.id', 128);

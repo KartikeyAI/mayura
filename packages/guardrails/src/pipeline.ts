@@ -1,4 +1,5 @@
 import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type Guard, type GuardContext, type JsonValue, type Outcome, type PublicError } from '@mayura/core';
+import { snapshotLocalGuards } from '@mayura/core/host';
 
 export interface ContentSnapshot { readonly version: number; readonly digest: string; readonly value: JsonValue }
 export interface GuardEvidence { readonly guardId: string; readonly version: number; readonly digest: string; readonly decision: 'allow' }
@@ -121,7 +122,7 @@ export function createPipeline(options: PipelineOptions = {}): Pipeline {
     return Object.freeze({ id: processor.id, version: processor.version, process: processor.process.bind(processor) });
   }));
   const guardIds = new Set<string>();
-  const guards = Object.freeze((options.guards ?? []).map((guard) => {
+  const guards = Object.freeze(snapshotLocalGuards(options.guards ?? []).map((guard) => {
     boundedText(guard.id, 'guard.id', 128);
     if (guardIds.has(guard.id) || typeof guard.check !== 'function') throw new MayuraError('INVALID_CONFIG', 'Guard identifiers must be unique and guards callable.');
     guardIds.add(guard.id); return Object.freeze({ id: guard.id, check: guard.check.bind(guard) });

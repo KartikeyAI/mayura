@@ -1,6 +1,6 @@
 # Runtime-managed auxiliary guardrails
 
-Status: proposed next implementation contract, **not implemented or approved by this document alone**. Review the accounting prerequisite and fail-first tests before changing code.
+Status: implemented experimental ephemeral integration, locally exercised on 2026-09-20. Core accounting, genuine host bindings, runtime barriers and packed optional consumers have independent regression evidence; this does not close the enterprise release gates or qualify model quality.
 
 Governing requirements: [framework plan §§8–9 and V08/V09/V12](../create-mayura-agentic-framework-plan.md), [technical proposal §7](../mayura-technical-proposal.md), [existing auxiliary helpers](auxiliary-guardrails.md), [processor boundaries](processors.md), [ephemeral orchestration](agent-orchestration.md), and [current status](../development-status.md).
 
@@ -20,11 +20,11 @@ Lifecycle hooks are the next dependent phase. They must reuse this admission lay
 
 The runtime currently calls ordinary `Guard.check` callbacks and owns money/call/operation accounting only for primary models and tools. Passing another callback through that surface cannot, by itself, establish mediated auxiliary execution.
 
-Core `Budget.reserve` reserves money and consumes a call immediately. There is no protected future-call bundle or independently cancellable never-dispatched ticket. A child ceiling is not an earmark. Checking a snapshot and reserving later races other branches.
+Before this slice, `Budget.reserve` reserved money and consumed a call immediately, with no protected future-call bundle or independently cancellable never-dispatched ticket. A child ceiling is not an earmark. Checking a snapshot and reserving later races other branches.
 
 ## 3. Minimal authoring API
 
-Proposed spelling, subject to review before implementation:
+Implemented authoring API:
 
 ```ts
 import { defineModerationGuard } from "@mayura/guardrails";
@@ -58,13 +58,95 @@ The factory returns an opaque immutable managed-guard definition, not a callable
 
 `AgentOptions.guards` accepts both existing local guards and these registered managed definitions. Definition snapshots preserve their registration identity and callable/schema references without mutating caller-owned configuration. Duplicate IDs, foreign/forged definitions, unknown fields, invalid limits and unsupported model capabilities fail before model work.
 
-Managed definitions cannot be evaluated through a detached `check`/`evaluate` method or serialized runtime identity. A private core-owned registration/context mechanism, analogous to the existing composition gateway, binds them to a live run. Never put a `Budget`, dispatch ticket, parent handle or mutable permission object into public guard context or events.
+Managed definitions cannot be evaluated through a detached `check`/`evaluate` method or serialized runtime identity. The explicit trusted-host bridge below lets the runtime recognize the definition; the runtime's private evaluator binds each invocation to its actual run. No execution gateway is passed through `GuardContext`. Never put a `Budget`, dispatch ticket, parent handle or mutable permission object into public guard context or events.
 
 The existing `createModerationGuard`/`createAuxiliaryCheck` helpers retain explicit caller-wired semantics. They do not silently acquire a different account. Ordinary application callbacks remain trusted code; the framework cannot prove that a captured callback makes no direct network call.
 
+### 3.1 Public definition and agent types
+
+The core type is an opaque handle whose visible fields contain correlation metadata only. A module-private registration, not the discriminator or a copied TypeScript shape, establishes its identity:
+
+```ts
+// @mayura/core: metadata/types only; no callable executor on this handle.
+interface ManagedGuardDefinition {
+  readonly kind: "mayura.managed-guard";
+  readonly id: string;
+  readonly version: string;
+}
+interface ManagedModerationVerdict {
+  readonly decision: "allow" | "block";
+  readonly categories: readonly string[];
+}
+type AgentGuard = Guard | ManagedGuardDefinition;
+
+// Additive substitutions in @mayura/runtime's existing generic agent types:
+// AgentOptions<I, O>.guards?: {
+//   readonly input?: readonly AgentGuard[];
+//   readonly output?: readonly AgentGuard[];
+// }
+// AgentDefinition<I, O>.guards: {
+//   readonly input: readonly AgentGuard[];
+//   readonly output: readonly AgentGuard[];
+// }
+```
+
+`@mayura/guardrails.defineModerationGuard` accepts the authoring fields in §3 and returns `ManagedGuardDefinition`; its public options do not expose input/output schema replacement in this first moderation-only slice. The helper supplies the existing identity JSON input schema and strict moderation-result schema: exactly `decision` and `categories`, an `allow`/`block` decision, and at most 32 unique category IDs matching `/^[a-z0-9][a-z0-9._-]{0,63}$/`. No reason strings, extra fields, coercion or transforms are introduced. The verdict shape remains structurally compatible with the existing guardrails `ModerationVerdict`, rather than introducing another classification vocabulary.
+
+Require an explicit `egressGuards` list on the new factory, allowing `[]` only as an explicit choice that supplies no local screening guarantee; every supplied local guard is mandatory. This does not change existing standalone helper defaults. `GuardContext` retains its existing run/call/scope/signal/boundary fields and does not acquire model, check or destination descriptors. Destination-specific local guards must capture the application's explicitly selected and pinned adapter/destination policy when defined. The framework does not infer a destination URL or certify that arbitrary content is safe to send there.
+
+`defineAgent` retains each genuine managed handle by exact object identity when it freezes a new guard array. It must not spread the handle, wrap it in a synthetic `check`, bind an absent callback or clone a private descriptor into the agent's public metadata. Existing local `Guard` callbacks retain their current captured-function snapshots. The combined boundary still allows at most 32 uniquely identified guards; local/managed ID collisions fail before model work. A foreign package-instance handle, proxy, structural copy or serialized reconstruction is not registered, even when its visible fields match.
+
+### 3.2 Explicit trusted-host core bridge
+
+The `@mayura/core/host` subpath exports the following small integration seam. It shares the same core module registrations as the main entry point; neither package relies on an inaccessible private import, a global symbol registry or an implicitly shared context slot.
+
+```ts
+interface ManagedGuardLimits {
+  readonly timeoutMs: number;
+  readonly maxInputBytes: number;
+  readonly maxOutputBytes: number;
+  readonly maxOutputTokens: number;
+}
+interface ManagedGuardDescriptor {
+  readonly kind: "moderation";
+  readonly id: string;
+  readonly version: string;
+  readonly model: ModelAdapter;
+  readonly instructions: string;
+  readonly input: Schema<JsonValue>;
+  readonly output: Schema<unknown, ManagedModerationVerdict>;
+  readonly egressGuards: readonly Guard[];
+  readonly limits: ManagedGuardLimits;
+}
+function registerManagedGuardDefinition(
+  descriptor: ManagedGuardDescriptor,
+): ManagedGuardDefinition;
+function readManagedGuardDefinition(
+  value: unknown,
+): Readonly<ManagedGuardDescriptor> | undefined;
+```
+
+Registration validates and snapshots the complete descriptor before installing a frozen handle in a private `WeakMap`. It captures the model's ID, capability flags, maximum cost and bound `generate` reference; Standard Schema metadata/validator references; local egress IDs/bound callbacks; bounded instructions; and fully resolved finite limits. It freezes its owned nested metadata/arrays without freezing caller-owned models or schema-library objects. It rejects unknown fields, accessor-driven configuration, invalid limits/capabilities and managed definitions in local egress positions. The first kind requires structured output but does not require a model's `tools` capability to be false: the auxiliary request itself always has `tools: []`, and a tool-call response is invalid.
+
+Resolved factory defaults are `timeoutMs: 10000`, `maxInputBytes: 65536`, `maxOutputBytes: 65536` and `maxOutputTokens: 1024`; descriptor limits contain all four positive safe-integer fields, with timeout within the supported timer range. The runtime further clamps these limits to its actual run/ancestor ceilings. Authoring-field/model metadata snapshots use captured data values, not repeated getter reads. Host registration can capture trusted custom schema references, but this first profile introduces no transformations: the runtime independently enforces the exact bounded raw moderation-verdict shape and unchanged admitted candidate/verdict values before and after schema validation. A schema cannot coerce malformed categories into an allow result or replace a block verdict.
+
+The descriptor contains **no** budget, permission list, scope, run handle, dispatch ticket, context-binding slot, executor override or invocation callback. It contains a captured model and schema/local callbacks because a custom runtime must be able to execute the configured policy through its own admission layer. `readManagedGuardDefinition` is a registration lookup, not an invocation, and returns `undefined` for unregistered values without inspecting arbitrary properties. Its returned descriptor is immutable and is never attached to `GuardContext`, model messages, run inspection or events.
+
+These host exports are trusted-computing-base integration APIs, not a sandbox boundary. Application code already supplied the model and can call its original reference directly; obtaining a descriptor does not make malicious local code contained or accounted. Mayura's claim is narrower: its own supported managed execution paths always use its private runtime evaluator. The bridge adds no dependency from runtime to guardrails and no provider/native/database dependency to core.
+
+The host entry also supplies `snapshotLocalGuards(guards: readonly Guard[]): readonly Guard[]` as shared configuration validation. It reads bounded dense own array data, captures local IDs/method references without invoking getters, rejects reserved managed markers (including inherited/accessor markers), and preserves unrelated data metadata such as an application's different `kind`. It creates no execution authority. Consumers retain their existing ID/uniqueness rules; mixed agent lists separately preserve genuine managed handles. No supported guard-list path calls a caller-overridden array `map` or iterator to establish registration.
+
+### 3.3 Runtime binding and fail-closed consumers
+
+The runtime reads a recognized descriptor into its private run-state evaluation record. That record pins the exact managed handle, boundary, immutable candidate, invocation identity, account, model-kind ticket, deadline and operation permit; none is minted from fields supplied in `GuardContext`. Reusing the same definition across roots or children creates separate records against each actual owning account and its ancestors, not a shared captured account.
+
+A missing descriptor is never an allow verdict. An object declaring `kind: 'mayura.managed-guard'` without a matching registration is invalid and cannot fall back to a local callback. Consumers that do not support this profile—standalone tool guard arrays, ordinary processor/pipeline guard positions, explicit caller-wired auxiliary helpers and durable runtimes—reject managed handles before dispatch rather than call a synthetic executor, ignore them or allocate a new budget. Preserve existing local-guard compatibility; rejection of a managed marker must not execute its supplied getters or `check` method.
+
+The host bridge is the only cross-package recognition mechanism in this proposal. `@mayura/guardrails` supplies definitions, core supplies identity and types, and `@mayura/runtime` owns invocation admission and execution. No managed gateway is added to the public context. Duplicate copies of core deliberately fail closed instead of accepting serialized brands; packed-consumer tests must verify the supported package graph resolves the shared registration correctly.
+
 ## 4. Mandatory prerequisite: atomic reservation bundles
 
-Implement and independently test the core accounting primitive before runtime integration. The proposed concrete API is additive:
+The core accounting primitive was independently tested before runtime integration. Its concrete API is additive:
 
 ```ts
 interface BundleOperation {
@@ -113,7 +195,46 @@ Never emulate bundles with a new budget, a prepaid child account, a snapshot bal
 
 `maxModelCalls` includes primary **and auxiliary** model calls. Auxiliary calls do not consume agent reasoning steps. `maxToolCalls` retains tool-attempt meaning. All relevant counters and holds apply to every ancestor, including an intermediate child ceiling. Zero-cost calls consume the same call capacity as paid calls.
 
-The core bundle protects generic call slots **only**. It does not solve the runtime's separate model/tool counter ownership. That later runtime prerequisite must reserve corresponding model/tool slots in the same synchronous admission step: validate every predicate before mutating either ledger, then commit core holds and the nonthrowing runtime counter projection without an intervening callback/await. Dispatch converts holds to consumed counters once; cancellation releases only undispatched holds. Passing core bundle tests alone does not qualify runtime counters. Ordinary reserves and bundles created from any child account must include all ancestor held calls in admission checks; a fork remains a ceiling over the same ledger, never a way to copy reserved capacity.
+The core bundle protects generic call slots **only**. It does not solve the runtime's separate model/tool counter ownership. That later runtime prerequisite must reserve corresponding model/tool slots in the same synchronous admission step: validate every predicate before mutating either ledger, then commit core holds and the nonthrowing runtime counter projection without an intervening callback/await. The admission transitions specified below convert holds to consumed counters once; cancellation releases only unconsumed holds. Passing core bundle tests alone does not qualify runtime counters. Ordinary reserves and bundles created from any child account must include all ancestor held calls in admission checks; a fork remains a ceiling over the same ledger, never a way to copy reserved capacity.
+
+Preserve the runtime's existing distinction between model dispatches and tool **broker attempts**. A model-kind hold converts to its historical model-call count together with its model ticket's dispatch. A tool-kind hold converts once immediately before `invokeTool` starts that broker attempt; its financial/generic-call ticket starts later, only at the broker's existing reserve point after input guards and permit admission. If broker admission fails before executor dispatch, cancel the never-started financial ticket and release its money/generic-call hold, but retain the historical tool-attempt count. Do not describe that attempted call as refunded. This preserves `maxToolCalls` behavior without a callback from the tool broker that mutates runtime counters.
+
+The runtime therefore keeps a private per-operation kind-hold registry separate from core's generic tickets. It snapshots and validates all operation records and every ancestor's consumed-plus-held counters before calling `reserveBundle` with newly created plain internal data. After core admission succeeds, it commits only nonthrowing private counter increments in the same synchronous turn, without a user callback, getter, hook, logger or await in between. Kind-limit failure leaves core untouched; core failure leaves kind counters untouched. Invocation/cancellation transitions follow the same no-callback rule. Caller-controlled objects must not reach the middle of this commit path, even though core separately protects against reentrant configuration inspection.
+
+### 4.4 Pre-reserved tool broker seam
+
+The existing `InvokeToolContext.budget` remains a genuine `Budget`. Do not replace it with a facade or let the caller provide a `Reservation`, `reserve` implementation or arbitrary ticket-consumption callback. The host APIs are:
+
+```ts
+// @mayura/core/host: validates private ticket and exact account identity.
+function assertBudgetTicket(
+  value: unknown,
+  owner: Budget,
+): asserts value is BudgetTicket;
+
+// @mayura/tools/host: captured, opaque binding; no public start/settle methods.
+interface ToolBudgetTicketBinding {
+  readonly kind: "mayura.tool-budget-ticket";
+}
+function bindToolBudgetTicket(
+  tool: AnyTool,
+  ticket: BudgetTicket,
+  context: Pick<InvokeToolContext, "budget" | "runId" | "callId" | "scope" | "signal">,
+): ToolBudgetTicketBinding;
+
+// Additive trusted option in the existing @mayura/tools invocation contract:
+// InvokeToolContext.budgetBinding?: ToolBudgetTicketBinding;
+```
+
+`assertBudgetTicket` checks the ticket and `Budget` through their private registrations and requires the ticket's **exact owning account**, not a matching string ID, common root, ancestor or sibling. It does not transfer a ticket, return its owner, start it or mint funds. The usual core state transition still rejects cancelled, started or closed-account tickets.
+
+The tools host factory first requires the exact registered `AnyTool`, a genuine owner-matching ticket and a ticket cost bound equal to the captured tool's fixed `costMicros`. It snapshots the exact account reference, exact tool registration/definition reference, run ID, call ID, principal/project scope and original invocation signal into a tools-private binding. The visible frozen handle contains none of those authorities. A ticket cannot be rebound to a different tool or invocation; copied/proxied bindings and serialized IDs carry no authority.
+
+`invokeTool` recognizes and claims that binding once before any asynchronous admission work; a second or concurrent attempt with it fails closed. It checks the captured invocation against the actual `options` and tool, then still performs its ordinary grant, input-schema, input-guard, cancellation, operation-permit and `beforeDispatch` checks. At the existing `budget.reserve(tool.costMicros)` point, it rechecks genuine owner/binding state and synchronously consumes `ticket.start()` instead of making a second reservation. That single reservation remains broker-owned for exact settlement and existing receipt/disclosure behavior. No alternate path can bypass permissions or invoke an alternate executor using a returned start acknowledgment.
+
+Claiming the binding is not financial dispatch. An attempt that fails before ticket start cannot reuse its binding; the owning runtime closes/cancels the still-held ticket in its attempt cleanup. If ticket start already occurred, cleanup must not refund it, including when the handler is still pending or its result is unknown. Binding identity/state checks must not expose an account, ticket, raw input or callback through the tool's `ExecutionContext`, `GuardContext`, `contextBindings`, receipts or events. Missing `budgetBinding` preserves standalone `invokeTool`'s existing ordinary-reservation behavior.
+
+Like the descriptor bridge, the binding factory is explicit trusted-host plumbing. A host that possesses a genuine account and ticket already possesses those accounting capabilities; the factory is not a sandbox or an authentication system. Within Mayura's runtime, only its private admission code creates these bindings, and it never accepts a caller-supplied binding for a run. Thus a model, local guard context or unrelated run cannot borrow another operation's capacity through an exposed gateway.
 
 ## 5. Where bundles are created
 
@@ -144,7 +265,7 @@ For each check: validate bounded plain JSON and schema → run configured requir
 
 Use existing auxiliary defaults where compatible: 10-second check timeout, 64-KiB complete request/response bounds and 1,024 requested output tokens, clamped to the owning runtime's stricter limits and deadline. Bound instructions plus serialized messages together. No hidden provider, credential lookup, retry, repair, fallback, token streaming, tool execution or continuation forwarding.
 
-Auxiliary egress does not reenter the primary moderation pipeline or future general lifecycle hooks. Local egress-guard configuration cannot contain managed auxiliary definitions; reject such graphs rather than recursively invoking them. Reentry through a reused managed gateway/context also fails closed. Trusted local callbacks can capture arbitrary code; this is not process isolation or prevention of all direct calls by malicious application code.
+Auxiliary egress does not reenter the primary moderation pipeline or future general lifecycle hooks. Local egress-guard configuration cannot contain managed auxiliary definitions; reject such graphs rather than recursively invoking them. Reentry through an already-claimed private evaluation record also fails closed; there is no managed gateway in a public context to reuse. Trusted local callbacks can capture arbitrary code; this is not process isolation or prevention of all direct calls by malicious application code.
 
 ## 8. Exact barriers and disclosure
 
@@ -155,6 +276,8 @@ Run required local guards before auxiliary egress when they are intended to prev
 No transforms are introduced here. Input/output schema transformations remain explicit and the exact admitted value is fingerprinted. A future transform invalidates previous verdicts and output-check ticket bindings; lifecycle-hook design must preserve that rule.
 
 Record only safe check/model IDs, run/call lineage, boundary, candidate/check version or digest, status and accounting metadata. Do not emit original/derived content, category text outside its bounded schema, raw provider messages, protected instructions or continuation. Known malformed-response usage and `ModelInvocationError` cost remain settled before rejecting the payload. Unknown usage is visible as retained reservation, not zero cost.
+
+The implemented observer contract reuses `model.started` and `model.completed` with `purpose: 'guardrail'`, `modelId`, `checkId`, `checkVersion`, `boundary` and `callId`. Started calls add `modelCall`; completed validated verdicts add `response: 'final'` and `decision: 'allow' | 'block'`. No `step` is fabricated for these calls. Primary event shapes remain unchanged. Categories and candidate content are not emitted. Native observer allowlists and the isolated packed managed-consumer fixture exercise this additive form.
 
 ## 9. Profiles and package independence
 
@@ -182,5 +305,9 @@ These tests precede implementation, use deterministic fake adapters, and require
 12. Known usage from invalid envelopes/provider errors settles before rejection; raw exceptions, original content, prompts and continuation never enter public metadata.
 13. Reusing a managed definition across independent roots/children binds the correct account every time. An incompatible profile rejects rather than silently provisioning standalone execution.
 14. Preserve existing standalone auxiliary, tool, child-agent and ephemeral-workflow behavior; verify packed positive/negative types and unchanged optional-dependency boundaries.
+15. Through actual packed core/guardrails/runtime entries, recognize the same genuine managed handle and preserve it in agent snapshots. Reject copied, proxied, foreign-instance and serialized handles before any callback; unsupported consumers never ignore or execute a managed marker. Mutating original descriptor/model/schema/guard metadata cannot replace captured references. Neither context nor public metadata exposes a descriptor, account, ticket or evaluator.
+16. Reject a pre-reserved tool binding for the wrong exact account (including a same-root sibling), tool registration, run/call/scope or original signal. Reject fake/copied bindings, rebinding and concurrent/repeated use. Correct use consumes only its pre-held ticket, never an additional ordinary reservation, while missing grants and failed guards still cause zero handler executions.
+17. A failed broker admission consumes one historical `maxToolCalls` attempt, releases only the never-dispatched financial/generic-call hold and leaves model-kind holds unchanged. Successful broker dispatch consumes its financial ticket once; output rejection or late unknown effects never refund it. No runtime-counter callback is required inside the broker.
+18. Failed core or kind-counter admission changes neither half of the private combined commit. Competing siblings, free calls and reentrant caller configuration cannot observe or exploit a partially installed money/model/tool hold; invocation inputs are completely snapshotted before this callback-free commit.
 
-Delivery order: approve this contract and finite accounting limits → add failing core bundle tests → implement/verify core accounting → add failing runtime barrier/permit tests → bind managed definitions → run existing and packed-consumer regressions. Only then design the dependent lifecycle-hook slice. V08/V09/V12 and enterprise release qualification remain open.
+Delivery order: review the contract and finite accounting limits → add failing core bundle tests → implement/verify core accounting → add failing runtime barrier/permit tests → bind managed definitions → run existing and packed-consumer regressions. Only then design the dependent lifecycle-hook slice. V08/V09/V12 and enterprise release qualification remain open.

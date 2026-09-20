@@ -80,7 +80,10 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       },
     });
     const runtime = (overrides: Partial<Options> = {}): Runtime => {
-      const instance = createScheduledWorkflowRuntime({ ...base(), workerId: `worker-${++worker}`, leaseMs: 1_000, ...overrides });
+      // Ordinary conformance uses the production default lease. Tests that exercise
+      // expiry/renewal opt into 1 s explicitly, rather than making every assertion
+      // depend on a heavily contended test machine completing SQL within that window.
+      const instance = createScheduledWorkflowRuntime({ ...base(), workerId: `worker-${++worker}`, ...overrides });
       runtimes.push(instance); return instance;
     };
     const wrapped = (methods: Partial<ScheduledWorkflowStore>): ScheduledWorkflowAggregateStore => ({
@@ -127,7 +130,16 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const engine = runtime(); const command = { input: { value: 2 }, idempotencyKey: 'deduplicate' };
       const runs = await Promise.all(Array.from({ length: 8 }, () => engine.submit(definition, command)));
       expect(new Set(runs.map(run => run.id)).size).toBe(1);
-      const run = runs[0]!; await engine.runUntilSettled(definition, run.id);
+      const run = runs[0]!; const completed = await engine.runUntilSettled(definition, run.id);
+      let diagnostics: string | undefined;
+      if (completed.status !== 'succeeded') {
+        const observed = await detail(run.id);
+        diagnostics = JSON.stringify({ status: completed.status, effects, jobs: observed.jobs.map(job => ({
+          state: job.state, fence: job.fence, leaseUntilMs: job.leaseUntilMs, startedAtMs: job.startedAtMs,
+          leaseRevoked: job.leaseRevoked, cancelRequested: job.cancelRequested, receipt: job.receipt,
+        })), events: await engine.events(run.id) });
+      }
+      expect(completed.status, diagnostics).toBe('succeeded');
       expect((await engine.submit(definition, command)).status).toBe('succeeded'); expect(effects).toBe(1);
       await expect(engine.submit(definition, { ...command, input: { value: 3 } })).rejects.toMatchObject({ code: 'CONFLICT' });
       expect((await detail(run.id)).jobs).toHaveLength(1);
@@ -432,7 +444,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         return result;
       } });
       let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }));
-      const old = runtime({ store: fault }); const run = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'lost-start' });
+      const old = runtime({ store: fault, leaseMs: 1_000 }); const run = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'lost-start' });
       await Promise.allSettled([old.runUntilSettled(definition, run.id)]); await old.close();
       const current = runtime(); await current.runUntilSettled(definition, run.id);
       await new Promise(resolve => setTimeout(resolve, 1_050)); await current.recoverExpired(run.id);
@@ -461,12 +473,15 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const leased = deferred<void>(); const continueOld = deferred<void>(); const backing = store.workflows;
       let held = false;
       const fault = wrapped({ claim: async command => {
+        // Deliver only the original delayed claim to this worker. A fresh fenced
+        // claim belongs to the replacement worker below, not another old-worker wave.
+        if (held) return [];
         const result = await backing.claim(command);
         if (!held && result.length) { held = true; leased.resolve(); await continueOld.promise; }
         return result;
       } });
       let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }));
-      const old = runtime({ store: fault }); const run = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'pre-start-expiry' });
+      const old = runtime({ store: fault, leaseMs: 1_000 }); const run = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'pre-start-expiry' });
       const execution = old.runUntilSettled(definition, run.id);
       try {
         await bounded(leased.promise); const before = await detail(run.id);
@@ -475,6 +490,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         await current.recoverExpired(run.id);
         expect((await current.inspect(run.id)).budget).toMatchObject({ spentMicros: 0, reservedMicros: 3 });
         continueOld.resolve(); await Promise.allSettled([execution]);
+        expect(effects).toBe(0); // The expired original claim cannot dispatch before a fresh worker claim.
         const result = await current.runUntilSettled(definition, run.id);
         expect(result.status).toBe('succeeded'); expect(result.budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 });
         expect(effects).toBe(1); const after = await detail(run.id);
@@ -504,9 +520,93 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
     it('renews a live long-running handler and does not replay it after one lease interval', async () => {
       let effects = 0;
       const definition = single(tool({ execute: async input => { effects++; await new Promise(resolve => setTimeout(resolve, 1_300)); return input; } }));
-      const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'renewal' });
+      const engine = runtime({ leaseMs: 1_000 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'renewal' });
       const result = await engine.runUntilSettled(definition, run.id);
       expect(result.status).toBe('succeeded'); expect(effects).toBe(1); expect((await detail(run.id)).jobs[0]!.fence).toBe(1);
+    });
+
+    it('does not retry completion after receipt persistence observes an expired started lease', async () => {
+      let effects = 0; let completions = 0; let delayed = false;
+      const definition = single(tool({ execute: input => { effects++; return input; } }));
+      const engine = runtime({ leaseMs: 1_000, store: wrapped({
+        async recordReceipt(command) {
+          if (!delayed && command.receipt.execution === 'succeeded') {
+            delayed = true;
+            const unlock = await fixture.lockAggregate(command.scope, command.id);
+            // The real SQL receipt and heartbeat both wait for this lock. Whichever
+            // wakes first must observe the already expired storage-clock lease.
+            const release = setTimeout(() => { void unlock(); }, 1_200);
+            try { return await store.workflows.recordReceipt(command); }
+            finally { clearTimeout(release); await unlock(); }
+          }
+          return store.workflows.recordReceipt(command);
+        },
+        async complete(command) { completions++; return store.workflows.complete(command); },
+      }) });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'expired-receipt-completion' });
+      const result = await engine.runUntilSettled(definition, run.id);
+      expect(result.status).toBe('outcome_unknown');
+      expect(result.steps['write']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+      expect(result.budget).toMatchObject({ spentMicros: 1, reservedMicros: 0 });
+      expect(completions).toBe(0); expect(effects).toBe(1);
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('outcome_unknown');
+      expect(effects).toBe(1);
+    });
+
+    it('does not retry completion when cancellation commits during known receipt persistence', async () => {
+      let effects = 0; let completions = 0; let cancelled = false;
+      const definition = single(tool({ execute: input => { effects++; return input; } }));
+      const engine = runtime({ store: wrapped({
+        async recordReceipt(command) {
+          if (!cancelled && command.receipt.execution === 'succeeded') {
+            cancelled = true;
+            const key = { scope: command.scope, id: command.id, policyHash: command.policyHash };
+            const current = await store.workflows.inspect(key);
+            await store.workflows.cancel({ ...key, commandId: 'cancel-during-receipt', expectedVersion: current.record.version });
+          }
+          return store.workflows.recordReceipt(command);
+        },
+        async complete(command) { completions++; return store.workflows.complete(command); },
+      }) });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'cancelled-receipt-completion' });
+      const result = await engine.runUntilSettled(definition, run.id);
+      expect(result.status).toBe('cancelled');
+      expect(result.steps['write']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+      expect(result.budget).toMatchObject({ spentMicros: 1, reservedMicros: 0 });
+      expect(completions).toBe(0); expect(effects).toBe(1);
+    });
+
+    it('drains an in-flight heartbeat before attempting the completed handler CAS', async () => {
+      const renewing = deferred<void>(); const finalReceipt = deferred<void>(); const releaseRenewal = deferred<void>();
+      let effects = 0; let completions = 0; let receipts = 0; let renewalSettled = false;
+      const definition = single(tool({ execute: async input => { effects++; await renewing.promise; return input; } }));
+      const engine = runtime({ leaseMs: 1_000, store: wrapped({
+        async renew(command) {
+          renewing.resolve(); await releaseRenewal.promise;
+          const claim = await store.workflows.renew(command); renewalSettled = true; return claim;
+        },
+        async recordReceipt(command) {
+          const result = await store.workflows.recordReceipt(command);
+          if (++receipts === 2) finalReceipt.resolve();
+          return result;
+        },
+        async complete(command) {
+          completions++;
+          expect(renewalSettled).toBe(true);
+          return store.workflows.complete(command);
+        },
+      }) });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'drained-renewal-completion' });
+      const execution = engine.runUntilSettled(definition, run.id);
+      // Attach a handler immediately; an old runtime can reject before the barrier assertion.
+      void execution.catch(() => {});
+      try {
+        await bounded(finalReceipt.promise);
+        await new Promise(resolve => setTimeout(resolve, 75));
+        expect(completions).toBe(0);
+      } finally { releaseRenewal.resolve(); }
+      expect((await execution).status).toBe('succeeded');
+      expect(completions).toBe(1); expect(effects).toBe(1);
     });
 
     it.each(['profile', 'aggregate-version', 'unknown-field'] as const)('fails closed on %s ownership corruption', async mutation => {

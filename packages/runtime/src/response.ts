@@ -1,7 +1,16 @@
-import { jsonValue, MayuraError, type JsonObject, type JsonValue, type ModelResponse } from '@mayura/core';
+import { jsonValue, MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelResponse } from '@mayura/core';
 import { isIdentifier } from './agent.js';
 
 const invalid = (): never => { throw new MayuraError('MODEL_FAILED', 'The model returned an invalid response envelope.'); };
+
+/** Read only independently known failure usage; exception accessors/proxies cannot supply public text. */
+export function modelFailureCost(error: unknown): number | undefined {
+  try {
+    const descriptor = error instanceof ModelInvocationError ? Object.getOwnPropertyDescriptor(error, 'costMicros') : undefined;
+    const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  } catch { return undefined; }
+}
 
 function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();

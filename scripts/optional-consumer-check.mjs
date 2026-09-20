@@ -12,12 +12,13 @@ import { gunzipSync } from 'node:zlib';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
+  guardrails: ['@mayura/core'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -135,11 +136,14 @@ async function main() {
     roots.forEach(visit); return result;
   };
   assert.deepEqual([...closure(['@mayura/sdk'])].sort(), ['@mayura/core', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
+  assert.deepEqual([...closure(['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'])].sort(),
+    ['@mayura/core', '@mayura/guardrails', '@mayura/observability', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing'], 'optional-node.test.ts'],
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
+    ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -161,7 +165,7 @@ async function main() {
     }, include: ['consumer.ts'] }, null, 2));
     await run([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false'], application);
     if (name !== 'browser') {
-      await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', `optional-${name}.test.mjs`)));
+      await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, execution });
@@ -186,7 +190,7 @@ async function main() {
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
-    checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
+    checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'managed-shared-definition-identity', 'managed-single-permit-budget', 'managed-observer-three-model-calls', 'explicit-trusted-host-entries', 'no-managed-provider-native-dependencies', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
   };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }

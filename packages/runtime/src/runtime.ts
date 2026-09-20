@@ -1,14 +1,17 @@
 import {
-  assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, ModelInvocationError, publicError, validate,
-  type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
+  assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, publicError, validate,
+  type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
   type Outcome, type Permissions, type RunHandle, type Schema, type Scope,
 } from '@mayura/core';
+import { readManagedGuardDefinition } from '@mayura/core/host';
 import { invokeTool, type AnyTool } from '@mayura/tools';
-import { assertAgent, isIdentifier, type AgentDefinition } from './agent.js';
+import { bindToolBudgetTicket } from '@mayura/tools/host';
+import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
-import { modelCost, modelResponse } from './response.js';
+import { modelCost, modelFailureCost, modelResponse } from './response.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
 import { OperationPermits } from './permits.js';
+import { evaluateManagedGuard } from './managed-guards.js';
 
 /** All bounds are finite; model/token/cost declarations do not turn trusted callbacks into a sandbox. */
 export interface RuntimeLimits {
@@ -122,6 +125,9 @@ interface RunState {
   descendants: number;
   modelCalls: number;
   toolCalls: number;
+  heldModelCalls: number;
+  heldToolCalls: number;
+  readonly bundles: Set<CallBundle>;
 }
 function permissionsFor(supplied: Permissions | undefined, required = false): Permissions {
   const allow = supplied?.allow ?? (required ? undefined : []);
@@ -148,14 +154,49 @@ function record(state: RunState, receipt: ExecutionReceipt): void {
 }
 function checkCalls(state: RunState, kind: 'model' | 'tool', count: number): void {
   for (const current of ancestors(state)) {
-    const remaining = kind === 'model' ? current.limits.maxModelCalls - current.modelCalls : current.limits.maxToolCalls - current.toolCalls;
+    const remaining = kind === 'model' ? current.limits.maxModelCalls - current.modelCalls - current.heldModelCalls
+      : current.limits.maxToolCalls - current.toolCalls - current.heldToolCalls;
     if (count > remaining) throw new MayuraError('LIMIT_EXCEEDED', 'An ancestor execution-call limit was reached.');
   }
 }
-function countCall(state: RunState, kind: 'model' | 'tool'): void {
-  for (const current of ancestors(state)) {
-    if (kind === 'model') current.modelCalls++; else current.toolCalls++;
+interface CallTicket { readonly ticket: BudgetTicket; readonly kind: 'model' | 'tool'; counted: boolean; cancelled: boolean }
+interface CallBundle { readonly entries: readonly CallTicket[]; close(): void }
+
+/** Internal atomic projection: only freshly-created primitive records reach the core commit. */
+function reserveCalls(state: RunState, operations: readonly { readonly kind: 'model' | 'tool'; readonly maxCostMicros: number }[]): CallBundle {
+  const path = ancestors(state);
+  const modelCount = operations.filter(operation => operation.kind === 'model').length;
+  const toolCount = operations.length - modelCount;
+  checkCalls(state, 'model', modelCount); checkCalls(state, 'tool', toolCount);
+  const bundleId = crypto.randomUUID();
+  const bundle: BudgetBundle = state.budget.reserveBundle(operations.map((operation, index) => ({ id: `${state.id}/${bundleId}/${index}`, maxCostMicros: operation.maxCostMicros })));
+  // No application callback, await, hook or logger occurs between the two ledger projections.
+  for (const account of path) { account.heldModelCalls += modelCount; account.heldToolCalls += toolCount; }
+  const entries = operations.map((operation, index): CallTicket => ({ ticket: bundle.tickets[index]!, kind: operation.kind, counted: false, cancelled: false }));
+  let closed = false;
+  const result: CallBundle = { entries, close: () => {
+    if (closed) return;
+    bundle.close();
+    for (const entry of entries) if (!entry.counted) {
+      for (const account of path) { if (entry.kind === 'model') account.heldModelCalls--; else account.heldToolCalls--; }
+      entry.cancelled = true;
+    }
+    closed = true; state.bundles.delete(result);
+  } };
+  state.bundles.add(result); return result;
+}
+
+/** Only runtime-owned records reach this transition; model dispatch and tool attempts differ deliberately. */
+function consumeCall(state: RunState, entry: CallTicket, kind: 'model'): Reservation;
+function consumeCall(state: RunState, entry: CallTicket, kind: 'tool'): void;
+function consumeCall(state: RunState, entry: CallTicket, kind: 'model' | 'tool'): Reservation | void {
+  if (entry.kind !== kind || entry.counted || entry.cancelled) throw new MayuraError('CONFLICT', 'The runtime invocation was already consumed, cancelled or has the wrong kind.');
+  const reservation = kind === 'model' ? entry.ticket.start() : undefined;
+  for (const account of ancestors(state)) {
+    if (kind === 'model') { account.heldModelCalls--; account.modelCalls++; }
+    else { account.heldToolCalls--; account.toolCalls++; }
   }
+  entry.counted = true; return reservation;
 }
 
 /** Process-local structured concurrency. No restart recovery or hard callback isolation is promised. */
@@ -235,7 +276,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
     const state = { id, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
-      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0 } as unknown as RunState;
+      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0,
+      heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
     const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
     const relayExternal = (): void => { if (!controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'The composing invocation was cancelled.')); };
@@ -244,7 +286,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     if (parent?.controller.signal.aborted) relayParent();
     if (externalSignal?.aborted) relayExternal();
     // Closing admissions never releases unknown charges; callback settlement remains valid.
-    controller.signal.addEventListener('abort', () => { state.accepting = false; budget.close(); }, { once: true });
+    controller.signal.addEventListener('abort', () => {
+      state.accepting = false; budget.close(); for (const bundle of state.bundles) bundle.close();
+    }, { once: true });
     if (parent) { parent.children.push(state); for (const item of ancestors(parent)) item.descendants++; }
     else activeRoots++;
     states.set(handle, state);
@@ -253,8 +297,25 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       if (Date.now() >= deadline && !controller.signal.aborted) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed.'));
       if (controller.signal.aborted) throw controller.signal.reason;
     };
-    const guard = async (checks: readonly Guard[], value: JsonValue, boundary: 'input' | 'output', callId: string): Promise<void> => {
-      const verdicts = await cancellable(() => Promise.all(checks.map(async (check) => {
+    const managed = (checks: readonly AgentGuard[]) => checks.flatMap(check => {
+      const descriptor = readManagedGuardDefinition(check);
+      return descriptor ? [{ handle: check as ManagedGuardDefinition, descriptor }] : [];
+    });
+    const requiredChecks = (checks: readonly AgentGuard[]) => {
+      const definitions = managed(checks);
+      for (const { descriptor } of definitions) if (!grants.has(`model:${descriptor.model.id}`)) {
+        throw new MayuraError('PERMISSION_DENIED', 'A required managed guard model destination is not authorized.');
+      }
+      return definitions;
+    };
+    const operationBundle = (kind: 'model' | 'tool', maxCostMicros: number): CallBundle => {
+      const definitions = requiredChecks(agent.guards.output);
+      return reserveCalls(state, [{ kind, maxCostMicros }, ...definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))]);
+    };
+    const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[]): Promise<void> => {
+      const definitions = managed(checks);
+      const local = checks.filter(check => !readManagedGuardDefinition(check)) as readonly Guard[];
+      const verdicts = await cancellable(() => Promise.all(local.map(check => runOperations.run(controller.signal, async () => {
         try {
           const verdict = await check.check(value, Object.freeze({ runId: id, callId, scope, signal: controller.signal, boundary }));
           const decision = verdict?.decision;
@@ -263,10 +324,35 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           return decision;
         }
         catch { throw new MayuraError('GUARD_UNAVAILABLE', 'A required guard could not complete its check.'); }
-      })), controller.signal);
+      }))), controller.signal);
       if (verdicts.some((decision) => decision !== 'allow')) {
         throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this content.');
       }
+      if (definitions.length === 0) return;
+      checkCancelled(); requiredChecks(checks);
+      const owned = held === undefined ? reserveCalls(state, definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))) : undefined;
+      const entries = held ?? owned!.entries;
+      try {
+        if (entries.length !== definitions.length) throw new MayuraError('CONFLICT', 'Required guard reservations do not match this barrier.');
+        const results = await cancellable(() => Promise.allSettled(definitions.map(({ descriptor }, index) => {
+          const entry = entries[index]!;
+          const metadata = { purpose: 'guardrail', modelId: descriptor.model.id, checkId: descriptor.id, checkVersion: descriptor.version, boundary, callId } as const;
+          return evaluateManagedGuard({ descriptor, candidate: value,
+            context: Object.freeze({ runId: id, callId, scope, signal: controller.signal, boundary }), limits, operations: runOperations,
+            assertActive: checkCancelled,
+            start: () => {
+              checkCancelled();
+              if (!grants.has(`model:${descriptor.model.id}`)) throw new MayuraError('PERMISSION_DENIED', 'The managed guard model destination is not authorized.');
+              return consumeCall(state, entry, 'model');
+            },
+            onStarted: () => { events.emit('model.started', { ...metadata, modelCall: state.modelCalls }); },
+            onCompleted: (decision: 'allow' | 'block') => { events.emit('model.completed', { ...metadata, response: 'final', decision }); },
+          });
+        })), controller.signal);
+        const rejected = results.find(result => result.status === 'rejected');
+        if (rejected?.status === 'rejected') throw rejected.reason;
+        checkCancelled();
+      } finally { owned?.close(); }
     };
 
     const preflight = async (tool: AnyTool, rawInput: JsonValue): Promise<void> => {
@@ -293,89 +379,98 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: freezeJson(jsonValue(tool.inputJsonSchema)) as typeof tool.inputJsonSchema }),
         }));
         const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
-        const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
+        const primaryBundle = operationBundle('model', agent.model.maxCostMicros);
+        try {
+          const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
+            checkCancelled();
+            const reservation = consumeCall(state, primaryBundle.entries[0]!, 'model');
+            events.emit('model.started', { step, modelCall: state.modelCalls });
+            let raw;
+            try { raw = await agent.model.generate(Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens })); }
+            catch (error) {
+              const cost = modelFailureCost(error);
+              if (cost !== undefined) reservation.settle(cost);
+              throw new MayuraError('MODEL_FAILED', 'The model adapter failed to produce a response.');
+            }
+            // Account independently validated usage even when the content envelope is malformed.
+            // The callback may complete after cooperative cancellation; it cannot re-open disclosure.
+            reservation.settle(modelCost(raw));
+            return raw;
+          }), controller.signal);
           checkCancelled();
-          checkCalls(state, 'model', 1);
-          const reservation = budget.reserve(agent.model.maxCostMicros);
-          countCall(state, 'model');
-          events.emit('model.started', { step, modelCall: state.modelCalls });
-          let raw;
-          try { raw = await agent.model.generate(Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens })); }
-          catch (error) {
-            if (error instanceof ModelInvocationError) reservation.settle(error.costMicros);
-            throw new MayuraError('MODEL_FAILED', 'The model adapter failed to produce a response.');
+          const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
+          continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
+          events.emit('model.completed', { step, response: response.type });
+          if (response.type === 'final') {
+            const output = await cancellable(() => validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes }), controller.signal);
+            const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
+            await guard(agent.guards.output, approvedOutput, 'output', `model.${state.modelCalls}`, primaryBundle.entries.slice(1));
+            checkCancelled();
+            return Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> });
           }
-          // Account independently validated usage even when the content envelope is malformed.
-          // The callback may complete after cooperative cancellation; it cannot re-open disclosure.
-          reservation.settle(modelCost(raw));
-          return raw;
-        }), controller.signal);
-        checkCancelled();
-        const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
-        continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
-        events.emit('model.completed', { step, response: response.type });
-        if (response.type === 'final') {
-          const output = await cancellable(() => validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes }), controller.signal);
-          const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
-          await guard(agent.guards.output, approvedOutput, 'output', `model.${state.modelCalls}`);
-          checkCancelled();
-          return Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> });
-        }
-        checkCalls(state, 'tool', response.calls.length);
-        // Admit every member before starting the first effect. Unknown or duplicate calls reject the batch.
-        let batchCost = 0;
-        for (const call of response.calls) {
-          if (callIds.has(call.id)) throw new MayuraError('CONFLICT', 'Tool call identifiers must be unique within a run.');
-          const tool = tools.get(call.toolId);
-          if (!tool) throw new MayuraError('NOT_FOUND', 'The model requested an unregistered tool.');
-          await preflight(tool, call.input);
-          batchCost += tool.costMicros;
-          if (!Number.isSafeInteger(batchCost)) throw new MayuraError('BUDGET_EXCEEDED', 'Tool batch cost exceeds supported accounting bounds.');
-        }
-        const ledger = budget.snapshot();
-        if (typeof ledger.spentMicros !== 'number' || batchCost > limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) {
-          throw new MayuraError('BUDGET_EXCEEDED', 'The complete tool batch cannot be admitted within the budget.');
-        }
-        for (const call of response.calls) callIds.add(call.id);
-        messages.push({ role: 'assistant', calls: response.calls });
-        for (const call of response.calls) {
-          checkCancelled();
-          checkCalls(state, 'tool', 1);
-          countCall(state, 'tool');
-          events.emit('tool.started', { callId: call.id, toolId: call.toolId });
-          let outcome = await invokeTool(tools.get(call.toolId)!, call.input, {
-            runId: id, callId: call.id, scope, signal: controller.signal, permissions, budget,
-            maxOutputBytes: limits.maxOutputBytes,
-            onExecutionReceipt: async (receipt) => { record(state, receipt); },
-            ...(isAgentTool(tools.get(call.toolId)!) ? {
-              contextBindings: [childGateway.bind(Object.freeze({
-                spawn: (childAgent: AgentDefinition, childInput: unknown, childOptions: ChildOptions, signal: AbortSignal) =>
-                  admitChild(state, childAgent, childInput, childOptions, true, signal),
-              }))],
-            } : { acquireExecution: (signal: AbortSignal) => runOperations.acquire(signal) }),
-          });
-          if (outcome.receipt) record(state, outcome.receipt);
-          if (outcome.status === 'cancelled' && controller.signal.aborted && controller.signal.reason instanceof MayuraError && controller.signal.reason.code === 'TIMEOUT') {
-            outcome = { ...outcome, status: 'failed', error: publicError(controller.signal.reason) };
+          // A validated tool proposal has no final candidate; these holds cannot fund a later invocation.
+          primaryBundle.close();
+          checkCalls(state, 'tool', response.calls.length);
+          // Preflight every proposed grant/schema/identity before the first effect. Money/call
+          // holds are per dispatch and include its required checks, not every future batch member.
+          let batchCost = 0;
+          for (const call of response.calls) {
+            if (callIds.has(call.id)) throw new MayuraError('CONFLICT', 'Tool call identifiers must be unique within a run.');
+            const tool = tools.get(call.toolId);
+            if (!tool) throw new MayuraError('NOT_FOUND', 'The model requested an unregistered tool.');
+            await preflight(tool, call.input);
+            batchCost += tool.costMicros;
+            if (!Number.isSafeInteger(batchCost)) throw new MayuraError('BUDGET_EXCEEDED', 'Tool batch cost exceeds supported accounting bounds.');
           }
-          if (outcome.status !== 'succeeded') {
-            events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status,
-              ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}),
-            });
-            return outcome;
+          const ledger = budget.snapshot();
+          if (typeof ledger.spentMicros !== 'number' || batchCost > limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) {
+            throw new MayuraError('BUDGET_EXCEEDED', 'The complete tool batch cannot be admitted within the budget.');
           }
-          const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
-          try { await guard(agent.guards.output, toolOutput, 'output', call.id); }
-          catch (error) {
-            const blocked = outcomeFor(error);
-            events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: blocked.status, execution: 'succeeded', disclosure: 'withheld' });
-            const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
-            if (receipt) record(state, receipt);
-            return { ...blocked, ...(receipt ? { receipt } : {}) };
+          for (const call of response.calls) callIds.add(call.id);
+          messages.push({ role: 'assistant', calls: response.calls });
+          for (const call of response.calls) {
+            checkCancelled();
+            const tool = tools.get(call.toolId)!;
+            const toolBundle = operationBundle('tool', tool.costMicros);
+            try {
+              consumeCall(state, toolBundle.entries[0]!, 'tool');
+              events.emit('tool.started', { callId: call.id, toolId: call.toolId });
+              let outcome = await invokeTool(tool, call.input, {
+                runId: id, callId: call.id, scope, signal: controller.signal, permissions, budget,
+                budgetBinding: bindToolBudgetTicket(tool, toolBundle.entries[0]!.ticket, { budget, runId: id, callId: call.id, scope, signal: controller.signal }),
+                maxOutputBytes: limits.maxOutputBytes,
+                onExecutionReceipt: async (receipt) => { record(state, receipt); },
+                ...(isAgentTool(tools.get(call.toolId)!) ? {
+                  contextBindings: [childGateway.bind(Object.freeze({
+                    spawn: (childAgent: AgentDefinition, childInput: unknown, childOptions: ChildOptions, signal: AbortSignal) =>
+                      admitChild(state, childAgent, childInput, childOptions, true, signal),
+                  }))],
+                } : { acquireExecution: (signal: AbortSignal) => runOperations.acquire(signal) }),
+              });
+              if (outcome.receipt) record(state, outcome.receipt);
+              if (outcome.status === 'cancelled' && controller.signal.aborted && controller.signal.reason instanceof MayuraError && controller.signal.reason.code === 'TIMEOUT') {
+                outcome = { ...outcome, status: 'failed', error: publicError(controller.signal.reason) };
+              }
+              if (outcome.status !== 'succeeded') {
+                events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status,
+                  ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}),
+                });
+                return outcome;
+              }
+              const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
+              try { await guard(agent.guards.output, toolOutput, 'output', call.id, toolBundle.entries.slice(1)); }
+              catch (error) {
+                const blocked = outcomeFor(error);
+                events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: blocked.status, execution: 'succeeded', disclosure: 'withheld' });
+                const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
+                if (receipt) record(state, receipt);
+                return { ...blocked, ...(receipt ? { receipt } : {}) };
+              }
+              events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status, execution: 'succeeded', disclosure: 'released' });
+              messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: toolOutput });
+            } finally { toolBundle.close(); }
           }
-          events.emit('tool.completed', { callId: call.id, toolId: call.toolId, status: outcome.status, execution: 'succeeded', disclosure: 'released' });
-          messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: toolOutput });
-        }
+        } finally { primaryBundle.close(); }
       }
       throw new MayuraError('LIMIT_EXCEEDED', 'The agent step limit was reached.');
     };
@@ -398,6 +493,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         if (state.children.length > 0) outcome = { ...outcome, evidence: evidenceFor(state) };
         terminal = true;
         state.status = outcome.status;
+        for (const bundle of state.bundles) bundle.close();
         budget.close();
         clearTimeout(timer);
         parent?.controller.signal.removeEventListener('abort', relayParent);

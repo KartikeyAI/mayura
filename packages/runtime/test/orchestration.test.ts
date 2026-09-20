@@ -410,7 +410,11 @@ describe('composition, scheduler ownership and privacy', () => {
     expect(await first.result()).toMatchObject({ status: 'cancelled' });
     await nextTurn();
     expect(next).not.toHaveBeenCalled();
-    expect(engine.inspect(parent).budget.reservedMicros).toBe(1);
+    // One unknown started charge plus the sibling's protected, not-yet-dispatched bundle.
+    // Financial admission does not free or acquire an actual execution permit.
+    expect(engine.inspect(first).budget.reservedMicros).toBe(1);
+    expect(engine.inspect(sibling).budget).toMatchObject({ reservedMicros: 1, calls: 0 });
+    expect(engine.inspect(parent).budget.reservedMicros).toBe(2);
     completion.resolve(final(2, 1));
     expect(await sibling.result()).toMatchObject({ status: 'succeeded' });
     expect((await parent.result()).status).not.toBe('succeeded');

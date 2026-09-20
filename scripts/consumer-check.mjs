@@ -155,9 +155,26 @@ function inspectSourceMaps(files) {
   return { maps, sources: referencedSources.size };
 }
 
-const consumerTypes = `import { Budget, type Outcome, defineTool, invokeTool, type ToolOutput, createRuntime, defineAgent, agentAsTool } from '@mayura/sdk';
+const consumerTypes = `import { Budget, type BudgetBundle, type BudgetTicket, type BundleOperation, type Outcome, defineTool, invokeTool, type ToolOutput, createRuntime, defineAgent, agentAsTool } from '@mayura/sdk';
 import { scriptedModel } from '@mayura/testing';
 import { z } from 'zod';
+
+const bundleBudget = new Budget(5, 2);
+const operations: readonly BundleOperation[] = [{ id: 'primary', maxCostMicros: 3 }, { id: 'check', maxCostMicros: 2 }];
+const bundle: BudgetBundle = bundleBudget.reserveBundle(operations);
+const ticket: BudgetTicket = bundle.tickets[0]!;
+const heldCalls: number = bundleBudget.capacitySnapshot().heldCalls;
+ticket.start().settle(3);
+bundle.close();
+void heldCalls;
+if (false) {
+  // @ts-expect-error Ticket arrays are immutable authority views.
+  bundle.tickets.push(ticket);
+  // @ts-expect-error Starting cannot replace the ticket cost or account.
+  ticket.start(0);
+  // @ts-expect-error Bundle costs are integer numbers, not arbitrary strings.
+  bundleBudget.reserveBundle([{ id: 'bad', maxCostMicros: 'free' }]);
+}
 
 const tool = defineTool({
   id: 'math.add', version: '1.0.0', description: 'Add finite numbers.',
@@ -277,6 +294,20 @@ assert.equal(sdk.defineAgent, defineAgent);
 assert.equal(sdk.createRuntime, createRuntime);
 assert.equal(sdk.Budget, Budget);
 const importMs = performance.now() - started;
+const bundleBudget = new Budget(5, 2);
+const bundleChild = bundleBudget.fork({ id: 'bundle-child', maxCostMicros: 5, maxCalls: 2 });
+const bundle = bundleChild.reserveBundle([{ id: 'primary', maxCostMicros: 3 }, { id: 'check', maxCostMicros: 2 }]);
+assert.deepEqual(bundleBudget.capacitySnapshot(), { heldCalls: 2 });
+assert.deepEqual(bundleBudget.snapshot(), { spentMicros: 0, reservedMicros: 5, calls: 0 });
+assert.throws(() => bundleBudget.reserve(0), { code: 'BUDGET_EXCEEDED' });
+bundle.tickets[0].start().settle(2);
+assert.throws(() => bundle.tickets[0].start(), { code: 'CONFLICT' });
+assert.throws(() => ({ ...bundle.tickets[1] }).start(), { code: 'INVALID_CONFIG' });
+bundle.close();
+assert.deepEqual(bundleBudget.capacitySnapshot(), { heldCalls: 0 });
+assert.deepEqual(bundleBudget.snapshot(), { spentMicros: 2, reservedMicros: 0, calls: 1 });
+bundleBudget.reserve(3).settle(3);
+assert.deepEqual(bundleBudget.snapshot(), { spentMicros: 5, reservedMicros: 0, calls: 2 });
 const consumerRoot = await realpath(process.cwd());
 for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/testing', '@mayura/sdk', 'zod']) {
   const resolved = await realpath(fileURLToPath(import.meta.resolve(name)));
@@ -477,7 +508,7 @@ async function main() {
     status: 'passed', node: process.version, platform: process.platform, architecture: process.arch,
     output, packages: reports, frameworkTarballBytes: frameworkBytes, installedPackageCount: installed.size,
     installMs, typecheckMs, executionMs, importMs: execution.importMs,
-    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'transformed-child-contracts', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
+    checks: ['offline-local-tarballs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'esm-agent-execution', 'default-deny-tool', 'private-exports-denied', 'no-native-or-provider-dependencies', 'archive-file-allowlist', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack', 'agent-tool-composition', 'shared-child-ledger', 'atomic-budget-bundles', 'transformed-child-contracts', 'isolated-runtime-and-debugger-imports', 'no-ancestor-module-fallback', 'outside-source-execution-denied'],
   };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));

@@ -25,6 +25,8 @@ Only bounded plain-JSON `RunEvent` envelopes with exact envelope keys, canonical
 | `run.started` | `profile: ephemeral`; optional `rootId`, `parentId`, `agentId` |
 | `model.started` | nonnegative `step`, positive `modelCall` |
 | `model.completed` | nonnegative `step`, `response: final/tool_calls` |
+| Managed `model.started` | `purpose: guardrail`, bounded `modelId`, `checkId`, `checkVersion`, `callId`, `boundary: input/output`, positive `modelCall`; no `step` |
+| Managed `model.completed` | same guardrail identity/boundary metadata, `response: final`, `decision: allow/block`; no categories or `step` |
 | `tool.started` | bounded `callId`, `toolId` |
 | `tool.completed` | `callId`, `toolId`, terminal outcome `status`; optional paired `execution`/`disclosure` receipt fields |
 | `run.completed` | terminal outcome `status`, exact `spentMicros`, nonnegative `reservedMicros` and `calls` |

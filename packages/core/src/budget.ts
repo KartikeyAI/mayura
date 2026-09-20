@@ -5,6 +5,28 @@ export interface Reservation {
   settle(actualMicros: number): void;
 }
 
+/** One fixed-cost future execution; IDs remain unique throughout their shared ledger's lifetime. */
+export interface BundleOperation {
+  readonly id: string;
+  readonly maxCostMicros: number;
+}
+
+/** Genuine receiver-bound authority for one held execution, not an executor or a transferable ID. */
+export interface BudgetTicket {
+  readonly id: string;
+  readonly maxCostMicros: number;
+  /** Consume one held call exactly once. Monetary settlement remains independently required. */
+  start(): Reservation;
+  /** Release only never-started capacity, including after account closure; repeated cancellation is harmless. */
+  cancel(): void;
+}
+
+/** Atomically admitted future calls. Closure cancels held tickets, never already-started usage. */
+export interface BudgetBundle {
+  readonly tickets: readonly BudgetTicket[];
+  close(): void;
+}
+
 /** Child limits are ceilings on shared funds, not prepaid allocations or guaranteed earmarks. */
 export interface BudgetForkOptions {
   /** Unique within the entire ledger; root is reserved and closed identities cannot be reused. */
@@ -28,7 +50,13 @@ export interface BudgetSnapshot {
   readonly calls: number;
 }
 
-interface Ledger { readonly ids: Set<string>; blocked: boolean }
+interface Ledger {
+  readonly ids: Set<string>;
+  readonly ticketIds: Set<string>;
+  /** Only named bundle tickets count here: held plus started but not yet validly settled. */
+  outstandingTickets: number;
+  blocked: boolean;
+}
 interface Account {
   readonly ledger: Ledger;
   readonly ancestors: readonly Account[];
@@ -38,14 +66,29 @@ interface Account {
   reserved: bigint;
   spent: bigint;
   calls: number;
+  heldCalls: number;
   closed: boolean;
 }
 
+interface TicketState {
+  readonly account: Account;
+  readonly path: readonly Account[];
+  readonly maxCostMicros: number;
+  readonly bound: bigint;
+  status: 'held' | 'started' | 'cancelled' | 'settled';
+}
+interface BundleState { readonly tickets: readonly TicketState[]; closed: boolean }
+
 const maximumAccounts = 1_024;
 const maximumDepth = 32;
+const maximumBundleOperations = 128;
+const maximumOutstandingTickets = 1_024;
+const maximumTicketIds = 16_384;
 const safeInteger = BigInt(Number.MAX_SAFE_INTEGER);
 // Runtime-private state prevents JavaScript writes to TypeScript-only private/readonly fields.
 const accounts = new WeakMap<Budget, Account>();
+const tickets = new WeakMap<BudgetTicket, TicketState>();
+const bundles = new WeakMap<BudgetBundle, BundleState>();
 
 function costLimit(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_CONFIG', 'maxCostMicros must be a non-negative safe integer.');
@@ -55,6 +98,15 @@ function costLimit(value: number): void {
 export function assertBudget(value: unknown): asserts value is Budget {
   if (typeof value !== 'object' || value === null || !accounts.has(value as Budget)) {
     throw new MayuraError('INVALID_CONFIG', 'A genuine shared execution Budget is required.');
+  }
+}
+
+/** Trusted-host ownership check; a common ledger or copied identity does not convey this account's authority. */
+export function assertBudgetTicket(value: unknown, owner: Budget): asserts value is BudgetTicket {
+  assertBudget(owner);
+  const ticket = typeof value === 'object' && value !== null ? tickets.get(value as BudgetTicket) : undefined;
+  if (!ticket || ticket.account !== accounts.get(owner)) {
+    throw new MayuraError('INVALID_CONFIG', 'A genuine execution ticket owned by the exact account is required.');
   }
 }
 
@@ -89,6 +141,100 @@ function forkOptions(value: BudgetForkOptions): BudgetForkOptions {
   return { id, maxCostMicros: maxCostMicros as number, maxCalls: maxCalls as number };
 }
 
+/** Snapshot every supplied descriptor before checking mutable ledger state; never execute getters or iterators. */
+function bundleOperations(value: readonly BundleOperation[]): readonly BundleOperation[] {
+  const excessiveLength = Symbol('bundle-length');
+  try {
+    if (!Array.isArray(value)) throw new Error();
+    const length = Object.getOwnPropertyDescriptor(value, 'length');
+    if (!length || !('value' in length) || !Number.isSafeInteger(length.value) || length.value < 1) throw new Error();
+    if (length.value > maximumBundleOperations) throw excessiveLength;
+    const size = length.value as number;
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.length !== size + 1 || keys.some(key => key !== 'length'
+      && (typeof key !== 'string' || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= size))) throw new Error();
+    const result: BundleOperation[] = [];
+    for (let index = 0; index < size; index++) {
+      const descriptor = descriptors[String(index)];
+      if (!descriptor || !('value' in descriptor)) throw new Error();
+      const operation = descriptor.value as unknown;
+      if (!operation || typeof operation !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(operation))) throw new Error();
+      const fields = Object.getOwnPropertyDescriptors(operation);
+      const fieldKeys = Reflect.ownKeys(fields);
+      if (fieldKeys.length !== 2 || fieldKeys.some(key => key !== 'id' && key !== 'maxCostMicros')
+        || !fields['id'] || !('value' in fields['id']) || !fields['maxCostMicros'] || !('value' in fields['maxCostMicros'])) throw new Error();
+      const id: unknown = fields['id'].value; const maxCostMicros: unknown = fields['maxCostMicros'].value;
+      if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(id)
+        || typeof maxCostMicros !== 'number' || !Number.isSafeInteger(maxCostMicros) || maxCostMicros < 0) throw new Error();
+      result.push({ id, maxCostMicros });
+    }
+    return result;
+  } catch (error) {
+    if (error === excessiveLength) throw new MayuraError('LIMIT_EXCEEDED', 'The execution bundle operation limit was reached.');
+    throw new MayuraError('INVALID_CONFIG', 'Bundle operations must be a bounded list of plain execution identities and cost bounds.');
+  }
+}
+
+/** Existing settlement semantics, shared by ordinary reservations and consumed bundle tickets. */
+function reservationFor(account: Account, path: readonly Account[], maxMicros: number, ticket?: TicketState): Reservation {
+  const bound = BigInt(maxMicros); let settled = false;
+  return Object.freeze({
+    settle: (actualMicros: number): void => {
+      if (settled) throw new MayuraError('CONFLICT', 'Reservation is already settled.');
+      if (!Number.isSafeInteger(actualMicros) || actualMicros < 0) {
+        throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost is invalid; reservation retained.');
+      }
+      settled = true;
+      // Closing, cancellation, or another reservation's overrun never discards known late usage.
+      for (const ancestor of path) { ancestor.reserved -= bound; ancestor.spent += BigInt(actualMicros); }
+      if (ticket) { ticket.status = 'settled'; account.ledger.outstandingTickets--; }
+      if (actualMicros > maxMicros) {
+        account.ledger.blocked = true;
+        throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost exceeded its bound; full actual usage recorded.');
+      }
+    },
+  });
+}
+
+function ticketFor(value: BudgetTicket): TicketState {
+  const ticket = tickets.get(value);
+  if (!ticket) throw new MayuraError('INVALID_CONFIG', 'A genuine execution ticket receiver is required.');
+  return ticket;
+}
+
+/** Private cleanup deliberately ignores closure and overruns: undispatched holds are still releasable. */
+function cancelHeld(ticket: TicketState): void {
+  ticket.status = 'cancelled';
+  for (const ancestor of ticket.path) { ancestor.heldCalls--; ancestor.reserved -= ticket.bound; }
+  ticket.account.ledger.outstandingTickets--;
+}
+
+function startTicket(this: BudgetTicket): Reservation {
+  const ticket = ticketFor(this);
+  if (ticket.status !== 'held') throw new MayuraError('CONFLICT', 'Execution ticket is no longer held.');
+  assertOpen(ticket.account, ticket.path);
+  // Every admission already counts these held slots; converting one cannot increase total capacity use.
+  ticket.status = 'started';
+  for (const ancestor of ticket.path) { ancestor.heldCalls--; ancestor.calls++; }
+  return reservationFor(ticket.account, ticket.path, ticket.maxCostMicros, ticket);
+}
+
+function cancelTicket(this: BudgetTicket): void {
+  const ticket = ticketFor(this);
+  if (ticket.status === 'cancelled') return;
+  if (ticket.status !== 'held') throw new MayuraError('CONFLICT', 'Started execution tickets cannot be cancelled.');
+  cancelHeld(ticket);
+}
+
+function closeBundle(this: BudgetBundle): void {
+  const bundle = bundles.get(this);
+  if (!bundle) throw new MayuraError('INVALID_CONFIG', 'A genuine execution bundle receiver is required.');
+  if (bundle.closed) return;
+  for (const ticket of bundle.tickets) if (ticket.status === 'held') cancelHeld(ticket);
+  bundle.closed = true;
+}
+
 /**
  * Process-local shared synchronous ledger. Reserve before awaits so children cannot spend
  * the same remaining funds. Ancestor totals include descendants and must not be added together.
@@ -100,9 +246,9 @@ export class Budget {
     if (new.target !== Budget) throw new MayuraError('INVALID_CONFIG', 'Budget accounts cannot be subclassed.');
     costLimit(maxCostMicros); assertPositiveInteger(maxCalls, 'maxCalls');
     accounts.set(this, {
-      ledger: { ids: new Set(['root']), blocked: false }, ancestors: Object.freeze([]),
+      ledger: { ids: new Set(['root']), ticketIds: new Set(), outstandingTickets: 0, blocked: false }, ancestors: Object.freeze([]),
       identity: Object.freeze({ id: 'root', lineage: Object.freeze(['root']), depth: 0 }),
-      maxCostMicros, maxCalls, reserved: 0n, spent: 0n, calls: 0, closed: false,
+      maxCostMicros, maxCalls, reserved: 0n, spent: 0n, calls: 0, heldCalls: 0, closed: false,
     });
     Object.freeze(this);
   }
@@ -130,7 +276,7 @@ export class Budget {
       lineage: Object.freeze([...parent.identity.lineage, config.id]), depth: parent.identity.depth + 1,
     });
     accounts.set(child, { ledger: parent.ledger, ancestors: Object.freeze(path), identity,
-      maxCostMicros: config.maxCostMicros, maxCalls: config.maxCalls, reserved: 0n, spent: 0n, calls: 0, closed: false,
+      maxCostMicros: config.maxCostMicros, maxCalls: config.maxCalls, reserved: 0n, spent: 0n, calls: 0, heldCalls: 0, closed: false,
     });
     parent.ledger.ids.add(config.id);
     return child;
@@ -142,30 +288,59 @@ export class Budget {
     if (!Number.isSafeInteger(maxMicros) || maxMicros < 0) throw new MayuraError('INVALID_CONFIG', 'A non-negative safe-integer cost bound is required.');
     assertOpen(account, path);
     const bound = BigInt(maxMicros);
-    if (path.some(ancestor => ancestor.calls >= ancestor.maxCalls || bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved)) {
+    if (path.some(ancestor => ancestor.heldCalls >= ancestor.maxCalls - ancestor.calls || bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved)) {
       throw new MayuraError('BUDGET_EXCEEDED', 'Execution budget exhausted; no new call was dispatched.');
     }
     // No callback or await can interleave ancestor validation and commit.
     for (const ancestor of path) { ancestor.calls++; ancestor.reserved += bound; }
-    let settled = false;
-    return Object.freeze({
-      settle: (actualMicros: number): void => {
-        if (settled) throw new MayuraError('CONFLICT', 'Reservation is already settled.');
-        if (!Number.isSafeInteger(actualMicros) || actualMicros < 0) {
-          throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost is invalid; reservation retained.');
-        }
-        settled = true;
-        // Closing, cancellation, or another reservation's overrun never discards known late usage.
-        for (const ancestor of path) { ancestor.reserved -= bound; ancestor.spent += BigInt(actualMicros); }
-        if (actualMicros > maxMicros) {
-          account.ledger.blocked = true;
-          throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost exceeded its bound; full actual usage recorded.');
-        }
-      },
-    });
+    return reservationFor(account, path, maxMicros);
   }
 
-  /** Stop new reserves/forks throughout this subtree; retain all unresolved usage and permit settlement. */
+  /**
+   * Atomically protect 1–128 future calls and their money on this account and every ancestor.
+   * Each ledger permits 1,024 held/unsettled bundle tickets and 16,384 lifetime ticket identities.
+   * Held calls do not count as consumed calls until start; failed admission never burns identities.
+   * IDs use 1–256 ASCII letters/digits plus internal '.', '_', ':', '/', or '-'.
+   */
+  reserveBundle(operations: readonly BundleOperation[]): BudgetBundle {
+    const account = accountFor(this); const path = Object.freeze(pathFor(account));
+    const config = bundleOperations(operations);
+    const identities = new Set(config.map(operation => operation.id));
+    const bound = config.reduce((total, operation) => total + BigInt(operation.maxCostMicros), 0n);
+    // Reflection above can invoke a trusted Proxy trap that reenters this account. Therefore all
+    // mutable ledger predicates are evaluated only after the complete descriptor snapshot.
+    assertOpen(account, path);
+    if (identities.size !== config.length || config.some(operation => account.ledger.ticketIds.has(operation.id))) {
+      throw new MayuraError('CONFLICT', 'An execution ticket identity is already in use.');
+    }
+    if (account.ledger.outstandingTickets + config.length > maximumOutstandingTickets
+      || account.ledger.ticketIds.size + config.length > maximumTicketIds) {
+      throw new MayuraError('LIMIT_EXCEEDED', 'The execution ticket count or lifetime identity limit was reached.');
+    }
+    if (path.some(ancestor => config.length > ancestor.maxCalls - ancestor.calls - ancestor.heldCalls
+      || bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved)) {
+      throw new MayuraError('BUDGET_EXCEEDED', 'Execution budget exhausted; no future call was admitted.');
+    }
+    const states: TicketState[] = [];
+    const handles = config.map(operation => {
+      const state: TicketState = { account, path, maxCostMicros: operation.maxCostMicros, bound: BigInt(operation.maxCostMicros), status: 'held' };
+      const handle: BudgetTicket = Object.freeze({ id: operation.id, maxCostMicros: operation.maxCostMicros, start: startTicket, cancel: cancelTicket });
+      states.push(state); tickets.set(handle, state); return handle;
+    });
+    const bundle: BudgetBundle = Object.freeze({ tickets: Object.freeze(handles), close: closeBundle });
+    bundles.set(bundle, { tickets: Object.freeze(states), closed: false });
+    for (const ancestor of path) { ancestor.reserved += bound; ancestor.heldCalls += config.length; }
+    for (const operation of config) account.ledger.ticketIds.add(operation.id);
+    account.ledger.outstandingTickets += config.length;
+    return bundle;
+  }
+
+  /** Frozen future-call capacity, including descendants; additive to the unchanged usage snapshot. */
+  capacitySnapshot(): Readonly<{ heldCalls: number }> {
+    return Object.freeze({ heldCalls: accountFor(this).heldCalls });
+  }
+
+  /** Stop new reserves/forks/starts throughout this subtree; explicit cleanup and late settlement remain valid. */
   close(): void { accountFor(this).closed = true; }
 
   /** Very large provider overruns use an exact decimal string instead of a lossy JSON number. */

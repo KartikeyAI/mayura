@@ -22,6 +22,18 @@ function cost(value: unknown): void {
 }
 function status(value: unknown): void { if (typeof value !== 'string' || !statuses.has(value)) throw new Error(); }
 
+/** Managed calls are model executions but never fabricated primary reasoning steps. */
+function managedModel(metadata: JsonObject, completed: boolean): boolean {
+  if (!Object.hasOwn(metadata, 'purpose')) return false;
+  keys(metadata, ['purpose', 'modelId', 'checkId', 'checkVersion', 'boundary', 'callId', ...(completed ? ['response', 'decision'] : ['modelCall'])]);
+  if (metadata['purpose'] !== 'guardrail' || !['input', 'output'].includes(metadata['boundary'] as string)) throw new Error();
+  for (const key of ['modelId', 'checkId', 'checkVersion', 'callId']) stableId(metadata[key]);
+  if (completed) {
+    if (metadata['response'] !== 'final' || !['allow', 'block'].includes(metadata['decision'] as string)) throw new Error();
+  } else integer(metadata['modelCall'], true);
+  return true;
+}
+
 /** Strict metadata allowlists are the export boundary; rejected input is never retained. */
 export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
   try {
@@ -40,8 +52,10 @@ export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
           || (metadata['rootId'] !== undefined && metadata['rootId'] !== expectedRunId && metadata['parentId'] === undefined)) throw new Error();
         break;
       case 'model.started':
+        if (managedModel(metadata, false)) break;
         keys(metadata, ['step', 'modelCall']); integer(metadata['step']); integer(metadata['modelCall'], true); break;
       case 'model.completed':
+        if (managedModel(metadata, true)) break;
         keys(metadata, ['step', 'response']); integer(metadata['step']);
         if (metadata['response'] !== 'final' && metadata['response'] !== 'tool_calls') throw new Error(); break;
       case 'tool.started':

@@ -39,6 +39,7 @@ Credentials stay in trusted server-side configuration. There is no automatic key
 | Restartable tool graph and approvals | `@mayura/workflows` + `@mayura/storage` | Current conservative engine never automatically replays an uncertain effect. |
 | Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or workflow wait node integration yet. |
 | Native content checks | `@mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
+| Runtime-owned moderation | `defineModerationGuard` with agent guards | [Shared limits and protected output-check capacity](how-to/managed-guardrails.md); model verdicts remain fallible. |
 
 These packages are experimental surfaces. Self-hosted HTTP, browser clients, child-agent orchestration, provider integrations, full memory/context and qualified Code Mode remain governed by the release ledger. A convenient import is not a promise that an unimplemented deployment profile exists.
 
