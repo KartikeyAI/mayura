@@ -231,7 +231,7 @@ async function main() {
     checks: ['actual-offline-tarballs', 'empty-caches', 'lifecycle-scripts-disabled', 'exact-selected-closures', 'pg-cloudflare-accounted', 'no-pg-native',
       'unchanged-third-party-manifests-licenses-prebuilds', 'self-contained-source-maps', 'no-reducer-copy-in-compatibility', 'strict-negative-public-types-without-driver-typings',
       'private-exports-denied', 'no-ancestor-module-or-type-fallback', 'empty-fixture-pgpass', 'sqlite-worker-native-load', 'aggregate-cas-events', 'scheduler-receipt-completion',
-      'scheduled-workflow-completion-wait', 'format3-graph-wait-reopen', 'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
+      'scheduled-workflow-completion-wait', 'format3-graph-wait-reopen', 'finite-graph-discovery-reopen', 'terminal-owner-cursor-progress', 'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

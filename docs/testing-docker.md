@@ -33,4 +33,6 @@ If port 55258 is occupied, stop the conflicting fixture deliberately or choose a
 
 CI uses a separate ephemeral service. SQLite tests use isolated temporary files. Process/client restart is tested; engine/host crash consistency and backup/restore still need the broader release matrix.
 
+The test runner defaults to two concurrent test processes. This limits contention among independent fsync-heavy, process-kill and short-lease fixtures; explicit competing-worker scenarios inside a test are unchanged. Run additional archive gates after the full suite, not concurrently with it. Recorded timing-sensitive failures and qualification limits are retained in the [development ledger](development-status.md).
+
 `pnpm test:consumer:storage` additionally installs real local archives into fresh SQLite-only, PostgreSQL-only and compatibility consumers, with lifecycle scripts and registry access disabled. When the explicit test URL is present, the two PostgreSQL-capable profiles create/drop only their own generated `mayura_packed_…` schemas. Without it, their database execution is reported as skipped, not qualified; the SQLite native-worker profile can still run. Generated archives, installed consumers and SQLite fixture files stay under an ignored `.artifacts/storage-consumer-*` directory for inspection.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { defineWorkflowGraph, createWorkflowGraphRuntime } from '@mayura/workflows/graphs';
+import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery } from '@mayura/workflows/graphs';
 import { defineWorkflow, createScheduledWorkflowRuntime } from '@mayura/workflows';
 import { workflowHashMaterial, workflowPolicy, initialWorkflowGraphState } from '@mayura/storage-contracts';
 
@@ -8,6 +8,7 @@ for (const name of ['@mayura/storage', '@mayura/storage-sql', '@mayura/storage-s
   await assert.rejects(import(name), { code: 'ERR_MODULE_NOT_FOUND' });
 }
 await assert.rejects(import('@mayura/workflows/src/graph-definition.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+await assert.rejects(import('@mayura/workflows/src/graph-discovery.js'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 const digest = (domain, value) => createHash('sha256').update(workflowHashMaterial(domain, value)).digest('hex');
 const schema = { '~standard': { version: 1, vendor: 'consumer', validate: value => ({ value }) } };
 const input = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'string' ? { value: JSON.parse(value) } : { issues: [] } } };
@@ -46,6 +47,18 @@ const workflowGraphs = {
 };
 const store = { workflowGraphs, initialize: async () => {}, read: async () => current?.record, events: async () => [], close: async () => { storageClosed = true; } };
 const options = { store, scope, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0, workerId: 'consumer', maxConcurrentRuns: 1, maxConcurrentJobs: 1 };
+const discoveryOptions = { store, scope, permissions: options.permissions, policyVersion: '1', maxCostMicros: 0 };
+assert.throws(() => createWorkflowGraphDiscovery(discoveryOptions), { code: 'UNSUPPORTED_PROFILE' });
+const discovery = createWorkflowGraphDiscovery({ ...discoveryOptions, store: { ...store, workflowGraphDiscovery: {
+  initialize: async () => {},
+  scan: async command => {
+    assert.equal(command.scope, scopeKey); assert.equal(command.policyHash, policyHash); assert.equal(command.limit, 1);
+    if (command.cursor) return { candidates: [], examined: 0, nextCursor: null };
+    const reference = { kind: 'scheduled-workflow', runId: current.record.id, definitionHash: definition.digest, policyHash };
+    return { candidates: current.record.state.status === 'waiting' ? [{ reference, version: current.record.version, status: 'waiting' }] : [],
+      examined: 1, nextCursor: { format: 1, scope: scopeKey, policyHash, afterId: current.record.id } };
+  },
+} } });
 let runtime = createWorkflowGraphRuntime(options);
 assert.equal(runtime.profile, 'scheduled-v2'); assert.equal('attach' in runtime, false);
 assert.throws(() => createScheduledWorkflowRuntime(options), { code: 'UNSUPPORTED_PROFILE' });
@@ -54,11 +67,16 @@ assert.throws(() => runtime.runUntilSettled(legacy, 'a'.repeat(64)), { code: 'IN
 try {
   const run = await runtime.submit(definition, { input: JSON.stringify([target]), idempotencyKey: 'one' });
   const waiting = await runtime.runUntilSettled(definition, run.id); assert.equal(waiting.status, 'waiting');
+  const discovered = await discovery.scan({ limit: 1 }); assert.equal(discovered.candidates[0].reference.runId, run.id); assert.equal(discovered.examined, 1);
+  assert(Object.isFrozen(discovered.candidates[0].reference));
+  assert.deepEqual(await discovery.scan({ limit: 1, cursor: discovered.nextCursor }), { candidates: [], examined: 0, nextCursor: null });
   assert.equal((await runtime.runUntilSettled(definition, run.id)).version, waiting.version);
   await runtime.close(); assert.equal(storageClosed, false); ready = true;
   runtime = createWorkflowGraphRuntime(options);
   const complete = await runtime.runUntilSettled(definition, run.id); assert.equal(complete.status, 'succeeded');
   assert.deepEqual(complete.output, [observation]); assert.equal(complete.budget.spentMicros, 0); assert.equal(current.jobs.length, 0);
   assert.equal((await runtime.reference(run.id)).definitionHash, definition.digest); assert(claims > 0);
-} finally { await runtime.close(); }
-console.log(JSON.stringify({ status: 'passed', driverFree: true, transformedInput: true, graphWaitResumed: true, unknownPreserved: true, closesCallerStorage: storageClosed }));
+  const terminal = await discovery.scan({ limit: 1 }); assert.deepEqual(terminal.candidates, []); assert(terminal.nextCursor);
+} finally { await discovery.close(); await runtime.close(); }
+await assert.rejects(discovery.scan(), { code: 'CANCELLED' });
+console.log(JSON.stringify({ status: 'passed', driverFree: true, transformedInput: true, graphWaitResumed: true, finiteDiscovery: true, terminalCursorProgress: true, unknownPreserved: true, closesCallerStorage: storageClosed }));

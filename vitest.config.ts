@@ -2,8 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Bound concurrent native/SQL/packed-consumer fixtures on developer machines and CI.
-    maxWorkers: 4,
+    // Keep fsync-heavy retention, process-kill and short-lease fixtures from
+    // competing with too many independent suites. In-test worker races are unchanged.
+    maxWorkers: 2,
     testTimeout: 10_000,
     hookTimeout: 15_000,
     projects: [

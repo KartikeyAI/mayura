@@ -40,6 +40,7 @@ Credentials stay in trusted server-side configuration. There is no automatic key
 | Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
 | Existing scheduled-run completion joins | `@mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |
 | Wait inside a scheduled workflow | `@mayura/workflows/graphs` + selected storage | [Format-3 graphs](how-to/workflow-graph-waits.md) pin existing references at submission; explicit driving resumes without holding a waiting worker. |
+| Find unfinished graphs after restart | `createWorkflowGraphDiscovery` from `@mayura/workflows/graphs` | [Bounded candidate pages](how-to/workflow-graph-discovery.md), not readiness promises or automatic dispatch; the application owns its page budget and definition registry. |
 | Native content checks | `@mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
 | Runtime-owned moderation | `defineModerationGuard` with agent guards | [Shared limits and protected output-check capacity](how-to/managed-guardrails.md); model verdicts remain fallible. |
 | Required lifecycle control | `defineHook` + `defineAgent({ hooks })` | [Four awaited stages](how-to/lifecycle-hooks.md), no transforms or permission escalation; action tools use the owning run's broker. |

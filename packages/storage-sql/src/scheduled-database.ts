@@ -9,6 +9,8 @@ import {
   workflowGraphManifest, workflowGraphState, workflowGraphResources, workflowGraphTargets, initialWorkflowGraphState,
   assertWorkflowGraphStateMatchesManifest, type WorkflowGraphManifest, type WorkflowGraphManifestNode,
   type WorkflowGraphFormat3State, type WorkflowGraphFormat3Step, type WorkflowGraphStoreSnapshot,
+  workflowGraphDiscoveryCommand, workflowGraphDiscoveryPage,
+  type WorkflowGraphDiscoveryStore, type WorkflowGraphDiscoveryScan, type WorkflowGraphDiscoveryCandidate,
 } from '@mayura/storage-contracts';
 import { StorageError, type StoredEventInput } from './contracts.js';
 import { aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql,
@@ -18,6 +20,7 @@ import { fields, hash, integer, object } from './scheduler-validation.js';
 import { scheduledCommand, type ScheduledMethod } from './scheduled-validation.js';
 import { createCommand, identifier, nextCounter } from './validation.js';
 import { checkCompletion, initializeCompletions, readCompletion } from './execution-completions.js';
+import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
 
 interface Journal { id: string; digest: string; version: number; operation: string }
 interface Owner {
@@ -60,6 +63,7 @@ function graphManifest(manifest: Manifest): manifest is WorkflowGraphManifest { 
 /** Finite integrated reducer. Every mutation uses its caller-owned connection/transaction. */
 export class ScheduledWorkflowDatabase {
   private initialized = false;
+  private discoveryInitialized = false;
   constructor(private readonly backend: SchedulerBackend, private readonly scheduler: SchedulerDatabase) {}
   private table(name: 'owners' | 'jobs' | 'wait_targets'): string { return `${this.backend.prefix}mayura_workflow_${name}`; }
   private hashEnrollment(manifest: Manifest, policy: WorkflowPolicyManifest, resources: WorkflowResourcePlan) {
@@ -402,6 +406,51 @@ export class ScheduledWorkflowDatabase {
         PRIMARY KEY(scope,aggregate_id,node_id,ordinal), UNIQUE(scope,aggregate_id,node_id,run_id),
         FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table('owners')}(scope,aggregate_id))`);
     }); this.initialized = true;
+  }
+  /** Discovery provisions its index only when explicitly requested, never as an unindexed fallback. */
+  private async initializeDiscovery(): Promise<void> {
+    if (this.discoveryInitialized) return;
+    await this.initialize();
+    await this.backend.transaction(async tx => {
+      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:scheduled-schema:${this.backend.prefix}`]);
+      await initializeWorkflowGraphDiscoveryIndex(tx,this.backend);
+    });
+    this.discoveryInitialized = true;
+  }
+  /**
+   * Finite recovery hints, not a ready queue or execution grant. Selection releases its transaction
+   * before each ordinary parent validation; no two parent locks or mutable target locks overlap.
+   */
+  async discover(method: keyof WorkflowGraphDiscoveryStore, value: unknown): Promise<unknown> {
+    const input = workflowGraphDiscoveryCommand(method,value);
+    if (method === 'initialize') return this.initializeDiscovery();
+    if (!this.discoveryInitialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow graph discovery before use.');
+    const command = input as unknown as WorkflowGraphDiscoveryScan;
+    try {
+      const afterId = command.cursor?.afterId ?? '';
+      const collation = this.backend.dialect === 'postgres' ? '"C"' : 'BINARY';
+      const rows = await this.backend.transaction(tx => tx.query<{ aggregate_id: string }>(
+        `SELECT aggregate_id FROM ${this.table('owners')} WHERE scope = ? AND policy_hash = ? AND profile = 2
+          AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,
+        [command.scope,command.policyHash,afterId,command.limit]));
+      if (rows.length > command.limit) failed();
+      const candidates: WorkflowGraphDiscoveryCandidate[] = [];
+      let previous = afterId;
+      for (const row of rows) {
+        const id = hash(row.aggregate_id); if (id <= previous) failed(); previous = id;
+        const candidate = await this.backend.transaction(async tx => {
+          // Do not use SKIP LOCKED: a selected parent is either validated or fails this entire page.
+          const run = await this.load(tx,command.scope,id,command.policyHash,false,2);
+          if (!run) failed();
+          if (run.state.status !== 'running' && run.state.status !== 'waiting') return undefined;
+          return { reference:{kind:'scheduled-workflow' as const,runId:id,definitionHash:run.row.definition_hash,policyHash:command.policyHash},
+            version:storedInteger(run.row.version),status:run.state.status };
+        });
+        if (candidate) candidates.push(candidate);
+      }
+      return workflowGraphDiscoveryPage({ candidates,examined:rows.length,nextCursor:rows.length === command.limit
+        ? {format:1,scope:command.scope,policyHash:command.policyHash,afterId:previous} : null },command);
+    } catch { return failed(); }
   }
   /** Internal finite maintenance; validates the full enrolled source before publishing old terminal state. */
   async materializeCompletion(scope: string, reference: ExecutionRef): Promise<ExecutionCompletion | undefined> {

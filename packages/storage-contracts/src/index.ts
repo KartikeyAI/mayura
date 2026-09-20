@@ -5,3 +5,4 @@ export * from './workflow-format2.js';
 export * from './execution-wait-contracts.js';
 export * from './workflow-graph-contracts.js';
 export * from './workflow-format3.js';
+export * from './workflow-graph-discovery.js';

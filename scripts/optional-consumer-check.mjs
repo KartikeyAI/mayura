@@ -200,6 +200,7 @@ async function main() {
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
   result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
+  result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

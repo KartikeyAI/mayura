@@ -1,9 +1,10 @@
-import { createSqliteStore, createPostgresStore, StorageError, type WorkflowGraphAggregateStore } from '@mayura/storage';
+import { createSqliteStore, createPostgresStore, StorageError, type WorkflowGraphDiscoveryAggregateStore } from '@mayura/storage';
 import { createSqliteStore as selectedSqlite } from '@mayura/storage-sqlite';
 import { createPostgresStore as selectedPostgres } from '@mayura/storage-postgres';
 
-const sqlite: WorkflowGraphAggregateStore = createSqliteStore({ filename: ':memory:' });
-const postgres: WorkflowGraphAggregateStore = createPostgresStore({ connectionString: 'postgresql://example.invalid/db' });
+const sqlite: WorkflowGraphDiscoveryAggregateStore = createSqliteStore({ filename: ':memory:' });
+const postgres: WorkflowGraphDiscoveryAggregateStore = createPostgresStore({ connectionString: 'postgresql://example.invalid/db' });
+void sqlite.workflowGraphDiscovery.initialize(); void postgres.workflowGraphDiscovery.initialize();
 void sqlite.workflowGraphs.initialize(); void postgres.workflowGraphs.initialize();
 // @ts-expect-error Graph attachment is not an optional migration shortcut.
 void sqlite.workflowGraphs.attach;

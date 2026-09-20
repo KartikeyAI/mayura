@@ -1,6 +1,6 @@
 # Finite graph continuation discovery
 
-Status: reviewed next-slice design; not implemented or qualified. Depends on [versioned graph waits](workflow-graph-waits.md). This specifies bounded discovery, not a ready queue, worker fleet or durable child ownership.
+Status: implemented and locally qualified on 2026-09-21, Windows x64 / Node 24.14.1. Depends on [versioned graph waits](workflow-graph-waits.md). This is bounded discovery, not a ready queue, worker fleet or durable child ownership. Exact passing evidence, failed-run observations and remaining enterprise gates are in the [development ledger](../development-status.md).
 
 ## Purpose and public boundary
 
@@ -10,17 +10,21 @@ Add a separately optional `workflowGraphDiscovery` storage capability. Do not wi
 
 `scan({ cursor?, limit? })` defaults to 16 and accepts 1–32 **examined owner rows** per call. Return a frozen bounded page with `candidates`, `examined` and `nextCursor`. Each candidate contains only its exact execution reference, observed aggregate version and nonterminal status (`running` or `waiting`). Never include input, output, job details, receipts or provider errors. Closing the facade rejects further calls without closing caller-owned storage.
 
-The versioned cursor binds the verified scope, policy hash and last examined run ID. It is plain continuation metadata, not an authentication capability or signed statement. Validate exact fields, context, monotonic ordering, candidate uniqueness/counts and next-cursor consistency for custom-adapter replies. Candidate versions and readiness may change immediately after observation. Pending timed-out adapter operations retain bounded admission slots until their actual promises settle.
+The versioned cursor binds the verified scope, policy hash and last examined run ID. It is plain continuation metadata, not an authentication capability or signed statement. Validate exact fields, context, monotonic ordering, candidate uniqueness/counts and next-cursor consistency for custom-adapter replies. If every examined owner is returned, the next cursor must exactly equal the final candidate ID. Candidate versions and readiness may change immediately after observation. Pending timed-out adapter operations retain bounded admission slots until their actual promises settle. These slots bound actual adapter callbacks, not concurrent callers sharing initialization; applications separately bound their scan requests.
 
 ## Authoritative index and finite transactions
 
-Use existing `mayura_workflow_owners` rows, with an index ordered by `(scope, policy_hash, profile, aggregate_id)`: equality predicates precede the run-ID range predicate. Select only profile 2, with explicit scope/policy, ordered keyset pagination and a hard SQL limit. Do not use OFFSET, an unbounded JSON readiness predicate, or a filtered `LIMIT` that can hide an unbounded candidate scan.
+Use existing `mayura_workflow_owners` rows, with an index ordered by `(scope, policy_hash, profile, aggregate_id)`: equality predicates precede the run-ID range predicate. Use explicit binary/C collation for the run-ID index, range and ordering so cursor checks match hexadecimal JavaScript lexical ordering independently of database locale. Select only profile 2, with explicit scope/policy, ordered keyset pagination and a hard SQL limit. Do not use OFFSET, an unbounded JSON readiness predicate, or a filtered `LIMIT` that can hide an unbounded candidate scan.
 
 First select at most `limit` owner identities without holding business locks. Then validate each selected parent in its own existing normal parent transaction. Never retain locks across two parents, lock target aggregates, acquire a scope-sequence counter, materialize completion facts, advance state, create jobs or invoke callbacks. Selected corruption or a missing selected owner fails the page closed; it must not be silently skipped as terminal.
 
 Return only parents currently nonterminal after validation, but advance the cursor over **every examined owner**, including terminal rows. If a full candidate page was examined, return its last ID as continuation even when no candidates remain; a subsequent empty page may be required to establish exhaustion. A short owner page ends that sweep. This keeps each command's work explicit and bounded rather than promising a particular number of useful results.
 
-Existing format-3 runs are discoverable through their authoritative ownership rows without a new projection, active flag, data migration or backfill-completeness protocol. Index provisioning itself traverses existing rows; use the adapter's bounded initialization/DDL behavior and report failure instead of silently running an unindexed fallback. Do not describe index creation as constant-time, online migration or mixed-version qualification.
+Existing format-3 runs are discoverable through their authoritative ownership rows without a new projection, active flag, data migration or backfill-completeness protocol. Index provisioning itself traverses existing rows; it is explicit capability initialization, with no silently unindexed fallback. PostgreSQL inherits its statement/lock timeouts. SQLite's busy timeout bounds lock acquisition, not CPU time spent building an index; the facade deadline bounds waiting and retains its pending slot but does not interrupt an already-running database operation. Do not describe index creation as constant-time, hard CPU cancellation, online migration or mixed-version qualification.
+
+Initialization also verifies native catalog metadata: exact owner table, nonpartial ordinary index, four ascending expected column keys and the required collation; PostgreSQL additionally requires a live/valid/ready B-tree with matching default operator classes and no extra included/expression keys. An incompatible same-named object is an error, never silently accepted, repaired or dropped. This is startup verification, not continuous protection against an administrator changing schema afterward.
+
+Index existence and compatibility do not force the optimizer to choose it. PostgreSQL's `indcheckxmin` is a snapshot/HOT-chain eligibility condition, not an invalid-index marker; it may remain true on a legitimate usable index after the relevant snapshot horizon passes. PostgreSQL owns that decision. Do not reject the flag unconditionally or promise a physical row-visit/latency bound from SQL `LIMIT`. The command bounds returned owner identities and subsequent parent validations; actual physical planning remains database-owned. See the [PostgreSQL index catalog](https://www.postgresql.org/docs/current/catalog-pg-index.html).
 
 ## Deliberate limits
 
@@ -39,4 +43,4 @@ A complete sweep scales with retained scoped/policy ownership history, including
 - Isolated custom-adapter packed consumer, selected SQL packed capability types/reopen and a credential-free application-owned continuation loop with an explicit page budget.
 - Verify actual query plans against a populated disposable fixture; do not force a query plan or infer production throughput from an empty table.
 
-Keep all enterprise release gates open and record exact evidence before changing this document's status.
+Local evidence comprises 125 added tests, including 56 paired SQL cases, four actual process-kill recoveries and one real PostgreSQL HOT/snapshot regression; isolated offline custom-adapter and selected SQL consumer gates; and the credential-free restart example. The integrated 2,134-test suite passes with two test processes. This narrower qualification leaves every enterprise release gate open; it does not establish production performance or the full platform matrix.

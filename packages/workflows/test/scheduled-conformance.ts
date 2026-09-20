@@ -724,9 +724,23 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const exit = new Promise<void>(resolve => { child.once('exit', () => { exited = true; resolve(); }); });
       const marker = new Promise<{ runId: string; effects: number }>((resolve, reject) => {
         child.once('error', reject);
-        child.on('message', (message: { kind?: string; runId?: string; effects?: number }) => {
+        child.on('message', (message: { kind?: string; runId?: string; effects?: number; phase?: unknown; status?: unknown; code?: unknown }) => {
           if (message.kind === 'checkpoint' && typeof message.runId === 'string' && typeof message.effects === 'number') resolve({ runId: message.runId, effects: message.effects });
-          else reject(new Error('Owned scheduled process failed before its checkpoint.'));
+          else {
+            // Do not reflect arbitrary IPC fields or child exception messages into test output.
+            const codes = ['INVALID_CONFIG', 'INVALID_INPUT', 'INVALID_OUTPUT', 'INVALID_JSON', 'PERMISSION_DENIED',
+              'BUDGET_EXCEEDED', 'LIMIT_EXCEEDED', 'CANCELLED', 'TIMEOUT', 'TOOL_FAILED', 'MODEL_FAILED', 'GUARD_BLOCKED',
+              'GUARD_UNAVAILABLE', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_PROFILE', 'NOT_FOUND', 'CONFLICT', 'STORAGE_UNAVAILABLE',
+              'STORE_CLOSED', 'STORE_NOT_INITIALIZED', 'QUEUE_FULL', 'STALE_CLAIM', 'SCHEDULED_WRITER_REQUIRED'];
+            const diagnostic = {
+              stage,
+              phase: typeof message.phase === 'string' && ['initialize', 'submit', 'drive', 'drive-returned'].includes(message.phase) ? message.phase : 'unknown',
+              status: typeof message.status === 'string' && ['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(message.status) ? message.status : null,
+              code: typeof message.code === 'string' && codes.includes(message.code) ? message.code : 'UNKNOWN',
+              effects: typeof message.effects === 'number' && Number.isSafeInteger(message.effects) && message.effects >= 0 && message.effects <= 128 ? message.effects : null,
+            };
+            reject(new Error(`Owned scheduled process failed before its checkpoint: ${JSON.stringify(diagnostic)}.`));
+          }
         });
         child.once('exit', () => { reject(new Error('Owned scheduled process exited before its checkpoint.')); });
       });

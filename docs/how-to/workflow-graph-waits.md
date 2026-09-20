@@ -45,7 +45,7 @@ Normal tool and join nodes can declare the wait ID in `dependsOn` and bind its a
 
 Repeated unchanged advances do not consume events, versions or the command journal. Concurrent drivers serialize transitions; closing one driver does not cancel the persisted graph. Cancelling the parent skips its unresolved waits and leaves targets untouched. A terminal parent cannot resume after late target completion. Known late target evidence cannot rewrite an immutable unknown completion observation.
 
-Drive calls are finite. There is no automatic polling, timer service or notification worker. This is not durable child ownership: the parent does not spawn targets, share their budgets, propagate cancellation, or return their payloads. Durable workflows-as-tools, timers/any waits, dynamic branches and distributed orchestration remain separate work.
+Drive calls are finite. [Graph discovery](workflow-graph-discovery.md) can supply bounded continuation candidates after restart; it does not drive them. There is no automatic polling, timer service or notification worker. This is not durable child ownership: the parent does not spawn targets, share their budgets, propagate cancellation, or return their payloads. Durable workflows-as-tools, timers/any waits, dynamic branches and distributed orchestration remain separate work.
 
 Custom adapters are trusted persistence implementations. Public responses receive bounded structural and contextual checks; execution with a registered definition additionally checks manifest/target consistency. Inspection alone has no supplied definition and does not cryptographically authenticate database facts. The reference SQL implementations additionally verify parent projections against the immutable target index and completion facts.
 

@@ -27,7 +27,8 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [WorkStream](specs/workstream.md) — durable scoped signals and wait registration.
 - [Execution completion waits](how-to/execution-completion-waits.md) and [transaction contract](specs/execution-completion-waits.md) — finite metadata joins over existing scheduled workflows, with restart and explicit unknown outcomes.
 - [Durable graph waits](how-to/workflow-graph-waits.md) and [format-3 contract](specs/workflow-graph-waits.md) — explicit in-graph suspension over already submitted runs without holding worker capacity.
-- [Graph continuation discovery design](specs/workflow-graph-discovery.md) — reviewed next slice, not implemented: bounded indexed candidate pages with explicit non-snapshot semantics.
+- [Graph discovery guide](how-to/workflow-graph-discovery.md) and [discovery contract](specs/workflow-graph-discovery.md) — finite indexed candidate pages after restart, with explicit non-snapshot semantics and no automatic dispatch.
+- [Registered graph coordinator design](specs/workflow-graph-coordinator.md) — reviewed next slice; not an implemented API or worker fleet.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
@@ -42,7 +43,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,009 tests; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,134 tests with two test processes; all V01–V22 enterprise release gates remain open.
 
 ## Distribution
 

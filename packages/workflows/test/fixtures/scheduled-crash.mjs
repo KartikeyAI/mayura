@@ -13,6 +13,13 @@ if (backend.kind === 'sqlite' && !backend.filename.includes('mayura-scheduled-wo
 const store = backend.kind === 'sqlite' ? createSqliteStore({ filename: backend.filename })
   : createPostgresStore({ connectionString: backend.connectionString, schema: backend.schema });
 let effects = 0;
+let phase = 'initialize';
+let lastStatus = null;
+const statuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const errorCodes = new Set(['INVALID_CONFIG', 'INVALID_INPUT', 'INVALID_OUTPUT', 'INVALID_JSON', 'PERMISSION_DENIED',
+  'BUDGET_EXCEEDED', 'LIMIT_EXCEEDED', 'CANCELLED', 'TIMEOUT', 'TOOL_FAILED', 'MODEL_FAILED', 'GUARD_BLOCKED',
+  'GUARD_UNAVAILABLE', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_PROFILE', 'NOT_FOUND', 'CONFLICT', 'STORAGE_UNAVAILABLE',
+  'STORE_CLOSED', 'STORE_NOT_INITIALIZED', 'QUEUE_FULL', 'STALE_CLAIM', 'SCHEDULED_WRITER_REQUIRED']);
 const notify = message => new Promise((resolve, reject) => process.send(message, error => error ? reject(error) : resolve()));
 const pause = async runId => {
   await notify({ kind: 'checkpoint', stage, runId, effects });
@@ -48,11 +55,23 @@ const runtime = createScheduledWorkflowRuntime({
 });
 try {
   await store.initialize();
+  phase = 'submit';
   const run = await runtime.submit(definition, { input: { value: 2 }, idempotencyKey: `process-${stage}` });
-  await runtime.runUntilSettled(definition, run.id);
+  lastStatus = statuses.has(run.status) ? run.status : null;
+  phase = 'drive';
+  const result = await runtime.runUntilSettled(definition, run.id);
+  lastStatus = statuses.has(result.status) ? result.status : null;
+  phase = 'drive-returned';
   throw new Error('Expected crash checkpoint was not reached.');
-} catch {
-  await notify({ kind: 'fixture-error' }).catch(() => {});
+} catch (error) {
+  // Only bounded public metadata crosses IPC: never exception text, stacks, input or connection data.
+  let code = 'UNKNOWN';
+  try {
+    const descriptor = error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code') : undefined;
+    if (descriptor && 'value' in descriptor && errorCodes.has(descriptor.value)) code = descriptor.value;
+  } catch { /* Error accessors/proxies do not become fixture diagnostics. */ }
+  await notify({ kind: 'fixture-error', stage, phase, status: lastStatus, code,
+    effects: Number.isSafeInteger(effects) && effects >= 0 && effects <= 128 ? effects : null }).catch(() => {});
   await runtime.close().catch(() => {}); await store.close().catch(() => {});
   process.exitCode = 1; if (process.connected) process.disconnect();
 }

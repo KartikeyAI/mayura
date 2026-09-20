@@ -16,6 +16,8 @@ The gate packs current built packages and installs their actual archives into fr
 
 6. **Driver-free versioned workflow graphs:** installed `@mayura/workflows/graphs` retains the five-package workflow closure. Strict consumer types accept inferred and readonly literal references directly while rejecting non-reference literals, step-output target bindings, legacy store capabilities, graph attachment and passing graph definitions to conservative/v1/ephemeral runtimes. A deliberately small custom-adapter fixture exercises transformed submission input, finite waiting, unchanged repeat driving, driver close/reopen and explicit unknown metadata without closing caller storage. It is not a persistence emulator or durability qualification; packed real-storage and paired process-kill suites prove the SQL behavior independently.
 
+   This same profile checks the optional graph-discovery factory: explicit capability types, immutable metadata-only candidates, context-bound cursor types, a terminal-only full page that still advances, explicit final empty-page continuation and close without closing application storage. Discovery adds no driver or sixth workflow dependency.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

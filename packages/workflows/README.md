@@ -17,4 +17,6 @@ The separate `@mayura/workflows/graphs` entry exports `defineWorkflowGraph` and 
 
 Scheduled execution admits at most 64 KiB per input/output, uses storage-clock leases and exact approvals, and retains late effect evidence without releasing late output. Unknown started effects are never automatically replayed. Worker shutdown is cooperative, not hard isolation or provider-side cancellation.
 
+The same graphs entry also exports `createWorkflowGraphDiscovery` with the separately optional `WorkflowGraphDiscoveryStore` capability. It returns bounded scope/policy-pinned pages of nonterminal graph metadata, not dispatch authority or readiness guarantees. Cursors count terminal owners too; pages are not a stable snapshot. Applications own their definition registry, page budget and explicit continuation calls. No polling service or projection backfill is added.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.

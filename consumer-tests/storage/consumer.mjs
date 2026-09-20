@@ -80,6 +80,14 @@ async function exercise(create, reopen) {
     assert.deepEqual(await store.executionWaits.drainReady({ ...stream, limit: 1 }), []);
     assert.equal((await store.executionWaits.events({ ...stream, after: 0 })).length, 3);
     assert.deepEqual(await store.workflowGraphs.inspect(graphAccess), waitingGraph);
+    // Existing parents predate discovery initialization; no backfill or new projection is needed.
+    await store.workflowGraphDiscovery.initialize();
+    const scan = { scope: graphAccess.scope, policyHash: graphAccess.policyHash, cursor: null, limit: 1 };
+    const discovered = await store.workflowGraphDiscovery.scan(scan);
+    assert.equal(discovered.examined, 1); assert.equal(discovered.candidates.length, 1);
+    assert.equal(discovered.candidates[0].reference.runId, graphAccess.id); assert.equal(discovered.candidates[0].status, 'waiting');
+    assert.equal(discovered.nextCursor.afterId, graphAccess.id);
+    assert.deepEqual(await store.workflowGraphDiscovery.scan({ ...scan, cursor: discovered.nextCursor }), { candidates: [], examined: 0, nextCursor: null });
     await assert.rejects(store.workflows.inspect(graphAccess), error => error instanceof StorageError);
     const resumed = await store.workflowGraphs.advance({ ...graphAccess, expectedVersion: waitingGraph.record.version, commandId: 'graph-resume' });
     assert.deepEqual(resumed.record.state.steps.observe.output, resolved.observations);
@@ -93,7 +101,10 @@ async function exercise(create, reopen) {
     assert.deepEqual((await store.read(original.scope, original.id)).state, { count: 3 });
     await store.workflowGraphs.initialize();
     assert.deepEqual((await store.workflowGraphs.inspect(graphAccess)).record, finishedGraph.record);
-    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, reopenDirections: 2 };
+    await store.workflowGraphDiscovery.initialize();
+    const terminalPage = await store.workflowGraphDiscovery.scan(scan);
+    assert.deepEqual(terminalPage.candidates, []); assert.equal(terminalPage.examined, 1); assert.equal(terminalPage.nextCursor.afterId, graphAccess.id);
+    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, finiteGraphDiscovery: true, terminalCursorProgress: true, reopenDirections: 2 };
   } finally { await store.close(); }
 }
 

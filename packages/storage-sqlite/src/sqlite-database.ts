@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore } from '@mayura/storage-contracts';
+import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerSession, type SchedulerBackend, type SchedulerMethod,
@@ -45,6 +45,7 @@ export class SqliteDatabase {
   schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
   workflowsCommand(method: ScheduledMethod, input: unknown): Promise<unknown> { return this.workflows.execute(method,input); }
   workflowGraphsCommand(method: keyof WorkflowGraphStore, input: unknown): Promise<unknown> { return this.workflows.execute(method,input,2); }
+  workflowGraphDiscoveryCommand(method: keyof WorkflowGraphDiscoveryStore, input: unknown): Promise<unknown> { return this.workflows.discover(method,input); }
   executionWaitsCommand(method: ExecutionWaitMethod, input: unknown): Promise<unknown> { return this.executionWaits.execute(method,input); }
 
   initialize(): void {

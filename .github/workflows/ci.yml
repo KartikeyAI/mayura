@@ -35,6 +35,7 @@ jobs:
       - run: node examples/lifecycle-hooks.mjs
       - run: node examples/execution-completion-waits.mjs
       - run: node examples/workflow-graph-waits.mjs
+      - run: node examples/workflow-graph-discovery.mjs
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20

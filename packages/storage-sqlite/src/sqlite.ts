@@ -1,13 +1,13 @@
 import { Worker } from 'node:worker_threads';
-import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphAggregateStore } from '@mayura/storage-contracts';
-import { createCommand, updateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade } from '@mayura/storage-sql/host';
+import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphDiscoveryAggregateStore } from '@mayura/storage-contracts';
+import { createCommand, updateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade, workflowGraphDiscoveryFacade } from '@mayura/storage-sql/host';
 
 export interface SqliteStoreOptions { readonly filename: string }
 interface Pending { resolve(value: unknown): void; reject(error: Error): void }
 interface Response { id: number; result?: unknown; error?: { code: StorageErrorCode; message: string } }
 
 /** Creates an optional SQLite adapter with one database-owning worker and a bounded IPC queue. */
-export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphAggregateStore {
+export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDiscoveryAggregateStore {
   if (typeof options.filename !== 'string' || options.filename.length === 0 || options.filename.includes('\0')) {
     throw new StorageError('INVALID_INPUT', 'SQLite filename must be nonempty and contain no null characters.');
   }
@@ -49,6 +49,7 @@ export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphAgg
     scheduler: schedulerFacade((method, input) => request('scheduler', [method, input])),
     workflows: scheduledFacade((method,input) => request('workflows',[method,input])),
     workflowGraphs: workflowGraphFacade((method,input) => request('workflowGraphs',[method,input])),
+    workflowGraphDiscovery: workflowGraphDiscoveryFacade((method,input) => request('workflowGraphDiscovery',[method,input])),
     executionWaits: executionWaitFacade((method,input) => request('executionWaits',[method,input])),
     initialize: () => request<void>('initialize', []),
     create: async (command: CreateRecord) => request<{ record: StoredRecord; created: boolean }>('create', [createCommand(command)]),

@@ -6,6 +6,8 @@ import type { AnyWorkflowGraph, WorkflowGraphDefinition } from './graph-definiti
 
 export { defineWorkflowGraph, type WorkflowGraphDefinition, type WorkflowGraphOptions,
   type WorkflowGraphNode, type WorkflowGraphTargetBinding, type WorkflowGraphOutput } from './graph-definition.js';
+export { createWorkflowGraphDiscovery, type WorkflowGraphDiscovery, type WorkflowGraphDiscoveryOptions,
+  type WorkflowGraphDiscoveryCandidate, type WorkflowGraphDiscoveryCursor, type WorkflowGraphDiscoveryPage } from './graph-discovery.js';
 
 export interface WorkflowGraphSnapshot extends Omit<WorkflowSnapshot, 'steps'> {
   readonly steps: Readonly<Record<string, Readonly<WorkflowGraphFormat3Step>>>;

@@ -1,8 +1,8 @@
 import type { Schema } from '@mayura/core';
-import { defineWorkflowGraph, createWorkflowGraphRuntime } from '@mayura/workflows/graphs';
+import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery } from '@mayura/workflows/graphs';
 import { createScheduledWorkflowRuntime, createWorkflowRuntime } from '@mayura/workflows';
 import { workflowAsAgent } from '@mayura/workflows/ephemeral';
-import type { WorkflowGraphAggregateStore, ScheduledWorkflowAggregateStore, ExecutionRef } from '@mayura/storage-contracts';
+import type { WorkflowGraphAggregateStore, WorkflowGraphDiscoveryAggregateStore, ScheduledWorkflowAggregateStore, ExecutionRef } from '@mayura/storage-contracts';
 
 const input: Schema<string, { references: readonly ExecutionRef[] }> = { '~standard': { version: 1, vendor: 'consumer', validate: () => ({ value: { references: [] } }) } };
 const output: Schema<unknown, { finished: boolean }> = { '~standard': { version: 1, vendor: 'consumer', validate: () => ({ value: { finished: true } }) } };
@@ -10,9 +10,24 @@ const graph = defineWorkflowGraph({ id: 'consumer.wait', version: '1', input, ou
   nodes: [{ kind: 'wait', id: 'observe', targets: { kind: 'input', path: ['references'] } }],
   result: { kind: 'step', stepId: 'observe', path: [] } });
 
-async function verify(store: WorkflowGraphAggregateStore, legacyStore: ScheduledWorkflowAggregateStore): Promise<void> {
+async function verify(store: WorkflowGraphDiscoveryAggregateStore, legacyStore: ScheduledWorkflowAggregateStore, graphOnlyStore: WorkflowGraphAggregateStore): Promise<void> {
   const options = { store, workerId: 'consumer', scope: { principalId: 'consumer', projectId: 'app' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 };
   const runtime = createWorkflowGraphRuntime(options); const profile: 'scheduled-v2' = runtime.profile;
+  const discoveryOptions = { store, scope: options.scope, permissions: options.permissions, policyVersion: '1', maxCostMicros: 0 };
+  const discovery = createWorkflowGraphDiscovery(discoveryOptions); const page = await discovery.scan({ limit: 2 });
+  if (page.nextCursor) await discovery.scan({ cursor: page.nextCursor });
+  if (page.candidates[0]) {
+    const candidateStatus: 'running' | 'waiting' = page.candidates[0].status; void candidateStatus;
+    // @ts-expect-error Discovery metadata cannot expose workflow payloads.
+    void page.candidates[0].output;
+    // @ts-expect-error Observed metadata is immutable.
+    page.candidates[0].reference.runId = 'b'.repeat(64);
+  }
+  // @ts-expect-error Discovery is an explicitly selected extra storage capability.
+  createWorkflowGraphDiscovery({ ...discoveryOptions, store: graphOnlyStore });
+  // @ts-expect-error A plain run ID is not a context-bound cursor.
+  await discovery.scan({ cursor: 'a'.repeat(64) });
+  await discovery.close();
   void profile; void runtime.submit(graph, { input: 'original', idempotencyKey: 'one' });
   void runtime.runUntilSettled(graph, 'a'.repeat(64)); void runtime.reference('a'.repeat(64));
   // @ts-expect-error Submission takes the original schema input, not the admitted target object.
