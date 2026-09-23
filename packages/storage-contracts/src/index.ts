@@ -9,3 +9,4 @@ export * from './workflow-graph-discovery.js';
 export * from './durable-budget-contracts.js';
 export * from './workflow-tree-contracts.js';
 export * from './workflow-format4.js';
+export * from './workflow-tree-discovery.js';

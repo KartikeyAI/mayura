@@ -5,7 +5,7 @@ Install `@mayura/workflows`, `@mayura/tools` and one selected storage adapter. I
 ```ts
 import { defineTool } from '@mayura/tools';
 import { defineWorkflow } from '@mayura/workflows';
-import { createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows/children';
+import { createWorkflowTreeCoordinator, createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows/children';
 import { createSqliteStore } from '@mayura/storage-sqlite';
 ```
 
@@ -24,3 +24,23 @@ Expected result:
 ```
 
 This preview supports root-local tool/join nodes plus one-level required child workflows containing tool/join nodes, including exact approval-enabled candidates at either level. Omit `childId` when approving a root-local tool; include the exact admitted child ID for a child approval. It rejects nested children and undeclared authority instead of silently changing profiles. `close` stops local driving; it does not imply durable cancellation. Started effects with uncertain outcomes are quarantined and never automatically replayed. Use verified application scope, genuine definitions and a selected adapter's explicit `workflowTrees` capability.
+
+For a trusted worker fleet, register genuine definitions explicitly and process finite discovery pages:
+
+```ts
+const coordinator = createWorkflowTreeCoordinator({
+  store,
+  definitions: [tree],
+  scope,
+  permissions,
+  policyVersion: 'policy-1',
+  maxCostMicros: 10_000,
+  maxCalls: 16,
+  workerId: 'worker-a',
+});
+
+const report = await coordinator.runPage({ limit: 16 });
+await coordinator.close();
+```
+
+Discovery returns metadata hints only. Unknown definition hashes are reported and skipped, approvals remain waiting for an explicit verified human action, and callers advance `nextCursor` themselves. There is no automatic background polling or authority inferred from persisted metadata.

@@ -7,7 +7,7 @@ import {
   type WorkflowTreeBudgetSnapshot, type WorkflowTreeCancellationResult, type WorkflowTreeChildAdmission, type WorkflowTreeChildCancellationResult, type WorkflowTreeClaimedTool, type WorkflowTreeCompletedTool,
   type WorkflowTreeMemberResult, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRecoveryResult, type WorkflowTreeRenewedTool, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool,
   type WorkflowTreeRootClaimedTool, type WorkflowTreeRootCompletedTool, type WorkflowTreeRootPreparedTool, type WorkflowTreeRootReceiptResult, type WorkflowTreeRootRenewedTool, type WorkflowTreeRootStartedTool,
-  type WorkflowTreeMethod,
+  workflowTreeDiscoveryCommand,workflowTreeDiscoveryPage,type WorkflowTreeDiscoveryCandidate,type WorkflowTreeDiscoveryScan,type WorkflowTreeDiscoveryStore,type WorkflowTreeMethod,
 } from '@mayura/storage-contracts';
 import type { ExecutionReceipt } from '@mayura/core';
 import {
@@ -16,6 +16,7 @@ import {
 import { WorkflowTreeBudgetDatabase } from './durable-budget-database.js';
 import { createCommand, identifier, nextCounter } from './validation.js';
 import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
+import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
 
 interface OwnerRow { scope:string;aggregate_id:string;profile:number|string;aggregate_version:number|string;definition_hash:string;policy_hash:string;resource_hash:string;data:string }
 interface MemberRow { scope:string;root_id:string;aggregate_id:string;parent_id:string|null;node_id:string|null;account_id:string;definition_hash:string;policy_hash:string;resource_hash:string }
@@ -30,6 +31,7 @@ function conflict():never{throw new StorageError('CONFLICT','Workflow-tree ident
 /** Atomic root enrollment foundation. Execution transitions remain deliberately unavailable. */
 export class WorkflowTreeDatabase {
   private initialized=false;
+  private discoveryInitialized=false;
   private readonly budgets:WorkflowTreeBudgetDatabase;
   constructor(private readonly backend:SchedulerBackend,private readonly scheduler:SchedulerDatabase){this.budgets=new WorkflowTreeBudgetDatabase(backend);}
   async execute(method:WorkflowTreeMethod,input:unknown):Promise<unknown>{const value=input as never;switch(method){case'initialize':return this.initialize();case'submit':return this.submit(value);case'inspect':{const command=input as {scope:string;rootId:string;rootPolicyHash:string};return this.inspect(command.scope,command.rootId,command.rootPolicyHash);}case'requestRootApproval':return this.requestRootApproval(value);case'approveRootTool':return this.approveRootTool(value);case'prepareRootTool':return this.prepareRootTool(value);case'claimPreparedRootTool':return this.claimPreparedRootTool(value);case'renewClaimedRootTool':return this.renewClaimedRootTool(value);case'startClaimedRootTool':return this.startClaimedRootTool(value);case'recordRootToolReceipt':return this.recordRootToolReceipt(value);case'completeRootTool':return this.completeRootTool(value);case'inspectChild':return this.inspectChild(value);case'admitChild':return this.admitChild(value);case'requestChildApproval':return this.requestChildApproval(value);case'approveChildTool':return this.approveChildTool(value);case'prepareChildTool':return this.prepareChildTool(value);case'claimPreparedChildTool':return this.claimPreparedChildTool(value);case'renewClaimedChildTool':return this.renewClaimedChildTool(value);case'startClaimedChildTool':return this.startClaimedChildTool(value);case'recordChildToolReceipt':return this.recordChildToolReceipt(value);case'completeChildTool':return this.completeChildTool(value);case'finalizeChild':return this.finalizeChild(value);case'joinChild':return this.joinChild(value);case'finalizeRoot':return this.finalizeRoot(value);case'cancelChild':return this.cancelChild(value);case'cancelRoot':return this.cancelRoot(value);case'recoverExpired':return this.recoverExpired(value);}}
@@ -58,6 +60,12 @@ export class WorkflowTreeDatabase {
         FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table()}(scope,aggregate_id),
         FOREIGN KEY(scope,job_id) REFERENCES ${this.backend.prefix}mayura_scheduler_jobs(scope,job_id))`);
     });this.initialized=true;
+  }
+  private async initializeDiscovery():Promise<void>{if(this.discoveryInitialized)return;await this.initialize();await this.backend.transaction(async tx=>{if(this.backend.dialect==='postgres')await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:workflow-tree-discovery:${this.backend.prefix}`]);await initializeWorkflowGraphDiscoveryIndex(tx,this.backend);});this.discoveryInitialized=true;}
+  /** Finite metadata hints only; each selected root is independently integrity checked. */
+  async discover(method:keyof WorkflowTreeDiscoveryStore,value:unknown):Promise<unknown>{
+    const input=workflowTreeDiscoveryCommand(method,value);if(method==='initialize')return this.initializeDiscovery();if(!this.discoveryInitialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree discovery before use.');const command=input as unknown as WorkflowTreeDiscoveryScan;
+    try{const afterId=command.cursor?.afterId??'';const collation=this.backend.dialect==='postgres'?'"C"':'BINARY';const rows=await this.backend.transaction(tx=>tx.query<{aggregate_id:string}>(`SELECT aggregate_id FROM ${this.owners()} WHERE scope = ? AND policy_hash = ? AND profile = 3 AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,[command.scope,command.policyHash,afterId,command.limit]));if(rows.length>command.limit)failed();const candidates:WorkflowTreeDiscoveryCandidate[]=[];let previous=afterId;for(const row of rows){const id=row.aggregate_id;if(!/^[a-f0-9]{64}$/.test(id)||id<=previous)failed();previous=id;const candidate=await this.backend.transaction(async tx=>{const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?`,[command.scope,id]))[0];if(!member)failed();if(member.root_id!==id||member.parent_id!==null||member.node_id!==null||member.account_id!=='root')return undefined;const root=await this.locked(tx,command.scope,id,command.policyHash);if(!root)failed();const state=workflowTreeState(root.record);if(state.status!=='running'&&state.status!=='waiting')return undefined;return{rootId:id,definitionHash:root.record.definitionHash,policyHash:command.policyHash,version:root.record.version,status:state.status} as const;});if(candidate)candidates.push(candidate);}return workflowTreeDiscoveryPage({candidates,examined:rows.length,nextCursor:rows.length===command.limit?{format:1,scope:command.scope,policyHash:command.policyHash,afterId:previous}:null},command);}catch{return failed();}
   }
   private command(raw:WorkflowTreeRootSubmission){
     const manifest=workflowTreeManifest(raw.manifest);const policy=workflowTreePolicy(raw.policy);const resources=workflowTreeRootResources(raw.resources,manifest);

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod } from '@mayura/storage-contracts';
+import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerSession, type SchedulerBackend, type SchedulerMethod,
@@ -53,6 +53,7 @@ export class SqliteDatabase {
   executionWaitsCommand(method: ExecutionWaitMethod, input: unknown): Promise<unknown> { return this.executionWaits.execute(method,input); }
   durableBudgetsCommand(method: DurableBudgetMethod, input: unknown): Promise<unknown> { return this.durableBudgets.execute(method,input); }
   workflowTreesCommand(method: WorkflowTreeMethod, input: unknown): Promise<unknown> { return this.workflowTrees.execute(method,input); }
+  workflowTreeDiscoveryCommand(method:keyof WorkflowTreeDiscoveryStore,input:unknown):Promise<unknown>{return this.workflowTrees.discover(method,input);}
 
   initialize(): void {
     const journal = this.db.pragma('journal_mode = WAL', { simple: true });

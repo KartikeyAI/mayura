@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from 'pg';
-import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeAggregateStore } from '@mayura/storage-contracts';
+import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerBackend, type SchedulerSession, schedulerFacade,
@@ -7,7 +7,7 @@ import {
   ExecutionWaitDatabase, executionWaitFacade,
   workflowGraphDiscoveryFacade,
   DurableBudgetDatabase, durableBudgetFacade,
-  WorkflowTreeDatabase, workflowTreeFacade,
+  WorkflowTreeDatabase, workflowTreeFacade, workflowTreeDiscoveryFacade,
 } from '@mayura/storage-sql/host';
 
 export interface PostgresStoreOptions { readonly connectionString: string; readonly schema?: string }
@@ -37,7 +37,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -108,6 +108,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
     executionWaits: executionWaitFacade((method,input) => { available(); return executionWaitDatabase.execute(method,input); }),
     durableBudgets: durableBudgetFacade((method,input) => { available(); return durableBudgetDatabase.execute(method,input); }),
     workflowTrees: workflowTreeFacade((method,input) => { available(); return workflowTreeDatabase.execute(method,input); }),
+    workflowTreeDiscovery: workflowTreeDiscoveryFacade((method,input)=>{available();return workflowTreeDatabase.discover(method,input);}),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

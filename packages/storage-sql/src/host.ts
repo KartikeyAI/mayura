@@ -12,6 +12,7 @@ export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';
 export { executionWaitFacade } from './execution-wait-validation.js';
 export { workflowGraphDiscoveryFacade } from './workflow-graph-discovery-validation.js';
+export { workflowTreeDiscoveryFacade } from './workflow-tree-discovery-validation.js';
 export { durableBudgetFacade } from './durable-budget-validation.js';
 export { workflowTreeCommand, workflowTreeFacade } from './workflow-tree-validation.js';
 export { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
