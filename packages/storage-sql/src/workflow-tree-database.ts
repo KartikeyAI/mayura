@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import {
-  StorageError, assertWorkflowTreeRootState, initialWorkflowTreeLeafState, initialWorkflowTreeRootState, workflowHashMaterial,
-  workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources, workflowTreeState,
-  type StoredRecord, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
+  StorageError, assertWorkflowTreeLeafState, assertWorkflowTreeRootState, initialWorkflowTreeLeafState, initialWorkflowTreeRootState, workflowHashMaterial,
+  workflowManifest, workflowResources, workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources, workflowTreeState,
+  type StoredRecord, type WorkflowManifest, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
 } from '@mayura/storage-contracts';
 import {
   aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql, storageClock, storedInteger, writeAggregate,
@@ -16,7 +16,7 @@ import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from 
 interface OwnerRow { scope:string;aggregate_id:string;profile:number|string;aggregate_version:number|string;definition_hash:string;policy_hash:string;resource_hash:string;data:string }
 interface MemberRow { scope:string;root_id:string;aggregate_id:string;parent_id:string|null;node_id:string|null;account_id:string;definition_hash:string;policy_hash:string;resource_hash:string }
 interface RootOwner { format:4;rootId:string;manifest:WorkflowTreeManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan }
-interface ChildOwner { format:4;rootId:string;parentId:string;nodeId:string;accountId:string;manifest:import('@mayura/storage-contracts').WorkflowManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan;inputHash:string }
+interface ChildOwner { format:4;rootId:string;parentId:string;nodeId:string;accountId:string;manifest:WorkflowManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan;inputHash:string }
 export interface WorkflowTreeRootSubmission {
   readonly manifest:WorkflowTreeManifest;readonly policy:WorkflowTreePolicyManifest;readonly resources:WorkflowResourcePlan;
   readonly input:JsonValue;readonly idempotencyKey:string;
@@ -92,6 +92,15 @@ export class WorkflowTreeDatabase {
     const row=(await tx.query<OwnerRow>(`SELECT * FROM ${this.owners()} WHERE scope = ? AND aggregate_id = ?`,[scope,rootId]))[0];if(!row||Number(row.profile)!==3)failed();
     try{const raw=JSON.parse(row.data) as RootOwner;if(raw.format!==4||raw.rootId!==rootId)failed();return{format:4,rootId,manifest:workflowTreeManifest(raw.manifest),policy:workflowTreePolicy(raw.policy),resources:workflowTreeRootResources(raw.resources,raw.manifest)};}catch{return failed();}
   }
+  private async childRecord(tx:SchedulerSession,scope:string,rootId:string,parentId:string,nodeId:string,childId:string,accountId:string,definitionHash:string,policyHash:string,resourceHash:string,inputHash:string,budget:WorkflowTreeBudgetSnapshot):Promise<StoredRecord>{
+    const row=await loadAggregate(tx,this.backend,scope,childId);const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?${lockSql(this.backend)}`,[scope,childId]))[0];const owner=(await tx.query<OwnerRow>(`SELECT * FROM ${this.owners()} WHERE scope = ? AND aggregate_id = ?${lockSql(this.backend)}`,[scope,childId]))[0];
+    if(!row||!member||!owner||Number(owner.profile)!==3||storedInteger(owner.aggregate_version)!==storedInteger(row.version)||member.root_id!==rootId||member.parent_id!==parentId||member.node_id!==nodeId||member.account_id!==accountId||member.definition_hash!==definitionHash||member.policy_hash!==policyHash||member.resource_hash!==resourceHash||owner.definition_hash!==definitionHash||owner.policy_hash!==policyHash||owner.resource_hash!==resourceHash)failed();
+    let data:ChildOwner;try{const raw=JSON.parse(owner.data) as ChildOwner;const manifest=workflowManifest(raw.manifest);const policy=workflowTreePolicy(raw.policy);const resources=workflowResources(raw.resources,manifest);data={format:raw.format,rootId:raw.rootId,parentId:raw.parentId,nodeId:raw.nodeId,accountId:raw.accountId,manifest,policy,resources,inputHash:raw.inputHash};}catch{return failed();}
+    if(data.format!==4||data.rootId!==rootId||data.parentId!==parentId||data.nodeId!==nodeId||data.accountId!==accountId||data.inputHash!==inputHash||digest('mayura:workflow:v1',data.manifest)!==definitionHash||digest('mayura:workflow-tree-policy:v1',data.policy)!==policyHash||digest('mayura:workflow-resources:v1',data.resources)!==resourceHash)failed();
+    const record=aggregateRecord(row);const state=workflowTreeState(record);assertWorkflowTreeLeafState(state,data.manifest,data.policy,data.resources);
+    if(state.rootId!==rootId||state.accountId!==accountId||state.definition!==definitionHash||state.policy!==policyHash||digest('mayura:workflow-tree-child-input:v1',state.input)!==inputHash||state.budgetVersion>budget.version)failed();
+    const account=budget.accounts.find(item=>item.id===accountId);if(!account||account.parentId!=='root'||account.maxCostMicros!==data.policy.maxCostMicros||account.maxCalls!==data.policy.maxCalls)failed();return record;
+  }
   async submit(raw:WorkflowTreeRootSubmission):Promise<{readonly snapshot:WorkflowTreeRootSnapshot;readonly created:boolean}>{
     if(!this.initialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree storage first.');const input=this.command(raw);
     const id=digest('mayura:workflow-tree-run:v1',{scope:input.hashes.scope,submissionKey:input.key});
@@ -126,7 +135,7 @@ export class WorkflowTreeDatabase {
       const state=workflowTreeState(root.record);const step=state.steps[nodeId];if(!step||step.kind!=='child')failed();
       if(step.child){
         if(step.child.runId!==childId||step.child.accountId!==accountId||step.child.definitionHash!==definitionHash||step.child.policyHash!==policyHash||step.child.inputHash!==inputHash)conflict();
-        const child=await loadAggregate(tx,this.backend,scope,childId);if(!child)failed();return{root,child:aggregateRecord(child),childId,accountId,definitionHash,policyHash,resourceHash,inputHash,created:false};
+        const child=await this.childRecord(tx,scope,rootId,parentId,nodeId,childId,accountId,definitionHash,policyHash,resourceHash,inputHash,root.budget);return{root,child,childId,accountId,definitionHash,policyHash,resourceHash,inputHash,created:false};
       }
       if(root.record.version!==raw.expectedVersion||!['running','waiting'].includes(state.status)||step.status!=='pending'||node.dependsOn.some(dependency=>state.steps[dependency]?.status!=='succeeded'))conflict();
       await lockRunIdentity(tx,this.backend,scope,childId);if(await loadAggregate(tx,this.backend,scope,childId))conflict();

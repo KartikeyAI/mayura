@@ -2,7 +2,7 @@ import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/
 import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowManifest, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
 import type { WorkflowTreeManifest, WorkflowTreePolicyManifest } from './workflow-tree-contracts.js';
-import { workflowManifest } from './workflow-format2.js';
+import { workflowManifest, workflowResources } from './workflow-format2.js';
 import { workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources } from './workflow-tree-contracts.js';
 
 export type WorkflowTreeStatus = 'running'|'waiting'|'succeeded'|'failed'|'blocked'|'cancelled'|'outcome_unknown';
@@ -84,6 +84,13 @@ export function workflowTreeState(record: Pick<StoredRecord,'id'|'state'>): Work
 export function assertWorkflowTreeRootState(state:WorkflowTreeState,definition:WorkflowTreeManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan):void {
   try{const manifest=workflowTreeManifest(definition);const authority=workflowTreePolicy(policy);workflowTreeRootResources(resources,manifest);
     if(state.accountId!=='root'||state.rootId===undefined||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
+    for(const node of manifest.graph)if(state.steps[node.id]?.kind!==node.kind)corrupt();
+  }catch{return corrupt();}
+}
+
+export function assertWorkflowTreeLeafState(state:WorkflowTreeState,definition:WorkflowManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan):void {
+  try{const manifest=workflowManifest(definition);const authority=workflowTreePolicy(policy);workflowResources(resources,manifest);
+    if(state.accountId==='root'||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
     for(const node of manifest.graph)if(state.steps[node.id]?.kind!==node.kind)corrupt();
   }catch{return corrupt();}
 }
