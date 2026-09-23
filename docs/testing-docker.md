@@ -35,4 +35,19 @@ CI uses a separate ephemeral service. SQLite tests use isolated temporary files.
 
 The test runner defaults to two concurrent test processes. This limits contention among independent fsync-heavy, process-kill and short-lease fixtures; explicit competing-worker scenarios inside a test are unchanged. Run additional archive gates after the full suite, not concurrently with it. Recorded timing-sensitive failures and qualification limits are retained in the [development ledger](development-status.md).
 
+## Code Mode sandbox image
+
+Build the workspace and the pinned local image, then copy the exact `image` and `provenance` values from the retained report:
+
+```powershell
+pnpm build
+pnpm code-sandbox:image
+$env:MAYURA_TEST_DOCKER_PATH = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
+$env:MAYURA_TEST_CODE_SANDBOX_IMAGE = 'sha256:<exact-local-image-id>'
+$env:MAYURA_TEST_CODE_SANDBOX_PROVENANCE = 'sha256:<exact-SPDX-document-digest>'
+node node_modules/vitest/vitest.mjs run packages/adapter-code-docker/test/docker.integration.test.ts --maxWorkers=1
+```
+
+The build retains `report.json` and `root/sbom.spdx.json` under `.artifacts/code-sandbox-image-*`. The runtime verifies both the exact image ID and its provenance label. This local SPDX inventory is not image signing, a vulnerability/license scan or production host qualification.
+
 `pnpm test:consumer:storage` additionally installs real local archives into fresh SQLite-only, PostgreSQL-only, compatibility and workflow-tree-plus-SQLite consumers, with lifecycle scripts and registry access disabled. The workflow-tree profile proves an approval-enabled root-local-to-required-child path after database close/reopen. When the explicit test URL is present, the two PostgreSQL-capable profiles create/drop only their own generated `mayura_packed_…` schemas. Without it, their database execution is reported as skipped, not qualified; both SQLite native-worker profiles can still run. Generated archives, installed consumers and SQLite fixture files stay under an ignored `.artifacts/storage-consumer-*` directory for inspection.

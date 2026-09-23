@@ -225,7 +225,8 @@ async function main() {
         assert.equal(execution.mediatedToolCall, true); assert.equal(execution.cpuInterrupted, true);
       }
       if (name === 'code-mode-docker') {
-        assert.equal(execution.immutableImageRequired, true); assert.equal(execution.noDockerDependency, true);
+        assert.equal(execution.immutableImageRequired, true); assert.equal(execution.provenanceRequired, true);
+        assert.equal(execution.noDockerDependency, true);
       }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {

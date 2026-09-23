@@ -7,23 +7,29 @@ import type { SandboxAdapter, SandboxExecutionRequest } from '@mayura/code-mode'
 
 const executeFile = promisify(execFile);
 const imageId = /^sha256:[a-f0-9]{64}$/;
+const provenanceDigest = /^sha256:[a-f0-9]{64}$/;
+const provenanceLabel = 'dev.mayura.code-sandbox.provenance';
 
 export interface DockerQuickJsAdapterOptions {
   /** Absolute trusted Docker CLI path. PATH lookup is deliberately unsupported. */
   readonly dockerPath: string;
   /** Exact locally present content ID returned by `docker image inspect --format {{.Id}}`. */
   readonly image: string;
+  /** Exact SHA-256 digest of the retained SPDX document embedded and labeled by the build. */
+  readonly provenance: string;
 }
 
 function config(value: DockerQuickJsAdapterOptions): DockerQuickJsAdapterOptions {
   if (!value || Object.getPrototypeOf(value) !== Object.prototype) throw new TypeError('Docker adapter configuration must be plain data.');
   const fields = Object.getOwnPropertyDescriptors(value);
-  if (Reflect.ownKeys(fields).length !== 2 || !fields['dockerPath'] || !('value' in fields['dockerPath'])
+  if (Reflect.ownKeys(fields).length !== 3 || !fields['dockerPath'] || !('value' in fields['dockerPath'])
     || !fields['image'] || !('value' in fields['image']) || typeof fields['dockerPath'].value !== 'string'
-    || !isAbsolute(fields['dockerPath'].value) || typeof fields['image'].value !== 'string' || !imageId.test(fields['image'].value)) {
-    throw new TypeError('Docker adapter requires an absolute CLI path and exact sha256 image ID.');
+    || !fields['provenance'] || !('value' in fields['provenance'])
+    || !isAbsolute(fields['dockerPath'].value) || typeof fields['image'].value !== 'string' || !imageId.test(fields['image'].value)
+    || typeof fields['provenance'].value !== 'string' || !provenanceDigest.test(fields['provenance'].value)) {
+    throw new TypeError('Docker adapter requires an absolute CLI path plus exact image and provenance digests.');
   }
-  return Object.freeze({ dockerPath: fields['dockerPath'].value, image: fields['image'].value });
+  return Object.freeze({ dockerPath: fields['dockerPath'].value, image: fields['image'].value, provenance: fields['provenance'].value });
 }
 
 function bytes(value: number): string { return `${value}b`; }
@@ -36,10 +42,11 @@ export function createDockerQuickJsSandboxAdapter(options: DockerQuickJsAdapterO
     version: '0.1.0',
     isAvailable: async () => {
       try {
-        const result = await executeFile(selected.dockerPath, ['image', 'inspect', '--format', '{{.Id}}', selected.image], {
-          windowsHide: true, timeout: 10_000, maxBuffer: 4_096, env: Object.freeze({}),
+        const result = await executeFile(selected.dockerPath, ['image', 'inspect', '--format', '{{json .}}', selected.image], {
+          windowsHide: true, timeout: 10_000, maxBuffer: 128 * 1_024, env: Object.freeze({}),
         });
-        return result.stdout.trim() === selected.image;
+        const inspected = JSON.parse(result.stdout) as { Id?: unknown; Config?: { Labels?: Record<string, unknown> | null } };
+        return inspected.Id === selected.image && inspected.Config?.Labels?.[provenanceLabel] === selected.provenance;
       } catch { return false; }
     },
     launch: (request: SandboxExecutionRequest): QuickJsWorkerProcess => {

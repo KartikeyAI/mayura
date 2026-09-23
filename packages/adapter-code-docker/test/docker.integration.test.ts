@@ -8,7 +8,8 @@ import { createDockerQuickJsSandboxAdapter } from '../src/index.js';
 
 const dockerPath = process.env['MAYURA_TEST_DOCKER_PATH'];
 const image = process.env['MAYURA_TEST_CODE_SANDBOX_IMAGE'];
-const available = dockerPath !== undefined && image !== undefined;
+const provenance = process.env['MAYURA_TEST_CODE_SANDBOX_PROVENANCE'];
+const available = dockerPath !== undefined && image !== undefined && provenance !== undefined;
 const executeFile = promisify(execFile);
 async function containerIds(): Promise<string[]> {
   const listed = await executeFile(dockerPath!, ['ps', '--quiet', '--filter', `ancestor=${image!}`, '--filter', 'name=mayura-code-'],
@@ -32,12 +33,22 @@ const tool = defineTool({ id: 'number.double', version: '1', description: 'Doubl
   effects: 'none', capabilities: [], execute: input => ({ value: input.value * 2 }) });
 
 describe.skipIf(!available)('Docker QuickJS containment profile', () => {
+  it('rejects an exact image whose retained provenance digest does not match its label', async () => {
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!,
+      provenance: `sha256:${'0'.repeat(64)}` }), allowTestAdapter: true, invokeTool: vi.fn() });
+    const program = defineCodeProgram({ id: 'docker.provenance', version: '1', intent: 'Docker provenance test.', language: 'javascript',
+      source: 'input => input', input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', limits });
+    await expect(mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-provenance',
+      scope: { principalId: 'alice', projectId: 'project' }, signal: new AbortController().signal }))
+      .resolves.toMatchObject({ status: 'failed', error: { code: 'UNSUPPORTED_PROFILE' } });
+  }, 30_000);
+
   it('executes brokered tools inside the hardened exact image', async () => {
     const budget = new Budget(0, 2);
     const broker = vi.fn(async (definition: AnyTool, input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> =>
       invokeTool(definition, input, { runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
         permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>>);
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image! }), allowTestAdapter: true, invokeTool: broker });
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: broker });
     const program = defineCodeProgram({ id: 'docker.tool', version: '1', intent: 'Docker tool test.', language: 'javascript',
       source: 'async (input, tools) => (await tools.call("number.double", input)).output', input: schema, output: schema,
       inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', tools: [tool], limits });
@@ -47,7 +58,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
   }, 30_000);
 
   it('interrupts hostile CPU work and removes the container', async () => {
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image! }), allowTestAdapter: true, invokeTool: vi.fn() });
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'docker.cpu', version: '1', intent: 'Docker CPU test.', language: 'javascript', source: '() => { while (true) {} }',
       input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', limits: { ...limits, cpuMillis: 20 } });
     await expect(mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-cpu', scope: { principalId: 'alice', projectId: 'project' },
@@ -62,7 +73,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     const holdingTool = defineTool({ id: 'number.hold', version: '1', description: 'Hold for inspection.', input: schema, output: schema,
       effects: 'none', capabilities: [], execute: async input => { admit(); await blocked; return input; } });
     const budget = new Budget(0, 1);
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image! }), allowTestAdapter: true,
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true,
       invokeTool: (definition, input, context) => invokeTool(definition, input, { runId: context.runId, callId: context.callId,
         scope: context.scope, signal: context.signal, permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>> });
     const program = defineCodeProgram({ id: 'docker.inspect', version: '1', intent: 'Docker confinement inspection.', language: 'javascript',
@@ -90,7 +101,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
 
   it('force-removes the disposable container when the caller cancels', async () => {
     const controller = new AbortController();
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image! }), allowTestAdapter: true, invokeTool: vi.fn() });
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'docker.cancel', version: '1', intent: 'Docker cancellation test.', language: 'javascript',
       source: '() => { while (true) {} }', input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1',
       limits: { ...limits, cpuMillis: 10_000 } });
