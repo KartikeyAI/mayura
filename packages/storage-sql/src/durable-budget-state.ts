@@ -9,6 +9,7 @@ type Reservation = Mutable<DurableBudgetReservation>;
 type State = Omit<Mutable<DurableBudgetSnapshot>, 'accounts' | 'bundles' | 'reservations'> & {
   accounts: Account[]; bundles: DurableBudgetBundle[]; reservations: Reservation[];
 };
+export type WorkflowTreeBudgetSnapshot = Omit<DurableBudgetSnapshot, 'owner'> & { readonly owner: 'workflow-tree-v1' };
 export type DurableBudgetMutation = Exclude<DurableBudgetMethod, 'initialize' | 'inspect' | 'events'>;
 export interface DurableBudgetReduction {
   readonly snapshot: DurableBudgetSnapshot; readonly changed: boolean; readonly event?: StoredEventInput;
@@ -26,6 +27,19 @@ export function initialDurableBudgetState(raw: unknown): DurableBudgetSnapshot {
     format: 1, mode: 'shared-ceiling-v1', owner: 'host-v1', version: 1, eventSequence: 1, blocked: false,
     accounts: [{ id: 'root', parentId: null, maxCostMicros: command['maxCostMicros'], maxCalls: command['maxCalls'], closed: false,
       spentMicros: 0, reservedMicros: 0, calls: 0, heldCalls: 0 }], bundles: [], reservations: [] });
+}
+
+/** Scheduler-owned accounting retains the host ledger's exact invariants under a distinct fixed owner. */
+export function initialWorkflowTreeBudgetState(raw: unknown): WorkflowTreeBudgetSnapshot {
+  return workflowTreeSnapshot(initialDurableBudgetState(raw));
+}
+
+function hostSnapshot(raw: WorkflowTreeBudgetSnapshot): DurableBudgetSnapshot {
+  return durableBudgetSnapshot({ ...raw, owner: 'host-v1' });
+}
+
+function workflowTreeSnapshot(raw: DurableBudgetSnapshot): WorkflowTreeBudgetSnapshot {
+  return Object.freeze({ ...raw, owner: 'workflow-tree-v1' });
 }
 
 /**
@@ -128,4 +142,14 @@ export function reduceDurableBudgetState(raw: unknown, method: DurableBudgetMuta
   state.accounts.sort(order); state.bundles.sort(order); state.reservations.sort(order);
   return { snapshot: durableBudgetSnapshot(state), changed: true, event,
     ...(startStatus === undefined ? {} : { startStatus }), ...(overrun === undefined ? {} : { overrun }) };
+}
+
+/** Fixed-owner reducer seam used only by the integrated workflow-tree writer. */
+export function reduceWorkflowTreeBudgetState(
+  raw: WorkflowTreeBudgetSnapshot,
+  method: DurableBudgetMutation,
+  input: unknown,
+): Omit<DurableBudgetReduction, 'snapshot'> & { readonly snapshot: WorkflowTreeBudgetSnapshot } {
+  const result = reduceDurableBudgetState(hostSnapshot(raw), method, input);
+  return { ...result, snapshot: workflowTreeSnapshot(result.snapshot) };
 }

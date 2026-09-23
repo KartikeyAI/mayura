@@ -1,6 +1,6 @@
 # Durable required workflow children
 
-Status: **planned, not implemented or qualified**. This is a reviewed next-slice proposal after the [standalone durable budget ledger](durable-budget-ledger.md). The names below are provisional until the decisions section is resolved and failure-first public tests are reviewed. This document does not change an existing runtime, storage capability or release gate.
+Status: **implementation in progress; not qualified**. The format-4 authoring/manifest contract and fixed scheduler-owned budget profile are implemented locally with focused tests. Atomic root/member storage, execution, joins and recovery remain incomplete, so this document does not claim a usable runtime or close a release gate.
 
 ## Smallest complete scope
 
@@ -14,7 +14,7 @@ Reuse the existing scheduled worker's actual job/handler/storage capacities, sch
 
 Expose the new API through an optional `@mayura/workflows/children` entry point, not through the base SDK. Proposed names:
 
-- `defineWorkflowTree({ id, version, input, output, nodes, result })` creates a genuine immutable definition. Tool/join nodes retain familiar bindings. A child node contains `{ kind: 'child', id, dependsOn?, definition, input, policy, resources? }` and pins one genuine leaf definition; model-supplied module names or dynamic imports are never resolved.
+- `defineWorkflowTree({ id, version, input, output, nodes, result })` creates a genuine immutable definition. Tool/join nodes retain familiar bindings. A child node contains `{ kind: 'child', id, dependsOn?, workflow, input, policy, resources? }` and pins one genuine leaf definition; model-supplied module names or dynamic imports are never resolved.
 - Child `policy` is explicit `{ permissions, maxCostMicros, maxCalls, maxOutputBytes, approvalTtlMs }`. No omission silently imports broader ambient grants. Scope and policy version are inherited immutable values, not child arguments.
 - `createWorkflowTreeRuntime({ store, scope, permissions, policyVersion, maxCostMicros, maxCalls, definitions, workerId, ...workerBounds })` owns one immutable root/leaf catalog and one shared driver. Proposed finite operations are `submit`, `inspect`, `events`, `runUntilSettled`, `approve`, `cancel`, `recoverExpired` and `close`. There is no `attach`, public arbitrary `spawn`, replacement-state API or implicit polling service.
 - `runUntilSettled(rootDefinition, rootId)` performs bounded continuation over that owned tree, including ready children, and returns when terminal or unable to make immediate progress. Waiting parents occupy no execution slot needed by their children. This is not a promise to wait indefinitely for approvals or unknown effects.
@@ -22,6 +22,8 @@ Expose the new API through an optional `@mayura/workflows/children` entry point,
 - Public snapshots distinguish local run state from inclusive account accounting and expose immutable owned-child references. Metadata inspection does not automatically disclose child input, handler output, credentials or raw receipts.
 
 Proposed optional storage capability: `WorkflowTreeAggregateStore.workflowTrees`. Its strict methods retain the scheduled finite controls, replacing submission with format-4 enrollment and adding `admitChild` and `joinChild`. Method inputs are snapshotted before any asynchronous initialization or transport. Replies are independently validated against the requested profile, root, member, account, policy and definition identities. A custom adapter is never silently treated as child-capable because it exposes legacy scheduled methods.
+
+Pinned foundation choices: the optional entry point is `@mayura/workflows/children`; the genuine factory is `defineWorkflowTree`; persisted manifests are format 4 in the `mayura:workflow-tree:v1` hash domain; child leaves are genuine legacy tool/join workflows; and scheduler accounting uses fixed owner `workflow-tree-v1` in `mayura_workflow_tree_budgets` / `mayura_workflow_tree_budget_events`. The public `host-v1` codec, tables and constructor remain unchanged.
 
 The storage write key must include the member policy pin and immutable tree identity, conceptually `{ scope, rootId, rootPolicyHash, id, policyHash, expectedVersion, commandId }`. Caller-provided root/account references are assertions to verify against stored ownership, not authority to move an existing member into a different tree. The exact exported type names and whether the redundant root pins are public or internally derived remain an API decision below.
 

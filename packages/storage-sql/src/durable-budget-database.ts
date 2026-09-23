@@ -3,7 +3,11 @@ import {
   type DurableBudgetKey, type DurableBudgetMethod, type DurableBudgetSnapshot, type StoredEvent, type StoredEventInput,
 } from '@mayura/storage-contracts';
 import { lockSql, storageClock, storedInteger } from './aggregate-session.js';
-import { initialDurableBudgetState, reduceDurableBudgetState } from './durable-budget-state.js';
+import {
+  initialDurableBudgetState, initialWorkflowTreeBudgetState,
+  reduceDurableBudgetState, reduceWorkflowTreeBudgetState,
+  type WorkflowTreeBudgetSnapshot,
+} from './durable-budget-state.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
 
 interface RootRow {
@@ -11,7 +15,10 @@ interface RootRow {
   version: number | string; event_sequence: number | string; state: string;
 }
 interface EventRow { sequence: number | string; type: string; data: string; created_at: string }
-interface LockedBudget { snapshot: DurableBudgetSnapshot; clockFloor: number }
+type BudgetOwner = 'host-v1' | 'workflow-tree-v1';
+type BudgetSnapshot = DurableBudgetSnapshot | WorkflowTreeBudgetSnapshot;
+interface BudgetProfile { readonly owner: BudgetOwner; readonly tables: 'durable_budget' | 'workflow_tree_budget' }
+interface LockedBudget { snapshot: BudgetSnapshot; clockFloor: number }
 const MAX_EVENTS = 2_048;
 function failed(): never { throw new StorageError('STORAGE_UNAVAILABLE','Stored durable budget failed integrity validation.'); }
 function conflict(): never { throw new StorageError('CONFLICT','The durable budget identity or configuration does not match.'); }
@@ -25,6 +32,7 @@ function canonical(value: unknown): string {
 export class DurableBudgetDatabase {
   private initialized = false;
   constructor(private readonly backend: SchedulerBackend) {}
+  protected budgetProfile(): BudgetProfile { return HOST_PROFILE; }
 
   /**
    * Internal trusted-host seam for later atomic execution integration. The caller
@@ -33,10 +41,13 @@ export class DurableBudgetDatabase {
    */
   inSession(tx: SchedulerSession): DurableBudgetDatabase {
     if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize durable budget storage before integrated use.');
-    const scoped = new DurableBudgetDatabase({...this.backend,transaction:body => body(tx)});
+    const backend = {...this.backend,transaction:<T>(body: (session: SchedulerSession) => Promise<T>) => body(tx)};
+    const scoped = this.budgetProfile().owner === 'host-v1'
+      ? new DurableBudgetDatabase(backend)
+      : new WorkflowTreeBudgetDatabase(backend);
     scoped.initialized = true; return scoped;
   }
-  private table(events = false): string { return `${this.backend.prefix}mayura_durable_budget${events ? '_events' : 's'}`; }
+  private table(events = false): string { return `${this.backend.prefix}mayura_${this.budgetProfile().tables}${events ? '_events' : 's'}`; }
   private async initialize(): Promise<void> {
     if (this.initialized) return;
     await this.backend.transaction(async tx => {
@@ -44,7 +55,7 @@ export class DurableBudgetDatabase {
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table()} (
         scope TEXT NOT NULL,id TEXT NOT NULL,policy_hash TEXT NOT NULL,
         format INTEGER NOT NULL CHECK(format = 1),mode TEXT NOT NULL CHECK(mode = 'shared-ceiling-v1'),
-        owner TEXT NOT NULL CHECK(owner = 'host-v1'),version INTEGER NOT NULL CHECK(version BETWEEN 1 AND 2048),
+        owner TEXT NOT NULL CHECK(owner = '${this.budgetProfile().owner}'),version INTEGER NOT NULL CHECK(version BETWEEN 1 AND 2048),
         event_sequence INTEGER NOT NULL CHECK(event_sequence BETWEEN 1 AND 2048),state TEXT NOT NULL,
         PRIMARY KEY(scope,id))`);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table(true)} (
@@ -77,10 +88,11 @@ export class DurableBudgetDatabase {
       return undefined;
     }
     if (rows.length !== 1) failed();
-    let snapshot: DurableBudgetSnapshot;
+    let snapshot: BudgetSnapshot;
     try {
       if (typeof row.state !== 'string' || Buffer.byteLength(row.state) > 1_048_576) failed();
-      snapshot = durableBudgetSnapshot(JSON.parse(row.state));
+      const parsed = JSON.parse(row.state) as Record<string, unknown>;
+      snapshot = this.budgetProfile().owner === 'host-v1' ? durableBudgetSnapshot(parsed) : workflowTreeBudgetSnapshot(parsed);
       if (row.scope !== key.scope || row.id !== key.id || snapshot.scope !== row.scope || snapshot.id !== row.id
         || snapshot.policyHash !== row.policy_hash || snapshot.format !== storedInteger(row.format)
         || snapshot.mode !== row.mode || snapshot.owner !== row.owner || snapshot.version !== storedInteger(row.version)
@@ -99,7 +111,7 @@ export class DurableBudgetDatabase {
     if (event.sequence !== snapshot.eventSequence) failed();
     return {snapshot,clockFloor:Date.parse(event.createdAt)};
   }
-  private async append(tx: SchedulerSession, snapshot: DurableBudgetSnapshot, event: StoredEventInput, floor: number): Promise<void> {
+  private async append(tx: SchedulerSession, snapshot: BudgetSnapshot, event: StoredEventInput, floor: number): Promise<void> {
     if (snapshot.eventSequence > MAX_EVENTS) failed();
     const createdAt = new Date(await storageClock(tx,this.backend,floor)).toISOString();
     const row: EventRow = {sequence:snapshot.eventSequence,type:event.type,data:canonical(event.data),created_at:createdAt};
@@ -121,7 +133,7 @@ export class DurableBudgetDatabase {
           if (!root || root.maxCostMicros !== command['maxCostMicros'] || root.maxCalls !== command['maxCalls']) conflict();
           return {snapshot:current.snapshot,created:false};
         }
-        const snapshot = initialDurableBudgetState(command);
+        const snapshot = this.budgetProfile().owner === 'host-v1' ? initialDurableBudgetState(command) : initialWorkflowTreeBudgetState(command);
         await tx.query(`INSERT INTO ${this.table()} (scope,id,policy_hash,format,mode,owner,version,event_sequence,state) VALUES (?,?,?,?,?,?,?,?,?)`,
           [key.scope,key.id,key.policyHash,snapshot.format,snapshot.mode,snapshot.owner,snapshot.version,snapshot.eventSequence,canonical(snapshot)]);
         await this.append(tx,snapshot,{type:'budget.created',data:{}},0);
@@ -136,7 +148,9 @@ export class DurableBudgetDatabase {
         if (events.length !== Math.min(1_000,Math.max(0,current.snapshot.eventSequence - after))) failed();
         return durableBudgetResult('events',events,command);
       }
-      const result = reduceDurableBudgetState(current.snapshot,method,command);
+      const result = this.budgetProfile().owner === 'host-v1'
+        ? reduceDurableBudgetState(current.snapshot as DurableBudgetSnapshot,method,command)
+        : reduceWorkflowTreeBudgetState(current.snapshot as WorkflowTreeBudgetSnapshot,method,command);
       if (result.changed) {
         if (!result.event || result.snapshot.version !== current.snapshot.version + 1 || result.snapshot.eventSequence !== current.snapshot.eventSequence + 1) failed();
         const rows = await tx.query<RootRow>(`UPDATE ${this.table()} SET state = ?,version = ?,event_sequence = ? WHERE scope = ? AND id = ? RETURNING *`,
@@ -150,4 +164,18 @@ export class DurableBudgetDatabase {
       return result.snapshot;
     });
   }
+}
+
+const HOST_PROFILE: BudgetProfile = Object.freeze({ owner: 'host-v1', tables: 'durable_budget' });
+const WORKFLOW_TREE_PROFILE: BudgetProfile = Object.freeze({ owner: 'workflow-tree-v1', tables: 'workflow_tree_budget' });
+
+function workflowTreeBudgetSnapshot(raw: unknown): WorkflowTreeBudgetSnapshot {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || (raw as Record<string, unknown>)['owner'] !== 'workflow-tree-v1') failed();
+  const host = durableBudgetSnapshot({ ...(raw as Record<string, unknown>), owner: 'host-v1' });
+  return Object.freeze({ ...host, owner: 'workflow-tree-v1' });
+}
+
+/** Fixed scheduler-owned ledger; intentionally has no public storage facade. */
+export class WorkflowTreeBudgetDatabase extends DurableBudgetDatabase {
+  protected override budgetProfile(): BudgetProfile { return WORKFLOW_TREE_PROFILE; }
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { DurableBudgetMethod, DurableBudgetSnapshot } from '@mayura/storage-contracts';
-import { initialDurableBudgetState, reduceDurableBudgetState } from '../src/durable-budget-state.js';
+import {
+  initialDurableBudgetState, initialWorkflowTreeBudgetState,
+  reduceDurableBudgetState, reduceWorkflowTreeBudgetState,
+} from '../src/durable-budget-state.js';
 
 const key = { scope: 'financial/मयूर', id: 'tree', policyHash: 'a'.repeat(64) };
 function initial(maxCostMicros = 10, maxCalls = 10) { return initialDurableBudgetState({ ...key, maxCostMicros, maxCalls }); }
@@ -19,6 +22,16 @@ function ticket(state: DurableBudgetSnapshot, method: 'start' | 'markUnknown' | 
 function account(state: DurableBudgetSnapshot, id = 'root') { return state.accounts.find(item => item.id === id)!; }
 
 describe('durable budget pure state transitions', () => {
+  it('keeps scheduler-owned trees distinct while preserving shared accounting', () => {
+    const created = initialWorkflowTreeBudgetState({ ...key, maxCostMicros: 10, maxCalls: 2 });
+    expect(created.owner).toBe('workflow-tree-v1');
+    const forked = reduceWorkflowTreeBudgetState(created,'fork',{...key,parentId:'root',accountId:'child',maxCostMicros:4,maxCalls:1}).snapshot;
+    const reserved = reduceWorkflowTreeBudgetState(forked,'reserveBundle',{...key,accountId:'child',bundleId:'bundle',operations:[{id:'ticket',maxCostMicros:4}]}).snapshot;
+    expect(reserved.owner).toBe('workflow-tree-v1');
+    expect(reserved.accounts.find(account => account.id === 'root')).toMatchObject({ reservedMicros: 4, heldCalls: 1 });
+    expect(() => reduceDurableBudgetState(reserved,'start',{...key,accountId:'child',reservationId:'ticket'})).toThrow();
+  });
+
   it('creates and retries immutable roots without consuming event capacity', () => {
     const state = initial(); expect(state).toMatchObject({ format: 1, mode: 'shared-ceiling-v1', owner: 'host-v1', version: 1, eventSequence: 1 });
     expect(Object.isFrozen(state.accounts[0])).toBe(true);
