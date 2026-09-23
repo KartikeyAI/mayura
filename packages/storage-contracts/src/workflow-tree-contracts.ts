@@ -1,8 +1,10 @@
-import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
-import { StorageError } from './contracts.js';
+import { freezeJson, jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
+import { StorageError, type AggregateStore, type StoredRecord } from './contracts.js';
 import type { Scope } from '@mayura/core';
 import type { WorkflowBinding, WorkflowManifest, WorkflowManifestNode, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
 import { workflowManifest, workflowResources } from './workflow-format2.js';
+import type { Claim, EvidenceDisposition, JobRecord } from './scheduler-contracts.js';
+import type { DurableBudgetSnapshot } from './durable-budget-contracts.js';
 
 export interface WorkflowTreeChildPolicy {
   readonly permissions: readonly string[];
@@ -26,6 +28,43 @@ export interface WorkflowTreePolicyManifest {
   readonly maxCostMicros: number; readonly maxCalls: number;
   readonly maxOutputBytes: number; readonly approvalTtlMs: number;
 }
+
+export type WorkflowTreeBudgetSnapshot = Omit<DurableBudgetSnapshot,'owner'> & {readonly owner:'workflow-tree-v1'};
+export interface WorkflowTreeRootSubmission {readonly manifest:WorkflowTreeManifest;readonly policy:WorkflowTreePolicyManifest;readonly resources:WorkflowResourcePlan;readonly input:JsonValue;readonly idempotencyKey:string}
+export interface WorkflowTreeRootSnapshot {readonly record:StoredRecord;readonly profile:'scheduled-v3';readonly rootId:string;readonly accountId:'root';readonly manifestHash:string;readonly policyHash:string;readonly resourceHash:string;readonly budget:WorkflowTreeBudgetSnapshot}
+export interface WorkflowTreeChildAdmission {readonly root:WorkflowTreeRootSnapshot;readonly child:StoredRecord;readonly childId:string;readonly accountId:string;readonly definitionHash:string;readonly policyHash:string;readonly resourceHash:string;readonly inputHash:string;readonly created:boolean}
+export interface WorkflowTreePreparedTool {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly created:boolean}
+export interface WorkflowTreeClaimedTool {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly claim:Claim}
+export interface WorkflowTreeRenewedTool {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly claim:Claim}
+export interface WorkflowTreeStartedTool {readonly status:'started'|'already_started';readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord}
+export interface WorkflowTreeReceiptResult {readonly disposition:EvidenceDisposition;readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord}
+export interface WorkflowTreeCompletedTool {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord}
+export interface WorkflowTreeMemberResult {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord}
+export interface WorkflowTreeCancellationResult {readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[]}
+export interface WorkflowTreeChildCancellationResult {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly jobs:readonly JobRecord[]}
+export interface WorkflowTreeRecoveryResult {readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[]}
+
+/** Explicit optional format-4 persistence capability. Every mutation is finite and root-fenced. */
+export interface WorkflowTreeStore {
+  initialize():Promise<void>;
+  submit(command:WorkflowTreeRootSubmission):Promise<{readonly snapshot:WorkflowTreeRootSnapshot;readonly created:boolean}>;
+  inspect(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string}):Promise<WorkflowTreeRootSnapshot|undefined>;
+  admitChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly parentId:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeChildAdmission>;
+  prepareChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreePreparedTool>;
+  claimPreparedChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly workerId:string;readonly leaseMs:number}):Promise<WorkflowTreeClaimedTool|undefined>;
+  renewClaimedChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly claim:Claim;readonly leaseMs:number}):Promise<WorkflowTreeRenewedTool>;
+  startClaimedChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly claim:Claim;readonly input:JsonValue}):Promise<WorkflowTreeStartedTool>;
+  recordChildToolReceipt(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly fence:number;readonly evidenceId:string;readonly receipt:ExecutionReceipt}):Promise<WorkflowTreeReceiptResult>;
+  completeChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly claim:Claim;readonly commandId:string;readonly evidenceId:string;readonly outcome:'succeeded'|'failed'|'blocked';readonly output:JsonValue|null}):Promise<WorkflowTreeCompletedTool>;
+  finalizeChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly expectedVersion:number;readonly output:JsonValue}):Promise<WorkflowTreeMemberResult>;
+  joinChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number}):Promise<WorkflowTreeRootSnapshot>;
+  finalizeRoot(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number;readonly output:JsonValue}):Promise<WorkflowTreeRootSnapshot>;
+  cancelChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly expectedVersion:number;readonly commandId:string}):Promise<WorkflowTreeChildCancellationResult>;
+  cancelRoot(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number;readonly commandId:string}):Promise<WorkflowTreeCancellationResult>;
+  recoverExpired(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly limit:number}):Promise<WorkflowTreeRecoveryResult>;
+}
+export interface WorkflowTreeAggregateStore extends AggregateStore {readonly workflowTrees:WorkflowTreeStore}
+export type WorkflowTreeMethod=keyof WorkflowTreeStore;
 
 const forbidden = new Set(['constructor','prototype','__proto__']);
 const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;

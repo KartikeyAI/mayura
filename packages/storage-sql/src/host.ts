@@ -6,11 +6,13 @@ export { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from 
 export { ScheduledWorkflowDatabase } from './scheduled-database.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';
-export { WorkflowTreeDatabase, type WorkflowTreeCancellationResult, type WorkflowTreeChildAdmission, type WorkflowTreeChildCancellationResult, type WorkflowTreeClaimedTool, type WorkflowTreeCompletedTool, type WorkflowTreeMemberResult, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRecoveryResult, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool } from './workflow-tree-database.js';
+export { WorkflowTreeDatabase } from './workflow-tree-database.js';
+export type { WorkflowTreeCancellationResult, WorkflowTreeChildAdmission, WorkflowTreeChildCancellationResult, WorkflowTreeClaimedTool, WorkflowTreeCompletedTool, WorkflowTreeMemberResult, WorkflowTreePreparedTool, WorkflowTreeReceiptResult, WorkflowTreeRecoveryResult, WorkflowTreeRenewedTool, WorkflowTreeRootSnapshot, WorkflowTreeRootSubmission, WorkflowTreeStartedTool } from '@mayura/storage-contracts';
 export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js';
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';
 export { executionWaitFacade } from './execution-wait-validation.js';
 export { workflowGraphDiscoveryFacade } from './workflow-graph-discovery-validation.js';
 export { durableBudgetFacade } from './durable-budget-validation.js';
+export { workflowTreeCommand, workflowTreeFacade } from './workflow-tree-validation.js';
 export { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
 export { createCommand, updateCommand, identifier, cursor, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';

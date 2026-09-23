@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { storageError, StorageError, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod } from '@mayura/storage-contracts';
+import { storageError, StorageError, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod } from '@mayura/storage-contracts';
 import { SqliteDatabase } from './sqlite-database.js';
 import { identifier, cursor, type SchedulerMethod, type ScheduledMethod } from '@mayura/storage-sql/host';
 
@@ -32,6 +32,7 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
         case 'workflowGraphDiscovery': result = await database.workflowGraphDiscoveryCommand(request.args[0] as keyof WorkflowGraphDiscoveryStore, request.args[1]); break;
         case 'executionWaits': result = await database.executionWaitsCommand(request.args[0] as ExecutionWaitMethod, request.args[1]); break;
         case 'durableBudgets': result = await database.durableBudgetsCommand(request.args[0] as DurableBudgetMethod, request.args[1]); break;
+        case 'workflowTrees': result = await database.workflowTreesCommand(request.args[0] as WorkflowTreeMethod, request.args[1]); break;
         case 'create': result = database.create(request.args[0] as CreateRecord); break;
         case 'update': result = database.update(request.args[0] as UpdateRecord); break;
         case 'read': result = database.read(identifier(request.args[0], 'Scope'), identifier(request.args[1], 'Record ID')); break;

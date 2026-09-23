@@ -1,12 +1,11 @@
 import {
   StorageError, durableBudgetCommand, durableBudgetResult, durableBudgetSnapshot, workflowHashMaterial,
-  type DurableBudgetKey, type DurableBudgetMethod, type DurableBudgetSnapshot, type StoredEvent, type StoredEventInput,
+  type DurableBudgetKey, type DurableBudgetMethod, type DurableBudgetSnapshot, type StoredEvent, type StoredEventInput, type WorkflowTreeBudgetSnapshot,
 } from '@mayura/storage-contracts';
 import { lockSql, storageClock, storedInteger } from './aggregate-session.js';
 import {
   initialDurableBudgetState, initialWorkflowTreeBudgetState,
   reduceDurableBudgetState, reduceWorkflowTreeBudgetState,
-  type WorkflowTreeBudgetSnapshot,
 } from './durable-budget-state.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
 

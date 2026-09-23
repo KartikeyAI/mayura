@@ -4,13 +4,15 @@ import {
   StorageError, assertWorkflowTreeLeafState, assertWorkflowTreeRootState, initialWorkflowTreeLeafState, initialWorkflowTreeRootState, mergeWorkflowReceipt, workflowHashMaterial,
   workflowManifest, workflowResources, workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources, workflowTreeState,
   type Claim, type EvidenceDisposition, type JobRecord, type StoredEventInput, type StoredRecord, type WorkflowManifest, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
+  type WorkflowTreeBudgetSnapshot, type WorkflowTreeCancellationResult, type WorkflowTreeChildAdmission, type WorkflowTreeChildCancellationResult, type WorkflowTreeClaimedTool, type WorkflowTreeCompletedTool,
+  type WorkflowTreeMemberResult, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRecoveryResult, type WorkflowTreeRenewedTool, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool,
+  type WorkflowTreeMethod,
 } from '@mayura/storage-contracts';
 import type { ExecutionReceipt } from '@mayura/core';
 import {
   aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql, storageClock, storedInteger, writeAggregate,
 } from './aggregate-session.js';
 import { WorkflowTreeBudgetDatabase } from './durable-budget-database.js';
-import type { WorkflowTreeBudgetSnapshot } from './durable-budget-state.js';
 import { createCommand, identifier } from './validation.js';
 import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
 
@@ -19,27 +21,6 @@ interface MemberRow { scope:string;root_id:string;aggregate_id:string;parent_id:
 interface TreeJobRow { scope:string;root_id:string;aggregate_id:string;node_id:string;job_id:string;account_id:string;reservation_id:string;cost_micros:number|string }
 interface RootOwner { format:4;rootId:string;manifest:WorkflowTreeManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan }
 interface ChildOwner { format:4;rootId:string;parentId:string;nodeId:string;accountId:string;manifest:WorkflowManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan;inputHash:string }
-export interface WorkflowTreeRootSubmission {
-  readonly manifest:WorkflowTreeManifest;readonly policy:WorkflowTreePolicyManifest;readonly resources:WorkflowResourcePlan;
-  readonly input:JsonValue;readonly idempotencyKey:string;
-}
-export interface WorkflowTreeRootSnapshot {
-  readonly record:StoredRecord;readonly profile:'scheduled-v3';readonly rootId:string;readonly accountId:'root';
-  readonly manifestHash:string;readonly policyHash:string;readonly resourceHash:string;readonly budget:WorkflowTreeBudgetSnapshot;
-}
-export interface WorkflowTreeChildAdmission {
-  readonly root:WorkflowTreeRootSnapshot;readonly child:StoredRecord;readonly childId:string;readonly accountId:string;
-  readonly definitionHash:string;readonly policyHash:string;readonly resourceHash:string;readonly inputHash:string;readonly created:boolean;
-}
-export interface WorkflowTreePreparedTool { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly created:boolean }
-export interface WorkflowTreeClaimedTool { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly claim:Claim }
-export interface WorkflowTreeStartedTool { readonly status:'started'|'already_started';readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord }
-export interface WorkflowTreeReceiptResult { readonly disposition:EvidenceDisposition;readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord }
-export interface WorkflowTreeCompletedTool { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord }
-export interface WorkflowTreeMemberResult { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord }
-export interface WorkflowTreeCancellationResult { readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[] }
-export interface WorkflowTreeChildCancellationResult { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly jobs:readonly JobRecord[] }
-export interface WorkflowTreeRecoveryResult { readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[] }
 function digest(domain:string,value:unknown):string{return createHash('sha256').update(workflowHashMaterial(domain,value)).digest('hex');}
 function same(left:unknown,right:unknown):boolean{return workflowHashMaterial('compare',left)===workflowHashMaterial('compare',right);}
 function failed():never{throw new StorageError('STORAGE_UNAVAILABLE','Stored workflow tree failed integrity validation.');}
@@ -50,6 +31,7 @@ export class WorkflowTreeDatabase {
   private initialized=false;
   private readonly budgets:WorkflowTreeBudgetDatabase;
   constructor(private readonly backend:SchedulerBackend,private readonly scheduler:SchedulerDatabase){this.budgets=new WorkflowTreeBudgetDatabase(backend);}
+  async execute(method:WorkflowTreeMethod,input:unknown):Promise<unknown>{const value=input as never;switch(method){case'initialize':return this.initialize();case'submit':return this.submit(value);case'inspect':{const command=input as {scope:string;rootId:string;rootPolicyHash:string};return this.inspect(command.scope,command.rootId,command.rootPolicyHash);}case'admitChild':return this.admitChild(value);case'prepareChildTool':return this.prepareChildTool(value);case'claimPreparedChildTool':return this.claimPreparedChildTool(value);case'renewClaimedChildTool':return this.renewClaimedChildTool(value);case'startClaimedChildTool':return this.startClaimedChildTool(value);case'recordChildToolReceipt':return this.recordChildToolReceipt(value);case'completeChildTool':return this.completeChildTool(value);case'finalizeChild':return this.finalizeChild(value);case'joinChild':return this.joinChild(value);case'finalizeRoot':return this.finalizeRoot(value);case'cancelChild':return this.cancelChild(value);case'cancelRoot':return this.cancelRoot(value);case'recoverExpired':return this.recoverExpired(value);}}
   private table():string{return `${this.backend.prefix}mayura_workflow_tree_members`;}
   private owners():string{return `${this.backend.prefix}mayura_workflow_owners`;}
   private hashes(manifest:WorkflowTreeManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan){return{
@@ -207,6 +189,10 @@ export class WorkflowTreeDatabase {
       const events:StoredEventInput[]=[];const claims=await this.scheduler.inSession(tx,childId,events,link.job_id).execute('claim',{scope,workerId,limit:1,leaseMs:raw.leaseMs}) as {job:JobRecord;claim:Claim}[];const claimed=claims[0];if(!claimed)return undefined;
       const row=await loadAggregate(tx,this.backend,scope,childId);if(!row)failed();const updated=await writeAggregate(tx,this.backend,row,state as unknown as JsonObject,events,await storageClock(tx,this.backend));await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ? WHERE scope = ? AND aggregate_id = ?`,[updated.version,scope,childId]);return{root,member:aggregateRecord(updated),job:claimed.job,claim:claimed.claim};
     });
+  }
+  async renewClaimedChildTool(raw:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly claim:Claim;readonly leaseMs:number}):Promise<WorkflowTreeRenewedTool>{
+    if(!this.initialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree storage first.');const scope=identifier(raw.scope,'Scope');const rootId=identifier(raw.rootId,'Root');const childId=identifier(raw.childId,'Child');const nodeId=identifier(raw.nodeId,'Node');if(![rootId,childId,raw.rootPolicyHash,raw.childPolicyHash].every(value=>/^[a-f0-9]{64}$/.test(value))||!Number.isSafeInteger(raw.leaseMs)||raw.leaseMs<1_000||raw.leaseMs>300_000)throw new StorageError('INVALID_INPUT','Child renewal requires exact bounded identities and lease.');
+    return this.backend.transaction(async tx=>{const root=await this.locked(tx,scope,rootId,raw.rootPolicyHash);if(!root)throw new StorageError('NOT_FOUND','Workflow-tree root was not found.');const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?${lockSql(this.backend)}`,[scope,childId]))[0];const ownerRow=(await tx.query<OwnerRow>(`SELECT * FROM ${this.owners()} WHERE scope = ? AND aggregate_id = ?`,[scope,childId]))[0];if(!member||member.root_id!==rootId||!member.parent_id||!member.node_id||member.policy_hash!==raw.childPolicyHash||!ownerRow)conflict();let owner:ChildOwner;try{owner=JSON.parse(ownerRow.data) as ChildOwner;}catch{return failed();}const child=await this.childRecord(tx,scope,rootId,member.parent_id,member.node_id,childId,member.account_id,member.definition_hash,member.policy_hash,member.resource_hash,owner.inputHash,root.budget);const state=workflowTreeState(child);const step=state.steps[nodeId];if(!step||step.kind!=='tool'||step.candidateHash===null||!['pending','dispatching'].includes(step.status))conflict();const link=(await tx.query<TreeJobRow>(`SELECT * FROM ${this.backend.prefix}mayura_workflow_tree_jobs WHERE scope = ? AND aggregate_id = ? AND node_id = ?${lockSql(this.backend)}`,[scope,childId,nodeId]))[0];if(!link||link.root_id!==rootId||link.account_id!==member.account_id||link.job_id!==raw.claim.jobId)conflict();const events:StoredEventInput[]=[];const claim=await this.scheduler.inSession(tx,childId,events,link.job_id).execute('renew',{claim:raw.claim,leaseMs:raw.leaseMs}) as Claim;const row=await loadAggregate(tx,this.backend,scope,childId);if(!row)failed();const updated=await writeAggregate(tx,this.backend,row,state as unknown as JsonObject,events,await storageClock(tx,this.backend));await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ? WHERE scope = ? AND aggregate_id = ?`,[updated.version,scope,childId]);return{root,member:aggregateRecord(updated),claim};});
   }
   async startClaimedChildTool(raw:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly claim:Claim;readonly input:JsonValue}):Promise<WorkflowTreeStartedTool>{
     if(!this.initialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree storage first.');

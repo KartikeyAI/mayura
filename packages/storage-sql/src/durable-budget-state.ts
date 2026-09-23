@@ -1,6 +1,7 @@
 import { durableBudgetCommand, durableBudgetSnapshot, StorageError,
   type DurableBudgetAccount, type DurableBudgetBundle, type DurableBudgetMethod, type DurableBudgetOperation,
   type DurableBudgetReservation, type DurableBudgetSnapshot, type StoredEventInput } from '@mayura/storage-contracts';
+import type { WorkflowTreeBudgetSnapshot } from '@mayura/storage-contracts';
 import type { JsonObject } from '@mayura/core';
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -9,7 +10,6 @@ type Reservation = Mutable<DurableBudgetReservation>;
 type State = Omit<Mutable<DurableBudgetSnapshot>, 'accounts' | 'bundles' | 'reservations'> & {
   accounts: Account[]; bundles: DurableBudgetBundle[]; reservations: Reservation[];
 };
-export type WorkflowTreeBudgetSnapshot = Omit<DurableBudgetSnapshot, 'owner'> & { readonly owner: 'workflow-tree-v1' };
 export type DurableBudgetMutation = Exclude<DurableBudgetMethod, 'initialize' | 'inspect' | 'events'>;
 export interface DurableBudgetReduction {
   readonly snapshot: DurableBudgetSnapshot; readonly changed: boolean; readonly event?: StoredEventInput;

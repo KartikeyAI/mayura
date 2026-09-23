@@ -1,6 +1,6 @@
 # Durable required workflow children
 
-Status: **implementation in progress; not qualified**. The format-4 authoring/manifest contract, fixed scheduler-owned budget profile, atomic root enrollment, one-level child/account admission, tool preparation/claim/first-start, truthful known/unknown receipt accounting, scheduler completion, successful child/root finalization, required-child join, root/child cancellation and expiry recovery are implemented locally with paired SQL tests. Approval-enabled nodes, root-local tools and public runtime/adapter facades remain incomplete, so this document does not claim a usable runtime or close a release gate.
+Status: **implementation in progress; not qualified**. The format-4 authoring/manifest contract, fixed scheduler-owned budget profile, atomic root enrollment, one-level child/account admission, tool preparation/claim/renew/first-start, truthful known/unknown receipt accounting, scheduler completion, successful child/root finalization, required-child join, root/child cancellation and expiry recovery are implemented locally with paired SQL tests. Both selected SQL adapters expose an opt-in `workflowTrees` capability with a bounded immutable command facade. Strict independent response codecs, hostile custom-adapter qualification, approval-enabled nodes, root-local tools and the developer runtime remain incomplete, so this document does not claim a usable runtime or close a release gate.
 
 ## Smallest complete scope
 
