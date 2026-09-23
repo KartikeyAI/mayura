@@ -13,6 +13,7 @@ The gate packs the actual built Mayura packages and the existing exact third-par
 | SQLite only | 6: core, contracts, shared SQL engine, selected adapter, better-sqlite3 and node-addon-api | Real worker-owned native loading, transactions and three storage owners across close/reopen |
 | PostgreSQL only | 18: four Mayura packages plus the pinned driver closure, including optional pg-cloudflare | Real PostgreSQL transactions when explicitly configured; no SQLite, node-addon-api or pg-native |
 | Compatibility | 22: both selected adapters, shared engine/contracts/core, compatibility facade and both driver closures | Exact factory/error identity and old/direct-factory reopen on each database |
+| Workflow tree + SQLite | 9: core, tools, runtime, workflows, contracts, shared SQL engine, SQLite adapter and native driver pair | Public format-4 authoring/runtime submission, process-local runtime close, database close/reopen, narrowed child execution and validated terminal output |
 
 The installed graph is checked against the qualified exact versions, not only against dependency names. Mayura archives permit only reviewed exports, implementation/declaration maps and included source/doc files. The compatibility archive contains only its index barrel and documentation, never another executable copy of reducers or adapters.
 
@@ -20,7 +21,7 @@ Third-party manifests, license notices and native prebuild bytes remain unchange
 
 ## Runtime and type isolation
 
-Strict positive/negative consumer types require no `@types/node`, `@types/pg` or `@types/better-sqlite3` installation. All three consumer gates audit the compiler's actual input-file list: only the canonical installed application and the selected compiler's standard libraries are permitted. `types: []` alone would not prevent ancestor workspace declarations from masking a broken package. Regression tests include parent declaration leakage, junction escapes, missing graph evidence and arbitrary compiler implementation files.
+Strict positive/negative consumer types require no `@types/node`, `@types/pg` or `@types/better-sqlite3` installation. All four profiles audit the compiler's actual input-file list: only the canonical installed application and the selected compiler's standard libraries are permitted. `types: []` alone would not prevent ancestor workspace declarations from masking a broken package. Regression tests include parent declaration leakage, junction escapes, missing graph evidence and arbitrary compiler implementation files.
 
 Native TypeScript's standard library is resolved from its exact matching platform package. Runtime module-resolution hooks separately reject ancestor workspace/source fallback. SQLite workers inherit those test-only hooks; `process.dlopen` instrumentation records the actual worker thread, contained installed prebuild path and binary digest. Windows extended-path spelling is normalized only for canonical containment/evidence checks; the real loader argument is unchanged. This is qualification instrumentation, not a production sandbox.
 
@@ -32,7 +33,7 @@ The packed fixtures exercise aggregate create retries, compare-and-set updates a
 
 Separate source-level suites run aggregate, scheduler, scheduled and completion-wait conformance through the direct adapters. Existing higher-level workflow, signal WorkStream and memory suites continue to use the compatibility facade. Seven new compatibility tests cover exact constructor/factory identity and bidirectional persisted-state/history reuse. The SQL extraction itself is verified unchanged apart from imports; no schema/data migration is introduced.
 
-The same three installed profiles exercise the optional durable budget capability without adding packages: account/bundle admission, distinct first/repeated starts, unknown usage, subtree held cleanup, late known settlement after reopen and committed overrun closure. A second reopen preserves blocked status and financial evidence; exact root retries never reset the ledger. Direct and compatibility factory declarations expose this optional capability. These ledger checks do not imply that existing scheduled workflows or children automatically use it.
+All installed storage profiles exercise the optional durable budget capability without adding packages: account/bundle admission, distinct first/repeated starts, unknown usage, subtree held cleanup, late known settlement after reopen and committed overrun closure. A second reopen preserves blocked status and financial evidence; exact root retries never reset the ledger. Direct and compatibility factory declarations expose this optional capability. The separate nine-package profile additionally compiles the public workflow-tree types without ambient driver declarations and runs a genuine required child after close/reopen from packed artifacts. Other scheduled profiles do not automatically gain child ownership.
 
 ## Retained evidence and limits
 

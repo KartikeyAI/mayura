@@ -18,7 +18,8 @@ for (const name of ['storage-sql', 'storage-sqlite', 'storage-postgres']) {
 }
 
 const mayura = {
-  core: [], 'storage-contracts': ['@mayura/core'], 'storage-sql': ['@mayura/core', '@mayura/storage-contracts'],
+  core: [], tools: ['@mayura/core'], runtime: ['@mayura/core','@mayura/tools'], workflows: ['@mayura/core','@mayura/tools','@mayura/storage-contracts','@mayura/runtime'],
+  'storage-contracts': ['@mayura/core'], 'storage-sql': ['@mayura/core', '@mayura/storage-contracts'],
   'storage-sqlite': ['@mayura/storage-contracts', '@mayura/storage-sql', 'better-sqlite3'],
   'storage-postgres': ['@mayura/storage-contracts', '@mayura/storage-sql', 'pg'],
   storage: ['@mayura/storage-contracts', '@mayura/storage-postgres', '@mayura/storage-sqlite'],
@@ -86,7 +87,8 @@ function inspectMayura(name, files) {
     assert(!version.startsWith('workspace:'), 'Unresolved workspace protocol in archive.');
     assert.equal(version, dependency.startsWith('@mayura/') ? manifest.version : external[dependency]?.[0], 'Archive dependency must retain the exact qualified version.');
   }
-  assert.deepEqual(Object.keys(manifest.exports ?? {}).sort(), name === 'core' ? ['.', './host'] : name === 'storage-sql' ? ['./host'] : ['.'], 'Public export set changed.');
+  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./children','./ephemeral','./graphs']:['.'];
+  assert.deepEqual(Object.keys(manifest.exports ?? {}).sort(), expectedExports, 'Public export set changed.');
   let maps = 0;
   for (const [path, bytes] of files) {
     assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura archive file: ${path}`);
@@ -178,6 +180,7 @@ async function main() {
     ['sqlite', ['@mayura/storage-sqlite'], [...base, '@mayura/storage-sqlite', 'better-sqlite3', 'node-addon-api']],
     ['postgres', ['@mayura/storage-postgres'], [...base, '@mayura/storage-postgres', ...postgresPackages]],
     ['compat', ['@mayura/storage'], [...base, '@mayura/storage', '@mayura/storage-sqlite', '@mayura/storage-postgres', ...Object.keys(external)]],
+    ['tree-sqlite', ['@mayura/storage-sqlite','@mayura/workflows'], [...base,'@mayura/storage-sqlite','@mayura/tools','@mayura/runtime','@mayura/workflows','better-sqlite3','node-addon-api']],
   ]) {
     const allowed = closure(roots); assert.deepEqual([...allowed].sort(), [...expected].sort());
     const application = join(output, profile); await mkdir(application); const config = join(application, 'empty.npmrc'); await writeFile(config, '');
@@ -209,7 +212,7 @@ async function main() {
     const compiled = await run([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false', '--listFiles'], application);
     const checkedTypeScriptFiles = assertConsumerTypeFiles({ output: compiled.stdout, application, compilerPath: tsc });
     // Explicitly supplied disposable database only; no ambient PG* settings/application credentials.
-    const suppliedPostgres = profile !== 'sqlite' ? process.env.MAYURA_TEST_POSTGRES_URL : undefined;
+    const suppliedPostgres = !['sqlite','tree-sqlite'].includes(profile) ? process.env.MAYURA_TEST_POSTGRES_URL : undefined;
     const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application,
       { timeout: 45_000, diagnostics: false, env: { MAYURA_STORAGE_PROFILE: profile, PGPASSFILE: pgpass,
         ...(suppliedPostgres ? { MAYURA_TEST_POSTGRES_URL: suppliedPostgres } : {}) } })).stdout);
@@ -219,6 +222,7 @@ async function main() {
         assert.equal(result.durableBudgetReopened, true); assert.equal(result.unknownHoldPreserved, true); assert.equal(result.overrunCommitted, true);
       }
     }
+    assert.equal(execution.sqlite.packedWorkflowTree,profile==='tree-sqlite'?true:profile==='postgres'?undefined:'not-selected');
     let nativeLoads = [];
     if (profile !== 'postgres') {
       nativeLoads = (await readFile(join(application, 'native-loads.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
@@ -229,7 +233,7 @@ async function main() {
         assert.equal(load.sha256, createHash('sha256').update(await readFile(binary)).digest('hex'));
       }
     } else assert(!existsSync(join(application, 'native-loads.jsonl')), 'PostgreSQL-only profile loaded native code.');
-    assert.equal(execution.postgres.status, suppliedPostgres ? 'passed' : profile === 'sqlite' ? 'not-selected' : 'skipped');
+    assert.equal(execution.postgres.status, suppliedPostgres ? 'passed' : ['sqlite','tree-sqlite'].includes(profile) ? 'not-selected' : 'skipped');
     profiles.push({ name: profile, installedPackageCount: installed.size, installedPackages: [...installed].sort(), installMs, checkedTypeScriptFiles, execution, nativeLoads });
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -237,7 +241,7 @@ async function main() {
       'unchanged-third-party-manifests-licenses-prebuilds', 'self-contained-source-maps', 'no-reducer-copy-in-compatibility', 'strict-negative-public-types-without-driver-typings',
       'private-exports-denied', 'no-ancestor-module-or-type-fallback', 'empty-fixture-pgpass', 'sqlite-worker-native-load', 'aggregate-cas-events', 'scheduler-receipt-completion',
       'scheduled-workflow-completion-wait', 'format3-graph-wait-reopen', 'finite-graph-discovery-reopen', 'terminal-owner-cursor-progress', 'durable-budget-close-reopen', 'budget-unknown-hold-and-overrun',
-      'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
+      'packed-workflow-tree-close-reopen', 'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

@@ -5,17 +5,18 @@ import { StorageError } from '@mayura/storage-contracts';
 
 const profile = process.env.MAYURA_STORAGE_PROFILE;
 let stage = 'imports';
-assert(['sqlite', 'postgres', 'compat'].includes(profile));
-const selected = await import(`@mayura/${profile === 'compat' ? 'storage' : `storage-${profile}`}`);
+assert(['sqlite', 'postgres', 'compat','tree-sqlite'].includes(profile));
+const selectedPackage=profile==='compat'?'storage':profile==='tree-sqlite'?'storage-sqlite':`storage-${profile}`;
+const selected = await import(`@mayura/${selectedPackage}`);
 await import('@mayura/storage-sql/host');
 for (const specifier of ['@mayura/storage-sql/src/scheduler-database.js', '@mayura/storage-sql/dist/scheduler-database.js',
-  `@mayura/${profile === 'compat' ? 'storage' : `storage-${profile}`}/src/index.js`]) {
+  `@mayura/${selectedPackage}/src/index.js`]) {
   await assert.rejects(import(specifier), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 }
-for (const specifier of ['pg-native', '@mayura/sdk', '@mayura/runtime', '@mayura/tools', '@mayura/workflows', '@mayura/server-node']) {
+for (const specifier of ['pg-native', '@mayura/sdk', ...(profile==='tree-sqlite'?[]:['@mayura/runtime','@mayura/tools','@mayura/workflows']), '@mayura/server-node']) {
   await assert.rejects(import(specifier), { code: 'ERR_MODULE_NOT_FOUND' });
 }
-if (profile === 'sqlite') {
+if (profile === 'sqlite'||profile==='tree-sqlite') {
   for (const name of ['pg', 'pg-cloudflare', '@mayura/storage-postgres', '@mayura/storage']) await assert.rejects(import(name), { code: 'ERR_MODULE_NOT_FOUND' });
 }
 if (profile === 'postgres') {
@@ -92,11 +93,23 @@ async function exercise(create, reopen) {
     const resolved = (await store.executionWaits.drainReady({ ...stream, limit: 1 }))[0];
     assert.equal(resolved.status, 'resolved'); assert.equal(resolved.version, 2); assert.equal(resolved.observations[0].outcome, 'succeeded');
     assert(!Object.hasOwn(resolved.observations[0], 'output')); assert(Object.isFrozen(resolved.observations[0]));
+    let treeFixture;
+    if(profile==='tree-sqlite'){
+      stage='workflow-tree-submit';
+      const {defineTool}=await import('@mayura/tools');const {defineWorkflow}=await import('@mayura/workflows');const {createWorkflowTreeRuntime,defineWorkflowTree}=await import('@mayura/workflows/children');
+      const numberSchema=Object.freeze({'~standard':Object.freeze({version:1,vendor:'packed',validate:value=>typeof value==='number'?{value}:{issues:[{message:'number'}]}})});
+      let executions=0;const tool=defineTool({id:'packed.increment',version:'1',description:'Increment.',input:numberSchema,output:numberSchema,effects:'none',capabilities:[],costMicros:2,execute:async value=>{executions++;return value+1;}});
+      const leaf=defineWorkflow({id:'packed.leaf',version:'1',input:numberSchema,output:numberSchema,nodes:[{kind:'tool',id:'work',tool,input:{kind:'input',path:[]}}],result:{kind:'step',stepId:'work',path:[]}});
+      const tree=defineWorkflowTree({id:'packed.tree',version:'1',input:numberSchema,output:numberSchema,nodes:[{kind:'child',id:'child',workflow:leaf,input:{kind:'input',path:[]},policy:{permissions:['tool:packed.increment'],maxCostMicros:2,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:1_000},resources:{work:[]}}],result:{kind:'step',stepId:'child',path:[]}});
+      const options={scope:{principalId:'packed',projectId:'consumer'},permissions:{allow:['tool:packed.increment']},policyVersion:'1',maxCostMicros:2,maxCalls:1,maxOutputBytes:1_024,workerId:'packed-worker'};
+      const runtime=createWorkflowTreeRuntime({store,...options});const submitted=await runtime.submit(tree,{input:1,idempotencyKey:'packed-tree'});await runtime.close();treeFixture={tree,options,id:submitted.id,executions,createRuntime:createWorkflowTreeRuntime,getExecutions:()=>executions};
+    }
     stage = 'direct-reopen';
     await store.close(); store = reopen();
     await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.workflowGraphs.initialize(); await store.executionWaits.initialize();
     stage = 'durable-budget-reopen-and-settlement';
     await store.durableBudgets.initialize();
+    if(treeFixture){stage='workflow-tree-reopen';const runtime=treeFixture.createRuntime({store,...treeFixture.options});const finished=await runtime.runUntilSettled(treeFixture.tree,treeFixture.id);assert.equal(finished.status,'succeeded');assert.equal(finished.output,2);assert.equal(treeFixture.getExecutions(),1);await runtime.close();}
     assert.deepEqual(await store.durableBudgets.inspect(budgetKey), closedBudget);
     assert.deepEqual(await store.durableBudgets.reserveBundle(budgetBundle), closedBudget);
     const settledBudget = await store.durableBudgets.settle({ ...reservation, actualMicros: 2 });
@@ -148,12 +161,12 @@ async function exercise(create, reopen) {
     const terminalPage = await store.workflowGraphDiscovery.scan(scan);
     assert.deepEqual(terminalPage.candidates, []); assert.equal(terminalPage.examined, 1); assert.equal(terminalPage.nextCursor.afterId, graphAccess.id);
     return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, finiteGraphDiscovery: true, terminalCursorProgress: true,
-      durableBudgetReopened: true, unknownHoldPreserved: true, overrunCommitted: true, reopenDirections: 2 };
+      durableBudgetReopened: true, unknownHoldPreserved: true, overrunCommitted: true, packedWorkflowTree:treeFixture?true:'not-selected', reopenDirections: 2 };
   } finally { await store.close(); }
 }
 
 try {
-  let sqlite = { status: 'not-selected' }; let postgres = { status: profile === 'sqlite' ? 'not-selected' : 'skipped', reason: 'No explicit disposable database URL supplied.' };
+  let sqlite = { status: 'not-selected' }; let postgres = { status: ['sqlite','tree-sqlite'].includes(profile) ? 'not-selected' : 'skipped', reason: 'No explicit disposable database URL supplied.' };
   if (profile !== 'postgres') {
     stage = 'sqlite-factory';
     const direct = await import('@mayura/storage-sqlite');
@@ -162,7 +175,7 @@ try {
     const options = { filename: join(process.cwd(), 'packed-storage.sqlite') };
     sqlite = await exercise(() => selected.createSqliteStore(options), () => direct.createSqliteStore(options));
   }
-  if (profile !== 'sqlite') {
+  if (!['sqlite','tree-sqlite'].includes(profile)) {
     stage = 'postgres-factory';
     const direct = await import('@mayura/storage-postgres');
     if (profile === 'compat') assert.equal(selected.createPostgresStore, direct.createPostgresStore);

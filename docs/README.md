@@ -39,7 +39,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Crash-recovery testing](testing-process-recovery.md) — forced process termination evidence.
 - [Packed consumer validation](dx-validation.md) — public imports, types and source navigation.
 - [Optional-package qualification](specs/optional-package-qualification.md) — isolated offline browser, local host/observer and driver-free workflow installations.
-- [Selected-storage qualification](specs/storage-package-qualification.md) — actual SQLite-only, PostgreSQL-only and compatibility archives, native worker proof and declaration-file isolation.
+- [Selected-storage qualification](specs/storage-package-qualification.md) — actual SQLite-only, PostgreSQL-only, compatibility and workflow-tree SQLite archives, native worker proof and declaration-file isolation.
 - [Technology qualification](technology-qualification.md) — exact pins and verified environments.
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
