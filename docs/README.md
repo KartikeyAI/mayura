@@ -23,6 +23,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Runtime-managed moderation](how-to/managed-guardrails.md) — definition-only authoring with actual run ownership, protected output-check capacity and bounded callbacks.
 - [Required lifecycle hooks](how-to/lifecycle-hooks.md) and [acceptance contract](specs/lifecycle-hooks.md) — control-only checks with mediated read/pure-tool actions, retained callback capacity and truthful output evidence.
 - [Shared budgets](how-to/shared-budgets.md) — atomic future-call reservations and genuine single-use tickets; [managed guardrail integration](specs/runtime-managed-guardrails.md) has a separate acceptance contract.
+- [Durable financial budgets](how-to/durable-budgets.md) and [ledger contract](specs/durable-budget-ledger.md) — restartable shared ceilings, exact evidence and subtree held cleanup; a standalone host primitive, not automatic workflow or child execution accounting.
 - [Model provider contract](specs/model-provider-contract.md) — optional adapter and private protocol state.
 - [WorkStream](specs/workstream.md) — durable scoped signals and wait registration.
 - [Execution completion waits](how-to/execution-completion-waits.md) and [transaction contract](specs/execution-completion-waits.md) — finite metadata joins over existing scheduled workflows, with restart and explicit unknown outcomes.
@@ -43,7 +44,9 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,190 tests with two test processes; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,339 tests with two test processes; all V01–V22 enterprise release gates remain open.
+
+Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 

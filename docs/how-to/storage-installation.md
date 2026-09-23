@@ -23,6 +23,8 @@ import { StorageError } from '@mayura/storage-contracts';
 
 Creating a store remains synchronous. Await `store.initialize()` before accessing it, and have the application owner call `store.close()` when finished. Both factories retain aggregate methods and the `scheduler`, `workflows` and `executionWaits` capabilities. Higher-level workflow and WorkStream runtimes receive a store explicitly; they do not select a driver or take ownership of closing it.
 
+The optional `.durableBudgets` capability is a separately initialized financial ledger with shared ancestor limits and retained unknown charges. It adds no driver dependency and does not automatically enroll workflow executions. See [durable budgets](durable-budgets.md) for its bounded lifecycle and integration requirements.
+
 ## Existing applications
 
 Imports from `@mayura/storage` continue to work and re-export the same factory functions. To isolate an installation, change the dependency and import to the selected direct adapter. Import common contracts and `StorageError` from `@mayura/storage-contracts`. Use the same SQLite filename or PostgreSQL connection/schema; this packaging change introduces no persisted-format migration or SQL semantic change.

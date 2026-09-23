@@ -14,7 +14,7 @@ The runtime must supply verified scopes and use compare-and-set updates to imple
 - Events have monotonically increasing per-aggregate sequences starting at one, store-assigned UTC timestamps, a type and JSON object data. `events(scope, id, after)` returns up to 1,000 events; repeat from the last sequence until a short page. Event history is durable data, not a publisher or an implicit authorization check.
 - Missing or cross-scope reads return `undefined`; missing/cross-scope event reads return `[]`; missing/cross-scope writes return `NOT_FOUND`. The same ID and idempotency key can exist in different scopes.
 
-Input limits: state one MiB; each event data 64 KiB; at most 1,000 events and one MiB combined event payload per transaction; depth 32 and 100,000 JSON nodes; identifiers at most 256 UTF-8 bytes without null characters. Counters use checked safe integers. Public driver failures are sanitized and do not expose SQL, paths, state or connection secrets.
+Input limits: state one MiB; each event data 64 KiB; at most 1,000 events and one MiB combined event payload per transaction; depth 32 and 100,000 JSON nodes; identifiers are nonempty well-formed Unicode strings of at most 256 UTF-8 bytes without null characters. Unpaired surrogate units are rejected before SQL encoding; valid strings are never normalized or repaired. This identity-only rule does not alter escaped surrogate content in JSON payloads; see [SQL identity integrity](sql-identity-integrity.md). Counters use checked safe integers. Public driver failures are sanitized and do not expose SQL, paths, state or connection secrets.
 
 ## Adapter implementation
 

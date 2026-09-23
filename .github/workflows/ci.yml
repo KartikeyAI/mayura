@@ -37,6 +37,7 @@ jobs:
       - run: node examples/workflow-graph-waits.mjs
       - run: node examples/workflow-graph-discovery.mjs
       - run: node examples/workflow-graph-coordinator.mjs
+      - run: node examples/durable-budgets.mjs
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20

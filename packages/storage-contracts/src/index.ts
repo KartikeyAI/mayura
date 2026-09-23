@@ -6,3 +6,4 @@ export * from './execution-wait-contracts.js';
 export * from './workflow-graph-contracts.js';
 export * from './workflow-format3.js';
 export * from './workflow-graph-discovery.js';
+export * from './durable-budget-contracts.js';

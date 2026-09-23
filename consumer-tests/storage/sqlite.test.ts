@@ -1,8 +1,9 @@
 import { createSqliteStore, type SqliteStoreOptions } from '@mayura/storage-sqlite';
-import type { WorkflowGraphDiscoveryAggregateStore } from '@mayura/storage-contracts';
+import type { WorkflowGraphDiscoveryAggregateStore, DurableBudgetAggregateStore } from '@mayura/storage-contracts';
 
 const options: SqliteStoreOptions = { filename: ':memory:' };
-const store: WorkflowGraphDiscoveryAggregateStore = createSqliteStore(options);
+const store: WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore = createSqliteStore(options);
+void store.durableBudgets.create({ scope: 'consumer', id: 'ledger', policyHash: 'a'.repeat(64), maxCostMicros: 10, maxCalls: 4 });
 void store.workflowGraphDiscovery.scan({ scope: 'a'.repeat(64), policyHash: 'b'.repeat(64), cursor: null, limit: 1 });
 void store.workflowGraphs.inspect({ scope: 'a'.repeat(64), id: 'b'.repeat(64), policyHash: 'c'.repeat(64) }).then(value => {
   const profile: 'scheduled-v2' = value.profile; void profile;

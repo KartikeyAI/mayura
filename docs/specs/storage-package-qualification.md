@@ -32,6 +32,8 @@ The packed fixtures exercise aggregate create retries, compare-and-set updates a
 
 Separate source-level suites run aggregate, scheduler, scheduled and completion-wait conformance through the direct adapters. Existing higher-level workflow, signal WorkStream and memory suites continue to use the compatibility facade. Seven new compatibility tests cover exact constructor/factory identity and bidirectional persisted-state/history reuse. The SQL extraction itself is verified unchanged apart from imports; no schema/data migration is introduced.
 
+The same three installed profiles exercise the optional durable budget capability without adding packages: account/bundle admission, distinct first/repeated starts, unknown usage, subtree held cleanup, late known settlement after reopen and committed overrun closure. A second reopen preserves blocked status and financial evidence; exact root retries never reset the ledger. Direct and compatibility factory declarations expose this optional capability. These ledger checks do not imply that existing scheduled workflows or children automatically use it.
+
 ## Retained evidence and limits
 
 Each run retains a report, original archives, installed consumers, native-load evidence and fixture files under an ignored `.artifacts/storage-consumer-*` directory. No generated consumer replaces an existing one. Current report paths and full-suite totals are maintained in the [development ledger](../development-status.md).

@@ -42,7 +42,9 @@ function text(value: unknown, maximum: number): string {
   return value;
 }
 function identity(value: unknown, maximum = 256): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maximum || encoder.encode(value).length > maximum || value.includes('\0')) return invalid();
+  // A valid pair is one Unicode code point; reject only unpaired surrogate units
+  // so distinct identities cannot alias after SQL's UTF-8 replacement encoding.
+  if (typeof value !== 'string' || value.length === 0 || value.length > maximum || /[\uD800-\uDFFF]/u.test(value) || encoder.encode(value).length > maximum || value.includes('\0')) return invalid();
   return value;
 }
 function hash(value: unknown): string {

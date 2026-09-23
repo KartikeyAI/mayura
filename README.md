@@ -25,12 +25,13 @@ The basic SDK requires no Docker, native database, server or hosted account. [Se
 - [Versioned workflow graph waits](docs/how-to/workflow-graph-waits.md) with immutable existing-run targets, explicit resumption and metadata-only results before downstream tools or approvals.
 - [Finite graph discovery](docs/how-to/workflow-graph-discovery.md) for finding unfinished persisted graphs after restart, with bounded examined-owner pages and explicit application-owned continuation.
 - [Registered graph continuation](docs/how-to/workflow-graph-coordinator.md) through one shared driver, with finite pages, exact per-definition resource plans and safe partial-page retry reports.
+- [Durable shared budgets](docs/how-to/durable-budgets.md) for trusted hosts, with atomic financial/call reservations, unknown-cost retention and committed overrun evidence. Existing workflows are not automatically enrolled.
 - Local processors and [metered auxiliary guardrails](docs/specs/auxiliary-guardrails.md), including explicit moderation and protected-segment language processing.
 - [Required lifecycle hooks](docs/how-to/lifecycle-hooks.md) with immutable proposals, mediated read/pure-tool actions, shared limits and output withholding.
 - An authenticated Fetch API, browser-safe client and optional [loopback-only Hono/Node host](docs/how-to/local-server.md). This is not production or durable multi-host serving.
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks; it is not mandatory durable audit.
 
-The integrated local checkpoint passes 2,190 tests with two test processes, strict types, eleven credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/graph/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
+The integrated local checkpoint passes 2,339 tests with two test processes, strict types, twelve credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/graph/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
 
 ## Documentation
 

@@ -20,6 +20,8 @@ The gate packs current built packages and installs their actual archives into fr
 
    The registered coordinator is exercised in this same installation: a genuine catalog, unknown-definition skip without inspection, frozen observed metadata, terminal-only pages, sanitized interruption with the original retry cursor, explicit retry and close without owning storage. Negative declarations reject missing discovery capability, global resources, submit/approve methods and access to the wrong report's cursor. Its private source entry stays inaccessible. These facade tests do not substitute for paired SQL recovery, shared-capacity or process-kill tests.
 
+7. **Driver-free durable budget contracts:** only storage contracts and core are installed. Public/negative declarations cover the optional capability, shared-ceiling snapshots, start-result distinction, known settlement and immutable observations. A codec fixture snapshots commands and rejects forged accounting and accessor input without SQL drivers or any effect executor. This is a custom-adapter data boundary, not an in-memory persistence substitute; paired real-SQL and selected-storage archive fixtures establish durability separately.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

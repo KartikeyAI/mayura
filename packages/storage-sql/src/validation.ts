@@ -7,8 +7,10 @@ const MAX_STATE_BYTES = 1_048_576;
 const MAX_EVENT_BYTES = 65_536;
 
 export function identifier(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value) > 256 || value.includes('\0')) {
-    throw new StorageError('INVALID_INPUT', `${label} must be a nonempty string of at most 256 UTF-8 bytes without null characters.`);
+  // In Unicode mode valid pairs are one code point; only unpaired units match.
+  // Reject before UTF-8 encoding can replace malformed identities with U+FFFD.
+  if (typeof value !== 'string' || value.length === 0 || /[\uD800-\uDFFF]/u.test(value) || Buffer.byteLength(value) > 256 || value.includes('\0')) {
+    throw new StorageError('INVALID_INPUT', `${label} must be a nonempty well-formed Unicode string of at most 256 UTF-8 bytes without null characters.`);
   }
   return value;
 }

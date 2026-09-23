@@ -30,7 +30,28 @@ async function exercise(create, reopen) {
   try {
     stage = 'initialization';
     await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.workflowGraphs.initialize(); await store.executionWaits.initialize();
+    stage = 'durable-budget-admission';
+    await store.durableBudgets.initialize();
+    const budgetKey = { scope: 'packed.financial', id: 'ledger', policyHash: 'e'.repeat(64) };
+    const budgetConfiguration = { ...budgetKey, maxCostMicros: 10, maxCalls: 4 };
+    await assert.rejects(store.durableBudgets.create({ ...budgetConfiguration, id: '\ud800' }),
+      error => error instanceof StorageError && error.code === 'INVALID_INPUT');
+    assert.equal((await store.durableBudgets.create(budgetConfiguration)).created, true);
+    await store.durableBudgets.fork({ ...budgetKey, parentId: 'root', accountId: 'child', maxCostMicros: 4, maxCalls: 2 });
+    const budgetBundle = { ...budgetKey, accountId: 'child', bundleId: 'protected-pair',
+      operations: [{ id: 'primary', maxCostMicros: 3 }, { id: 'check', maxCostMicros: 1 }] };
+    await store.durableBudgets.reserveBundle(budgetBundle);
+    const reservation = { ...budgetKey, accountId: 'child', reservationId: 'primary' };
+    assert.equal((await store.durableBudgets.start(reservation)).status, 'started');
+    assert.equal((await store.durableBudgets.start(reservation)).status, 'already_started');
+    await store.durableBudgets.markUnknown(reservation);
+    const closedBudget = await store.durableBudgets.closeSubtree({ ...budgetKey, accountId: 'child' });
+    assert.equal(closedBudget.accounts.find(account => account.id === 'root').reservedMicros, 3);
+    assert.equal(closedBudget.accounts.find(account => account.id === 'root').calls, 1);
+    assert.equal(closedBudget.reservations.find(item => item.id === 'check').status, 'cancelled');
+    assert(Object.isFrozen(closedBudget.accounts[0]));
     stage = 'aggregate-transactions';
+    await assert.rejects(store.create({ ...original, id: '\ud800' }), error => error instanceof StorageError && error.code === 'INVALID_INPUT');
     const first = await store.create(original); assert.equal(first.created, true);
     const updated = await store.update({ scope: original.scope, id: original.id, expectedVersion: 1, state: { count: 2 }, events: [{ type: 'updated', data: {} }] });
     assert.equal(updated.version, 2);
@@ -74,6 +95,23 @@ async function exercise(create, reopen) {
     stage = 'direct-reopen';
     await store.close(); store = reopen();
     await store.initialize(); await store.scheduler.initialize(); await store.workflows.initialize(); await store.workflowGraphs.initialize(); await store.executionWaits.initialize();
+    stage = 'durable-budget-reopen-and-settlement';
+    await store.durableBudgets.initialize();
+    assert.deepEqual(await store.durableBudgets.inspect(budgetKey), closedBudget);
+    assert.deepEqual(await store.durableBudgets.reserveBundle(budgetBundle), closedBudget);
+    const settledBudget = await store.durableBudgets.settle({ ...reservation, actualMicros: 2 });
+    assert.equal(settledBudget.overrun, false);
+    assert.equal(settledBudget.snapshot.accounts.find(account => account.id === 'root').spentMicros, 2);
+    assert.equal(settledBudget.snapshot.accounts.find(account => account.id === 'root').reservedMicros, 0);
+    await store.durableBudgets.reserveBundle({ ...budgetKey, accountId: 'root', bundleId: 'overrun-bundle', operations: [{ id: 'overrun', maxCostMicros: 1 }] });
+    const overrunReservation = { ...budgetKey, accountId: 'root', reservationId: 'overrun' };
+    await store.durableBudgets.start(overrunReservation);
+    const overrun = await store.durableBudgets.settle({ ...overrunReservation, actualMicros: 2 });
+    assert.equal(overrun.overrun, true); assert.equal(overrun.snapshot.blocked, true);
+    assert.equal(overrun.snapshot.accounts.find(account => account.id === 'root').spentMicros, 4);
+    await assert.rejects(store.durableBudgets.reserveBundle({ ...budgetKey, accountId: 'root', bundleId: 'denied', operations: [{ id: 'denied', maxCostMicros: 0 }] }),
+      error => error instanceof StorageError && error.code === 'CONFLICT');
+    stage = 'direct-reopen-checks';
     assert.deepEqual((await store.read(original.scope, original.id)).state, { count: 2 });
     assert.equal((await store.scheduler.read({ scope: job.scope, jobId: job.jobId })).state, 'succeeded');
     assert.deepEqual(await store.executionWaits.inspect({ ...stream, id: 'release' }), resolved);
@@ -98,13 +136,19 @@ async function exercise(create, reopen) {
     await store.update({ scope: original.scope, id: original.id, expectedVersion: 2, state: { count: 3 }, events: [{ type: 'reopened', data: {} }] });
     stage = 'reverse-reopen';
     await store.close(); store = create(); await store.initialize();
+    await store.durableBudgets.initialize();
+    assert.deepEqual(await store.durableBudgets.inspect(budgetKey), overrun.snapshot);
+    const retriedBudget = await store.durableBudgets.create(budgetConfiguration);
+    assert.equal(retriedBudget.created, false); assert.equal(retriedBudget.snapshot.blocked, true);
+    assert.equal((await store.durableBudgets.events({ ...budgetKey, after: 0 })).length, 10);
     assert.deepEqual((await store.read(original.scope, original.id)).state, { count: 3 });
     await store.workflowGraphs.initialize();
     assert.deepEqual((await store.workflowGraphs.inspect(graphAccess)).record, finishedGraph.record);
     await store.workflowGraphDiscovery.initialize();
     const terminalPage = await store.workflowGraphDiscovery.scan(scan);
     assert.deepEqual(terminalPage.candidates, []); assert.equal(terminalPage.examined, 1); assert.equal(terminalPage.nextCursor.afterId, graphAccess.id);
-    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, finiteGraphDiscovery: true, terminalCursorProgress: true, reopenDirections: 2 };
+    return { status: 'passed', aggregateVersion: 3, scheduler: 'succeeded', workflow: 'succeeded', waitVersion: 2, graphReopenedFromWaiting: true, graphJobs: 0, finiteGraphDiscovery: true, terminalCursorProgress: true,
+      durableBudgetReopened: true, unknownHoldPreserved: true, overrunCommitted: true, reopenDirections: 2 };
   } finally { await store.close(); }
 }
 

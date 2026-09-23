@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
-import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore } from '@mayura/storage-contracts';
+import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerSession, type SchedulerBackend, type SchedulerMethod,
-  ScheduledWorkflowDatabase, type ScheduledMethod, writerRequired, ExecutionWaitDatabase,
+  ScheduledWorkflowDatabase, type ScheduledMethod, writerRequired, ExecutionWaitDatabase, DurableBudgetDatabase,
 } from '@mayura/storage-sql/host';
 
 interface Row {
@@ -24,6 +24,7 @@ export class SqliteDatabase {
   private readonly scheduler: SchedulerDatabase;
   private readonly workflows: ScheduledWorkflowDatabase;
   private readonly executionWaits: ExecutionWaitDatabase;
+  private readonly durableBudgets: DurableBudgetDatabase;
   constructor(private readonly filename: string) {
     this.db = new Database(filename, { timeout: 5_000 });
     const session: SchedulerSession = { query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
@@ -40,6 +41,7 @@ export class SqliteDatabase {
     this.scheduler = new SchedulerDatabase(backend);
     this.workflows = new ScheduledWorkflowDatabase(backend,this.scheduler);
     this.executionWaits = new ExecutionWaitDatabase(backend,this.workflows);
+    this.durableBudgets = new DurableBudgetDatabase(backend);
   }
 
   schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
@@ -47,6 +49,7 @@ export class SqliteDatabase {
   workflowGraphsCommand(method: keyof WorkflowGraphStore, input: unknown): Promise<unknown> { return this.workflows.execute(method,input,2); }
   workflowGraphDiscoveryCommand(method: keyof WorkflowGraphDiscoveryStore, input: unknown): Promise<unknown> { return this.workflows.discover(method,input); }
   executionWaitsCommand(method: ExecutionWaitMethod, input: unknown): Promise<unknown> { return this.executionWaits.execute(method,input); }
+  durableBudgetsCommand(method: DurableBudgetMethod, input: unknown): Promise<unknown> { return this.durableBudgets.execute(method,input); }
 
   initialize(): void {
     const journal = this.db.pragma('journal_mode = WAL', { simple: true });
