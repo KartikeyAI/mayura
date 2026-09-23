@@ -213,6 +213,7 @@ async function main() {
       }
       if (name === 'code-mode') {
         assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
+        assert.equal(execution.usageReported, true);
         assert.equal(execution.sandboxDependencyCount, 0);
       }
       if (name === 'code-mode-workflows') {
@@ -222,7 +223,7 @@ async function main() {
       }
       if (name === 'code-mode-quickjs') {
         assert.equal(execution.childProcess, true); assert.equal(execution.nodeGlobalsAbsent, true);
-        assert.equal(execution.mediatedToolCall, true); assert.equal(execution.cpuInterrupted, true);
+        assert.equal(execution.mediatedToolCall, true); assert.equal(execution.usageReported, true); assert.equal(execution.cpuInterrupted, true);
       }
       if (name === 'code-mode-docker') {
         assert.equal(execution.immutableImageRequired, true); assert.equal(execution.provenanceRequired, true);
@@ -258,8 +259,8 @@ async function main() {
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
-  result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-negative-types');
-  result.checks.push('durable-code-mode-definition', 'code-phase-mandatory-approval', 'code-phase-program-digest-pinning');
+  result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-usage-reporting', 'code-mode-negative-types');
+  result.checks.push('durable-code-mode-definition', 'code-phase-mandatory-approval', 'code-phase-program-digest-pinning', 'code-phase-usage-audit-v2');
   result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));

@@ -46,7 +46,7 @@ describe('durable Code Mode workflow bridge', () => {
       expect(phase).toMatchObject({ kind: 'tool', approval: true });
       if (phase.kind !== 'tool') throw new Error('Expected phase tool.');
       expect(phase.tool).toMatchObject({ version: program.manifest.digest, effects: 'write', costMicros: 6 });
-      expect(phase.tool.capabilities).toEqual(['code:execute', 'code:audit:v1', expect.stringMatching(/^code:audit-scope:[a-f0-9]{64}$/u),
+      expect(phase.tool.capabilities).toEqual(['code:execute', 'code:audit:v2', expect.stringMatching(/^code:audit-scope:[a-f0-9]{64}$/u),
         `code:program:${program.manifest.digest}`]);
       const policy = { scope: { principalId: 'alice', projectId: 'project' }, permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write',
         ...phase.tool.capabilities] }, policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024,
@@ -75,7 +75,8 @@ describe('durable Code Mode workflow bridge', () => {
       expect((await second.runUntilSettled(reopenedDefinition, submitted.id)).status).toBe('succeeded');
       expect(executions).toBe(1);
       expect(await createDurableCodeAudit({ store: secondStore, scope: policy.scope }).inspect(submitted.id, 'execute')).toMatchObject({
-        format: 1, runId: submitted.id, phaseId: 'execute', programDigest: program.manifest.digest, outcome: 'succeeded',
+        format: 2, runId: submitted.id, phaseId: 'execute', programDigest: program.manifest.digest, outcome: 'succeeded',
+        usage: { toolCalls: 1, unknownCalls: 0, knownCostMicros: 3, unknownCostMicros: 0, maximumCostMicros: 6 },
         evidence: [{ runId: submitted.id, receipt: { toolId: 'external.write', execution: 'succeeded', disclosure: 'released' } }],
       });
       await second.close(); await secondStore.close();
@@ -167,6 +168,7 @@ describe('durable Code Mode workflow bridge', () => {
       expect(result.status).toBe('outcome_unknown'); expect(result.output).toBeNull();
       expect(result.steps['execute']!.receipt).toMatchObject({ execution: 'unknown', disclosure: 'withheld' });
       expect(await audit.inspect(submitted.id, 'execute')).toMatchObject({ outcome: 'failed',
+        usage: { toolCalls: 1, unknownCalls: 0, knownCostMicros: 3, unknownCostMicros: 0, maximumCostMicros: 6 },
         evidence: [{ receipt: { toolId: 'external.uncertain-write', execution: 'succeeded' } }] });
       await runtime.runUntilSettled(definition, submitted.id);
       expect({ sandboxRuns, nestedWrites }).toEqual({ sandboxRuns: 1, nestedWrites: 1 });

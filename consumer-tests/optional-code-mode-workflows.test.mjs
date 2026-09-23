@@ -17,6 +17,6 @@ const phase = workflow.nodes[0];
 console.log(JSON.stringify({ status: phase?.kind === 'tool' && phase.approval === true && phase.tool.version === program.manifest.digest ? 'passed' : 'failed',
   mandatoryApproval: phase?.kind === 'tool' && phase.approval === true,
   programDigestPinned: phase?.kind === 'tool' && phase.tool.version === program.manifest.digest,
-  durableAuditRequired: phase?.kind === 'tool' && phase.tool.capabilities.includes('code:audit:v1'),
+  durableAuditRequired: phase?.kind === 'tool' && phase.tool.capabilities.includes('code:audit:v2'),
   auditScopePinned: phase?.kind === 'tool' && phase.tool.capabilities.some(capability => /^code:audit-scope:[a-f0-9]{64}$/.test(capability)),
   driverFreeDefinition: true }));

@@ -66,6 +66,11 @@ describe('Code Mode artifact and containment boundary', () => {
     });
     expect(() => program({ limits: { ...limits, memoryBytes: 2_147_483_649 } })).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
     expect(() => program({ limits: { ...limits, maxToolConcurrency: 129, maxToolCalls: 129 } })).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    const costly = defineTool({ id: 'costly', version: '1', description: 'Cost overflow fixture.', effects: 'none', capabilities: [],
+      input: z.object({ value: z.number() }), output: z.object({ value: z.number() }), costMicros: Number.MAX_SAFE_INTEGER,
+      execute: input => input });
+    expect(() => program({ tools: [costly], limits: { ...limits, maxToolCalls: 2 } }))
+      .toThrowError(expect.objectContaining({ code: 'LIMIT_EXCEEDED' }));
   });
 
   it('has no host fallback and requires an explicit opt-in for test adapters', async () => {
@@ -94,6 +99,7 @@ describe('Code Mode artifact and containment boundary', () => {
       .execute(definition, { value: 6 }, execution());
 
     expect(result).toMatchObject({ status: 'succeeded', output: { value: 12 } });
+    expect(result.usage).toEqual({ toolCalls: 1, unknownCalls: 0, knownCostMicros: 1, unknownCostMicros: 0, maximumCostMicros: 4 });
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence?.[0]?.receipt).toMatchObject({ callId: 'execution-1:code:1', toolId: 'number.double', execution: 'succeeded' });
     expect(broker).toHaveBeenCalledWith(double, { value: 6 }, expect.objectContaining({
@@ -113,7 +119,8 @@ describe('Code Mode artifact and containment boundary', () => {
     });
     const result = await createCodeMode({ adapter: sandbox, allowTestAdapter: true, invokeTool: broker })
       .execute(program(), { value: 3 }, execution());
-    expect(result).toMatchObject({ status: 'succeeded', output: { value: 3 } });
+    expect(result).toMatchObject({ status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN' },
+      usage: { toolCalls: 1, unknownCalls: 1, knownCostMicros: 0, unknownCostMicros: 1, maximumCostMicros: 4 } });
     expect(result.evidence).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain('private');
   });
@@ -136,7 +143,11 @@ describe('Code Mode artifact and containment boundary', () => {
   it('enforces concurrent and total nested-call bounds before host dispatch', async () => {
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
-    const broker = vi.fn(async (): Promise<Outcome<JsonValue>> => { await gate; return { status: 'succeeded', output: { value: 2 } }; });
+    const broker = vi.fn(async (_tool: AnyTool, _input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> => {
+      await gate;
+      return { status: 'succeeded', output: { value: 2 },
+        receipt: { callId: context.callId, toolId: 'number.double', execution: 'succeeded', disclosure: 'released' } };
+    });
     const sandbox = adapter(async request => {
       const first = request.tools.call('number.double', { value: 1 });
       const second = await request.tools.call('number.double', { value: 2 });
@@ -149,7 +160,28 @@ describe('Code Mode artifact and containment boundary', () => {
     const result = await createCodeMode({ adapter: sandbox, allowTestAdapter: true, invokeTool: broker })
       .execute(constrained, { value: 1 }, execution());
     expect(result.status).toBe('succeeded');
+    expect(result.usage).toEqual({ toolCalls: 1, unknownCalls: 0, knownCostMicros: 1, unknownCostMicros: 0, maximumCostMicros: 1 });
     expect(broker).toHaveBeenCalledTimes(1);
+  });
+
+  it('forces reconciliation when a nested receipt reports unknown execution', async () => {
+    const zeroCostWrite = defineTool({ id: 'external.zero-cost-write', version: '1', description: 'Unknown zero-cost effect.', effects: 'write', capabilities: [],
+      input: z.object({ value: z.number() }), output: z.object({ value: z.number() }), costMicros: 0, execute: input => input });
+    const broker = vi.fn(async (_tool: AnyTool, _input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> => ({
+      status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN', message: 'private provider detail' },
+      receipt: { callId: context.callId, toolId: 'external.zero-cost-write', execution: 'unknown', disclosure: 'withheld' },
+    }));
+    const sandbox = adapter(async request => {
+      await request.tools.call('external.zero-cost-write', request.input);
+      return { status: 'succeeded', output: request.input };
+    }, { id: 'sandbox.unknown-usage' });
+    const result = await createCodeMode({ adapter: sandbox, allowTestAdapter: true, invokeTool: broker })
+      .execute(program({ tools: [zeroCostWrite] }), { value: 1 }, execution('unknown-usage'));
+    expect(result).toMatchObject({ status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN' },
+      usage: { toolCalls: 1, unknownCalls: 1, knownCostMicros: 0, unknownCostMicros: 0, maximumCostMicros: 0 },
+      evidence: [{ receipt: { execution: 'unknown', disclosure: 'withheld' } }],
+    });
+    expect(JSON.stringify(result)).not.toContain('private provider detail');
   });
 
   it('snapshots caller input before the first asynchronous availability boundary', async () => {
@@ -173,7 +205,11 @@ describe('Code Mode artifact and containment boundary', () => {
     let started!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const admitted = new Promise<void>(resolve => { started = resolve; });
-    const broker = vi.fn(async (): Promise<Outcome<JsonValue>> => { started(); await gate; return { status: 'succeeded', output: { value: 2 } }; });
+    const broker = vi.fn(async (_tool: AnyTool, _input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> => {
+      started(); await gate;
+      return { status: 'succeeded', output: { value: 2 },
+        receipt: { callId: context.callId, toolId: 'number.double', execution: 'succeeded', disclosure: 'released' } };
+    });
     let retained: CodeToolBridge | undefined;
     const sandbox = adapter(async request => {
       retained = request.tools;
@@ -197,7 +233,8 @@ describe('Code Mode artifact and containment boundary', () => {
     const throwing = adapter(async () => { throw new Error('SECRET'); }, { id: 'sandbox.throwing' });
     const thrown = await createCodeMode({ adapter: throwing, allowTestAdapter: true, invokeTool: vi.fn() })
       .execute(program(), { value: 1 }, execution('throwing'));
-    expect(thrown).toEqual({ status: 'failed', error: { code: 'TOOL_FAILED', message: 'Code Mode execution failed; raw adapter details are withheld.' } });
+    expect(thrown).toEqual({ status: 'failed', error: { code: 'TOOL_FAILED', message: 'Code Mode execution failed; raw adapter details are withheld.' },
+      usage: { toolCalls: 0, unknownCalls: 0, knownCostMicros: 0, unknownCostMicros: 0, maximumCostMicros: 4 } });
     expect(JSON.stringify(thrown)).not.toContain('SECRET');
 
     const hostile = adapter(async () => Object.defineProperty({}, 'status', { enumerable: true, get: () => { throw new Error('SECRET'); } }) as never,

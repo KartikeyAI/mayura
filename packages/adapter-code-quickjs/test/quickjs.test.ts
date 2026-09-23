@@ -30,7 +30,8 @@ function execute(source: string, invokeTool: CreateCodeModeOptions['invokeTool']
 
 describe('QuickJS child-process adapter', () => {
   it('executes a plain JavaScript expression in a fresh interpreter', async () => {
-    await expect(execute('(input) => ({ value: input.value + 4 })')).resolves.toEqual({ status: 'succeeded', output: { value: 7 } });
+    await expect(execute('(input) => ({ value: input.value + 4 })')).resolves.toEqual({ status: 'succeeded', output: { value: 7 },
+      usage: { toolCalls: 0, unknownCalls: 0, knownCostMicros: 0, unknownCostMicros: 0, maximumCostMicros: 0 } });
   });
 
   it('mediates asynchronous tool calls through the ordinary Mayura broker', async () => {
@@ -45,12 +46,14 @@ describe('QuickJS child-process adapter', () => {
   });
 
   it('supports bounded parallel guest calls without bypassing the host bridge', async () => {
-    const broker = vi.fn(async (_tool: AnyTool, input: JsonValue): Promise<Outcome<JsonValue>> => {
+    const broker = vi.fn(async (_tool: AnyTool, input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> => {
       await new Promise(resolve => setTimeout(resolve, 5));
-      return { status: 'succeeded', output: { value: (input as { value: number }).value * 2 } };
+      return { status: 'succeeded', output: { value: (input as { value: number }).value * 2 },
+        receipt: { callId: context.callId, toolId: 'number.double', execution: 'succeeded', disclosure: 'released' } };
     });
     const result = await execute('async (input, tools) => { const values = await Promise.all([tools.call("number.double", input), tools.call("number.double", { value: input.value + 1 })]); return { value: values[0].output.value + values[1].output.value }; }', broker, { tools: [double] });
     expect(result).toMatchObject({ status: 'succeeded', output: { value: 14 } });
+    expect(result.usage).toEqual({ toolCalls: 2, unknownCalls: 0, knownCostMicros: 2, unknownCostMicros: 0, maximumCostMicros: 4 });
     expect(broker).toHaveBeenCalledTimes(2);
   });
 
@@ -60,7 +63,8 @@ describe('QuickJS child-process adapter', () => {
       input: valueSchema, output: textSchema, inputSchemaId: 'value.input.v1', outputSchemaId: 'text.output.v1', limits });
     const mode = createCodeMode({ adapter: createQuickJsSandboxAdapter(), allowTestAdapter: true, invokeTool: vi.fn() });
     const result = await mode.execute(definition, { value: 1 }, { runId: 'run', executionId: 'globals', scope, signal: new AbortController().signal });
-    expect(result).toEqual({ status: 'succeeded', output: { value: 'undefined,undefined,undefined,undefined' } });
+    expect(result).toEqual({ status: 'succeeded', output: { value: 'undefined,undefined,undefined,undefined' },
+      usage: { toolCalls: 0, unknownCalls: 0, knownCostMicros: 0, unknownCostMicros: 0, maximumCostMicros: 0 } });
   });
 
   it('interrupts infinite CPU work inside QuickJS before the host wall deadline', async () => {

@@ -1,6 +1,6 @@
 # Code Mode containment and broker contract
 
-Status: experimental foundation; no sandbox adapter is qualified yet.
+Status: experimental foundation; optional adapters are test-qualified, not hostile-code production-qualified.
 
 ## Boundary
 
@@ -38,6 +38,8 @@ The callback must route through the same policy, approval, budget, resource, gua
 
 The adapter result is admitted only after bounded JSON copying and output-schema validation. Adapter exceptions and invalid results are replaced with fixed public errors. A host deadline closes the bridge immediately. Code Mode waits for already-admitted nested calls to settle before returning, so their broker receipts and budget settlement are not abandoned; no new nested calls are admitted after cancellation.
 
+Every result contains immutable host-derived usage: admitted nested calls, known fixed tool cost, unresolved cost and the program maximum. A succeeded/failed receipt settles its registered fixed cost, `not_started` settles zero, and an unknown or missing receipt retains that tool's cost as unresolved. Any unresolved cost forces the outer Code Mode result to `outcome_unknown`, even when generated code ignores a failed nested call and returns a valid-looking output. Program admission rejects a maximum cost that cannot be represented exactly as a safe integer.
+
 ## Host execution and durable recovery
 
 This package does not execute generated source on the host. Host execution must be represented by a separate effectful tool and therefore requires the ordinary exact-action approval grant for the program digest, dependency digest and action. Renaming or persisting a generated program grants nothing.
@@ -48,7 +50,7 @@ The optional durable bridge records a digest-bound phase, exact approval and imm
 
 - independently evaluate container/kernel escape resistance and daemon/rootless hardening;
 - qualify the pinned outer profile across supported hosts and architectures;
-- add authoritative reconciliation for unknown external effects and exact nested usage settlement;
+- add authoritative reconciliation for unknown external effects and atomically settle the durable outer ledger from recorded nested usage;
 - qualify generated-tool promotion and host execution approvals beyond durable phase approval; and
 - pass packed-consumer and supported OS/architecture installation matrices.
 

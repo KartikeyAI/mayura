@@ -145,12 +145,23 @@ export interface ExecuteCodeOptions {
   readonly signal: AbortSignal;
 }
 
+/** Host-derived nested-tool accounting. Unknown cost remains reserved for reconciliation. */
+export interface CodeExecutionUsage {
+  readonly toolCalls: number;
+  readonly unknownCalls: number;
+  readonly knownCostMicros: number;
+  readonly unknownCostMicros: number;
+  readonly maximumCostMicros: number;
+}
+
+export type CodeExecutionOutcome<T> = Outcome<T> & { readonly usage: CodeExecutionUsage };
+
 export interface CodeMode {
   execute<I extends Schema, O extends Schema>(
     program: CodeProgramDefinition<I, O>,
     input: InferInput<I>,
     options: ExecuteCodeOptions,
-  ): Promise<Outcome<InferOutput<O>>>;
+  ): Promise<CodeExecutionOutcome<InferOutput<O>>>;
 }
 
 interface ProgramRegistration {
@@ -310,6 +321,10 @@ export function defineCodeProgram<I extends Schema, O extends Schema>(options: C
     toolMap.set(tool.id, tool);
     return freezeTool(tool);
   });
+  const maximumToolCost = toolManifest.reduce((maximum, tool) => Math.max(maximum, tool.costMicros), 0);
+  if (!Number.isSafeInteger(maximumToolCost * codeLimits.maxToolCalls)) {
+    throw new MayuraError('LIMIT_EXCEEDED', 'Program nested-tool cost bound exceeds safe accounting.');
+  }
   const suppliedImports = data['approvedImports'] ?? [];
   if (!Array.isArray(suppliedImports) || suppliedImports.length > MAX_IMPORTS) throw new MayuraError('INVALID_CONFIG', 'Approved imports must be a bounded array.');
   const approvedImports = suppliedImports.map(item => {
@@ -362,6 +377,12 @@ function failure(code: ErrorCode): Exclude<Outcome<never>, { status: 'succeeded'
   const status = code === 'CANCELLED' ? 'cancelled' : code === 'OUTCOME_UNKNOWN' ? 'outcome_unknown'
     : ['PERMISSION_DENIED', 'BUDGET_EXCEEDED', 'GUARD_BLOCKED', 'GUARD_UNAVAILABLE'].includes(code) ? 'blocked' : 'failed';
   return Object.freeze({ status, error: Object.freeze({ code, message: messages[code] }) });
+}
+
+const zeroUsage = Object.freeze<CodeExecutionUsage>({ toolCalls: 0, unknownCalls: 0, knownCostMicros: 0, unknownCostMicros: 0, maximumCostMicros: 0 });
+
+function codeOutcome<T>(outcome: Outcome<T>, usage: CodeExecutionUsage = zeroUsage): CodeExecutionOutcome<T> {
+  return Object.freeze({ ...outcome, usage: Object.freeze({ ...usage }) }) as CodeExecutionOutcome<T>;
 }
 
 function bridgeFailure(code: ErrorCode): CodeToolOutcome {
@@ -444,22 +465,24 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
   const executions = new Set<string>();
 
   const mode = Object.freeze({
-    async execute<I extends Schema, O extends Schema>(program: CodeProgramDefinition<I, O>, rawInput: InferInput<I>, rawOptions: ExecuteCodeOptions): Promise<Outcome<InferOutput<O>>> {
+    async execute<I extends Schema, O extends Schema>(program: CodeProgramDefinition<I, O>, rawInput: InferInput<I>, rawOptions: ExecuteCodeOptions): Promise<CodeExecutionOutcome<InferOutput<O>>> {
       const registered = programs.get(program);
-      if (!registered) return failure('INVALID_CONFIG') as Outcome<InferOutput<O>>;
+      if (!registered) return codeOutcome(failure('INVALID_CONFIG')) as CodeExecutionOutcome<InferOutput<O>>;
+      const maximumToolCost = program.manifest.tools.reduce((maximum, tool) => Math.max(maximum, tool.costMicros), 0);
+      const maximumCostMicros = maximumToolCost * program.manifest.limits.maxToolCalls;
       let execution: ExecuteCodeOptions;
       try { execution = snapshotExecutionOptions(rawOptions); }
-      catch { return failure('INVALID_CONFIG') as Outcome<InferOutput<O>>; }
-      if (executions.size >= MAX_EXECUTIONS_PER_RUNTIME) return failure('LIMIT_EXCEEDED') as Outcome<InferOutput<O>>;
-      if (executions.has(execution.executionId)) return failure('CONFLICT') as Outcome<InferOutput<O>>;
+      catch { return codeOutcome(failure('INVALID_CONFIG'), { ...zeroUsage, maximumCostMicros }) as CodeExecutionOutcome<InferOutput<O>>; }
+      if (executions.size >= MAX_EXECUTIONS_PER_RUNTIME) return codeOutcome(failure('LIMIT_EXCEEDED'), { ...zeroUsage, maximumCostMicros }) as CodeExecutionOutcome<InferOutput<O>>;
+      if (executions.has(execution.executionId)) return codeOutcome(failure('CONFLICT'), { ...zeroUsage, maximumCostMicros }) as CodeExecutionOutcome<InferOutput<O>>;
       executions.add(execution.executionId);
       let inputSnapshot: JsonValue;
       try { inputSnapshot = freezeJson(jsonValue(rawInput, { maxBytes: program.manifest.limits.maxInputBytes })); }
-      catch { return failure('INVALID_INPUT') as Outcome<InferOutput<O>>; }
+      catch { return codeOutcome(failure('INVALID_INPUT'), { ...zeroUsage, maximumCostMicros }) as CodeExecutionOutcome<InferOutput<O>>; }
       let available = false;
       try { available = await registration.isAvailable() === true; }
       catch { /* Availability errors reveal no adapter details. */ }
-      if (!available) return failure('UNSUPPORTED_PROFILE') as Outcome<InferOutput<O>>;
+      if (!available) return codeOutcome(failure('UNSUPPORTED_PROFILE'), { ...zeroUsage, maximumCostMicros }) as CodeExecutionOutcome<InferOutput<O>>;
 
       const controller = new AbortController();
       let abortCode: 'CANCELLED' | 'TIMEOUT' = 'CANCELLED';
@@ -471,6 +494,20 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
       const pending = new Set<Promise<CodeToolOutcome>>();
       let startedCalls = 0;
       let activeCalls = 0;
+      let accountedCalls = 0;
+      let unknownCalls = 0;
+      let knownCostMicros = 0;
+      let unknownCostMicros = 0;
+      const usage = (): CodeExecutionUsage => Object.freeze({ toolCalls: accountedCalls, unknownCalls, knownCostMicros, unknownCostMicros, maximumCostMicros });
+      const account = (tool: AnyTool, receipt?: ExecutionReceipt): void => {
+        accountedCalls++;
+        if (!receipt || receipt.execution === 'unknown') { unknownCalls++; unknownCostMicros += tool.costMicros; }
+        else if (receipt.execution !== 'not_started') knownCostMicros += tool.costMicros;
+        if (!Number.isSafeInteger(knownCostMicros) || !Number.isSafeInteger(unknownCostMicros)
+          || knownCostMicros + unknownCostMicros > maximumCostMicros) {
+          throw new MayuraError('LIMIT_EXCEEDED', 'Nested-tool usage exceeded the admitted accounting bound.');
+        }
+      };
       let bridgeOpen = true;
       let bridgeCloseCode: 'CONFLICT' | 'CANCELLED' | 'TIMEOUT' = 'CONFLICT';
       const bridge: CodeToolBridge = Object.freeze({
@@ -493,8 +530,9 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
               try {
                 outcome = await invoke(tool, input, Object.freeze({ runId: execution.runId, executionId: execution.executionId,
                   callId, programDigest: program.manifest.digest, scope: execution.scope, signal: controller.signal }));
-              } catch { return bridgeFailure('TOOL_FAILED'); }
+              } catch { account(tool); return bridgeFailure('TOOL_FAILED'); }
               const snapshot = snapshotToolOutcome(outcome, program.manifest.limits.maxOutputBytes, callId, toolId);
+              account(tool, snapshot.receipt);
               if (snapshot.receipt) evidence.push(Object.freeze({ runId: execution.runId, receipt: snapshot.receipt }));
               return snapshot.exposed;
             } finally { activeCalls--; }
@@ -510,8 +548,8 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
         try {
           input = freezeJson(jsonValue(await validate(program.input, inputSnapshot, 'input', { maxBytes: program.manifest.limits.maxInputBytes }),
             { maxBytes: program.manifest.limits.maxInputBytes }));
-        } catch { return failure('INVALID_INPUT') as Outcome<InferOutput<O>>; }
-        if (controller.signal.aborted) return failure(abortCode) as Outcome<InferOutput<O>>;
+        } catch { return codeOutcome(failure('INVALID_INPUT'), usage()) as CodeExecutionOutcome<InferOutput<O>>; }
+        if (controller.signal.aborted) return codeOutcome(failure(abortCode), usage()) as CodeExecutionOutcome<InferOutput<O>>;
         const request = Object.freeze({ executionId: execution.executionId, manifest: program.manifest, source: registered.source,
           input, signal: controller.signal, tools: bridge });
         let sandboxResult: SandboxExecutionResult | undefined;
@@ -525,18 +563,22 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
         bridgeOpen = false;
         if (controller.signal.aborted) {
           await Promise.allSettled([...pending]);
-          return Object.freeze({ ...failure(abortCode), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }) as Outcome<InferOutput<O>>;
+          const code = unknownCalls > 0 ? 'OUTCOME_UNKNOWN' : abortCode;
+          return codeOutcome(Object.freeze({ ...failure(code), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }), usage()) as CodeExecutionOutcome<InferOutput<O>>;
         }
         await Promise.allSettled([...pending]);
+        if (unknownCalls > 0) {
+          return codeOutcome(Object.freeze({ ...failure('OUTCOME_UNKNOWN'), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }), usage()) as CodeExecutionOutcome<InferOutput<O>>;
+        }
         if (!sandboxResult || !plainRecord(sandboxResult) || sandboxResult.status !== 'succeeded') {
-          return Object.freeze({ ...failure('TOOL_FAILED'), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }) as Outcome<InferOutput<O>>;
+          return codeOutcome(Object.freeze({ ...failure('TOOL_FAILED'), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }), usage()) as CodeExecutionOutcome<InferOutput<O>>;
         }
         try {
           const output = freezeJson(jsonValue(await validate(program.output, sandboxResult.output, 'output', { maxBytes: program.manifest.limits.maxOutputBytes }),
             { maxBytes: program.manifest.limits.maxOutputBytes })) as InferOutput<O>;
-          return Object.freeze({ status: 'succeeded' as const, output, ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) });
+          return codeOutcome(Object.freeze({ status: 'succeeded' as const, output, ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }), usage());
         } catch {
-          return Object.freeze({ ...failure('INVALID_OUTPUT'), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }) as Outcome<InferOutput<O>>;
+          return codeOutcome(Object.freeze({ ...failure('INVALID_OUTPUT'), ...(evidence.length ? { evidence: Object.freeze([...evidence]) } : {}) }), usage()) as CodeExecutionOutcome<InferOutput<O>>;
         }
       } finally {
         if (controller.signal.aborted) bridgeCloseCode = abortCode;

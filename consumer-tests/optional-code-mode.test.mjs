@@ -28,4 +28,6 @@ const unavailableResult = await createCodeMode({ adapter: unavailable, allowTest
   .execute(program, { value: 1 }, { runId: 'run', executionId: 'unavailable', scope: { principalId: 'p', projectId: 'j' }, signal: new AbortController().signal });
 noHostFallback = unavailableResult.error?.code === 'UNSUPPORTED_PROFILE';
 console.log(JSON.stringify({ status: result.status === 'succeeded' && result.output.value === 8 ? 'passed' : 'failed', noHostFallback,
-  mediatedToolCall, sandboxDependencyCount: 0 }));
+  mediatedToolCall, usageReported: result.usage.toolCalls === 1 && result.usage.unknownCalls === 0 && result.usage.knownCostMicros === 0
+    && result.usage.unknownCostMicros === 0 && result.usage.maximumCostMicros === 0,
+  sandboxDependencyCount: 0 }));

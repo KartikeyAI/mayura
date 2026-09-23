@@ -6,13 +6,20 @@ import { defineTool } from '@mayura/tools';
 import { defineWorkflow, type Binding, type WorkflowDefinition } from '@mayura/workflows';
 
 export interface DurableCodeAuditEntry {
-  readonly format: 1;
+  readonly format: 2;
   readonly runId: string;
   readonly phaseId: string;
   readonly executionId: string;
   readonly programDigest: string;
   readonly outcome: 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
   readonly evidence: readonly ExecutionEvidence[];
+  readonly usage: {
+    readonly toolCalls: number;
+    readonly unknownCalls: number;
+    readonly knownCostMicros: number;
+    readonly unknownCostMicros: number;
+    readonly maximumCostMicros: number;
+  };
 }
 
 export interface DurableCodeAudit {
@@ -45,7 +52,7 @@ export interface DurableCodeWorkflowOptions<I extends Schema, O extends Schema> 
 const effectRank: Readonly<Record<Effect, number>> = Object.freeze({ none: 0, read: 1, write: 2, host: 3 });
 const audits = new WeakMap<object, { readonly store: AggregateStore; readonly scope: string }>();
 const digest = (domain: string, value: unknown): string => createHash('sha256').update(workflowHashMaterial(domain, value), 'utf8').digest('hex');
-const auditDefinitionHash = digest('mayura:code-phase-audit-definition:v1', { format: 1 });
+const auditDefinitionHash = digest('mayura:code-phase-audit-definition:v2', { format: 2 });
 
 function identifier(value: unknown, name: string): asserts value is string {
   if (typeof value !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(value)
@@ -65,15 +72,30 @@ function auditEntry(value: unknown, expected: { readonly runId: string; readonly
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit is invalid.');
   const item = snapshot as unknown as Record<string, unknown>;
   const executionId = `${expected.runId}/step:${expected.phaseId}:sandbox`;
-  if (Object.keys(item).length !== 7 || item['format'] !== 1 || item['runId'] !== expected.runId || item['phaseId'] !== expected.phaseId
+  const usage = item['usage'];
+  if (Object.keys(item).length !== 8 || item['format'] !== 2 || item['runId'] !== expected.runId || item['phaseId'] !== expected.phaseId
     || item['executionId'] !== executionId
     || (expected.programDigest !== undefined && item['programDigest'] !== expected.programDigest)
     || typeof item['executionId'] !== 'string' || item['executionId'].length > 256 || !/^[a-f0-9]{64}$/.test(String(item['programDigest']))
     || !['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['outcome']))
-    || !Array.isArray(item['evidence']) || item['evidence'].length > 64) {
+    || !Array.isArray(item['evidence']) || item['evidence'].length > 64
+    || !usage || typeof usage !== 'object' || Array.isArray(usage)) {
     throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit is invalid.');
   }
+  const accounting = usage as Record<string, unknown>;
+  if (Object.keys(accounting).length !== 5 || !Number.isSafeInteger(accounting['toolCalls']) || (accounting['toolCalls'] as number) < 0
+    || (accounting['toolCalls'] as number) > 64 || !Number.isSafeInteger(accounting['unknownCalls'])
+    || (accounting['unknownCalls'] as number) < 0 || (accounting['unknownCalls'] as number) > (accounting['toolCalls'] as number)
+    || !Number.isSafeInteger(accounting['knownCostMicros'])
+    || (accounting['knownCostMicros'] as number) < 0 || !Number.isSafeInteger(accounting['unknownCostMicros'])
+    || (accounting['unknownCostMicros'] as number) < 0 || !Number.isSafeInteger(accounting['maximumCostMicros'])
+    || (accounting['maximumCostMicros'] as number) < 0
+    || (accounting['knownCostMicros'] as number) + (accounting['unknownCostMicros'] as number) > (accounting['maximumCostMicros'] as number)
+    || item['evidence'].length > (accounting['toolCalls'] as number)) {
+    throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit usage is invalid.');
+  }
   const sequences = new Set<number>();
+  let unknownReceipts = 0;
   for (const evidence of item['evidence']) {
     if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit is invalid.');
     const record = evidence as Record<string, unknown>; const receipt = record['receipt'];
@@ -88,7 +110,12 @@ function auditEntry(value: unknown, expected: { readonly runId: string; readonly
       || !Number.isSafeInteger(sequence) || sequence < 1 || sequence > 64 || sequences.has(sequence)
       || !['not_started', 'succeeded', 'failed', 'unknown'].includes(String(fields['execution']))
       || !['released', 'withheld'].includes(String(fields['disclosure']))) throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit is invalid.');
+    if (fields['execution'] === 'unknown') unknownReceipts++;
     sequences.add(sequence);
+  }
+  if (unknownReceipts > (accounting['unknownCalls'] as number)
+    || ((accounting['unknownCalls'] as number) > 0 && item['outcome'] !== 'outcome_unknown')) {
+    throw new MayuraError('STORAGE_UNAVAILABLE', 'Code phase audit reconciliation state is invalid.');
   }
   return snapshot as unknown as DurableCodeAuditEntry;
 }
@@ -134,7 +161,8 @@ async function recordAudit(audit: DurableCodeAudit, entry: DurableCodeAuditEntry
   const result = await registration.store.create({ scope: registration.scope, id, idempotencyKey: id,
     definitionHash: auditDefinitionHash, state: admitted as unknown as JsonObject,
     events: [{ type: 'code.phase.evidence', data: { phaseId: entry.phaseId, programDigest: entry.programDigest,
-      outcome: entry.outcome, receipts: entry.evidence.length } }],
+      outcome: entry.outcome, receipts: entry.evidence.length, toolCalls: entry.usage.toolCalls, unknownCalls: entry.usage.unknownCalls,
+      knownCostMicros: entry.usage.knownCostMicros, unknownCostMicros: entry.usage.unknownCostMicros } }],
   });
   assertAuditRecord(result.record, registration.scope, id);
   auditEntry(result.record.state, entry);
@@ -171,7 +199,7 @@ function phaseTool(mode: CodeMode, audit: DurableCodeAudit, phaseId: string, pro
     input: program.input,
     output: program.output,
     effects,
-    capabilities: [`code:execute`, 'code:audit:v1', `code:audit-scope:${auditRegistration.scope}`, `code:program:${program.manifest.digest}`],
+    capabilities: [`code:execute`, 'code:audit:v2', `code:audit-scope:${auditRegistration.scope}`, `code:program:${program.manifest.digest}`],
     timeoutMs: program.manifest.limits.wallTimeMillis,
     costMicros,
     execute: async (input, context) => {
@@ -180,8 +208,23 @@ function phaseTool(mode: CodeMode, audit: DurableCodeAudit, phaseId: string, pro
       }
       const outcome = await mode.execute(program, input, { runId: context.runId, executionId: `${context.callId}:sandbox`,
         scope: context.scope, signal: context.signal });
-      await recordAudit(audit, Object.freeze({ format: 1, runId: context.runId, phaseId, executionId: `${context.callId}:sandbox`,
-        programDigest: program.manifest.digest, outcome: outcome.status, evidence: Object.freeze([...(outcome.evidence ?? [])]) }));
+      const toolCosts = new Map(program.manifest.tools.map(tool => [tool.id, tool.costMicros]));
+      let evidencedKnownCost = 0; let evidencedUnknownCost = 0; let evidencedUnknownCalls = 0;
+      for (const item of outcome.evidence ?? []) {
+        const toolCost = toolCosts.get(item.receipt.toolId);
+        if (toolCost === undefined) throw new MayuraError('OUTCOME_UNKNOWN', 'Code Mode usage could not be bound to the approved program.');
+        if (item.receipt.execution === 'unknown') { evidencedUnknownCalls++; evidencedUnknownCost += toolCost; }
+        else if (item.receipt.execution !== 'not_started') evidencedKnownCost += toolCost;
+      }
+      if (!Number.isSafeInteger(evidencedKnownCost) || !Number.isSafeInteger(evidencedUnknownCost)
+        || outcome.usage.maximumCostMicros !== costMicros || outcome.usage.toolCalls > program.manifest.limits.maxToolCalls
+        || outcome.usage.knownCostMicros !== evidencedKnownCost || outcome.usage.unknownCalls < evidencedUnknownCalls
+        || outcome.usage.unknownCostMicros < evidencedUnknownCost) {
+        throw new MayuraError('OUTCOME_UNKNOWN', 'Code Mode usage could not be bound to the approved program.');
+      }
+      await recordAudit(audit, Object.freeze({ format: 2, runId: context.runId, phaseId, executionId: `${context.callId}:sandbox`,
+        programDigest: program.manifest.digest, outcome: outcome.status, evidence: Object.freeze([...(outcome.evidence ?? [])]),
+        usage: outcome.usage }));
       if (outcome.status === 'succeeded') return outcome.output;
       throw new MayuraError(outcome.error.code, 'Durable Code Mode phase failed; nested details are withheld.');
     },

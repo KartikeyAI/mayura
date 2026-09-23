@@ -21,6 +21,7 @@ const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: (defi
   runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
   permissions: { allow: [`tool:${definition.id}`] }, budget,
 }) as Promise<Outcome<JsonValue>> });
-void mode.execute(program, { value: 2 }, { runId: 'run', executionId: 'execution', scope: { principalId: 'p', projectId: 'j' }, signal: new AbortController().signal });
+void mode.execute(program, { value: 2 }, { runId: 'run', executionId: 'execution', scope: { principalId: 'p', projectId: 'j' }, signal: new AbortController().signal })
+  .then(result => result.usage.knownCostMicros);
 // @ts-expect-error Credentials are not a Code Mode runtime option.
 createCodeMode({ adapter, allowTestAdapter: true, invokeTool: async () => ({ status: 'failed', error: { code: 'TOOL_FAILED', message: '' } }), credentials: {} });

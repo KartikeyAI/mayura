@@ -26,4 +26,5 @@ const globals = await mode.execute(make('globals', '() => ({ value: [typeof proc
 const cpu = await mode.execute(make('cpu', '() => { while (true) {} }', schema, { ...limits, cpuMillis: 20 }), { value: 1 }, options('cpu'));
 console.log(JSON.stringify({ status: result.status === 'succeeded' && result.output.value === 8 ? 'passed' : 'failed', childProcess: true,
   nodeGlobalsAbsent: globals.status === 'succeeded' && globals.output.value === 'undefined,undefined,undefined', mediatedToolCall,
+  usageReported: result.usage.toolCalls === 1 && result.usage.unknownCalls === 0 && result.usage.unknownCostMicros === 0,
   cpuInterrupted: cpu.status === 'failed' }));
