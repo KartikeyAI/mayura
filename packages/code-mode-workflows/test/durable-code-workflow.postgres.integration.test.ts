@@ -8,7 +8,7 @@ import { createCodeMode, defineCodeProgram, defineSandboxAdapter } from '@mayura
 import { defineTool, invokeTool } from '@mayura/tools';
 import { createScheduledWorkflowRuntime } from '@mayura/workflows';
 import { createPostgresStore } from '@mayura/storage';
-import { defineDurableCodeWorkflow } from '../src/index.js';
+import { createDurableCodeAudit, defineDurableCodeWorkflow } from '../src/index.js';
 
 const connectionString = process.env['MAYURA_TEST_POSTGRES_URL'];
 const suite = connectionString ? describe : describe.skip;
@@ -30,24 +30,29 @@ suite('PostgreSQL durable Code Mode workflow bridge', () => {
         input: valueSchema, output: valueSchema, inputSchemaId: 'in', outputSchemaId: 'out', limits: { cpuMillis: 100, wallTimeMillis: 2_000,
           memoryBytes: 16 * 1_024 * 1_024, scratchBytes: 1_024, maxInputBytes: 1_024, maxOutputBytes: 1_024,
           maxToolInputBytes: 1_024, maxToolCalls: 1, maxToolConcurrency: 1 } });
-      const definition = defineDurableCodeWorkflow({ id: 'pg.durable.code', version: '1', input: valueSchema, output: valueSchema, codeMode: mode,
-        phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
+      const firstStore = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(firstStore); await firstStore.initialize();
+      const definitionFor = (store: typeof firstStore) => defineDurableCodeWorkflow({ id: 'pg.durable.code', version: '1', input: valueSchema,
+        output: valueSchema, codeMode: mode, audit: createDurableCodeAudit({ store, scope: { principalId: 'pg-user', projectId: 'project' } }),
+        phases: [{ id: 'execute', program, input: { kind: 'input' as const, path: [] } }], result: { kind: 'step' as const, stepId: 'execute', path: [] } });
+      const definition = definitionFor(firstStore);
       const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
       const options = { scope: { principalId: 'pg-user', projectId: 'project' }, permissions: { allow: [`tool:${phase.tool.id}`,
-        'code:execute', `code:program:${program.manifest.digest}`] }, policyVersion: '1', maxCostMicros: 0, maxOutputBytes: 1_024,
+        ...phase.tool.capabilities] }, policyVersion: '1', maxCostMicros: 0, maxOutputBytes: 1_024,
         verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) } as const;
-      const firstStore = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(firstStore); await firstStore.initialize();
       const first = createScheduledWorkflowRuntime({ ...options, store: firstStore, workerId: 'first' }); runtimes.push(first);
       const submitted = await first.submit(definition, { input: { value: 7 }, idempotencyKey: 'phase' });
       const waiting = await first.runUntilSettled(definition, submitted.id); const approval = waiting.steps['execute']!.approval!;
       expect(waiting.status).toBe('waiting'); expect(executions).toBe(0);
       await first.close(); runtimes.splice(0); await firstStore.close();
       const secondStore = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(secondStore); await secondStore.initialize();
+      const reopenedDefinition = definitionFor(secondStore); expect(reopenedDefinition.digest).toBe(definition.digest);
       const second = createScheduledWorkflowRuntime({ ...options, store: secondStore, workerId: 'second' }); runtimes.push(second);
       expect((await second.inspect(submitted.id)).steps['execute']!.approval).toEqual(approval);
       await second.approve({ id: submitted.id, nodeId: 'execute', digest: approval.digest, credential: 'trusted' });
-      expect(await second.runUntilSettled(definition, submitted.id)).toMatchObject({ status: 'succeeded', output: { value: 7 } });
+      expect(await second.runUntilSettled(reopenedDefinition, submitted.id)).toMatchObject({ status: 'succeeded', output: { value: 7 } });
       expect(executions).toBe(1);
+      expect(await createDurableCodeAudit({ store: secondStore, scope: options.scope }).inspect(submitted.id, 'execute'))
+        .toMatchObject({ outcome: 'succeeded', evidence: [] });
     } finally {
       await Promise.all(runtimes.map(runtime => runtime.close())); await Promise.all(stores.map(store => store.close()));
       if (!/^mayura_code_phase_[a-f0-9]{32}$/.test(schema)) throw new Error('Unexpected fixture schema.');
@@ -94,12 +99,13 @@ suite('PostgreSQL durable Code Mode workflow bridge', () => {
         runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
         permissions: { allow: [`tool:${tool.id}`, 'effect:write'] }, budget,
       }) as Promise<Outcome<JsonValue>> });
-      const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: valueSchema, output: valueSchema, codeMode: mode,
+      const store = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(store); await store.initialize();
+      const audit = createDurableCodeAudit({ store, scope: { principalId: 'crash-user', projectId: 'project' } });
+      const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: valueSchema, output: valueSchema, codeMode: mode, audit,
         phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
       const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
-      const store = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(store); await store.initialize();
       const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'crash-user', projectId: 'project' },
-        permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', 'code:execute', `code:program:${program.manifest.digest}`] },
+        permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] },
         policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'recovery', leaseMs: 1_000,
         verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
       runtimes.push(runtime);
@@ -112,6 +118,9 @@ suite('PostgreSQL durable Code Mode workflow bridge', () => {
         expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
         if (scenario === 'receipt') expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
       }
+      const evidence = await audit.inspect(runId!, 'execute');
+      if (scenario === 'effect') expect(evidence).toBeUndefined();
+      else expect(evidence).toMatchObject({ outcome: 'succeeded', evidence: [{ receipt: { toolId: 'external.crash-write' } }] });
       await runtime.runUntilSettled(definition, runId!); expect(replayed).toBe(0);
     } finally {
       if (!exited) { child.kill('SIGKILL'); await exit; }

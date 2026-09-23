@@ -30,5 +30,4 @@ Memory includes a fixed outer-runtime allowance in addition to the program's Qui
 
 Protocol corruption, Docker startup failure, image mismatch, resource exhaustion, abnormal exit and removal races return sanitized failures. Cancellation returns the Code Mode cancellation outcome and asynchronously force-removes the exact randomly named container. No host execution fallback exists.
 
-Live tests require `MAYURA_TEST_DOCKER_PATH` and `MAYURA_TEST_CODE_SANDBOX_IMAGE`. Without both variables, the Docker integration file is skipped and supplies no containment evidence. The current live matrix is one Docker Desktop Linux/amd64 environment. V15 remains open for durable phase and no-replay semantics, exact host approvals, broader host qualification, escape evaluation and production image supply-chain controls.
-
+Live tests require `MAYURA_TEST_DOCKER_PATH` and `MAYURA_TEST_CODE_SANDBOX_IMAGE`. Without both variables, the Docker integration file is skipped and supplies no containment evidence. The current live matrix is one Docker Desktop Linux/amd64 environment. V15 remains open for authoritative external reconciliation, exact promoted host-action approvals, broader host qualification, escape evaluation and production image supply-chain controls.

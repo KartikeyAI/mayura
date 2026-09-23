@@ -102,6 +102,22 @@ describe('Code Mode artifact and containment boundary', () => {
     expect(budget.snapshot()).toEqual({ spentMicros: 1, reservedMicros: 0, calls: 1 });
   });
 
+  it('does not retain receipt extensions outside the exact public evidence contract', async () => {
+    const broker = vi.fn(async (_tool: AnyTool, input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]) => ({
+      status: 'succeeded' as const, output: input,
+      receipt: { callId: context.callId, toolId: 'number.double', execution: 'succeeded' as const, disclosure: 'released' as const, secret: 'private' },
+    }));
+    const sandbox = adapter(async request => {
+      const result = await request.tools.call('number.double', request.input);
+      return result.status === 'succeeded' ? { status: 'succeeded', output: result.output } : { status: 'failed' };
+    });
+    const result = await createCodeMode({ adapter: sandbox, allowTestAdapter: true, invokeTool: broker })
+      .execute(program(), { value: 3 }, execution());
+    expect(result).toMatchObject({ status: 'succeeded', output: { value: 3 } });
+    expect(result.evidence).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+
   it('denies unknown tools before the broker and closes retained bridges when the adapter settles', async () => {
     let retained: CodeToolBridge | undefined;
     const broker = vi.fn(async (): Promise<Outcome<JsonValue>> => ({ status: 'succeeded', output: { value: 1 } }));

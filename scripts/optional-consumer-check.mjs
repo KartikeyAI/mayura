@@ -22,7 +22,7 @@ const expectedDependencies = {
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
   'code-mode': ['@mayura/core', '@mayura/tools'],
-  'code-mode-workflows': ['@mayura/code-mode', '@mayura/core', '@mayura/tools', '@mayura/workflows'],
+  'code-mode-workflows': ['@mayura/code-mode', '@mayura/core', '@mayura/storage-contracts', '@mayura/tools', '@mayura/workflows'],
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
   'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode'],
 };
@@ -217,6 +217,7 @@ async function main() {
       }
       if (name === 'code-mode-workflows') {
         assert.equal(execution.mandatoryApproval, true); assert.equal(execution.programDigestPinned, true);
+        assert.equal(execution.durableAuditRequired, true); assert.equal(execution.auditScopePinned, true);
         assert.equal(execution.driverFreeDefinition, true);
       }
       if (name === 'code-mode-quickjs') {

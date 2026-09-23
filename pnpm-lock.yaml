@@ -124,6 +124,9 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
       '@mayura/tools':
         specifier: workspace:*
         version: link:../tools

@@ -1,12 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "types": ["node"] },
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../core" },
+    { "path": "../storage-contracts" },
     { "path": "../tools" },
     { "path": "../code-mode" },
     { "path": "../workflows" }
   ]
 }
-

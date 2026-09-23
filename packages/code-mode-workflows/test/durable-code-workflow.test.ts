@@ -10,7 +10,7 @@ import { createCodeMode, defineCodeProgram, defineSandboxAdapter } from '@mayura
 import { defineTool, invokeTool } from '@mayura/tools';
 import { createScheduledWorkflowRuntime } from '@mayura/workflows';
 import { createSqliteStore } from '@mayura/storage';
-import { defineDurableCodeWorkflow } from '../src/index.js';
+import { createDurableCodeAudit, defineDurableCodeWorkflow } from '../src/index.js';
 
 type Value = { readonly value: number };
 const schema: Schema<Value, Value> = { '~standard': { version: 1, vendor: 'test', validate: value => value && typeof value === 'object'
@@ -37,19 +37,22 @@ describe('durable Code Mode workflow bridge', () => {
         runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
         permissions: { allow: [`tool:${tool.id}`, 'effect:write'] }, budget: nestedBudget,
       }) as Promise<Outcome<JsonValue>> });
-      const definition = defineDurableCodeWorkflow({ id: 'durable.code', version: '1', input: schema, output: schema, codeMode: mode,
-        phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
+      const firstStore = createSqliteStore({ filename }); await firstStore.initialize();
+      const definitionFor = (store: typeof firstStore) => defineDurableCodeWorkflow({ id: 'durable.code', version: '1', input: schema,
+        output: schema, codeMode: mode, audit: createDurableCodeAudit({ store, scope: { principalId: 'alice', projectId: 'project' } }),
+        phases: [{ id: 'execute', program, input: { kind: 'input' as const, path: [] } }], result: { kind: 'step' as const, stepId: 'execute', path: [] } });
+      const definition = definitionFor(firstStore);
       const phase = definition.nodes[0]!;
       expect(phase).toMatchObject({ kind: 'tool', approval: true });
       if (phase.kind !== 'tool') throw new Error('Expected phase tool.');
-      expect(phase.tool).toMatchObject({ version: program.manifest.digest, effects: 'write', costMicros: 6,
-        capabilities: ['code:execute', `code:program:${program.manifest.digest}`] });
+      expect(phase.tool).toMatchObject({ version: program.manifest.digest, effects: 'write', costMicros: 6 });
+      expect(phase.tool.capabilities).toEqual(['code:execute', 'code:audit:v1', expect.stringMatching(/^code:audit-scope:[a-f0-9]{64}$/u),
+        `code:program:${program.manifest.digest}`]);
       const policy = { scope: { principalId: 'alice', projectId: 'project' }, permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write',
-        'code:execute', `code:program:${program.manifest.digest}`] }, policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024,
+        ...phase.tool.capabilities] }, policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024,
         approvalTtlMs: 60_000, verifyHuman: async (credential: unknown) => {
           if (credential !== 'approved') throw new Error('denied'); return { id: 'reviewer', projectId: 'project', canApprove: true };
         } } as const;
-      const firstStore = createSqliteStore({ filename }); await firstStore.initialize();
       const first = createScheduledWorkflowRuntime({ ...policy, store: firstStore, workerId: 'first' });
       const submitted = await first.submit(definition, { input: { value: 2 }, idempotencyKey: randomUUID() });
       const waiting = await first.runUntilSettled(definition, submitted.id);
@@ -59,32 +62,78 @@ describe('durable Code Mode workflow bridge', () => {
       await first.close(); await firstStore.close();
 
       const secondStore = createSqliteStore({ filename }); await secondStore.initialize();
+      const reopenedDefinition = definitionFor(secondStore); expect(reopenedDefinition.digest).toBe(definition.digest);
       const second = createScheduledWorkflowRuntime({ ...policy, store: secondStore, workerId: 'second' });
       expect((await second.inspect(submitted.id)).steps['execute']!.approval).toEqual(approval);
       await expect(second.approve({ id: submitted.id, nodeId: 'execute', digest: 'a'.repeat(64), credential: 'approved' }))
         .rejects.toMatchObject({ code: 'CONFLICT' });
       await second.approve({ id: submitted.id, nodeId: 'execute', digest: approval.digest, credential: 'approved' });
-      const completed = await second.runUntilSettled(definition, submitted.id);
+      const completed = await second.runUntilSettled(reopenedDefinition, submitted.id);
       expect(completed).toMatchObject({ status: 'succeeded', output: { value: 3 }, budget: { spentMicros: 6, reservedMicros: 0 } });
       expect(completed.steps['execute']!.approval?.humanId).toBe('reviewer');
       expect(executions).toBe(1);
-      expect((await second.runUntilSettled(definition, submitted.id)).status).toBe('succeeded');
+      expect((await second.runUntilSettled(reopenedDefinition, submitted.id)).status).toBe('succeeded');
       expect(executions).toBe(1);
+      expect(await createDurableCodeAudit({ store: secondStore, scope: policy.scope }).inspect(submitted.id, 'execute')).toMatchObject({
+        format: 1, runId: submitted.id, phaseId: 'execute', programDigest: program.manifest.digest, outcome: 'succeeded',
+        evidence: [{ runId: submitted.id, receipt: { toolId: 'external.write', execution: 'succeeded', disclosure: 'released' } }],
+      });
       await second.close(); await secondStore.close();
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 
-  it('rejects forged programs, executors and accessor-bearing definitions', () => {
+  it('rejects forged programs, executors, audits and accessor-bearing definitions', () => {
     const adapter = defineSandboxAdapter({ id: 'test.forgery', version: '1', qualification: 'test', isAvailable: () => true,
       execute: async () => ({ status: 'failed' }) });
     const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'genuine', version: '1', intent: 'Genuine.', language: 'javascript', source: 'input => input',
       input: schema, output: schema, inputSchemaId: 'in', outputSchemaId: 'out', limits });
-    const base = { id: 'durable.code', version: '1', input: schema, output: schema, codeMode: mode,
+    const fakeStore = { create: vi.fn(), read: vi.fn() } as unknown as Parameters<typeof createDurableCodeAudit>[0]['store'];
+    const audit = createDurableCodeAudit({ store: fakeStore, scope: { principalId: 'alice', projectId: 'project' } });
+    const base = { id: 'durable.code', version: '1', input: schema, output: schema, codeMode: mode, audit,
       phases: [{ id: 'phase', program, input: { kind: 'input' as const, path: [] } }], result: { kind: 'step' as const, stepId: 'phase', path: [] } };
     expect(() => defineDurableCodeWorkflow({ ...base, codeMode: { execute: mode.execute } })).toThrow();
+    expect(() => defineDurableCodeWorkflow({ ...base, audit: { inspect: audit.inspect } })).toThrow();
     expect(() => defineDurableCodeWorkflow({ ...base, phases: [{ ...base.phases[0]!, program: { ...program } }] })).toThrow();
     expect(() => defineDurableCodeWorkflow(Object.defineProperty({ ...base }, 'phases', { enumerable: true, get: () => base.phases }))).toThrow();
+    const oversized = defineCodeProgram({ id: 'too-many-calls', version: '1', intent: 'Rejected durable audit bound.', language: 'javascript',
+      source: 'input => input', input: schema, output: schema, inputSchemaId: 'in', outputSchemaId: 'out',
+      limits: { ...limits, maxToolCalls: 65 } });
+    expect(() => defineDurableCodeWorkflow({ ...base, phases: [{ ...base.phases[0]!, program: oversized }] }))
+      .toThrowError(expect.objectContaining({ code: 'LIMIT_EXCEEDED' }));
+  });
+
+  it('fails closed when an audit store returns a mismatched record identity', async () => {
+    const fakeStore = ({ create: vi.fn(), read: vi.fn(async (_scope: string, id: string) => ({ scope: 'wrong', id,
+      idempotencyKey: id, definitionHash: '0'.repeat(64), version: 1, state: {} })) }) as unknown as Parameters<typeof createDurableCodeAudit>[0]['store'];
+    const audit = createDurableCodeAudit({ store: fakeStore, scope: { principalId: 'alice', projectId: 'project' } });
+    await expect(audit.inspect('a'.repeat(64), 'execute')).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+  });
+
+  it('does not execute a phase when its durable audit belongs to another scope', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize(); let executions = 0;
+    const nested = defineTool({ id: 'external.scope-write', version: '1', description: 'Must not execute.', input: schema, output: schema,
+      effects: 'write', capabilities: [], costMicros: 1, execute: input => { executions++; return input; } });
+    const program = defineCodeProgram({ id: 'scope.phase', version: '1', intent: 'Audit scope isolation.', language: 'javascript',
+      source: 'async (input, tools) => (await tools.call("external.scope-write", input)).output', input: schema, output: schema,
+      inputSchemaId: 'in', outputSchemaId: 'out', tools: [nested], limits });
+    const adapter = defineSandboxAdapter({ id: 'test.scope-phase', version: '1', qualification: 'test', isAvailable: () => true,
+      execute: async request => { executions++; return { status: 'succeeded', output: request.input }; } });
+    const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: vi.fn() });
+    const audit = createDurableCodeAudit({ store, scope: { principalId: 'mallory', projectId: 'project' } });
+    const definition = defineDurableCodeWorkflow({ id: 'scope.code', version: '1', input: schema, output: schema, codeMode: mode, audit,
+      phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
+    const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
+    const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'alice', projectId: 'project' },
+      permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] }, policyVersion: '1', maxCostMicros: 2,
+      maxOutputBytes: 1_024, workerId: 'scope', verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
+    try {
+      const submitted = await runtime.submit(definition, { input: { value: 1 }, idempotencyKey: 'scope' });
+      const waiting = await runtime.runUntilSettled(definition, submitted.id);
+      await runtime.approve({ id: submitted.id, nodeId: 'execute', digest: waiting.steps['execute']!.approval!.digest, credential: 'trusted' });
+      expect(await runtime.runUntilSettled(definition, submitted.id)).toMatchObject({ status: 'outcome_unknown', output: null });
+      expect(executions).toBe(0); expect(await audit.inspect(submitted.id, 'execute')).toBeUndefined();
+    } finally { await runtime.close(); await store.close(); }
   });
 
   it('does not replay a write phase when its sandbox fails after the nested effect', async () => {
@@ -102,11 +151,12 @@ describe('durable Code Mode workflow bridge', () => {
       runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
       permissions: { allow: [`tool:${tool.id}`, 'effect:write'] }, budget: nestedBudget,
     }) as Promise<Outcome<JsonValue>> });
-    const definition = defineDurableCodeWorkflow({ id: 'uncertain.code', version: '1', input: schema, output: schema, codeMode: mode,
+    const audit = createDurableCodeAudit({ store, scope: { principalId: 'alice', projectId: 'project' } });
+    const definition = defineDurableCodeWorkflow({ id: 'uncertain.code', version: '1', input: schema, output: schema, codeMode: mode, audit,
       phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
     const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
     const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'alice', projectId: 'project' },
-      permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', 'code:execute', `code:program:${program.manifest.digest}`] },
+      permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] },
       policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'uncertain',
       verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
     try {
@@ -116,6 +166,8 @@ describe('durable Code Mode workflow bridge', () => {
       const result = await runtime.runUntilSettled(definition, submitted.id);
       expect(result.status).toBe('outcome_unknown'); expect(result.output).toBeNull();
       expect(result.steps['execute']!.receipt).toMatchObject({ execution: 'unknown', disclosure: 'withheld' });
+      expect(await audit.inspect(submitted.id, 'execute')).toMatchObject({ outcome: 'failed',
+        evidence: [{ receipt: { toolId: 'external.uncertain-write', execution: 'succeeded' } }] });
       await runtime.runUntilSettled(definition, submitted.id);
       expect({ sandboxRuns, nestedWrites }).toEqual({ sandboxRuns: 1, nestedWrites: 1 });
     } finally { await runtime.close(); await store.close(); }
@@ -153,12 +205,13 @@ describe('durable Code Mode workflow bridge', () => {
       const adapter = defineSandboxAdapter({ id: 'test.crash-phase-recovery', version: '1', qualification: 'test', isAvailable: () => true,
         execute: async request => { replayed++; return { status: 'succeeded', output: request.input }; } });
       const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: vi.fn() });
-      const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: schema, output: schema, codeMode: mode,
+      const store = createSqliteStore({ filename }); await store.initialize();
+      const audit = createDurableCodeAudit({ store, scope: { principalId: 'crash-user', projectId: 'project' } });
+      const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: schema, output: schema, codeMode: mode, audit,
         phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
       const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
-      const store = createSqliteStore({ filename }); await store.initialize();
       const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'crash-user', projectId: 'project' },
-        permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', 'code:execute', `code:program:${program.manifest.digest}`] },
+        permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] },
         policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'recovery', leaseMs: 1_000,
         verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
       try {
@@ -171,6 +224,9 @@ describe('durable Code Mode workflow bridge', () => {
           expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
           if (scenario === 'receipt') expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
         }
+        const evidence = await audit.inspect(runId!, 'execute');
+        if (scenario === 'effect') expect(evidence).toBeUndefined();
+        else expect(evidence).toMatchObject({ outcome: 'succeeded', evidence: [{ receipt: { toolId: 'external.crash-write' } }] });
         await runtime.runUntilSettled(definition, runId!); expect(replayed).toBe(0);
       } finally { await runtime.close(); await store.close(); }
     } finally {

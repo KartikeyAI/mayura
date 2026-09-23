@@ -42,15 +42,14 @@ The adapter result is admitted only after bounded JSON copying and output-schema
 
 This package does not execute generated source on the host. Host execution must be represented by a separate effectful tool and therefore requires the ordinary exact-action approval grant for the program digest, dependency digest and action. Renaming or persisting a generated program grants nothing.
 
-This foundation is ephemeral. A future durable phase records program digest, phase ID, input digest and every nested invocation ID before dispatch. Recovery reuses known results and never reruns a completed write. Unknown nested effects enter reconciliation. Arbitrary heaps, closures and pending promises are never checkpointed.
+The optional durable bridge records a digest-bound phase, exact approval and immutable nested-receipt audit around this ephemeral executor. Recovery reuses known results and never reruns a completed write. Unknown nested effects remain unknown until an authoritative external reconciler resolves them. Arbitrary heaps, closures and pending promises are never checkpointed.
 
 ## Qualification still required for V15
 
-- select an optional interpreter and an outer OS-isolated worker profile through an ADR;
-- prove filesystem, process, environment, credential and direct-network denial;
-- prove CPU, memory, scratch, output, IPC and kill limits under hostile programs;
-- persist phase/invocation receipts and pass process-kill/replay tests;
-- qualify exact host-approval flows and generated-tool promotion; and
+- independently evaluate container/kernel escape resistance and daemon/rootless hardening;
+- qualify the pinned outer profile across supported hosts and architectures;
+- add authoritative reconciliation for unknown external effects and exact nested usage settlement;
+- qualify generated-tool promotion and host execution approvals beyond durable phase approval; and
 - pass packed-consumer and supported OS/architecture installation matrices.
 
 Until those items pass, Code Mode remains experimental and V15 remains open.

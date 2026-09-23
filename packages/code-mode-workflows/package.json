@@ -10,9 +10,9 @@
   "dependencies": {
     "@mayura/code-mode": "workspace:*",
     "@mayura/core": "workspace:*",
+    "@mayura/storage-contracts": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/workflows": "workspace:*"
   },
   "devDependencies": { "@mayura/storage": "workspace:*" }
 }
-

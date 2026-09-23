@@ -378,7 +378,7 @@ function snapshotReceipt(value: unknown, callId: string, toolId: string): Execut
   if (value === undefined) return undefined;
   try {
     const receipt = jsonValue(value, { maxBytes: 4_096 });
-    if (!plainRecord(receipt) || receipt['callId'] !== callId || receipt['toolId'] !== toolId
+    if (!plainRecord(receipt) || Object.keys(receipt).length !== 4 || receipt['callId'] !== callId || receipt['toolId'] !== toolId
       || !['not_started', 'succeeded', 'failed', 'unknown'].includes(String(receipt['execution']))
       || !['released', 'withheld'].includes(String(receipt['disclosure']))) return undefined;
     return Object.freeze(receipt) as unknown as ExecutionReceipt;

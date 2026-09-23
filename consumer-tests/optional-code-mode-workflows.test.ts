@@ -1,6 +1,6 @@
 import type { Schema } from '@mayura/core';
 import { createCodeMode, defineCodeProgram, defineSandboxAdapter } from '@mayura/code-mode';
-import { defineDurableCodeWorkflow } from '@mayura/code-mode-workflows';
+import { createDurableCodeAudit, defineDurableCodeWorkflow } from '@mayura/code-mode-workflows';
 
 type Value = { readonly value: number };
 const schema: Schema<Value, Value> = { '~standard': { version: 1, vendor: 'fixture', validate: value => value && typeof value === 'object'
@@ -8,13 +8,15 @@ const schema: Schema<Value, Value> = { '~standard': { version: 1, vendor: 'fixtu
 const adapter = defineSandboxAdapter({ id: 'fixture', version: '1', qualification: 'test', isAvailable: () => true,
   execute: async request => ({ status: 'succeeded', output: request.input }) });
 const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: async () => ({ status: 'failed', error: { code: 'TOOL_FAILED', message: 'unused' } }) });
+const store = ({ create: async () => { throw new Error('unused'); }, read: async () => undefined }) as unknown as Parameters<typeof createDurableCodeAudit>[0]['store'];
+const audit = createDurableCodeAudit({ store, scope: { principalId: 'fixture', projectId: 'fixture' } });
 const program = defineCodeProgram({ id: 'phase', version: '1', intent: 'Packed phase.', language: 'javascript', source: 'input => input',
   input: schema, output: schema, inputSchemaId: 'in', outputSchemaId: 'out', limits: { cpuMillis: 10, wallTimeMillis: 1_000,
     memoryBytes: 1_048_576, scratchBytes: 1_024, maxInputBytes: 1_024, maxOutputBytes: 1_024, maxToolInputBytes: 1_024,
     maxToolCalls: 1, maxToolConcurrency: 1 } });
-const workflow = defineDurableCodeWorkflow({ id: 'durable', version: '1', input: schema, output: schema, codeMode: mode,
+const workflow = defineDurableCodeWorkflow({ id: 'durable', version: '1', input: schema, output: schema, codeMode: mode, audit,
   phases: [{ id: 'phase', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'phase', path: [] } });
 void workflow.digest;
-defineDurableCodeWorkflow({ id: 'bad', version: '1', input: schema, output: schema, codeMode: mode,
+defineDurableCodeWorkflow({ id: 'bad', version: '1', input: schema, output: schema, codeMode: mode, audit,
   // @ts-expect-error Durable phase programs must be typed Code Program definitions.
   phases: [{ id: 'phase', program: {}, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'phase', path: [] } });
