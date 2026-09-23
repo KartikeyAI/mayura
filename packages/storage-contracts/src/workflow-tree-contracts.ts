@@ -49,6 +49,7 @@ export interface WorkflowTreeStore {
   initialize():Promise<void>;
   submit(command:WorkflowTreeRootSubmission):Promise<{readonly snapshot:WorkflowTreeRootSnapshot;readonly created:boolean}>;
   inspect(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string}):Promise<WorkflowTreeRootSnapshot|undefined>;
+  inspectChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string}):Promise<WorkflowTreeMemberResult>;
   admitChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly parentId:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeChildAdmission>;
   prepareChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreePreparedTool>;
   claimPreparedChildTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly workerId:string;readonly leaseMs:number}):Promise<WorkflowTreeClaimedTool|undefined>;

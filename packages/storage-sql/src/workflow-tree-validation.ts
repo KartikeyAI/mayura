@@ -17,6 +17,7 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
     case 'initialize':fields(raw,[]);break;
     case 'submit':{fields(raw,['manifest','policy','resources','input','idempotencyKey']);const manifest=workflowTreeManifest(raw['manifest']);raw['manifest']=manifest as unknown as JsonValue;raw['policy']=workflowTreePolicy(raw['policy']) as unknown as JsonValue;raw['resources']=workflowTreeRootResources(raw['resources'],manifest) as unknown as JsonValue;value(raw,'input');const key=identifier(raw['idempotencyKey'],'Submission key');if(key.length>128)invalid();break;}
     case 'inspect':fields(raw,['scope','rootId','rootPolicyHash']);root(raw);break;
+    case 'inspectChild':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash']);child(raw);break;
     case 'admitChild':fields(raw,['scope','rootId','rootPolicyHash','parentId','nodeId','expectedVersion','input']);root(raw);hash(raw['parentId']);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
     case 'prepareChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','expectedVersion','input']);child(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
     case 'claimPreparedChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','workerId','leaseMs']);child(raw);identifier(raw['nodeId'],'Node');identifier(raw['workerId'],'Worker');integer(raw['leaseMs'],1_000,300_000);break;
@@ -39,7 +40,7 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
 export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:JsonObject)=>Promise<unknown>):WorkflowTreeStore{
   const call=async<T>(method:WorkflowTreeMethod,input:unknown):Promise<T>=>{const result=await request(method,workflowTreeCommand(method,input));return result===undefined?undefined as T:immutable(result) as T;};
   return Object.freeze({
-    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),admitChild:value=>call('admitChild',value),
+    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),
     prepareChildTool:value=>call('prepareChildTool',value),claimPreparedChildTool:value=>call('claimPreparedChildTool',value),renewClaimedChildTool:value=>call('renewClaimedChildTool',value),startClaimedChildTool:value=>call('startClaimedChildTool',value),
     recordChildToolReceipt:value=>call('recordChildToolReceipt',value),completeChildTool:value=>call('completeChildTool',value),finalizeChild:value=>call('finalizeChild',value),joinChild:value=>call('joinChild',value),finalizeRoot:value=>call('finalizeRoot',value),
     cancelChild:value=>call('cancelChild',value),cancelRoot:value=>call('cancelRoot',value),recoverExpired:value=>call('recoverExpired',value),
