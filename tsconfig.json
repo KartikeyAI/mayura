@@ -21,6 +21,7 @@
     { "path": "packages/client" },
     { "path": "packages/server-node" },
     { "path": "packages/observability" },
-    { "path": "packages/code-mode" }
+    { "path": "packages/code-mode" },
+    { "path": "packages/adapter-code-quickjs" }
   ]
 }

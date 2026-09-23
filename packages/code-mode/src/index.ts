@@ -233,6 +233,20 @@ function limits(value: unknown): CodeLimits {
   if ((data['maxToolConcurrency'] as number) > (data['maxToolCalls'] as number)) {
     throw new MayuraError('INVALID_CONFIG', 'maxToolConcurrency cannot exceed maxToolCalls.');
   }
+  const ceilings: Readonly<Record<keyof CodeLimits, number>> = Object.freeze({
+    cpuMillis: 3_600_000,
+    wallTimeMillis: 3_600_000,
+    memoryBytes: 2_147_483_648,
+    scratchBytes: 2_147_483_648,
+    maxInputBytes: 16_777_216,
+    maxOutputBytes: 16_777_216,
+    maxToolInputBytes: 16_777_216,
+    maxToolCalls: 10_000,
+    maxToolConcurrency: 128,
+  });
+  for (const [name, ceiling] of Object.entries(ceilings) as [keyof CodeLimits, number][]) {
+    if ((data[name] as number) > ceiling) throw new MayuraError('INVALID_CONFIG', `limits.${name} exceeds the supported maximum.`);
+  }
   return Object.freeze({
     cpuMillis: data['cpuMillis'] as number,
     wallTimeMillis: data['wallTimeMillis'] as number,

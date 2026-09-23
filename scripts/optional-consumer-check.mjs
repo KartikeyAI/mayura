@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'adapter-code-quickjs'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -22,6 +22,7 @@ const expectedDependencies = {
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
   'code-mode': ['@mayura/core', '@mayura/tools'],
+  'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -69,8 +70,11 @@ function archive(bytes) {
     const field = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
     const name = [field(345, 155), field(0, 100)].filter(Boolean).join('/'); const size = Number.parseInt(field(124, 12).trim(), 8); const type = field(156, 1);
     assert(Number.isSafeInteger(size) && size >= 0 && cursor + 512 + size <= tar.length, 'Invalid archive size.');
-    assert(['', '0', '5'].includes(type) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
-    if (type !== '5') { const path = name.slice(8); assert(!files.has(path), 'Duplicate archive member.'); files.set(path, tar.subarray(cursor + 512, cursor + 512 + size)); }
+    assert(['', '0', '1', '5'].includes(type) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
+    if (type === '1') {
+      const link = field(157, 100); assert(size === 0 && link.startsWith('package/') && !link.includes('\\') && !link.split('/').includes('..'), 'Unsafe archive hard link.');
+      const path = name.slice(8); const target = files.get(link.slice(8)); assert(!files.has(path) && target, 'Archive hard link target is unavailable.'); files.set(path, target);
+    } else if (type !== '5') { const path = name.slice(8); assert(!files.has(path), 'Duplicate archive member.'); files.set(path, tar.subarray(cursor + 512, cursor + 512 + size)); }
     cursor += 512 + Math.ceil(size / 512) * 512;
   }
   return files;
@@ -130,6 +134,23 @@ async function main() {
     packages.set(name, { archive: pathToFileURL(destination).href, manifest });
     reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
+  const quickjsVariant = await realpath(join(workspace, 'packages', 'adapter-code-quickjs', 'node_modules', '@jitl', 'quickjs-wasmfile-release-sync'));
+  const quickjsDirectories = new Map([
+    ['@jitl/quickjs-ffi-types', await realpath(join(dirname(quickjsVariant), 'quickjs-ffi-types'))],
+    ['@jitl/quickjs-wasmfile-release-sync', quickjsVariant],
+    ['quickjs-emscripten-core', await realpath(join(workspace, 'packages', 'adapter-code-quickjs', 'node_modules', 'quickjs-emscripten-core'))],
+  ]);
+  for (const [name, directory] of quickjsDirectories) {
+    const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(original.version, '0.32.0'); assert.equal(original.license, 'MIT');
+    for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(original.scripts?.[script], undefined, `${name} has an unreviewed installation script.`);
+    const packed = JSON.parse((await run([npm, 'pack', '--ignore-scripts', '--pack-destination', tarballs, '--json'], directory)).stdout);
+    assert.equal(packed.length, 1); const destination = join(tarballs, packed[0].filename);
+    const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+    assert.equal(manifest.name, name); assert.equal(manifest.version, original.version); assert.equal(manifest.license, 'MIT');
+    packages.set(name, { archive: pathToFileURL(destination).href, manifest });
+    reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
+  }
   const closure = roots => {
     const result = new Set(); const visit = name => {
       if (result.has(name)) return; result.add(name); const pkg = packages.get(name); assert(pkg, `Unqualified dependency: ${name}`);
@@ -151,6 +172,7 @@ async function main() {
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
     ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
+    ['code-mode-quickjs', ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core', '@mayura/tools'], 'optional-code-mode-quickjs.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -189,6 +211,10 @@ async function main() {
         assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
         assert.equal(execution.sandboxDependencyCount, 0);
       }
+      if (name === 'code-mode-quickjs') {
+        assert.equal(execution.childProcess, true); assert.equal(execution.nodeGlobalsAbsent, true);
+        assert.equal(execution.mediatedToolCall, true); assert.equal(execution.cpuInterrupted, true);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -220,6 +246,7 @@ async function main() {
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
   result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-negative-types');
+  result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

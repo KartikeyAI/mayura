@@ -22,6 +22,10 @@ The gate packs current built packages and installs their actual archives into fr
 
 7. **Driver-free durable budget contracts:** only storage contracts and core are installed. Public/negative declarations cover the optional capability, shared-ceiling snapshots, start-result distinction, known settlement and immutable observations. A codec fixture snapshots commands and rejects forged accounting and accessor input without SQL drivers or any effect executor. This is a custom-adapter data boundary, not an in-memory persistence substitute; paired real-SQL and selected-storage archive fixtures establish durability separately.
 
+8. **Provider-neutral Code Mode:** `@mayura/code-mode` plus core/tools is installed without an interpreter or sandbox package. Strict types reject ambient credentials. The fixture proves no host fallback and routes one nested call through the ordinary broker. Its explicit test adapter is not containment evidence.
+
+9. **QuickJS inner interpreter:** `@mayura/adapter-code-quickjs`, Code Mode, core/tools and the exact three-package QuickJS closure are installed from reviewed local archives. npm packing and installation both disable lifecycle scripts. The real packed child worker executes a brokered tool, exposes no Node globals and interrupts an infinite CPU loop. This proves packaging and the inner interpreter boundary, not an outer OS sandbox.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

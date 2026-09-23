@@ -64,6 +64,8 @@ describe('Code Mode artifact and containment boundary', () => {
     await expect(mode.execute({ ...definition } as never, { value: 1 }, execution('forged'))).resolves.toMatchObject({
       status: 'failed', error: { code: 'INVALID_CONFIG' },
     });
+    expect(() => program({ limits: { ...limits, memoryBytes: 2_147_483_649 } })).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    expect(() => program({ limits: { ...limits, maxToolConcurrency: 129, maxToolCalls: 129 } })).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 
   it('has no host fallback and requires an explicit opt-in for test adapters', async () => {

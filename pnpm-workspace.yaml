@@ -2,3 +2,5 @@ packages:
   - packages/*
 minimumReleaseAge: 1440
 strictDepBuilds: true
+onlyBuiltDependencies:
+  - better-sqlite3
