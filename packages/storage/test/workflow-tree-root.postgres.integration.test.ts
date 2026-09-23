@@ -23,7 +23,8 @@ suite('workflow-tree PostgreSQL root enrollment',()=>{
       const raced=await Promise.all([trees.admitChild(command),reopened.admitChild(command)]);expect(raced.filter(item=>item.created)).toHaveLength(1);expect(new Set(raced.map(item=>item.childId))).toHaveLength(1);const admitted=raced[0]!;
       const retry=await reopened.submit({manifest,policy,resources:{},input:null,idempotencyKey:'root'});expect(retry.created).toBe(false);expect(retry.snapshot.record.version).toBe(2);
       const childRetry=await reopened.admitChild({scope:first.snapshot.record.scope,rootId:first.snapshot.rootId,rootPolicyHash:first.snapshot.policyHash,parentId:first.snapshot.rootId,nodeId:'child',expectedVersion:1,input:null});expect(childRetry.created).toBe(false);expect(childRetry.childId).toBe(admitted.childId);
-      const counts=await pool.query(`SELECT (SELECT COUNT(*) FROM ${prefix}mayura_workflow_tree_budgets)::int AS budgets,(SELECT COUNT(*) FROM ${prefix}mayura_workflow_tree_members)::int AS members`);expect(counts.rows[0]).toEqual({budgets:1,members:2});
+      const prepare={scope:first.snapshot.record.scope,rootId:first.snapshot.rootId,rootPolicyHash:first.snapshot.policyHash,childId:admitted.childId,childPolicyHash:admitted.policyHash,nodeId:'work',expectedVersion:1,input:null};const prepared=await Promise.all([trees.prepareChildTool(prepare),reopened.prepareChildTool(prepare)]);expect(prepared.filter(item=>item.created)).toHaveLength(1);expect(new Set(prepared.map(item=>item.job.jobId))).toHaveLength(1);
+      const counts=await pool.query(`SELECT (SELECT COUNT(*) FROM ${prefix}mayura_workflow_tree_budgets)::int AS budgets,(SELECT COUNT(*) FROM ${prefix}mayura_workflow_tree_members)::int AS members,(SELECT COUNT(*) FROM ${prefix}mayura_workflow_tree_jobs)::int AS jobs`);expect(counts.rows[0]).toEqual({budgets:1,members:2,jobs:1});
     }finally{await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);await pool.end();}
   });
 });

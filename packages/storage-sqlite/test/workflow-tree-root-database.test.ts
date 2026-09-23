@@ -63,4 +63,19 @@ describe('workflow-tree atomic root enrollment',()=>{
     await expect(trees.admitChild({scope:root.record.scope,rootId:root.rootId,rootPolicyHash:root.policyHash,parentId:root.rootId,nodeId:'child',expectedVersion:1,input:null})).rejects.toBeDefined();
     const reopened=await trees.inspect(root.record.scope,root.rootId,root.policyHash);expect(reopened).toMatchObject({record:{version:1},budget:{version:1,accounts:[{id:'root'}]}});expect(database.prepare('SELECT COUNT(*) FROM mayura_aggregates').pluck().get()).toBe(1);database.close();
   });
+
+  it('atomically prepares one child tool with its shared-ledger ticket and scheduler job',async()=>{
+    const database=new Database(':memory:');base(database);const selected=backend(database);const scheduler=new SchedulerDatabase(selected);const trees=new WorkflowTreeDatabase(selected,scheduler);await trees.initialize();
+    const root=(await trees.submit({manifest,policy,resources:{},input:null,idempotencyKey:'root'})).snapshot;const child=await trees.admitChild({scope:root.record.scope,rootId:root.rootId,rootPolicyHash:root.policyHash,parentId:root.rootId,nodeId:'child',expectedVersion:1,input:null});
+    const command={scope:root.record.scope,rootId:root.rootId,rootPolicyHash:root.policyHash,childId:child.childId,childPolicyHash:child.policyHash,nodeId:'work',expectedVersion:1,input:null};
+    const prepared=await trees.prepareChildTool(command);expect(prepared.created).toBe(true);expect(prepared.job).toMatchObject({state:'ready',runId:child.childId,nodeId:'work'});expect(prepared.root).toMatchObject({record:{version:3},budget:{version:3}});expect(prepared.root.budget.accounts.find(account=>account.id===child.accountId)).toMatchObject({reservedMicros:2,heldCalls:1});expect(workflowTreeState(prepared.member)).toMatchObject({budgetVersion:3,reservedMicros:2,steps:{work:{candidateHash:expect.stringMatching(/^[a-f0-9]{64}$/),costReserved:2}}});
+    const retry=await trees.prepareChildTool(command);expect(retry.created).toBe(false);expect(retry.job.jobId).toBe(prepared.job.jobId);await expect(trees.prepareChildTool({...command,input:{changed:true},expectedVersion:2})).rejects.toMatchObject({code:'CONFLICT'});
+    await expect(scheduler.execute('claim',{scope:root.record.scope,workerId:'legacy',limit:1,leaseMs:1_000})).resolves.toEqual([]);database.close();
+  });
+
+  it('rolls a financial hold and scheduler reservation back when job linkage fails',async()=>{
+    const database=new Database(':memory:');base(database);const selected=backend(database);const trees=new WorkflowTreeDatabase(selected,new SchedulerDatabase(selected));await trees.initialize();const root=(await trees.submit({manifest,policy,resources:{},input:null,idempotencyKey:'root'})).snapshot;const child=await trees.admitChild({scope:root.record.scope,rootId:root.rootId,rootPolicyHash:root.policyHash,parentId:root.rootId,nodeId:'child',expectedVersion:1,input:null});
+    database.exec("CREATE TRIGGER reject_tree_job BEFORE INSERT ON mayura_workflow_tree_jobs BEGIN SELECT RAISE(ABORT, 'rejected'); END;");await expect(trees.prepareChildTool({scope:root.record.scope,rootId:root.rootId,rootPolicyHash:root.policyHash,childId:child.childId,childPolicyHash:child.policyHash,nodeId:'work',expectedVersion:1,input:null})).rejects.toBeDefined();
+    const current=await trees.inspect(root.record.scope,root.rootId,root.policyHash);expect(current).toMatchObject({record:{version:2},budget:{version:2,reservations:[]}});expect(database.prepare('SELECT COUNT(*) FROM mayura_scheduler_jobs').pluck().get()).toBe(0);database.close();
+  });
 });
