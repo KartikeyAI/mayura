@@ -142,7 +142,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
       const raw=exactObject(value,['root','member','jobs']);const root=rootSnapshot(raw['root'],command);ownedMember(root,raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);for(const item of array(raw['jobs'],128))job(item,{...command,nodeId:(item as JsonObject)['nodeId']} as JsonObject);return immutable(raw);
     }
     if(method==='cancelRoot'||method==='recoverExpired'){
-      const raw=exactObject(value,['root','members','jobs']);const root=rootSnapshot(raw['root'],command);const members=array(raw['members'],16).map(item=>ownedMember(root,item,command));const ids=new Set(members.map(item=>item.id));if(ids.size!==members.length)unavailable();for(const item of array(raw['jobs'],128)){const stored=job(item,{...command,childId:(item as JsonObject)['runId'],nodeId:(item as JsonObject)['nodeId']} as JsonObject);if(!ids.has(stored.runId))unavailable();}return immutable(raw);
+      const raw=exactObject(value,['root','members','jobs']);const root=rootSnapshot(raw['root'],command);const members=array(raw['members'],16).map(item=>ownedMember(root,item,command));const ids=new Set(members.map(item=>item.id));if(ids.size!==members.length)unavailable();for(const item of array(raw['jobs'],128)){const stored=job(item,{...command,childId:(item as JsonObject)['runId'],nodeId:(item as JsonObject)['nodeId']} as JsonObject);if(stored.runId!==root.rootId&&!ids.has(stored.runId))unavailable();}return immutable(raw);
     }
     unavailable();
   }catch(error){if(error instanceof StorageError&&error.code==='STORAGE_UNAVAILABLE')throw error;return unavailable();}
