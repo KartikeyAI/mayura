@@ -18,6 +18,14 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
     case 'initialize':fields(raw,[]);break;
     case 'submit':{fields(raw,['manifest','policy','resources','input','idempotencyKey']);const manifest=workflowTreeManifest(raw['manifest']);raw['manifest']=manifest as unknown as JsonValue;raw['policy']=workflowTreePolicy(raw['policy']) as unknown as JsonValue;raw['resources']=workflowTreeRootResources(raw['resources'],manifest) as unknown as JsonValue;value(raw,'input');const key=identifier(raw['idempotencyKey'],'Submission key');if(key.length>128)invalid();break;}
     case 'inspect':fields(raw,['scope','rootId','rootPolicyHash']);root(raw);break;
+    case 'requestRootApproval':fields(raw,['scope','rootId','rootPolicyHash','nodeId','expectedVersion','input']);root(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
+    case 'approveRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','expectedVersion','digest','humanId']);root(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);hash(raw['digest']);identifier(raw['humanId'],'Human');break;
+    case 'prepareRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','expectedVersion','input']);root(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
+    case 'claimPreparedRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','workerId','leaseMs']);root(raw);identifier(raw['nodeId'],'Node');identifier(raw['workerId'],'Worker');integer(raw['leaseMs'],1_000,300_000);break;
+    case 'renewClaimedRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','claim','leaseMs']);root(raw);identifier(raw['nodeId'],'Node');claim(raw['claim']);integer(raw['leaseMs'],1_000,300_000);break;
+    case 'startClaimedRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','expectedVersion','claim','input']);root(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);claim(raw['claim']);value(raw,'input');break;
+    case 'recordRootToolReceipt':fields(raw,['scope','rootId','rootPolicyHash','nodeId','fence','evidenceId','receipt']);root(raw);identifier(raw['nodeId'],'Node');integer(raw['fence'],1,128);identifier(raw['evidenceId'],'Evidence');raw['receipt']=receipt(raw['receipt']) as unknown as JsonValue;break;
+    case 'completeRootTool':fields(raw,['scope','rootId','rootPolicyHash','nodeId','claim','commandId','evidenceId','outcome','output']);root(raw);identifier(raw['nodeId'],'Node');claim(raw['claim']);identifier(raw['commandId'],'Command');identifier(raw['evidenceId'],'Evidence');if(!['succeeded','failed','blocked'].includes(raw['outcome'] as string)||(raw['outcome']!=='succeeded'&&raw['output']!==null))invalid();value(raw,'output');break;
     case 'inspectChild':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash']);child(raw);break;
     case 'admitChild':fields(raw,['scope','rootId','rootPolicyHash','parentId','nodeId','expectedVersion','input']);root(raw);hash(raw['parentId']);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
     case 'requestChildApproval':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','expectedVersion','input']);child(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
@@ -70,7 +78,7 @@ function job(value:unknown,command:JsonObject):JobRecord{
   const raw=exactObject(value,['scope','jobId','runId','nodeId','invocationId','definitionHash','candidateHash','intent','resourceKeys','state','version','fence','workerId','dueAtMs','deadlineAtMs','leaseUntilMs','startedAtMs','leaseRevoked','cancelRequested','receipt','output']);
   try{hash(raw['scope']);hash(raw['jobId']);hash(raw['runId']);identifier(raw['nodeId'],'Node');identifier(raw['invocationId'],'Invocation');hash(raw['definitionHash']);hash(raw['candidateHash']);object(raw['intent']);integer(raw['version'],1);integer(raw['fence'],0,128);integer(raw['dueAtMs']);if(raw['deadlineAtMs']!==null)integer(raw['deadlineAtMs']);if(raw['leaseUntilMs']!==null)integer(raw['leaseUntilMs']);if(raw['startedAtMs']!==null)integer(raw['startedAtMs']);if(raw['receipt']!==null){const evidence=exactObject(raw['receipt'],['callId','toolId','execution','disclosure']);identifier(evidence['callId'],'Receipt call');identifier(evidence['toolId'],'Receipt tool');if(!['not_started','succeeded','failed','unknown'].includes(evidence['execution'] as string)||!['withheld','released'].includes(evidence['disclosure'] as string))unavailable();}jsonValue(raw['output'],{maxBytes:65_536});}
   catch{return unavailable();}
-  if(raw['scope']!==command['scope']||raw['runId']!==command['childId']||raw['nodeId']!==command['nodeId']||!['ready','leased','started','succeeded','failed','blocked','cancelled','outcome_unknown'].includes(raw['state'] as string)||!(raw['workerId']===null||typeof raw['workerId']==='string')||typeof raw['leaseRevoked']!=='boolean'||typeof raw['cancelRequested']!=='boolean'||!Array.isArray(raw['resourceKeys'])||raw['resourceKeys'].length>32)unavailable();
+  if(raw['scope']!==command['scope']||raw['runId']!==(command['childId']??command['rootId'])||raw['nodeId']!==command['nodeId']||!['ready','leased','started','succeeded','failed','blocked','cancelled','outcome_unknown'].includes(raw['state'] as string)||!(raw['workerId']===null||typeof raw['workerId']==='string')||typeof raw['leaseRevoked']!=='boolean'||typeof raw['cancelRequested']!=='boolean'||!Array.isArray(raw['resourceKeys'])||raw['resourceKeys'].length>32)unavailable();
   for(const resource of raw['resourceKeys'])try{identifier(resource,'Resource');}catch{return unavailable();}
   return raw as unknown as JobRecord;
 }
@@ -89,6 +97,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
       if(snapshot.manifestHash!==digest('mayura:workflow-tree:v1',command['manifest'])||snapshot.resourceHash!==digest('mayura:workflow-tree-resources:v1',command['resources']))unavailable();return immutable(raw);
     }
     if(method==='inspect'||method==='joinChild'||method==='finalizeRoot')return immutable(rootSnapshot(value,command));
+    if(method==='requestRootApproval'||method==='approveRootTool')return immutable(rootSnapshot(value,command));
     if(method==='inspectChild'||method==='requestChildApproval'||method==='approveChildTool'||method==='finalizeChild')return immutable(memberResult(value,command));
     if(method==='admitChild'){
       const raw=exactObject(value,['root','child','childId','accountId','definitionHash','policyHash','resourceHash','inputHash','created']);boolean(raw['created']);for(const name of ['childId','definitionHash','policyHash','resourceHash','inputHash'])try{hash(raw[name]);}catch{return unavailable();}if(typeof raw['accountId']!=='string')unavailable();const root=rootSnapshot(raw['root'],command);const state=workflowTreeState(root.record);const link=state.steps[command['nodeId'] as string]?.child;if(!link||link.runId!==raw['childId']||link.accountId!==raw['accountId']||link.definitionHash!==raw['definitionHash']||link.policyHash!==raw['policyHash']||link.inputHash!==raw['inputHash'])unavailable();const child=ownedMember(root,raw['child'],command,raw['childId'] as string,raw['policyHash'] as string);if(workflowTreeState(child).accountId!==raw['accountId'])unavailable();return immutable(raw);
@@ -96,20 +105,38 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
     if(method==='prepareChildTool'){
       const raw=exactObject(value,['root','member','job','created']);boolean(raw['created']);const root=rootSnapshot(raw['root'],command);ownedMember(root,raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);job(raw['job'],command);return immutable(raw);
     }
+    if(method==='prepareRootTool'){
+      const raw=exactObject(value,['root','job','created']);boolean(raw['created']);rootSnapshot(raw['root'],command);job(raw['job'],command);return immutable(raw);
+    }
     if(method==='claimPreparedChildTool'){
       if(value===undefined)return undefined;const raw=exactObject(value,['root','member','job','claim']);const root=rootSnapshot(raw['root'],command);ownedMember(root,raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);const storedJob=job(raw['job'],command);claimResult(raw['claim'],storedJob);return immutable(raw);
+    }
+    if(method==='claimPreparedRootTool'){
+      if(value===undefined)return undefined;const raw=exactObject(value,['root','job','claim']);rootSnapshot(raw['root'],command);const storedJob=job(raw['job'],command);claimResult(raw['claim'],storedJob);return immutable(raw);
     }
     if(method==='renewClaimedChildTool'){
       const raw=exactObject(value,['root','member','claim']);rootSnapshot(raw['root'],command);member(raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);const renewed=claimResult(raw['claim']);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(renewed.scope!==original.scope||renewed.jobId!==original.jobId||renewed.workerId!==original.workerId||renewed.fence!==original.fence||renewed.leaseUntilMs<original.leaseUntilMs)unavailable();return immutable(raw);
     }
+    if(method==='renewClaimedRootTool'){
+      const raw=exactObject(value,['root','claim']);rootSnapshot(raw['root'],command);const renewed=claimResult(raw['claim']);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(renewed.scope!==original.scope||renewed.jobId!==original.jobId||renewed.workerId!==original.workerId||renewed.fence!==original.fence||renewed.leaseUntilMs<original.leaseUntilMs)unavailable();return immutable(raw);
+    }
     if(method==='startClaimedChildTool'){
       const raw=exactObject(value,['status','root','member','job']);if(!['started','already_started'].includes(raw['status'] as string))unavailable();rootSnapshot(raw['root'],command);member(raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);const storedJob=job(raw['job'],command);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(storedJob.jobId!==original.jobId||storedJob.fence!==original.fence)unavailable();return immutable(raw);
+    }
+    if(method==='startClaimedRootTool'){
+      const raw=exactObject(value,['status','root','job']);if(!['started','already_started'].includes(raw['status'] as string))unavailable();rootSnapshot(raw['root'],command);const storedJob=job(raw['job'],command);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(storedJob.jobId!==original.jobId||storedJob.fence!==original.fence)unavailable();return immutable(raw);
     }
     if(method==='recordChildToolReceipt'){
       const raw=exactObject(value,['disposition','root','member','job']);if(!['current','late','conflicting'].includes(raw['disposition'] as string))unavailable();rootSnapshot(raw['root'],command);member(raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);const storedJob=job(raw['job'],command);if(storedJob.fence!==command['fence'])unavailable();return immutable(raw);
     }
+    if(method==='recordRootToolReceipt'){
+      const raw=exactObject(value,['disposition','root','job']);if(!['current','late','conflicting'].includes(raw['disposition'] as string))unavailable();rootSnapshot(raw['root'],command);const storedJob=job(raw['job'],command);if(storedJob.fence!==command['fence'])unavailable();return immutable(raw);
+    }
     if(method==='completeChildTool'){
       const raw=exactObject(value,['root','member','job']);rootSnapshot(raw['root'],command);member(raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);const storedJob=job(raw['job'],command);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(storedJob.jobId!==original.jobId||storedJob.fence!==original.fence)unavailable();return immutable(raw);
+    }
+    if(method==='completeRootTool'){
+      const raw=exactObject(value,['root','job']);rootSnapshot(raw['root'],command);const storedJob=job(raw['job'],command);const original=command['claim'] as unknown as ReturnType<typeof claim>;if(storedJob.jobId!==original.jobId||storedJob.fence!==original.fence)unavailable();return immutable(raw);
     }
     if(method==='cancelChild'){
       const raw=exactObject(value,['root','member','jobs']);const root=rootSnapshot(raw['root'],command);ownedMember(root,raw['member'],command,command['childId'] as string,command['childPolicyHash'] as string);for(const item of array(raw['jobs'],128))job(item,{...command,nodeId:(item as JsonObject)['nodeId']} as JsonObject);return immutable(raw);
@@ -125,7 +152,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
 export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:JsonObject)=>Promise<unknown>):WorkflowTreeStore{
   const call=async<T>(method:WorkflowTreeMethod,input:unknown):Promise<T>=>{const command=workflowTreeCommand(method,input);const result=await request(method,command);return workflowTreeResult(method,result,command) as T;};
   return Object.freeze({
-    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),requestChildApproval:value=>call('requestChildApproval',value),approveChildTool:value=>call('approveChildTool',value),
+    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),requestRootApproval:value=>call('requestRootApproval',value),approveRootTool:value=>call('approveRootTool',value),prepareRootTool:value=>call('prepareRootTool',value),claimPreparedRootTool:value=>call('claimPreparedRootTool',value),renewClaimedRootTool:value=>call('renewClaimedRootTool',value),startClaimedRootTool:value=>call('startClaimedRootTool',value),recordRootToolReceipt:value=>call('recordRootToolReceipt',value),completeRootTool:value=>call('completeRootTool',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),requestChildApproval:value=>call('requestChildApproval',value),approveChildTool:value=>call('approveChildTool',value),
     prepareChildTool:value=>call('prepareChildTool',value),claimPreparedChildTool:value=>call('claimPreparedChildTool',value),renewClaimedChildTool:value=>call('renewClaimedChildTool',value),startClaimedChildTool:value=>call('startClaimedChildTool',value),
     recordChildToolReceipt:value=>call('recordChildToolReceipt',value),completeChildTool:value=>call('completeChildTool',value),finalizeChild:value=>call('finalizeChild',value),joinChild:value=>call('joinChild',value),finalizeRoot:value=>call('finalizeRoot',value),
     cancelChild:value=>call('cancelChild',value),cancelRoot:value=>call('cancelRoot',value),recoverExpired:value=>call('recoverExpired',value),

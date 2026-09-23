@@ -50,6 +50,12 @@ export interface WorkflowTreeStartedTool {readonly status:'started'|'already_sta
 export interface WorkflowTreeReceiptResult {readonly disposition:EvidenceDisposition;readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord}
 export interface WorkflowTreeCompletedTool {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord}
 export interface WorkflowTreeMemberResult {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord}
+export interface WorkflowTreeRootPreparedTool {readonly root:WorkflowTreeRootSnapshot;readonly job:JobRecord;readonly created:boolean}
+export interface WorkflowTreeRootClaimedTool {readonly root:WorkflowTreeRootSnapshot;readonly job:JobRecord;readonly claim:Claim}
+export interface WorkflowTreeRootRenewedTool {readonly root:WorkflowTreeRootSnapshot;readonly claim:Claim}
+export interface WorkflowTreeRootStartedTool {readonly status:'started'|'already_started';readonly root:WorkflowTreeRootSnapshot;readonly job:JobRecord}
+export interface WorkflowTreeRootReceiptResult {readonly disposition:EvidenceDisposition;readonly root:WorkflowTreeRootSnapshot;readonly job:JobRecord}
+export interface WorkflowTreeRootCompletedTool {readonly root:WorkflowTreeRootSnapshot;readonly job:JobRecord}
 export interface WorkflowTreeCancellationResult {readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[]}
 export interface WorkflowTreeChildCancellationResult {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly jobs:readonly JobRecord[]}
 export interface WorkflowTreeRecoveryResult {readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[]}
@@ -59,6 +65,14 @@ export interface WorkflowTreeStore {
   initialize():Promise<void>;
   submit(command:WorkflowTreeRootSubmission):Promise<{readonly snapshot:WorkflowTreeRootSnapshot;readonly created:boolean}>;
   inspect(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string}):Promise<WorkflowTreeRootSnapshot|undefined>;
+  requestRootApproval(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeRootSnapshot>;
+  approveRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly digest:string;readonly humanId:string}):Promise<WorkflowTreeRootSnapshot>;
+  prepareRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeRootPreparedTool>;
+  claimPreparedRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly workerId:string;readonly leaseMs:number}):Promise<WorkflowTreeRootClaimedTool|undefined>;
+  renewClaimedRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly claim:Claim;readonly leaseMs:number}):Promise<WorkflowTreeRootRenewedTool>;
+  startClaimedRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly claim:Claim;readonly input:JsonValue}):Promise<WorkflowTreeRootStartedTool>;
+  recordRootToolReceipt(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly fence:number;readonly evidenceId:string;readonly receipt:ExecutionReceipt}):Promise<WorkflowTreeRootReceiptResult>;
+  completeRootTool(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly nodeId:string;readonly claim:Claim;readonly commandId:string;readonly evidenceId:string;readonly outcome:'succeeded'|'failed'|'blocked';readonly output:JsonValue|null}):Promise<WorkflowTreeRootCompletedTool>;
   inspectChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string}):Promise<WorkflowTreeMemberResult>;
   admitChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly parentId:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeChildAdmission>;
   requestChildApproval(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly expectedVersion:number;readonly input:JsonValue}):Promise<WorkflowTreeMemberResult>;

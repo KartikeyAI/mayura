@@ -13,6 +13,7 @@ const store:WorkflowTreeAggregateStore=createSqliteStore({filename:':memory:'});
 const runtime=createWorkflowTreeRuntime({store,scope:{principalId:'consumer',projectId:'types'},permissions:{allow:['tool:increment']},policyVersion:'1',maxCostMicros:1,maxCalls:1,workerId:'worker',verifyHuman:async()=>({id:'reviewer',projectId:'types',canApprove:true})});
 void runtime.submit(tree,{input:1,idempotencyKey:'tree'});
 void runtime.inspectChild('0'.repeat(64),'1'.repeat(64));
+void runtime.approve({id:'0'.repeat(64),nodeId:'rootWork',digest:'2'.repeat(64),credential:{token:'application-owned'}});
 void runtime.approve({id:'0'.repeat(64),childId:'1'.repeat(64),nodeId:'work',digest:'2'.repeat(64),credential:{token:'application-owned'}});
 // @ts-expect-error A workflow tree requires an aggregate store with the explicit optional capability.
 createWorkflowTreeRuntime({store:{initialize:store.initialize,create:store.create,read:store.read,update:store.update,events:store.events,close:store.close},scope:{principalId:'consumer',projectId:'types'},permissions:{allow:[]},policyVersion:'1',maxCostMicros:1,maxCalls:1,workerId:'worker'});
