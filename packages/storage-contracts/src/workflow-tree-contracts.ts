@@ -4,7 +4,7 @@ import type { Scope } from '@mayura/core';
 import type { WorkflowBinding, WorkflowManifest, WorkflowManifestNode, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
 import { workflowManifest, workflowResources } from './workflow-format2.js';
 import type { Claim, EvidenceDisposition, JobRecord } from './scheduler-contracts.js';
-import type { DurableBudgetSnapshot } from './durable-budget-contracts.js';
+import { durableBudgetSnapshot, type DurableBudgetKey, type DurableBudgetSnapshot } from './durable-budget-contracts.js';
 
 export interface WorkflowTreeChildPolicy {
   readonly permissions: readonly string[];
@@ -30,6 +30,16 @@ export interface WorkflowTreePolicyManifest {
 }
 
 export type WorkflowTreeBudgetSnapshot = Omit<DurableBudgetSnapshot,'owner'> & {readonly owner:'workflow-tree-v1'};
+
+/** Decode the scheduler-owned ledger without weakening the standalone host-v1 contract. */
+export function workflowTreeBudgetSnapshot(raw:unknown,context?:DurableBudgetKey):WorkflowTreeBudgetSnapshot{
+  try{
+    const captured=jsonValue(raw,{maxBytes:1_048_576,maxNodes:30_000,maxDepth:24});
+    if(!captured||typeof captured!=='object'||Array.isArray(captured)||captured['owner']!=='workflow-tree-v1')throw new Error();
+    const host=durableBudgetSnapshot({...captured,owner:'host-v1'},context);
+    return freezeJson(jsonValue({...host,owner:'workflow-tree-v1'})) as unknown as WorkflowTreeBudgetSnapshot;
+  }catch{throw new StorageError('STORAGE_UNAVAILABLE','Workflow-tree budget metadata failed integrity validation.');}
+}
 export interface WorkflowTreeRootSubmission {readonly manifest:WorkflowTreeManifest;readonly policy:WorkflowTreePolicyManifest;readonly resources:WorkflowResourcePlan;readonly input:JsonValue;readonly idempotencyKey:string}
 export interface WorkflowTreeRootSnapshot {readonly record:StoredRecord;readonly profile:'scheduled-v3';readonly rootId:string;readonly accountId:'root';readonly manifestHash:string;readonly policyHash:string;readonly resourceHash:string;readonly budget:WorkflowTreeBudgetSnapshot}
 export interface WorkflowTreeChildAdmission {readonly root:WorkflowTreeRootSnapshot;readonly child:StoredRecord;readonly childId:string;readonly accountId:string;readonly definitionHash:string;readonly policyHash:string;readonly resourceHash:string;readonly inputHash:string;readonly created:boolean}
