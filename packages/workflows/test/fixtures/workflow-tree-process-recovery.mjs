@@ -8,10 +8,11 @@ import { createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows
 
 // This fixture intentionally reaches real crash boundaries. It is never a production example.
 const [scenario, action, directory, existingRunId, reviewedDigest] = process.argv.slice(2);
-if (!['approval', 'dispatch', 'receipt', 'child-approval', 'child-dispatch', 'child-receipt'].includes(scenario) || !['start', 'recover'].includes(action) || !directory) throw new Error('Invalid workflow-tree recovery fixture arguments.');
+if (!['approval', 'dispatch', 'receipt', 'root-prepare', 'root-completion', 'root-finalization', 'root-cancellation', 'child-approval', 'child-dispatch', 'child-receipt', 'child-admission', 'child-prepare', 'child-completion', 'child-finalization', 'child-join'].includes(scenario) || !['start', 'recover'].includes(action) || !directory) throw new Error('Invalid workflow-tree recovery fixture arguments.');
 const childScenario=scenario.startsWith('child-');
 const approvalScenario=scenario.endsWith('approval');
 const receiptScenario=scenario.endsWith('receipt');
+const dispatchScenario=scenario.endsWith('dispatch');
 const fixtureDirectory = resolve(directory);
 if (!basename(fixtureDirectory).startsWith('mayura-tree-process-recovery-')) throw new Error('Unexpected fixture directory.');
 const filename = join(fixtureDirectory, 'workflow-tree.sqlite');
@@ -32,14 +33,36 @@ function recordEffect(context) {
 }
 
 const value = z.object({ value: z.number() });
-const store = createSqliteStore({ filename });
+const rawStore = createSqliteStore({ filename });
 let rootRunId;
+const commitMethod = ({
+  'root-prepare': 'prepareRootTool',
+  'root-completion': 'completeRootTool',
+  'root-finalization': 'finalizeRoot',
+  'root-cancellation': 'cancelRoot',
+  'child-admission': 'admitChild',
+  'child-prepare': 'prepareChildTool',
+  'child-completion': 'completeChildTool',
+  'child-finalization': 'finalizeChild',
+  'child-join': 'joinChild',
+})[scenario];
+// The proxy returns from the real adapter first, then withholds the committed
+// response. Killing this fixture therefore models an acknowledgement lost at
+// the exact durable boundary without changing production code.
+const workflowTrees = commitMethod && action === 'start' ? Object.freeze(Object.fromEntries(
+  Object.entries(rawStore.workflowTrees).map(([method, value]) => [method, method === commitMethod ? async (...args) => {
+    const result = await value(...args);
+    await notify({ kind: 'commit_pending', operation: commitMethod, runId: rootRunId });
+    return await new Promise(() => {});
+  } : value]),
+)) : rawStore.workflowTrees;
+const store = commitMethod && action === 'start' ? Object.freeze({ ...rawStore, workflowTrees }) : rawStore;
 const tool = defineTool({
   id: 'tree-process.write', version: '1', description: 'Append once to a test-owned artifact.',
   input: value, output: value, effects: 'write', capabilities: [], costMicros: 1, timeoutMs: 120_000,
   execute: async (input, context) => {
     recordEffect(context);
-    if (!approvalScenario && !receiptScenario) { await notify({ kind: 'dispatched', runId: rootRunId, childId: childScenario ? context.runId : undefined }); return await new Promise(() => {}); }
+    if (dispatchScenario) { await notify({ kind: 'dispatched', runId: rootRunId, childId: childScenario ? context.runId : undefined }); return await new Promise(() => {}); }
     return input;
   },
   ...(receiptScenario ? {
@@ -71,7 +94,7 @@ try {
     phase='submit';
     const run = await runtime.submit(definition, { input: { value: 7 }, idempotencyKey: `tree-process-${scenario}` });
     rootRunId=run.id;
-    const state = await runtime.runUntilSettled(definition, run.id);
+    const state = scenario === 'root-cancellation' ? await runtime.cancel(run.id) : await runtime.runUntilSettled(definition, run.id);
     if (!approvalScenario || state.status !== 'waiting') throw new Error('Unexpected pre-crash state.');
     if(childScenario){const link=state.steps.child?.child;if(!link)throw new Error('Missing admitted child.');const child=await runtime.inspectChild(run.id,link.runId);await notify({kind:'waiting',runId:run.id,childId:link.runId,digest:child.steps.write.approval.digest,snapshot:state});}
     else await notify({ kind: 'waiting', runId: run.id, digest: state.steps.write.approval.digest, snapshot: state });
