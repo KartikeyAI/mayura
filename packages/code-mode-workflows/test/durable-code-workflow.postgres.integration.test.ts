@@ -1,8 +1,11 @@
+import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
-import { type Schema } from '@mayura/core';
+import { Budget, type JsonValue, type Outcome, type Schema } from '@mayura/core';
 import { createCodeMode, defineCodeProgram, defineSandboxAdapter } from '@mayura/code-mode';
+import { defineTool, invokeTool } from '@mayura/tools';
 import { createScheduledWorkflowRuntime } from '@mayura/workflows';
 import { createPostgresStore } from '@mayura/storage';
 import { defineDurableCodeWorkflow } from '../src/index.js';
@@ -52,5 +55,70 @@ suite('PostgreSQL durable Code Mode workflow bridge', () => {
       try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); }
     }
   });
-});
 
+  it.each(['effect', 'receipt', 'completion'] as const)('recovers without replay after a PostgreSQL process kill at the %s boundary', async scenario => {
+    const schema = `mayura_code_phase_crash_${randomUUID().replaceAll('-', '')}`;
+    const child = fork(fileURLToPath(new URL('./fixtures/durable-code-crash.mjs', import.meta.url)),
+      [JSON.stringify({ adapter: 'postgres', schema, scenario })], { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    let exited = false; let runId: string | undefined;
+    const exit = new Promise<void>(resolve => { child.once('exit', () => { exited = true; resolve(); }); });
+    const checkpoint = new Promise<{ readonly effects: number; readonly scenario: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Owned PostgreSQL Code Mode child did not reach its checkpoint.')), 12_000);
+      child.once('error', reject);
+      child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown; scenario?: unknown }) => {
+        if (message.kind === 'run' && typeof message.runId === 'string') runId = message.runId;
+        if (message.kind === 'checkpoint' && Number.isSafeInteger(message.effects) && typeof message.scenario === 'string') {
+          clearTimeout(timer); resolve({ effects: message.effects as number, scenario: message.scenario });
+        }
+        if (message.kind === 'fixture-error') { clearTimeout(timer); reject(new Error('Owned PostgreSQL Code Mode child failed before its checkpoint.')); }
+      });
+      child.once('exit', () => { clearTimeout(timer); reject(new Error('Owned PostgreSQL Code Mode child exited before its checkpoint.')); });
+    });
+    const stores: ReturnType<typeof createPostgresStore>[] = [];
+    const runtimes: ReturnType<typeof createScheduledWorkflowRuntime>[] = [];
+    try {
+      expect(await checkpoint).toEqual({ effects: 1, scenario }); expect(runId).toMatch(/^[a-f0-9]{64}$/u);
+      child.kill('SIGKILL'); await exit; await new Promise(resolve => setTimeout(resolve, 1_050));
+      let replayed = 0;
+      const nested = defineTool({ id: 'external.crash-write', version: '1', description: 'Controlled crash write.', input: valueSchema,
+        output: valueSchema, effects: 'write', capabilities: [], costMicros: 3, execute: input => { replayed++; return input; } });
+      const limits = { cpuMillis: 100, wallTimeMillis: 120_000, memoryBytes: 16 * 1_024 * 1_024, scratchBytes: 1_024,
+        maxInputBytes: 1_024, maxOutputBytes: 1_024, maxToolInputBytes: 1_024, maxToolCalls: 2, maxToolConcurrency: 1 };
+      const program = defineCodeProgram({ id: 'crash.phase', version: '1', intent: 'Durable crash phase.', language: 'javascript',
+        source: 'async (input, tools) => (await tools.call("external.crash-write", input)).output', input: valueSchema, output: valueSchema,
+        inputSchemaId: 'crash.in', outputSchemaId: 'crash.out', tools: [nested], limits });
+      const adapter = defineSandboxAdapter({ id: 'test.crash-phase-recovery-pg', version: '1', qualification: 'test', isAvailable: () => true,
+        execute: async request => { replayed++; return { status: 'succeeded', output: request.input }; } });
+      const budget = new Budget(3, 1);
+      const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: (tool, input, context) => invokeTool(tool, input, {
+        runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
+        permissions: { allow: [`tool:${tool.id}`, 'effect:write'] }, budget,
+      }) as Promise<Outcome<JsonValue>> });
+      const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: valueSchema, output: valueSchema, codeMode: mode,
+        phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
+      const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
+      const store = createPostgresStore({ connectionString: connectionString!, schema }); stores.push(store); await store.initialize();
+      const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'crash-user', projectId: 'project' },
+        permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', 'code:execute', `code:program:${program.manifest.digest}`] },
+        policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'recovery', leaseMs: 1_000,
+        verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
+      runtimes.push(runtime);
+      await runtime.recoverExpired(runId!);
+      const recovered = await runtime.runUntilSettled(definition, runId!);
+      if (scenario === 'completion') {
+        expect(recovered).toMatchObject({ status: 'succeeded', output: { value: 1 },
+          steps: { execute: { receipt: { execution: 'succeeded', disclosure: 'released' } } } });
+      } else {
+        expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
+        if (scenario === 'receipt') expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+      }
+      await runtime.runUntilSettled(definition, runId!); expect(replayed).toBe(0);
+    } finally {
+      if (!exited) { child.kill('SIGKILL'); await exit; }
+      await Promise.all(runtimes.map(runtime => runtime.close())); await Promise.all(stores.map(store => store.close()));
+      if (!/^mayura_code_phase_crash_[a-f0-9]{32}$/.test(schema)) throw new Error('Unexpected fixture schema.');
+      const pool = new Pool({ connectionString: connectionString! });
+      try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); }
+    }
+  }, 25_000);
+});

@@ -121,25 +121,27 @@ describe('durable Code Mode workflow bridge', () => {
     } finally { await runtime.close(); await store.close(); }
   });
 
-  it('does not replay a started write phase after actual process termination', async () => {
+  it.each(['effect', 'receipt', 'completion'] as const)('recovers without replay after actual process termination at the %s boundary', async scenario => {
     const directory = await mkdtemp(join(tmpdir(), 'mayura-code-phase-crash-'));
     const filename = join(directory, 'state.sqlite');
-    const child = fork(fileURLToPath(new URL('./fixtures/durable-code-crash.mjs', import.meta.url)), [JSON.stringify({ filename })],
+    const child = fork(fileURLToPath(new URL('./fixtures/durable-code-crash.mjs', import.meta.url)), [JSON.stringify({ adapter: 'sqlite', filename, scenario })],
       { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     let exited = false; let runId: string | undefined;
     const exit = new Promise<void>(resolve => { child.once('exit', () => { exited = true; resolve(); }); });
-    const checkpoint = new Promise<number>((resolve, reject) => {
+    const checkpoint = new Promise<{ readonly effects: number; readonly scenario: string }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Owned Code Mode child did not reach its checkpoint.')), 8_000);
       child.once('error', reject);
-      child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown }) => {
+      child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown; scenario?: unknown }) => {
         if (message.kind === 'run' && typeof message.runId === 'string') runId = message.runId;
-        if (message.kind === 'checkpoint' && Number.isSafeInteger(message.effects)) { clearTimeout(timer); resolve(message.effects as number); }
+        if (message.kind === 'checkpoint' && Number.isSafeInteger(message.effects) && typeof message.scenario === 'string') {
+          clearTimeout(timer); resolve({ effects: message.effects as number, scenario: message.scenario });
+        }
         if (message.kind === 'fixture-error') { clearTimeout(timer); reject(new Error('Owned Code Mode child failed before its checkpoint.')); }
       });
       child.once('exit', () => { clearTimeout(timer); reject(new Error('Owned Code Mode child exited before its checkpoint.')); });
     });
     try {
-      expect(await checkpoint).toBe(1); expect(runId).toMatch(/^[a-f0-9]{64}$/u);
+      expect(await checkpoint).toEqual({ effects: 1, scenario }); expect(runId).toMatch(/^[a-f0-9]{64}$/u);
       child.kill('SIGKILL'); await exit; await new Promise(resolve => setTimeout(resolve, 1_050));
       let replayed = 0;
       const nested = defineTool({ id: 'external.crash-write', version: '1', description: 'Controlled crash write.', input: schema, output: schema,
@@ -162,12 +164,18 @@ describe('durable Code Mode workflow bridge', () => {
       try {
         await runtime.recoverExpired(runId!);
         const recovered = await runtime.runUntilSettled(definition, runId!);
-        expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
+        if (scenario === 'completion') {
+          expect(recovered).toMatchObject({ status: 'succeeded', output: { value: 1 },
+            steps: { execute: { receipt: { execution: 'succeeded', disclosure: 'released' } } } });
+        } else {
+          expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
+          if (scenario === 'receipt') expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+        }
         await runtime.runUntilSettled(definition, runId!); expect(replayed).toBe(0);
       } finally { await runtime.close(); await store.close(); }
     } finally {
       if (!exited) { child.kill('SIGKILL'); await exit; }
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, 20_000);
 });

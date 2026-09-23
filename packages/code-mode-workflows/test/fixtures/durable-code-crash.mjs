@@ -3,10 +3,13 @@ import { createCodeMode, defineCodeProgram, defineSandboxAdapter } from '@mayura
 import { defineDurableCodeWorkflow } from '@mayura/code-mode-workflows';
 import { defineTool, invokeTool } from '@mayura/tools';
 import { createScheduledWorkflowRuntime } from '@mayura/workflows';
-import { createSqliteStore } from '@mayura/storage';
+import { createPostgresStore, createSqliteStore } from '@mayura/storage';
 
 const config = JSON.parse(process.argv[2] ?? 'null');
-if (!config || typeof config.filename !== 'string' || !config.filename.includes('mayura-code-phase-crash-') || !process.send) throw new Error('Invalid fixture.');
+const sqlite = config?.adapter === 'sqlite' && typeof config.filename === 'string' && config.filename.includes('mayura-code-phase-crash-');
+const postgres = config?.adapter === 'postgres' && typeof config.schema === 'string'
+  && /^mayura_code_phase_crash_[a-f0-9]{32}$/.test(config.schema) && typeof process.env.MAYURA_TEST_POSTGRES_URL === 'string';
+if ((!sqlite && !postgres) || !['effect', 'receipt', 'completion'].includes(config.scenario) || !process.send) throw new Error('Invalid fixture.');
 const notify = message => new Promise((resolve, reject) => process.send(message, error => error ? reject(error) : resolve()));
 const schema = { '~standard': { version: 1, vendor: 'crash-fixture', validate: value => value && typeof value === 'object'
   && typeof value.value === 'number' ? { value } : { issues: [{ message: 'invalid' }] } } };
@@ -19,7 +22,11 @@ const program = defineCodeProgram({ id: 'crash.phase', version: '1', intent: 'Du
   source: 'async (input, tools) => (await tools.call("external.crash-write", input)).output', input: schema, output: schema,
   inputSchemaId: 'crash.in', outputSchemaId: 'crash.out', tools: [nested], limits });
 const adapter = defineSandboxAdapter({ id: 'test.crash-phase', version: '1', qualification: 'test', isAvailable: () => true,
-  execute: async request => { await request.tools.call('external.crash-write', request.input); await notify({ kind: 'checkpoint', effects }); return new Promise(() => {}); } });
+  execute: async request => {
+    const result = await request.tools.call('external.crash-write', request.input);
+    if (config.scenario === 'effect') { await notify({ kind: 'checkpoint', scenario: config.scenario, effects }); return new Promise(() => {}); }
+    return result.status === 'succeeded' ? { status: 'succeeded', output: result.output } : { status: 'failed' };
+  } });
 const budget = new Budget(3, 1);
 const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: (tool, input, context) => invokeTool(tool, input, {
   runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
@@ -28,8 +35,28 @@ const mode = createCodeMode({ adapter, allowTestAdapter: true, invokeTool: (tool
 const definition = defineDurableCodeWorkflow({ id: 'crash.code', version: '1', input: schema, output: schema, codeMode: mode,
   phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
 const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
-const store = createSqliteStore({ filename: config.filename });
-const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'crash-user', projectId: 'project' },
+const store = sqlite ? createSqliteStore({ filename: config.filename })
+  : createPostgresStore({ connectionString: process.env.MAYURA_TEST_POSTGRES_URL, schema: config.schema });
+let checkpointed = false;
+const workflows = Object.freeze({
+  ...store.workflows,
+  async recordReceipt(command) {
+    const result = await store.workflows.recordReceipt(command);
+    if (config.scenario === 'receipt' && !checkpointed) {
+      checkpointed = true; await notify({ kind: 'checkpoint', scenario: config.scenario, effects }); return new Promise(() => {});
+    }
+    return result;
+  },
+  async complete(command) {
+    const result = await store.workflows.complete(command);
+    if (config.scenario === 'completion' && !checkpointed) {
+      checkpointed = true; await notify({ kind: 'checkpoint', scenario: config.scenario, effects }); return new Promise(() => {});
+    }
+    return result;
+  },
+});
+const instrumentedStore = Object.freeze({ ...store, workflows });
+const runtime = createScheduledWorkflowRuntime({ store: instrumentedStore, scope: { principalId: 'crash-user', projectId: 'project' },
   permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', 'code:execute', `code:program:${program.manifest.digest}`] },
   policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'crash-child', leaseMs: 1_000,
   verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
@@ -46,4 +73,3 @@ try {
   await runtime.close().catch(() => {}); await store.close().catch(() => {});
   process.exitCode = 1; if (process.connected) process.disconnect();
 }
-
