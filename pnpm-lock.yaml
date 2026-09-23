@@ -20,6 +20,9 @@ importers:
       '@mayura/code-mode':
         specifier: workspace:*
         version: link:packages/code-mode
+      '@mayura/code-mode-workflows':
+        specifier: workspace:*
+        version: link:packages/code-mode-workflows
       '@mayura/core':
         specifier: workspace:*
         version: link:packages/core
@@ -112,6 +115,25 @@ importers:
       '@mayura/tools':
         specifier: workspace:*
         version: link:../tools
+
+  packages/code-mode-workflows:
+    dependencies:
+      '@mayura/code-mode':
+        specifier: workspace:*
+        version: link:../code-mode
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@mayura/workflows':
+        specifier: workspace:*
+        version: link:../workflows
+    devDependencies:
+      '@mayura/storage':
+        specifier: workspace:*
+        version: link:../storage
 
   packages/consumer-tests:
     dependencies:

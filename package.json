@@ -31,6 +31,7 @@
     "@mayura/storage-sqlite": "workspace:*",
     "@mayura/storage-postgres": "workspace:*",
     "@mayura/code-mode": "workspace:*",
+    "@mayura/code-mode-workflows": "workspace:*",
     "@mayura/adapter-code-quickjs": "workspace:*",
     "@mayura/adapter-code-docker": "workspace:*",
     "@types/node": "24.13.6",

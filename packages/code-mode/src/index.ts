@@ -165,6 +165,7 @@ interface AdapterRegistration {
 
 const programs = new WeakMap<object, ProgramRegistration>();
 const adapters = new WeakMap<object, AdapterRegistration>();
+const modes = new WeakSet<object>();
 const identifier = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
 const digest = /^[a-f0-9]{64}$/;
 const MAX_SOURCE_BYTES = 1_048_576;
@@ -337,6 +338,11 @@ export function defineCodeProgram<I extends Schema, O extends Schema>(options: C
   return definition;
 }
 
+/** Rejects forged or foreign-instance program metadata before durable composition. */
+export function assertCodeProgram(program: CodeProgramDefinition): void {
+  if (!programs.has(program)) throw new MayuraError('INVALID_CONFIG', 'Use defineCodeProgram from this package instance.');
+}
+
 /** Registers trusted adapter callbacks behind an immutable metadata-only handle. */
 export function defineSandboxAdapter(options: SandboxAdapterOptions): SandboxAdapter {
   const data = exactData(options, ['id', 'version', 'qualification', 'isAvailable', 'execute']);
@@ -437,7 +443,7 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
   const invoke = data['invokeTool'] as CreateCodeModeOptions['invokeTool'];
   const executions = new Set<string>();
 
-  return Object.freeze({
+  const mode = Object.freeze({
     async execute<I extends Schema, O extends Schema>(program: CodeProgramDefinition<I, O>, rawInput: InferInput<I>, rawOptions: ExecuteCodeOptions): Promise<Outcome<InferOutput<O>>> {
       const registered = programs.get(program);
       if (!registered) return failure('INVALID_CONFIG') as Outcome<InferOutput<O>>;
@@ -541,6 +547,13 @@ export function createCodeMode(options: CreateCodeModeOptions): CodeMode {
       }
     },
   });
+  modes.add(mode);
+  return mode;
+}
+
+/** Rejects forged executors before they are captured by a durable phase tool. */
+export function assertCodeMode(mode: CodeMode): void {
+  if (!modes.has(mode)) throw new MayuraError('INVALID_CONFIG', 'Use createCodeMode from this package instance.');
 }
 
 /** Runtime assertion for callers that persist or compare program digests. */

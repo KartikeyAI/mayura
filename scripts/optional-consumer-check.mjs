@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'adapter-code-quickjs', 'adapter-code-docker'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -22,6 +22,7 @@ const expectedDependencies = {
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
   'code-mode': ['@mayura/core', '@mayura/tools'],
+  'code-mode-workflows': ['@mayura/code-mode', '@mayura/core', '@mayura/tools', '@mayura/workflows'],
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
   'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode'],
 };
@@ -173,6 +174,7 @@ async function main() {
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
     ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
+    ['code-mode-workflows', ['@mayura/code-mode-workflows'], 'optional-code-mode-workflows.test.ts'],
     ['code-mode-quickjs', ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core', '@mayura/tools'], 'optional-code-mode-quickjs.test.ts'],
     ['code-mode-docker', ['@mayura/adapter-code-docker'], 'optional-code-mode-docker.test.ts'],
   ]) {
@@ -213,6 +215,10 @@ async function main() {
         assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
         assert.equal(execution.sandboxDependencyCount, 0);
       }
+      if (name === 'code-mode-workflows') {
+        assert.equal(execution.mandatoryApproval, true); assert.equal(execution.programDigestPinned, true);
+        assert.equal(execution.driverFreeDefinition, true);
+      }
       if (name === 'code-mode-quickjs') {
         assert.equal(execution.childProcess, true); assert.equal(execution.nodeGlobalsAbsent, true);
         assert.equal(execution.mediatedToolCall, true); assert.equal(execution.cpuInterrupted, true);
@@ -251,6 +257,7 @@ async function main() {
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
   result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-negative-types');
+  result.checks.push('durable-code-mode-definition', 'code-phase-mandatory-approval', 'code-phase-program-digest-pinning');
   result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
