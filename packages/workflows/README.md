@@ -21,4 +21,6 @@ The same graphs entry also exports `createWorkflowGraphDiscovery` with the separ
 
 `createWorkflowGraphCoordinator` adds explicit registered continuation over that capability: 1–32 trusted definitions and their exact resource plans share one driver across finite, sequential candidate pages. Frozen metadata reports distinguish completed pages from interrupted pages carrying the original retry cursor. Unknown definitions are skipped without dispatch. No submit/approve interface, background polling, fleet ownership or pooled cross-run monetary budget is added.
 
+The opt-in `@mayura/workflows/children` entry exports `defineWorkflowTree` and `createWorkflowTreeRuntime`. Its current `scheduled-v3` profile drives one-level required child workflows through a selected adapter's explicit `workflowTrees` capability, including narrowed authority, fenced dispatch, renewal, close/reopen continuation, exact joins, recovery and terminal accounting. Root-local tools, approval-enabled child tools, nested children and automatic background polling are rejected in this preview.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.
