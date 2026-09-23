@@ -20,7 +20,7 @@ node examples/workflow-tree-children.mjs
 Expected result:
 
 ```json
-{"status":"succeeded","output":42,"toolExecutions":1,"rootAccountClosed":true}
+{"status":"succeeded","output":42,"toolExecutions":1,"approvalVerified":true,"rootAccountClosed":true}
 ```
 
 This preview supports one-level required child workflows containing tool/join nodes, including exact approval-enabled tool candidates. It rejects root-local tools, nested children and undeclared authority instead of silently changing profiles. `close` stops local driving; it does not imply durable cancellation. Started effects with uncertain outcomes are quarantined and never automatically replayed. Use verified application scope, genuine definitions and a selected adapter's explicit `workflowTrees` capability.
