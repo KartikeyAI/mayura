@@ -1,6 +1,6 @@
 # Durable required workflow children
 
-Status: **implementation in progress; not qualified**. The format-4 authoring/manifest contract, fixed scheduler-owned budget profile, atomic root enrollment, one-level child/account admission, tool preparation/claim/first-start and truthful known/unknown receipt accounting are implemented locally with paired SQL tests. Scheduler completion/output release, joins, cancellation/recovery and public runtime/adapter facades remain incomplete, so this document does not claim a usable runtime or close a release gate.
+Status: **implementation in progress; not qualified**. The format-4 authoring/manifest contract, fixed scheduler-owned budget profile, atomic root enrollment, one-level child/account admission, tool preparation/claim/first-start, truthful known/unknown receipt accounting, scheduler completion, successful child finalization and required-child join are implemented locally with paired SQL tests. Root finalization, cancellation/recovery and public runtime/adapter facades remain incomplete, so this document does not claim a usable runtime or close a release gate.
 
 ## Smallest complete scope
 

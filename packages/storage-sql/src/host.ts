@@ -6,7 +6,7 @@ export { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from 
 export { ScheduledWorkflowDatabase } from './scheduled-database.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';
-export { WorkflowTreeDatabase, type WorkflowTreeChildAdmission, type WorkflowTreeClaimedTool, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool } from './workflow-tree-database.js';
+export { WorkflowTreeDatabase, type WorkflowTreeChildAdmission, type WorkflowTreeClaimedTool, type WorkflowTreeCompletedTool, type WorkflowTreeMemberResult, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool } from './workflow-tree-database.js';
 export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js';
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';
 export { executionWaitFacade } from './execution-wait-validation.js';
