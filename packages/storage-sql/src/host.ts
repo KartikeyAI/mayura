@@ -5,7 +5,8 @@
 export { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
 export { ScheduledWorkflowDatabase } from './scheduled-database.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
-export { DurableBudgetDatabase, WorkflowTreeBudgetDatabase } from './durable-budget-database.js';
+export { DurableBudgetDatabase } from './durable-budget-database.js';
+export { WorkflowTreeDatabase, type WorkflowTreeChildAdmission, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission } from './workflow-tree-database.js';
 export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js';
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';
 export { executionWaitFacade } from './execution-wait-validation.js';

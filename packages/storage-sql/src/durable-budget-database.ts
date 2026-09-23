@@ -67,7 +67,7 @@ export class DurableBudgetDatabase {
   }
   private async lockIdentity(tx: SchedulerSession, key: DurableBudgetKey): Promise<void> {
     if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[
-      JSON.stringify(['mayura:durable-budget-root:v1',this.backend.prefix,key.scope,key.id]),
+      JSON.stringify(['mayura:durable-budget-root:v1',this.budgetProfile().owner,this.backend.prefix,key.scope,key.id]),
     ]);
   }
   private event(row: EventRow, key: DurableBudgetKey): StoredEvent {

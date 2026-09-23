@@ -1,5 +1,6 @@
 import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError } from './contracts.js';
+import type { Scope } from '@mayura/core';
 import type { WorkflowBinding, WorkflowManifest, WorkflowManifestNode, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
 import { workflowManifest, workflowResources } from './workflow-format2.js';
 
@@ -19,6 +20,11 @@ export type WorkflowTreeManifestNode = WorkflowManifestNode | WorkflowTreeChildM
 export interface WorkflowTreeManifest {
   readonly format: 4; readonly id: string; readonly version: string;
   readonly graph: readonly WorkflowTreeManifestNode[]; readonly result: WorkflowBinding;
+}
+export interface WorkflowTreePolicyManifest {
+  readonly scope: Scope; readonly permissions: readonly string[]; readonly policyVersion: string;
+  readonly maxCostMicros: number; readonly maxCalls: number;
+  readonly maxOutputBytes: number; readonly approvalTtlMs: number;
 }
 
 const forbidden = new Set(['constructor','prototype','__proto__']);
@@ -76,5 +82,31 @@ export function workflowTreeManifest(value: unknown): WorkflowTreeManifest {
     if (children > 16 || totalNodes > 256 || totalTools > 128) invalid();
     workflowManifest({ id:copy['id'],version:copy['version'],graph:projection,result:copy['result'] });
     const result = freezeJson(copy) as unknown as WorkflowTreeManifest; owned.add(result); return result;
+  } catch { return invalid(); }
+}
+
+/** Format-4 root authority adds an explicit shared call ceiling without widening legacy policy hashes. */
+export function workflowTreePolicy(value: unknown): WorkflowTreePolicyManifest {
+  try {
+    const copy = object(jsonValue(value,{maxBytes:1_048_576}));
+    fields(copy,['scope','permissions','policyVersion','maxCostMicros','maxCalls','maxOutputBytes','approvalTtlMs']);
+    const scope = object(copy['scope']); fields(scope,['principalId','projectId']); text(scope['principalId'],128); text(scope['projectId'],128);
+    text(copy['policyVersion'],128); integer(copy['maxCostMicros']); integer(copy['maxCalls'],1,128);
+    integer(copy['maxOutputBytes'],1,65_536); integer(copy['approvalTtlMs'],1);
+    const permissions = list(copy['permissions'],4_096).map(grant => text(grant,256));
+    if (new Set(permissions).size !== permissions.length) invalid(); permissions.sort(); copy['permissions'] = permissions;
+    return freezeJson(copy) as unknown as WorkflowTreePolicyManifest;
+  } catch { return invalid(); }
+}
+
+/** Root resources apply only to root tool nodes; child plans retain their own pinned resources. */
+export function workflowTreeRootResources(value: unknown, definition: WorkflowTreeManifest): WorkflowResourcePlan {
+  try {
+    const manifest = workflowTreeManifest(definition);
+    const projection: WorkflowManifest = {id:manifest.id,version:manifest.version,
+      graph:manifest.graph.map(node => node.kind === 'child'
+        ? {kind:'join',id:node.id,dependsOn:node.dependsOn}
+        : node),result:manifest.result};
+    return workflowResources(value,projection);
   } catch { return invalid(); }
 }
