@@ -1,6 +1,6 @@
 # Workflow-tree fleet boundary
 
-Status: **implementation in progress; not qualified**. Strict discovery contracts/facades, selected SQLite/PostgreSQL owner scans, a public metadata-only discovery facade and a finite registered-definition coordinator are implemented. Real database tests exclude child/terminal owners, preserve cursor progress, resume registered roots, skip unknown definitions, retain the original page boundary after an interruption and fence competing PostgreSQL coordinators to one dispatch. A real SQLite process kill between observation and continuation resumes once without replay. An isolated packed SQLite consumer compiles the APIs and coordinates a reopened approval wait using installed archives only. Populated query-plan evidence and production fleet qualification remain.
+Status: **implementation in progress; not qualified**. Strict discovery contracts/facades, selected SQLite/PostgreSQL owner scans, a public metadata-only discovery facade and a finite registered-definition coordinator are implemented. Real database tests exclude child/terminal owners, preserve cursor progress, resume registered roots, skip unknown definitions, retain the original page boundary after an interruption and fence competing PostgreSQL coordinators to one dispatch. A real SQLite process kill between observation and continuation resumes once without replay. Populated genuine format-4 histories use the configured owner index in actual unforced SQLite and PostgreSQL plans. Close during discovery aborts the local page without closing caller storage; close during dispatch waits for the actual handler while withholding its late output. An isolated packed SQLite consumer compiles the APIs and coordinates a reopened approval wait using installed archives only. Background service policy, production load/soak and fleet qualification remain.
 
 ## Objective
 
@@ -32,7 +32,7 @@ Allow multiple trusted Mayura workers to discover and continue nonterminal forma
 ## Qualification required
 
 - Strict command/response codecs, hostile custom adapters and wrong-context cursor rejection.
-- SQLite/PostgreSQL pages containing root, child and terminal owners; exact binary ordering; close/reopen; populated query-plan evidence; incompatible-index preservation.
-- Competing coordinators, unknown definitions, approval waits, partial-page interruption/retry, close during discovery/dispatch and actual process termination between candidate observation and continuation. The implemented suite covers all except the close-during-discovery/dispatch timing matrix.
+- SQLite/PostgreSQL pages containing root, child and terminal owners; exact binary ordering; close/reopen; populated query-plan evidence; incompatible-index preservation. All except a tree-specific incompatible-index fixture are implemented; the shared index validator already has hostile graph-profile coverage.
+- Competing coordinators, unknown definitions, approval waits, partial-page interruption/retry, close during discovery/dispatch and actual process termination between candidate observation and continuation. The implemented correctness suite covers this matrix; production load and repeated-fault qualification remain.
 - Packed driver-free contract/facade consumer plus selected-adapter runtime consumer.
 - The complete unchanged regression suite. This document closes no release gate until all evidence is recorded.
