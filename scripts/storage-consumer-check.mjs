@@ -223,6 +223,7 @@ async function main() {
       }
     }
     assert.equal(execution.sqlite.packedWorkflowTree,profile==='tree-sqlite'?true:profile==='postgres'?undefined:'not-selected');
+    assert.equal(execution.sqlite.packedWorkflowTreeApproval,profile==='tree-sqlite'?true:profile==='postgres'?undefined:'not-selected');
     let nativeLoads = [];
     if (profile !== 'postgres') {
       nativeLoads = (await readFile(join(application, 'native-loads.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
@@ -241,7 +242,7 @@ async function main() {
       'unchanged-third-party-manifests-licenses-prebuilds', 'self-contained-source-maps', 'no-reducer-copy-in-compatibility', 'strict-negative-public-types-without-driver-typings',
       'private-exports-denied', 'no-ancestor-module-or-type-fallback', 'empty-fixture-pgpass', 'sqlite-worker-native-load', 'aggregate-cas-events', 'scheduler-receipt-completion',
       'scheduled-workflow-completion-wait', 'format3-graph-wait-reopen', 'finite-graph-discovery-reopen', 'terminal-owner-cursor-progress', 'durable-budget-close-reopen', 'budget-unknown-hold-and-overrun',
-      'packed-workflow-tree-close-reopen', 'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
+      'packed-workflow-tree-close-reopen', 'packed-workflow-tree-approval', 'profile-isolation', 'selected-and-compatibility-reopen', 'explicit-postgres-pass-or-skip'] };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
