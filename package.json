@@ -14,7 +14,8 @@
     "test:consumer:optional": "node scripts/optional-consumer-check.mjs",
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
-    "example": "node examples/first-agent.mjs"
+    "example": "node examples/first-agent.mjs",
+    "code-sandbox:image": "node scripts/code-sandbox-image.mjs"
   },
   "devDependencies": {
     "@mayura/sdk": "workspace:*",
@@ -31,6 +32,7 @@
     "@mayura/storage-postgres": "workspace:*",
     "@mayura/code-mode": "workspace:*",
     "@mayura/adapter-code-quickjs": "workspace:*",
+    "@mayura/adapter-code-docker": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",

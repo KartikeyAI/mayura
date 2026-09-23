@@ -1,8 +1,31 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineSandboxAdapter, type CodeToolOutcome, type SandboxAdapter, type SandboxExecutionRequest, type SandboxExecutionResult } from '@mayura/code-mode';
+
+/** Minimal transport contract so outer adapters do not expose Node types to consumers. */
+export interface QuickJsChildProcess {
+  readonly stdin: { readonly destroyed: boolean; write(value: string): boolean; destroy(): void };
+  readonly stdout: { setEncoding(value: 'utf8'): void; on(event: 'data', listener: (chunk: string) => void): unknown; destroy(): void };
+  readonly stderr: { on(event: 'data', listener: (chunk: Uint8Array) => void): unknown; destroy(): void };
+  readonly exitCode: number | null;
+  readonly pid?: number;
+  once(event: 'error' | 'exit', listener: () => void): unknown;
+  kill(signal: 'SIGKILL'): boolean;
+}
+
+export interface QuickJsWorkerProcess {
+  readonly child: QuickJsChildProcess;
+  terminate(): void;
+}
+
+export interface QuickJsProtocolAdapterOptions {
+  readonly id: string;
+  readonly version: string;
+  readonly isAvailable?: () => boolean | Promise<boolean>;
+  readonly launch: (request: SandboxExecutionRequest) => QuickJsWorkerProcess;
+}
 
 interface ToolMessage { readonly v: 1; readonly type: 'tool'; readonly requestId: number; readonly toolId: string; readonly input: unknown }
 interface ResultMessage { readonly v: 1; readonly type: 'result'; readonly status: 'succeeded' | 'failed'; readonly output?: unknown }
@@ -30,7 +53,7 @@ function parseMessage(line: string): ToolMessage | ResultMessage | undefined {
   return undefined;
 }
 
-function write(child: ChildProcessWithoutNullStreams, value: unknown): boolean {
+function write(child: QuickJsChildProcess, value: unknown): boolean {
   try {
     const line = `${JSON.stringify(value)}\n`;
     if (Buffer.byteLength(line) > MAX_PROTOCOL_BYTES || child.stdin.destroyed) return false;
@@ -39,7 +62,7 @@ function write(child: ChildProcessWithoutNullStreams, value: unknown): boolean {
   } catch { return false; }
 }
 
-function terminate(child: ChildProcessWithoutNullStreams): void {
+function terminate(child: QuickJsChildProcess): void {
   child.stdin.destroy();
   child.stdout.destroy();
   child.stderr.destroy();
@@ -58,7 +81,7 @@ function terminate(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-function run(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> {
+function run(request: SandboxExecutionRequest, launch: QuickJsProtocolAdapterOptions['launch']): Promise<SandboxExecutionResult> {
   if (request.manifest.language !== 'javascript' || request.manifest.approvedImports.length !== 0) {
     return Promise.resolve(Object.freeze({ status: 'failed' }));
   }
@@ -67,17 +90,13 @@ function run(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> 
     let stdout = '';
     let stderrBytes = 0;
     const requestIds = new Set<number>();
-    const child = spawn(process.execPath, [workerPath], {
-      cwd: fileURLToPath(new URL('.', import.meta.url)),
-      env: Object.freeze({}),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    const worker = launch(request);
+    const child = worker.child;
     const finish = (result: SandboxExecutionResult): void => {
       if (settled) return;
       settled = true;
       request.signal.removeEventListener('abort', abort);
-      terminate(child);
+      worker.terminate();
       resolve(Object.freeze(result));
     };
     const abort = (): void => finish({ status: 'failed' });
@@ -85,7 +104,7 @@ function run(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> 
     if (request.signal.aborted) { abort(); return; }
     child.once('error', () => finish({ status: 'failed' }));
     child.once('exit', () => finish({ status: 'failed' }));
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr.on('data', (chunk: Uint8Array) => {
       stderrBytes += chunk.byteLength;
       if (stderrBytes > 64 * 1_024) finish({ status: 'failed' });
     });
@@ -119,16 +138,37 @@ function run(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> 
   });
 }
 
+/** Trusted transport seam used by separately packaged outer-sandbox adapters. */
+export function createQuickJsProtocolAdapter(options: QuickJsProtocolAdapterOptions): SandboxAdapter {
+  if (!options || typeof options.id !== 'string' || typeof options.version !== 'string' || typeof options.launch !== 'function'
+    || (options.isAvailable !== undefined && typeof options.isAvailable !== 'function')) {
+    throw new TypeError('QuickJS protocol adapter configuration is invalid.');
+  }
+  return defineSandboxAdapter({
+    id: options.id,
+    version: options.version,
+    qualification: 'test',
+    isAvailable: options.isAvailable ?? (() => true),
+    execute: request => run(request, options.launch),
+  });
+}
+
 /**
  * Creates the disposable QuickJS/WASM inner-interpreter adapter.
  * It is intentionally unqualified for hostile production code until wrapped by a qualified outer sandbox.
  */
 export function createQuickJsSandboxAdapter(): SandboxAdapter {
-  return defineSandboxAdapter({
+  return createQuickJsProtocolAdapter({
     id: 'mayura.quickjs-child',
     version: '0.1.0',
-    qualification: 'test',
-    isAvailable: () => true,
-    execute: run,
+    launch: () => {
+      const child = spawn(process.execPath, [workerPath], {
+        cwd: fileURLToPath(new URL('.', import.meta.url)),
+        env: Object.freeze({}),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      }) as unknown as QuickJsChildProcess;
+      return Object.freeze({ child, terminate: () => terminate(child) });
+    },
   });
 }

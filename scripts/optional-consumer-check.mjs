@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'adapter-code-quickjs'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'adapter-code-quickjs', 'adapter-code-docker'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -23,6 +23,7 @@ const expectedDependencies = {
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
   'code-mode': ['@mayura/core', '@mayura/tools'],
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
+  'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -87,7 +88,7 @@ function inspectMayura(shortName, files) {
   for (const version of Object.values(manifest.dependencies ?? {})) assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into archive.');
   let maps = 0;
   for (const [path, bytes] of files) {
-    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
+    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
     assert(!/\.(?:test|spec)\.ts$/.test(path) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
     if (!path.startsWith('dist/') || !/\.(?:js|d\.ts)$/.test(path)) continue;
     const directives = [...bytes.toString('utf8').matchAll(/^\/\/# sourceMappingURL=([^\r\n]+)$/gm)];
@@ -173,6 +174,7 @@ async function main() {
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
     ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
     ['code-mode-quickjs', ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core', '@mayura/tools'], 'optional-code-mode-quickjs.test.ts'],
+    ['code-mode-docker', ['@mayura/adapter-code-docker'], 'optional-code-mode-docker.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -215,6 +217,9 @@ async function main() {
         assert.equal(execution.childProcess, true); assert.equal(execution.nodeGlobalsAbsent, true);
         assert.equal(execution.mediatedToolCall, true); assert.equal(execution.cpuInterrupted, true);
       }
+      if (name === 'code-mode-docker') {
+        assert.equal(execution.immutableImageRequired, true); assert.equal(execution.noDockerDependency, true);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -247,6 +252,7 @@ async function main() {
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
   result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-negative-types');
   result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
+  result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
