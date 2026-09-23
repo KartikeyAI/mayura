@@ -20,6 +20,8 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
     case 'inspect':fields(raw,['scope','rootId','rootPolicyHash']);root(raw);break;
     case 'inspectChild':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash']);child(raw);break;
     case 'admitChild':fields(raw,['scope','rootId','rootPolicyHash','parentId','nodeId','expectedVersion','input']);root(raw);hash(raw['parentId']);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
+    case 'requestChildApproval':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','expectedVersion','input']);child(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
+    case 'approveChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','expectedVersion','digest','humanId']);child(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);hash(raw['digest']);identifier(raw['humanId'],'Human');break;
     case 'prepareChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','expectedVersion','input']);child(raw);identifier(raw['nodeId'],'Node');integer(raw['expectedVersion'],1);value(raw,'input');break;
     case 'claimPreparedChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','workerId','leaseMs']);child(raw);identifier(raw['nodeId'],'Node');identifier(raw['workerId'],'Worker');integer(raw['leaseMs'],1_000,300_000);break;
     case 'renewClaimedChildTool':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','nodeId','claim','leaseMs']);child(raw);identifier(raw['nodeId'],'Node');claim(raw['claim']);integer(raw['leaseMs'],1_000,300_000);break;
@@ -87,7 +89,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
       if(snapshot.manifestHash!==digest('mayura:workflow-tree:v1',command['manifest'])||snapshot.resourceHash!==digest('mayura:workflow-tree-resources:v1',command['resources']))unavailable();return immutable(raw);
     }
     if(method==='inspect'||method==='joinChild'||method==='finalizeRoot')return immutable(rootSnapshot(value,command));
-    if(method==='inspectChild'||method==='finalizeChild')return immutable(memberResult(value,command));
+    if(method==='inspectChild'||method==='requestChildApproval'||method==='approveChildTool'||method==='finalizeChild')return immutable(memberResult(value,command));
     if(method==='admitChild'){
       const raw=exactObject(value,['root','child','childId','accountId','definitionHash','policyHash','resourceHash','inputHash','created']);boolean(raw['created']);for(const name of ['childId','definitionHash','policyHash','resourceHash','inputHash'])try{hash(raw[name]);}catch{return unavailable();}if(typeof raw['accountId']!=='string')unavailable();const root=rootSnapshot(raw['root'],command);const state=workflowTreeState(root.record);const link=state.steps[command['nodeId'] as string]?.child;if(!link||link.runId!==raw['childId']||link.accountId!==raw['accountId']||link.definitionHash!==raw['definitionHash']||link.policyHash!==raw['policyHash']||link.inputHash!==raw['inputHash'])unavailable();const child=ownedMember(root,raw['child'],command,raw['childId'] as string,raw['policyHash'] as string);if(workflowTreeState(child).accountId!==raw['accountId'])unavailable();return immutable(raw);
     }
@@ -123,7 +125,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
 export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:JsonObject)=>Promise<unknown>):WorkflowTreeStore{
   const call=async<T>(method:WorkflowTreeMethod,input:unknown):Promise<T>=>{const command=workflowTreeCommand(method,input);const result=await request(method,command);return workflowTreeResult(method,result,command) as T;};
   return Object.freeze({
-    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),
+    initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),requestChildApproval:value=>call('requestChildApproval',value),approveChildTool:value=>call('approveChildTool',value),
     prepareChildTool:value=>call('prepareChildTool',value),claimPreparedChildTool:value=>call('claimPreparedChildTool',value),renewClaimedChildTool:value=>call('renewClaimedChildTool',value),startClaimedChildTool:value=>call('startClaimedChildTool',value),
     recordChildToolReceipt:value=>call('recordChildToolReceipt',value),completeChildTool:value=>call('completeChildTool',value),finalizeChild:value=>call('finalizeChild',value),joinChild:value=>call('joinChild',value),finalizeRoot:value=>call('finalizeRoot',value),
     cancelChild:value=>call('cancelChild',value),cancelRoot:value=>call('cancelRoot',value),recoverExpired:value=>call('recoverExpired',value),
