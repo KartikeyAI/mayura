@@ -3,7 +3,7 @@ import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import {
   StorageError, assertWorkflowTreeLeafState, assertWorkflowTreeRootState, initialWorkflowTreeLeafState, initialWorkflowTreeRootState, workflowHashMaterial,
   workflowManifest, workflowResources, workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources, workflowTreeState,
-  type JobRecord, type StoredEventInput, type StoredRecord, type WorkflowManifest, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
+  type Claim, type JobRecord, type StoredEventInput, type StoredRecord, type WorkflowManifest, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
 } from '@mayura/storage-contracts';
 import {
   aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql, storageClock, storedInteger, writeAggregate,
@@ -15,6 +15,7 @@ import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from 
 
 interface OwnerRow { scope:string;aggregate_id:string;profile:number|string;aggregate_version:number|string;definition_hash:string;policy_hash:string;resource_hash:string;data:string }
 interface MemberRow { scope:string;root_id:string;aggregate_id:string;parent_id:string|null;node_id:string|null;account_id:string;definition_hash:string;policy_hash:string;resource_hash:string }
+interface TreeJobRow { scope:string;root_id:string;aggregate_id:string;node_id:string;job_id:string;account_id:string;reservation_id:string;cost_micros:number|string }
 interface RootOwner { format:4;rootId:string;manifest:WorkflowTreeManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan }
 interface ChildOwner { format:4;rootId:string;parentId:string;nodeId:string;accountId:string;manifest:WorkflowManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan;inputHash:string }
 export interface WorkflowTreeRootSubmission {
@@ -30,6 +31,7 @@ export interface WorkflowTreeChildAdmission {
   readonly definitionHash:string;readonly policyHash:string;readonly resourceHash:string;readonly inputHash:string;readonly created:boolean;
 }
 export interface WorkflowTreePreparedTool { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly created:boolean }
+export interface WorkflowTreeClaimedTool { readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly job:JobRecord;readonly claim:Claim }
 function digest(domain:string,value:unknown):string{return createHash('sha256').update(workflowHashMaterial(domain,value)).digest('hex');}
 function same(left:unknown,right:unknown):boolean{return workflowHashMaterial('compare',left)===workflowHashMaterial('compare',right);}
 function failed():never{throw new StorageError('STORAGE_UNAVAILABLE','Stored workflow tree failed integrity validation.');}
@@ -182,6 +184,20 @@ export class WorkflowTreeDatabase {
       const childRow=await loadAggregate(tx,this.backend,scope,childId);if(!childRow)failed();const updatedChild=await writeAggregate(tx,this.backend,childRow,childState as unknown as JsonObject,[...events,{type:'step.prepared',data:{nodeId}}],await storageClock(tx,this.backend));await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ? WHERE scope = ? AND aggregate_id = ?`,[updatedChild.version,scope,childId]);
       const rootState=workflowTreeState(root.record);const mutableRoot=structuredClone(rootState);mutableRoot.budgetVersion=budget.version;const rootRow=await loadAggregate(tx,this.backend,scope,rootId);if(!rootRow)failed();const updatedRoot=await writeAggregate(tx,this.backend,rootRow,mutableRoot as unknown as JsonObject,[{type:'workflow.budget_updated',data:{memberId:childId,nodeId}}],await storageClock(tx,this.backend));await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ? WHERE scope = ? AND aggregate_id = ?`,[updatedRoot.version,scope,rootId]);
       const current=await this.locked(tx,scope,rootId,raw.rootPolicyHash);if(!current)failed();return{root:current,member:aggregateRecord(updatedChild),job,created:true};
+    });
+  }
+  async claimPreparedChildTool(raw:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly nodeId:string;readonly workerId:string;readonly leaseMs:number}):Promise<WorkflowTreeClaimedTool|undefined>{
+    if(!this.initialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree storage first.');
+    const scope=identifier(raw.scope,'Scope');const rootId=identifier(raw.rootId,'Root');const childId=identifier(raw.childId,'Child');const nodeId=identifier(raw.nodeId,'Node');const workerId=identifier(raw.workerId,'Worker');
+    if(![rootId,childId,raw.rootPolicyHash,raw.childPolicyHash].every(value=>/^[a-f0-9]{64}$/.test(value))||!Number.isSafeInteger(raw.leaseMs)||raw.leaseMs<1_000||raw.leaseMs>300_000)throw new StorageError('INVALID_INPUT','Child claim requires exact bounded identities and lease.');
+    return this.backend.transaction(async tx=>{
+      const root=await this.locked(tx,scope,rootId,raw.rootPolicyHash);if(!root)throw new StorageError('NOT_FOUND','Workflow-tree root was not found.');
+      const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?${lockSql(this.backend)}`,[scope,childId]))[0];const ownerRow=(await tx.query<OwnerRow>(`SELECT * FROM ${this.owners()} WHERE scope = ? AND aggregate_id = ?`,[scope,childId]))[0];if(!member||!member.parent_id||!member.node_id||member.root_id!==rootId||member.policy_hash!==raw.childPolicyHash||!ownerRow)conflict();
+      let owner:ChildOwner;try{owner=JSON.parse(ownerRow.data) as ChildOwner;}catch{return failed();}
+      const child=await this.childRecord(tx,scope,rootId,member.parent_id,member.node_id,childId,member.account_id,member.definition_hash,member.policy_hash,member.resource_hash,owner.inputHash,root.budget);const state=workflowTreeState(child);const step=state.steps[nodeId];if(!step||step.kind!=='tool'||step.candidateHash===null)conflict();
+      const link=(await tx.query<TreeJobRow>(`SELECT * FROM ${this.backend.prefix}mayura_workflow_tree_jobs WHERE scope = ? AND aggregate_id = ? AND node_id = ?${lockSql(this.backend)}`,[scope,childId,nodeId]))[0];if(!link||link.root_id!==rootId||link.account_id!==member.account_id)failed();
+      const events:StoredEventInput[]=[];const claims=await this.scheduler.inSession(tx,childId,events,link.job_id).execute('claim',{scope,workerId,limit:1,leaseMs:raw.leaseMs}) as {job:JobRecord;claim:Claim}[];const claimed=claims[0];if(!claimed)return undefined;
+      const row=await loadAggregate(tx,this.backend,scope,childId);if(!row)failed();const updated=await writeAggregate(tx,this.backend,row,state as unknown as JsonObject,events,await storageClock(tx,this.backend));await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ? WHERE scope = ? AND aggregate_id = ?`,[updated.version,scope,childId]);return{root,member:aggregateRecord(updated),job:claimed.job,claim:claimed.claim};
     });
   }
 }
