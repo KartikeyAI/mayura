@@ -8,9 +8,10 @@ import { createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows
 
 // This fixture intentionally reaches real crash boundaries. It is never a production example.
 const [scenario, action, directory, existingRunId, reviewedDigest] = process.argv.slice(2);
-if (!['approval', 'dispatch', 'child-approval', 'child-dispatch'].includes(scenario) || !['start', 'recover'].includes(action) || !directory) throw new Error('Invalid workflow-tree recovery fixture arguments.');
+if (!['approval', 'dispatch', 'receipt', 'child-approval', 'child-dispatch', 'child-receipt'].includes(scenario) || !['start', 'recover'].includes(action) || !directory) throw new Error('Invalid workflow-tree recovery fixture arguments.');
 const childScenario=scenario.startsWith('child-');
 const approvalScenario=scenario.endsWith('approval');
+const receiptScenario=scenario.endsWith('receipt');
 const fixtureDirectory = resolve(directory);
 if (!basename(fixtureDirectory).startsWith('mayura-tree-process-recovery-')) throw new Error('Unexpected fixture directory.');
 const filename = join(fixtureDirectory, 'workflow-tree.sqlite');
@@ -38,9 +39,16 @@ const tool = defineTool({
   input: value, output: value, effects: 'write', capabilities: [], costMicros: 1, timeoutMs: 120_000,
   execute: async (input, context) => {
     recordEffect(context);
-    if (!approvalScenario) { await notify({ kind: 'dispatched', runId: rootRunId, childId: childScenario ? context.runId : undefined }); return await new Promise(() => {}); }
+    if (!approvalScenario && !receiptScenario) { await notify({ kind: 'dispatched', runId: rootRunId, childId: childScenario ? context.runId : undefined }); return await new Promise(() => {}); }
     return input;
   },
+  ...(receiptScenario ? {
+    guards: { output: [{ id: 'pause-after-receipt', check: async (_output, context) => {
+      // The broker has committed the durable receipt before output guards run.
+      await notify({ kind: 'receipt_pending', runId: rootRunId, childId: childScenario ? context.runId : undefined });
+      return await new Promise(() => {});
+    } }] },
+  } : {}),
 });
 const leaf=defineWorkflow({id:`tree-process.leaf.${scenario}`,version:'1',input:value,output:value,nodes:[{kind:'tool',id:'write',tool,input:{kind:'input',path:[]},approval:approvalScenario}],result:{kind:'step',stepId:'write',path:[]}});
 const definition = childScenario ? defineWorkflowTree({

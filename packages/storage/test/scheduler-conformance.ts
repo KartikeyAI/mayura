@@ -149,9 +149,11 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
     });
 
     it('keeps due jobs dormant and cancels expired ready work using the storage clock', async () => {
-      await reserve({ delayMs: 50, deadlineAfterMs: 100 });
+      // Leave enough wall-clock headroom for a parallel integration worker to
+      // reach the first claim without accidentally crossing the due boundary.
+      await reserve({ delayMs: 1_000, deadlineAfterMs: 2_000 });
       expect(await scheduler.claim({ scope: key.scope, workerId: 'worker', limit: 1, leaseMs: 1_000 })).toEqual([]);
-      await pause(110);
+      await pause(2_050);
       expect((await scheduler.recover({ scope: key.scope, limit: 10 }))[0]?.state).toBe('cancelled');
     });
 
