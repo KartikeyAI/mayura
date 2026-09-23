@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -21,6 +21,7 @@ const expectedDependencies = {
   'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
+  'code-mode': ['@mayura/core', '@mayura/tools'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -149,6 +150,7 @@ async function main() {
     ['executions', ['@mayura/workstream'], 'optional-executions.test.ts'],
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
+    ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -183,6 +185,10 @@ async function main() {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);
         assert.equal(execution.executesEffects, false);
       }
+      if (name === 'code-mode') {
+        assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
+        assert.equal(execution.sandboxDependencyCount, 0);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -213,6 +219,7 @@ async function main() {
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
+  result.checks.push('provider-neutral-code-mode', 'code-mode-no-host-fallback', 'code-mode-mediated-tool-call', 'code-mode-negative-types');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

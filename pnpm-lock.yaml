@@ -11,6 +11,9 @@ importers:
       '@mayura/client':
         specifier: workspace:*
         version: link:packages/client
+      '@mayura/code-mode':
+        specifier: workspace:*
+        version: link:packages/code-mode
       '@mayura/core':
         specifier: workspace:*
         version: link:packages/core
@@ -73,6 +76,15 @@ importers:
         version: 4.6.5
 
   packages/client: {}
+
+  packages/code-mode:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/consumer-tests:
     dependencies:
