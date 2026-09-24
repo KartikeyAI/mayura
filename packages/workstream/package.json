@@ -7,7 +7,8 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./executions": { "types": "./dist/executions.d.ts", "import": "./dist/executions.js" },
-    "./humans": { "types": "./dist/humans.d.ts", "import": "./dist/humans.js" }
+    "./humans": { "types": "./dist/humans.d.ts", "import": "./dist/humans.js" },
+    "./timers": { "types": "./dist/timers.d.ts", "import": "./dist/timers.js" }
   },
   "files": ["dist", "src/**/*.ts", "README.md"],
   "sideEffects": false,
