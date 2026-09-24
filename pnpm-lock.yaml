@@ -41,6 +41,9 @@ importers:
       '@mayura/memory':
         specifier: workspace:*
         version: link:packages/memory
+      '@mayura/memory-remote':
+        specifier: workspace:*
+        version: link:packages/memory-remote
       '@mayura/provider-anthropic':
         specifier: workspace:*
         version: link:packages/provider-anthropic
@@ -248,6 +251,15 @@ importers:
       '@mayura/storage':
         specifier: workspace:*
         version: link:../storage
+
+  packages/memory-remote:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/memory':
+        specifier: workspace:*
+        version: link:../memory
 
   packages/observability:
     dependencies:

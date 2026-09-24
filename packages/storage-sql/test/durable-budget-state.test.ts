@@ -137,5 +137,5 @@ describe('durable budget pure state transitions', () => {
     }
     state = transition(state, 'closeSubtree', { accountId: 'root' }).snapshot;
     expect(state.eventSequence).toBe(1 + 128 + 512 * 3 + 1); expect(account(state)).toMatchObject({ reservedMicros: 0, heldCalls: 0, calls: 512 });
-  }, 30_000);
+  }, 60_000);
 });

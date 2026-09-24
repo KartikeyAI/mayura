@@ -1,6 +1,6 @@
 # Native context assembly
 
-Status: experimental independent `@mayura/context` foundation. Implements bounded, provenance-preserving selection from caller-supplied candidates. It does not implement semantic retrieval, model summarization, generated compaction, OpenViking, speculative work, or provider prompt caches.
+Status: experimental independent `@mayura/context` foundation. Implements bounded, provenance-preserving selection from caller-supplied candidates. It does not itself implement semantic retrieval, model summarization, generated compaction, speculative work, or provider prompt caches. The separate optional remote-memory package can retrieve OpenViking candidates only through native canonical rehydration.
 
 ## Public API
 

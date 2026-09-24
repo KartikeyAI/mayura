@@ -28,6 +28,7 @@
     "@mayura/cli": "workspace:*",
     "@mayura/helpers": "workspace:*",
     "@mayura/memory": "workspace:*",
+    "@mayura/memory-remote": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/runtime": "workspace:*",
     "@mayura/testing": "workspace:*",
