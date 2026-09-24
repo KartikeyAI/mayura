@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Budget, createRuntime, defineAgent, defineHook, defineTool, invokeTool } from '@mayura/sdk';
-import { createPipeline, defineModerationGuard, protectLiterals, redactPII, releaseBufferedOutput } from '@mayura/guardrails';
+import { createPipeline, defineModerationGuard, prepareOutputDisclosure, protectLiterals, redactPII, releaseBufferedOutput } from '@mayura/guardrails';
 import { assertBudgetTicket, readManagedGuardDefinition, registerManagedGuardDefinition } from '@mayura/core/host';
 import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { createObserver } from '@mayura/observability';
@@ -56,6 +56,11 @@ await assert.rejects(releaseBufferedOutput(textChunks('SE', 'CR', 'ET'), createP
   { code: 'GUARD_BLOCKED' });
 const buffered = await releaseBufferedOutput(textChunks('person@', 'example.com'), createPipeline({ processors: [redactPII()] }), outputContext);
 assert.equal(buffered.value, '[EMAIL]');
+const disclosed = await prepareOutputDisclosure([{ kind: 'text', text: 'safe' },
+  { kind: 'tool_preview', toolId: 'consumer.private', preview: { secret: 'PRIVATE_PREVIEW' } },
+  { kind: 'error', code: 'TOOL_FAILED', message: 'PRIVATE_ERROR' },
+  { kind: 'event', event: { secret: 'PRIVATE_EVENT' } }], createPipeline(), outputContext);
+assert.equal(disclosed.status, 'succeeded'); assert(!JSON.stringify(disclosed).includes('PRIVATE_'));
 
 let hookActions = 0;
 const assertion = defineTool({ id: 'consumer.assertion', version: '1', description: 'Private required policy assertion.',
@@ -134,5 +139,5 @@ assert.equal(toolOutcome.status, 'succeeded'); assert.equal(toolOutcome.output, 
 assert.deepEqual(budget.snapshot(), { spentMicros: 2, reservedMicros: 0, calls: 1 });
 bundle.close();
 console.log(JSON.stringify({ status: 'passed', packages: packages.length, observation: observationReport,
-  singlePermit: true, mediatedHooks: true, transformedSchemas: true, wholeOutputBarrier: true,
+  singlePermit: true, mediatedHooks: true, transformedSchemas: true, wholeOutputBarrier: true, structuredDisclosure: true,
   sharedHostRegistrations: true, forgedHandlesRejected: true, noProviderOrNativeDependencies: true }));
