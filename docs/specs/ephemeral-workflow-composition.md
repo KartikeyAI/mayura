@@ -20,7 +20,7 @@ The tool form uses `agentAsTool` without creating another runtime or budget. It 
 - Original workflow input and final output schema transforms happen once at their respective run boundaries. Tool schemas are still checked by the ordinary broker, including its pure preflight; joins and bindings consume only released results.
 - The finite graph remains capped at 128 nodes. A chain can need 129 planner calls; defaults do not automatically increase caller limits. The planner independently caps transcript/response JSON at 8 MiB, 300,000 nodes and 257 messages; individual bindings retain the existing 1 MiB JSON boundary. Context/message/output bounds, deadlines and ancestor limits may stop a valid but too-large graph. There is no unbounded replay loop or silent retry.
 
-This is partial F08/V05/V18 evidence, not durable child orchestration, restartable joins, workflow-as-durable-node support, or closure of any full enterprise release gate. It leaves format-2 workflow records and scheduler ownership unchanged.
+This is F08 and ephemeral-profile V05 evidence, plus partial V18 evidence. V05 closure also depends on the separately bounded format-4 durable child profile. This compiler is not durable child orchestration, restartable joins or workflow-as-durable-node support; it leaves format-2 workflow records and scheduler ownership unchanged.
 
 ## Required verification
 
