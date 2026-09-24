@@ -190,6 +190,7 @@ async function main() {
     ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
     ['otlp', ['@mayura/exporter-otlp'], 'optional-otlp.test.ts'],
     ['executions', ['@mayura/workstream'], 'optional-executions.test.ts'],
+    ['humans', ['@mayura/workstream'], 'optional-humans.test.ts'],
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
     ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
@@ -247,6 +248,10 @@ async function main() {
       if (name === 'budgets') {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);
         assert.equal(execution.executesEffects, false);
+      }
+      if (name === 'humans') {
+        assert.equal(execution.driverFree, true); assert.equal(execution.restartSafe, true);
+        assert.equal(execution.typedResponse, true); assert.equal(execution.authorizationCalls, 1);
       }
       if (name === 'code-mode') {
         assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
@@ -307,6 +312,7 @@ async function main() {
     checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'typed-batch-output-references', 'arth-free-parallel-child-policy-artifact-matrix', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'managed-shared-definition-identity', 'managed-single-permit-budget', 'managed-observer-four-model-calls', 'mediated-control-hooks', 'hook-action-evidence', 'explicit-trusted-host-entries', 'no-managed-provider-native-dependencies', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
   };
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
+  result.checks.push('driver-free-human-request-subpath', 'restart-safe-human-response', 'human-request-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
   result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');

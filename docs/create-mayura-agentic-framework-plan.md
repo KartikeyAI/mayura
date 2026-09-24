@@ -349,6 +349,8 @@ Observers reconnect using authorized cursors and snapshots. A retention gap retu
 
 Human intervention is a durable runtime primitive: approval, information request, content correction, plan selection, pause, resume, and cancellation. Requests carry typed input schemas, safe context, scope, expiry, and the exact action or artifact under review. Support CLI, server, and browser clients through the same protocol.
 
+Implementation checkpoint (2026-09-24): the driver-free `@mayura/workstream/humans` protocol now implements restart-safe typed information, correction and plan-selection requests, exact subject/schema binding, authorized single-response races, deadlines and cancellation over both reference aggregate adapters. Pause/resume workflow nodes and CLI/server/browser bindings remain M3/M8 work; this checkpoint does not mark M3 complete.
+
 Approval records bind an authenticated human to the run, action/tool version, processed arguments, resolved targets, code/artifact digests, environment, credential identity, policy epoch, expiry, and permitted repetitions. Changing any approval-relevant field invalidates the grant. Editing a proposed tool argument during review creates a new candidate and repeats validation.
 
 Only authorized human identities can resolve approval requests. Child agents, models, tools, hooks, and callbacks cannot impersonate them. A stale or duplicate response is rejected or acknowledged as already resolved. Cancellation, revocation, and expired approval prevent new dispatch. A stored approval never overrides a current hard policy denial.

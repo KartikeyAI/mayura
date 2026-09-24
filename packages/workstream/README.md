@@ -18,8 +18,10 @@ const result = await stream.inspect('release');
 await stream.close();
 ```
 
+`@mayura/workstream/humans` adds finite durable typed information, correction and plan-selection requests. It persists exact digest-bound request metadata, authorizes an authenticated actor through an application callback, validates the response with Standard Schema and resolves one deterministic response signal across retries/restarts. Corrections bind a subject digest and never rewrite or authorize the reviewed action.
+
 The application supplies initialized storage, verified scope and a pinned policy. References are data, not authorization capabilities. Closing a facade does not close application-owned storage or cancel persisted work. Applications explicitly invoke finite drains; no worker slot, polling loop or per-wait promise survives a command.
 
-A resolved join means every target is terminal, not necessarily successful. Inspect each observation's `outcome`; `outcome_unknown` stays unknown. Results contain no workflow output, input, receipts or errors. Read authorized source evidence separately. This export does not add workflow graph suspension, durable child orchestration, timers or notifications.
+A resolved join means every target is terminal, not necessarily successful. Inspect each observation's `outcome`; `outcome_unknown` stays unknown. Results contain no workflow output, input, receipts or errors. Read authorized source evidence separately. These exports do not add workflow graph suspension, durable child orchestration, background timers or notifications.
 
 The package depends only on core and driver-free storage contracts. Select `@mayura/storage-sqlite` or `@mayura/storage-postgres` for one reference driver. The compatibility `@mayura/storage` package intentionally installs both; a custom adapter does not require either driver. The complete checkout includes Markdown guides, shared real-database conformance tests and a credential-free close/reopen example.

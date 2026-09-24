@@ -6,7 +6,8 @@
   "engines": { "node": ">=24.14.1 <25" },
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./executions": { "types": "./dist/executions.d.ts", "import": "./dist/executions.js" }
+    "./executions": { "types": "./dist/executions.d.ts", "import": "./dist/executions.js" },
+    "./humans": { "types": "./dist/humans.d.ts", "import": "./dist/humans.js" }
   },
   "files": ["dist", "src/**/*.ts", "README.md"],
   "sideEffects": false,
