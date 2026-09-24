@@ -32,6 +32,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Durable financial budgets](how-to/durable-budgets.md) and [ledger contract](specs/durable-budget-ledger.md) — restartable shared ceilings, exact evidence and subtree held cleanup; a standalone host primitive, not automatic workflow or child execution accounting.
 - [Model provider contract](specs/model-provider-contract.md) — optional adapter and private protocol state.
 - [WorkStream](specs/workstream.md) — durable scoped signals and wait registration.
+- [Authenticated webhook triggers](specs/webhook-triggers.md) and [integration guide](how-to/webhook-triggers.md) — driver-free HMAC ingress, durable deduplication and conservative recovery.
 - [Execution completion waits](how-to/execution-completion-waits.md) and [transaction contract](specs/execution-completion-waits.md) — finite metadata joins over existing scheduled workflows, with restart and explicit unknown outcomes.
 - [Durable graph waits](how-to/workflow-graph-waits.md) and [format-3 contract](specs/workflow-graph-waits.md) — explicit in-graph suspension over already submitted runs without holding worker capacity.
 - [Graph discovery guide](how-to/workflow-graph-discovery.md) and [discovery contract](specs/workflow-graph-discovery.md) — finite indexed candidate pages after restart, with explicit non-snapshot semantics and no automatic dispatch.
@@ -61,7 +62,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 
 Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. All 22 finite acceptance scenarios are closed with bounded claims recorded in the ledger.
 
-Next-slice design: [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md) now has a conservative durable runtime and explicit fleet coordination; separately versioned [durable workflow sagas](specs/workflow-sagas.md) and [bounded loops](specs/workflow-loops.md) add compensation and finite iteration without changing formats 2–5. A continuously hosted coordinator remains in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
+Current implementation focus: M3's declared preview is complete through [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md), [durable workflow sagas](specs/workflow-sagas.md), [bounded loops](specs/workflow-loops.md), hosted lifecycle coordination and composite-parent continuation. M8 now includes [authenticated webhook triggers](specs/webhook-triggers.md); UI bindings and durable operational administration remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 

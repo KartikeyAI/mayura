@@ -192,6 +192,7 @@ async function main() {
     ['executions', ['@mayura/workstream'], 'optional-executions.test.ts'],
     ['humans', ['@mayura/workstream'], 'optional-humans.test.ts'],
     ['timers', ['@mayura/workstream'], 'optional-timers.test.ts'],
+    ['webhooks', ['@mayura/workstream'], 'optional-webhooks.test.ts'],
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
     ['code-mode', ['@mayura/code-mode'], 'optional-code-mode.test.ts'],
@@ -259,6 +260,10 @@ async function main() {
         assert.equal(execution.driverFree, true); assert.equal(execution.restartSafe, true);
         assert.equal(execution.firesOnce, true);
       }
+      if (name === 'webhooks') {
+        assert.equal(execution.driverFree, true); assert.equal(execution.authenticated, true);
+        assert.equal(execution.deduplicated, true);
+      }
       if (name === 'code-mode') {
         assert.equal(execution.noHostFallback, true); assert.equal(execution.mediatedToolCall, true);
         assert.equal(execution.usageReported, true);
@@ -320,6 +325,7 @@ async function main() {
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
   result.checks.push('driver-free-human-request-subpath', 'restart-safe-human-response', 'human-request-negative-types');
   result.checks.push('driver-free-timer-subpath', 'restart-safe-timer-sweep', 'timer-negative-types');
+  result.checks.push('driver-free-webhook-subpath', 'authenticated-webhook-ingress', 'deduplicated-webhook-dispatch', 'webhook-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
   result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
   result.checks.push('driver-free-workflow-lifecycle-subpath', 'format5-negative-types', 'format5-data-only-manifest', 'format5-custom-adapter-runtime', 'format5-durable-fleet-index', 'format5-authenticated-human-transport-binding');
