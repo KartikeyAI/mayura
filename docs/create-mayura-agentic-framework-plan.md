@@ -584,6 +584,8 @@ The CLI supports initializing a selected template, validating configuration, ins
 
 Include adapters/interfaces for credential stores, file/blob artifacts, scheduled/event-triggered workflows, webhooks with authenticated deduplicated delivery, health probes, and pluggable tool catalogs. Scheduled work retains an explicit owner, scope, budget, expiry, and cancellation control. Event triggers do not create unrestricted background agents.
 
+Implementation checkpoint (2026-09-24): `@mayura/helpers` now supplies the provider-neutral credential-store contract. Genuine providers resolve explicit value-free references only within bounded use callbacks; version/expiry integrity, best-effort buffer zeroing, safe errors and retained non-cooperative admission are enforced without caching or ambient discovery. Concrete hosted/local provider adapters and hardware-backed erasure claims remain outside this slice.
+
 Package optional integrations separately so a simple tool app does not install browsers, native sandbox binaries, multiple memory SDKs, or cloud provider dependencies. Publish API documentation, lifecycle/state diagrams, threat-model explanations, migration guides, and complete runnable examples. A template's tests and documented commands run in release CI.
 
 Additional “advanced features” enter a tracked backlog with a concrete use case and acceptance criteria. Do not add a visual workflow builder, marketplace, multi-region control plane, billing service, model training platform, or arbitrary plugin distribution service merely to expand the framework feature list. They are deferred unless separately requested.

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { Budget, MayuraError, type Schema } from '@mayura/core';
 import {
-  capture, collectPages, createRedactedLogger, deadlineSignal, delay, pollUntil, providerSchema, retry, withDeadline,
+  capture, collectPages, createCredentialBroker, createRedactedLogger, deadlineSignal, defineCredentialProvider, delay, pollUntil, providerSchema, retry, withDeadline,
   runBudgetedTasks, secretReference, transferArtifact, validatedConfig, validatedEnvironment, withCleanup,
   type ArtifactStage,
 } from '../src/index.js';
@@ -36,6 +36,45 @@ describe('@mayura/helpers configuration', () => {
     expect(() => providerSchema({} as Schema, {})).toThrow(MayuraError);
     await expect(capture(() => { throw new Error('credential=secret'); })).resolves.toEqual({ ok: false,
       error: { code: 'TOOL_FAILED', message: expect.not.stringContaining('secret') } });
+  });
+});
+
+describe('@mayura/helpers credential broker', () => {
+  it('uses explicit versioned material once and zeroes provider and consumer buffers', async () => {
+    const supplied = new TextEncoder().encode('TOKEN_PRIVATE'); let viewed: Uint8Array | undefined;
+    const provider = defineCredentialProvider({ id: 'vault', resolve: async (reference, signal) => {
+      expect(reference).toEqual({ key: 'agents/prod', version: 'v1' }); expect(signal.aborted).toBe(false);
+      return { bytes: supplied, version: 'v1', expiresAtMs: 2_000 };
+    } });
+    const broker = createCredentialBroker({ providers: [provider], now: () => 1_000 });
+    const result = await broker.use(secretReference({ provider: 'vault', key: 'agents/prod', version: 'v1' }), controller().signal,
+      async (credential, metadata) => { viewed = credential; expect(new TextDecoder().decode(credential)).toBe('TOKEN_PRIVATE'); expect(metadata).toEqual({ version: 'v1', expiresAtMs: 2_000 }); return 'ok'; });
+    expect(result).toBe('ok'); expect([...supplied]).toEqual(Array(supplied.length).fill(0)); expect([...viewed!]).toEqual(Array(viewed!.length).fill(0));
+    expect(JSON.stringify(broker.inspect())).not.toMatch(/TOKEN_PRIVATE|agents\/prod/); expect(broker.inspect()).toEqual({ providers: ['vault'], pending: 0, maxConcurrent: 16 });
+  });
+
+  it('retains capacity for timed-out non-cooperative consumers until actual settlement', async () => {
+    let finish!: () => void; const waiting = new Promise<void>(resolve => { finish = resolve; }); let retained: Uint8Array | undefined;
+    const provider = defineCredentialProvider({ id: 'vault', resolve: () => ({ bytes: new Uint8Array([1, 2, 3]), version: 'current' }) });
+    const broker = createCredentialBroker({ providers: [provider], maxConcurrent: 1, timeoutMs: 5 });
+    await expect(broker.use(secretReference({ provider: 'vault', key: 'key' }), controller().signal, async bytes => { retained = bytes; await waiting; }))
+      .rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(broker.inspect().pending).toBe(1);
+    await expect(broker.use(secretReference({ provider: 'vault', key: 'key' }), controller().signal, async () => undefined)).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+    finish(); await vi.waitFor(() => expect(broker.inspect().pending).toBe(0)); expect([...retained!]).toEqual([0, 0, 0]);
+  });
+
+  it('rejects forged providers, stale versions and callback failures without leaking secrets', async () => {
+    expect(() => createCredentialBroker({ providers: [{ id: 'vault' }] })).toThrow(MayuraError);
+    const bytes = new TextEncoder().encode('SECRET_VALUE');
+    const provider = defineCredentialProvider({ id: 'vault', resolve: () => ({ bytes, version: 'old' }) });
+    const broker = createCredentialBroker({ providers: [provider] });
+    await expect(broker.use(secretReference({ provider: 'vault', key: 'key', version: 'new' }), controller().signal, async () => undefined))
+      .rejects.toMatchObject({ code: 'INTEGRITY_VIOLATION', message: expect.not.stringContaining('SECRET_VALUE') });
+    expect([...bytes]).toEqual(Array(bytes.length).fill(0));
+    const failing = createCredentialBroker({ providers: [defineCredentialProvider({ id: 'other', resolve: () => { throw new Error('SECRET_VALUE'); } })] });
+    await expect(failing.use(secretReference({ provider: 'other', key: 'key' }), controller().signal, async () => undefined))
+      .rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', message: expect.not.stringContaining('SECRET_VALUE') });
   });
 });
 

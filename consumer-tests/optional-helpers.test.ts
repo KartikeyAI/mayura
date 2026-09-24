@@ -1,5 +1,6 @@
 import { Budget } from '@mayura/core';
-import { createRedactedLogger, retry, runBudgetedTasks, secretReference, type BudgetedTaskResult } from '@mayura/helpers';
+import { createCredentialBroker, createRedactedLogger, defineCredentialProvider, retry, runBudgetedTasks, secretReference,
+  type BudgetedTaskResult, type CredentialBrokerSnapshot } from '@mayura/helpers';
 
 export async function verifyHelpers(): Promise<Readonly<{ results: readonly BudgetedTaskResult<number>[]; logs: number }>> {
   const signal = new AbortController().signal; const logs: unknown[] = [];
@@ -11,3 +12,7 @@ export async function verifyHelpers(): Promise<Readonly<{ results: readonly Budg
     .log('info', 'consumer.checked', { token: 'not-exported' });
   return Object.freeze({ results, logs: logs.length });
 }
+const credentialSnapshot: CredentialBrokerSnapshot = createCredentialBroker({ providers: [
+  defineCredentialProvider({ id: 'fixture', resolve: () => ({ bytes: new Uint8Array([1]), version: 'v1' }) }),
+] }).inspect();
+void credentialSnapshot;

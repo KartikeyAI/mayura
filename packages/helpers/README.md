@@ -6,6 +6,7 @@ Optional, provider-neutral utilities for explicit configuration, cancellation-aw
 
 - schema-validated configuration and explicit environment selection;
 - secret references that never contain credential values;
+- a provider-neutral credential broker with use-scoped material, version/expiry checks, zeroing and retained callback admission;
 - linked deadlines, cancellation-aware delays, bounded polling and cursor pagination;
 - retries that require an idempotent or read-only guarantee;
 - exactly-once cleanup with primary-error precedence;

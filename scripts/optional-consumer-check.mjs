@@ -229,7 +229,7 @@ async function main() {
       if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); }
       if (name === 'helpers') {
         assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
-        assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true);
+        assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true); assert.equal(execution.credentialStore, true);
       }
       if (name === 'cli') {
         assert.equal(execution.eightTemplates, true); assert.equal(execution.planFirst, true);
@@ -333,6 +333,7 @@ async function main() {
     'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard', 'artifact-backup-restore');
   result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting', 'otlp-traces', 'otlp-metrics');
   result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
+  result.checks.push('provider-neutral-credential-store', 'credential-use-scope-zeroing', 'credential-retained-callback-admission');
   result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
