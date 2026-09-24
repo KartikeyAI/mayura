@@ -3,19 +3,33 @@ import { StorageError, type AggregateStore, type StoredEvent, type StoredEventIn
 
 export interface SignalRecord { readonly id: string; readonly name: string; readonly value: JsonValue; readonly sequence: number }
 export interface WaitCondition { readonly id: string; readonly name: string; readonly after?: number }
-export interface WaitDefinition { readonly id: string; readonly mode: 'all' | 'any'; readonly conditions: readonly WaitCondition[] }
+export interface WaitDefinition {
+  readonly id: string;
+  readonly mode: 'all' | 'any';
+  readonly conditions: readonly WaitCondition[];
+  /** Absolute Unix epoch deadline. The configured trusted clock decides when it is due. */
+  readonly deadlineAtMs?: number;
+}
 export interface WaitMatch { readonly conditionId: string; readonly signal: SignalRecord }
 export interface WaitSnapshot extends WaitDefinition {
-  readonly status: 'waiting' | 'succeeded' | 'cancelled';
+  readonly status: 'waiting' | 'succeeded' | 'cancelled' | 'timed_out';
   readonly matches: readonly WaitMatch[];
 }
-export interface WorkStreamOptions { readonly store: AggregateStore; readonly scope: Scope; readonly streamId: string }
+export interface WorkStreamOptions {
+  readonly store: AggregateStore;
+  readonly scope: Scope;
+  readonly streamId: string;
+  /** Trusted host clock. Override only for deterministic tests or a synchronized platform clock. */
+  readonly now?: () => number;
+}
 export interface WorkStream {
   initialize(): Promise<void>;
   signal(input: { readonly id: string; readonly name: string; readonly value: JsonValue }): Promise<SignalRecord>;
   register(definition: WaitDefinition): Promise<WaitSnapshot>;
   inspect(id: string): Promise<WaitSnapshot | undefined>;
   cancel(id: string): Promise<WaitSnapshot>;
+  /** Atomically expires due waits. Repeated calls and competing workers are idempotent. */
+  sweepDeadlines(options?: { readonly limit?: number }): Promise<readonly WaitSnapshot[]>;
   signals(options?: { readonly after?: number; readonly limit?: number }): Promise<{ readonly items: readonly SignalRecord[]; readonly next: number }>;
   events(after?: number): Promise<readonly StoredEvent[]>;
 }
@@ -33,6 +47,9 @@ function identifier(value: unknown): asserts value is string {
 function cursor(value: unknown): asserts value is number {
   if (!Number.isSafeInteger(value) || typeof value !== 'number' || value < 0) throw new MayuraError('INVALID_INPUT', 'A signal cursor must be a nonnegative safe integer.');
 }
+function timestamp(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_INPUT', 'A wait deadline must be a nonnegative safe Unix epoch millisecond value.');
+}
 function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MayuraError('INVALID_INPUT', 'WorkStream data must be a plain JSON object.');
   return value;
@@ -47,7 +64,7 @@ function immutable<T>(value: T): T { return freezeJson(jsonValue(value, { maxByt
 function definition(value: unknown): WaitDefinition {
   const raw = object(jsonValue(value));
   identifier(raw['id']);
-  if ((raw['mode'] !== 'all' && raw['mode'] !== 'any') || !Array.isArray(raw['conditions']) || raw['conditions'].length < 1 || raw['conditions'].length > CONDITIONS || Object.keys(raw).some(key => !['id', 'mode', 'conditions'].includes(key))) {
+  if ((raw['mode'] !== 'all' && raw['mode'] !== 'any') || !Array.isArray(raw['conditions']) || raw['conditions'].length < 1 || raw['conditions'].length > CONDITIONS || Object.keys(raw).some(key => !['id', 'mode', 'conditions', 'deadlineAtMs'].includes(key))) {
     throw new MayuraError('INVALID_INPUT', 'A wait needs a mode and 1–32 named conditions.');
   }
   const conditions = raw['conditions'].map(item => {
@@ -57,7 +74,8 @@ function definition(value: unknown): WaitDefinition {
     return { id: part['id'], name: part['name'], after };
   });
   if (new Set(conditions.map(condition => condition.id)).size !== conditions.length) throw new MayuraError('INVALID_INPUT', 'Wait condition IDs must be unique.');
-  return immutable({ id: raw['id'], mode: raw['mode'], conditions });
+  if (raw['deadlineAtMs'] !== undefined) timestamp(raw['deadlineAtMs']);
+  return immutable({ id: raw['id'], mode: raw['mode'], conditions, ...(raw['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: raw['deadlineAtMs'] }) });
 }
 function matched(wait: WaitDefinition, signals: readonly SignalRecord[]): readonly WaitMatch[] | undefined {
   const matches: WaitMatch[] = [];
@@ -78,6 +96,8 @@ function settle(state: State): StoredEventInput[] {
     const matches = matched(wait, state.signals);
     if (!matches) return wait;
     events.push({ type: 'wait.succeeded', data: { waitId: wait.id } });
+    const disposed = wait.mode === 'any' ? wait.conditions.length - 1 : 0;
+    if (disposed > 0) events.push({ type: 'wait.subscriptions.disposed', data: { waitId: wait.id, reason: 'succeeded', count: disposed } });
     return { ...wait, status: 'succeeded', matches };
   });
   return events;
@@ -96,15 +116,15 @@ function stateFrom(record: StoredRecord, streamId: string, scopeKey: string): St
     if (new Set(signals.map(item => item.id)).size !== signals.length) throw new Error();
     const waits = state['waits'].map((raw): WaitSnapshot => {
       const item = object(raw);
-      const def = definition({ id: item['id'], mode: item['mode'], conditions: item['conditions'] });
-      if (typeof item['status'] !== 'string' || !['waiting', 'succeeded', 'cancelled'].includes(item['status']) || !Array.isArray(item['matches']) || Object.keys(item).some(key => !['id', 'mode', 'conditions', 'status', 'matches'].includes(key))) throw new Error();
+      const def = definition({ id: item['id'], mode: item['mode'], conditions: item['conditions'], ...(item['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: item['deadlineAtMs'] }) });
+      if (typeof item['status'] !== 'string' || !['waiting', 'succeeded', 'cancelled', 'timed_out'].includes(item['status']) || !Array.isArray(item['matches']) || Object.keys(item).some(key => !['id', 'mode', 'conditions', 'deadlineAtMs', 'status', 'matches'].includes(key))) throw new Error();
       const result = matched(def, signals);
       if (item['status'] === 'succeeded') {
         if (!result || !equal(result, item['matches'])) throw new Error();
         return { ...def, status: 'succeeded', matches: result };
       }
       if (item['matches'].length !== 0 || (item['status'] === 'waiting' && result)) throw new Error();
-      return { ...def, status: item['status'] as 'waiting' | 'cancelled', matches: [] };
+      return { ...def, status: item['status'] as 'waiting' | 'cancelled' | 'timed_out', matches: [] };
     });
     if (new Set(waits.map(item => item.id)).size !== waits.length) throw new Error();
     return { format: 1, streamId, signals, waits };
@@ -117,6 +137,13 @@ export function createWorkStream(options: WorkStreamOptions): WorkStream {
   const streamId = options.streamId;
   const scope = { principalId: options.scope.principalId, projectId: options.scope.projectId };
   const store = options.store;
+  const now = options.now ?? Date.now;
+  const currentTime = (): number => {
+    let value: unknown;
+    try { value = now(); } catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'The trusted WorkStream clock is unavailable.'); }
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new MayuraError('STORAGE_UNAVAILABLE', 'The trusted WorkStream clock returned an invalid timestamp.');
+    return value;
+  };
   let scopeKey: string | undefined;
   let initializePromise: Promise<void> | undefined;
   const storage = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -188,7 +215,7 @@ export function createWorkStream(options: WorkStreamOptions): WorkStream {
       return update(state => {
         const existing = state.waits.find(wait => wait.id === def.id);
         if (existing) {
-          if (!equal({ id: existing.id, mode: existing.mode, conditions: existing.conditions }, def)) throw new MayuraError('CONFLICT', 'Wait ID already identifies a different definition.');
+          if (!equal({ id: existing.id, mode: existing.mode, conditions: existing.conditions, ...(existing.deadlineAtMs === undefined ? {} : { deadlineAtMs: existing.deadlineAtMs }) }, def)) throw new MayuraError('CONFLICT', 'Wait ID already identifies a different definition.');
           return { result: existing, events: [] };
         }
         if (state.waits.length >= WAITS) throw new MayuraError('LIMIT_EXCEEDED', 'The stream wait-retention limit was reached.');
@@ -209,7 +236,31 @@ export function createWorkStream(options: WorkStreamOptions): WorkStream {
         if (current.status !== 'waiting') return { result: current, events: [] };
         const cancelled: WaitSnapshot = { ...current, status: 'cancelled', matches: [] };
         state.waits[index] = cancelled;
-        return { result: cancelled, events: [{ type: 'wait.cancelled', data: { waitId: id } }] };
+        return { result: cancelled, events: [
+          { type: 'wait.cancelled', data: { waitId: id } },
+          { type: 'wait.subscriptions.disposed', data: { waitId: id, reason: 'cancelled', count: current.conditions.length } },
+        ] };
+      });
+    },
+    sweepDeadlines: async (input: { readonly limit?: number } = {}): Promise<readonly WaitSnapshot[]> => {
+      const raw = object(jsonValue(input, { maxBytes: 1024 }));
+      if (Object.keys(raw).some(key => key !== 'limit')) throw new MayuraError('INVALID_INPUT', 'Deadline sweep accepts only a bounded limit.');
+      const limit = raw['limit'] === undefined ? 32 : raw['limit'];
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > WAITS) throw new MayuraError('INVALID_INPUT', 'Deadline sweep limit must be between 1 and 128.');
+      const observedAtMs = currentTime();
+      return update(state => {
+        const expired: WaitSnapshot[] = []; const events: StoredEventInput[] = [];
+        state.waits = state.waits.map(wait => {
+          if (expired.length >= limit || wait.status !== 'waiting' || wait.deadlineAtMs === undefined || wait.deadlineAtMs > observedAtMs) return wait;
+          const timedOut: WaitSnapshot = { ...wait, status: 'timed_out', matches: [] };
+          expired.push(timedOut);
+          events.push(
+            { type: 'wait.timed_out', data: { waitId: wait.id, deadlineAtMs: wait.deadlineAtMs } },
+            { type: 'wait.subscriptions.disposed', data: { waitId: wait.id, reason: 'timed_out', count: wait.conditions.length } },
+          );
+          return timedOut;
+        });
+        return { result: expired, events };
       });
     },
     signals: async (options: { readonly after?: number; readonly limit?: number } = {}) => {

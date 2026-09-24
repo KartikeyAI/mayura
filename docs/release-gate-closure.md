@@ -4,14 +4,14 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**8 of 22 gates closed. Mayura remains an experimental development preview.**
+**9 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
 | V01 — Unified authority | Implementation gap | Direct, batch, delegated, workflow-as-tool and required-hook paths exist. MCP invocation and an exact cross-path policy-decision matrix are missing; Code Mode parity must be proven in the same matrix. |
 | V02 — Durable effects | **Closed** | Paired scheduler process-kill fixtures cover committed claim/intent, start/dispatch and receipt boundaries; paired scheduled-workflow process fixtures cover start, receipt and completion/result commits. Recovery either safely reclaims never-started intent or exposes/preserves unknown/known evidence with zero handler replay. The `V02` paired conformance scenario proves repeated inspection and event replay cause zero effects. These matrices pass on SQLite and PostgreSQL. Contracts: [durable execution](specs/durable-execution.md), [leased scheduler](specs/leased-scheduler.md), and [process recovery](testing-process-recovery.md). |
 | V03 — Fencing | **Closed** | The shared scheduler conformance matrix passes 22/22 on SQLite and 22/22 on PostgreSQL. Its `persists expiry observation and rejects stale control before and after pre-start recovery`, `commits stale observation without falsely journaling a failed completion`, `never reclaims a started effect` and `serializes declared resources` scenarios prove sticky ownership transfer, stale start/commit rejection and conflicting-resource exclusion. Contract: [leased scheduler](specs/leased-scheduler.md). |
-| V04 — WorkStream races | Implementation gap | Durable registration, signals, composites, cancellation, restart and cursor gaps exist. A durable deadline transition and explicit losing-subscription disposal evidence are missing. |
+| V04 — WorkStream races | **Closed** | The paired `V04` scenario in `packages/workstream/test/conformance.ts` proves restart-safe durable deadlines, exactly one terminal winner in cancellation/deadline races, and explicit single disposal evidence for losing/abandoned subscriptions. The same matrix also covers event-before-registration, duplicate signals, deterministic composites, restart and gap-free exclusive signal cursors on SQLite and PostgreSQL; bounded runtime observation separately proves explicit cursor-gap records. Contract: [WorkStream](specs/workstream.md). |
 | V05 — Bounded orchestration | Qualification gap | Ephemeral nesting and bounded format-4 one-level children exist. A constrained-capacity matrix must jointly prove progress, cycle rejection and depth/concurrency/budget bounds for every supported orchestration profile. |
 | V06 — Tool batch semantics | Implementation gap | Success, denial, failure, unknown, receipts, references and no-rollback behavior are covered. The batch contract has no truthful waiting outcome, so the exact mandatory scenario cannot yet pass. |
 | V07 — Human intervention | **Closed** | The `V07` scenario in `packages/workflows/test/scheduled-conformance.ts` runs on both selected SQL adapters. It proves a wait retains no job or budget reservation, survives close/reopen, dispatches once after verified approval, and rejects stale approval after changing target run, tool version/definition identity, arguments or policy. Contract: [scheduled workflows](specs/scheduled-workflows.md). |
@@ -33,7 +33,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Implement the narrow missing contracts for V06 and V04, then close their deterministic matrices.
+1. Implement the narrow missing contract for V06, then close its deterministic matrix.
 2. Close composition and containment gates V05, V14, V15 and V18.
 3. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
 4. Execute the owner-approved distribution matrix for V19 and release governance for V22.

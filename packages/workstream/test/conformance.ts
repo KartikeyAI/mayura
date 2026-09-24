@@ -102,6 +102,52 @@ export function workstreamConformance(name: string, factory: () => Promise<WorkS
       expect(await value.cancel('wait-a')).toEqual(completed);
     });
 
+    it('V04 closes restart-safe deadlines, losing-branch disposal and cancellation/deadline races', async () => {
+      let time = 1_000;
+      const first = await initialized({ now: () => time });
+      await first.register(wait({
+        id: 'restart-deadline', mode: 'any', deadlineAtMs: 2_000,
+        conditions: [{ id: 'winner', name: 'winner' }, { id: 'loser', name: 'loser' }],
+      }));
+      expect(await first.sweepDeadlines()).toEqual([]);
+
+      await store.close(); store = fixture.reopen(); await store.initialize();
+      time = 2_000;
+      const reopened = await initialized({ now: () => time });
+      expect(await reopened.sweepDeadlines()).toMatchObject([{ id: 'restart-deadline', status: 'timed_out' }]);
+      expect(await reopened.sweepDeadlines()).toEqual([]);
+      expect((await reopened.events()).filter(event => event.type === 'wait.subscriptions.disposed' && event.data['waitId'] === 'restart-deadline')).toEqual([
+        expect.objectContaining({ data: { waitId: 'restart-deadline', reason: 'timed_out', count: 2 } }),
+      ]);
+
+      await reopened.register(wait({
+        id: 'winner-disposes-loser', mode: 'any',
+        conditions: [{ id: 'winner', name: 'winner' }, { id: 'loser', name: 'loser' }],
+      }));
+      await reopened.signal({ id: 'winner-signal', name: 'winner', value: 1 });
+      const won = await reopened.inspect('winner-disposes-loser');
+      await reopened.signal({ id: 'loser-signal', name: 'loser', value: 2 });
+      expect(await reopened.inspect('winner-disposes-loser')).toEqual(won);
+      expect((await reopened.events()).filter(event => event.type === 'wait.subscriptions.disposed' && event.data['waitId'] === 'winner-disposes-loser')).toEqual([
+        expect.objectContaining({ data: { waitId: 'winner-disposes-loser', reason: 'succeeded', count: 1 } }),
+      ]);
+
+      await reopened.register(wait({ id: 'race', deadlineAtMs: time }));
+      const otherStore = fixture.reopen();
+      try {
+        await otherStore.initialize();
+        const other = await initialized({ store: otherStore, now: () => time });
+        await Promise.all([reopened.cancel('race'), other.sweepDeadlines()]);
+        const settled = await reopened.inspect('race');
+        expect(['cancelled', 'timed_out']).toContain(settled?.status);
+        expect(await other.cancel('race')).toEqual(settled);
+        expect(await other.sweepDeadlines()).toEqual([]);
+        const terminal = (await other.events()).filter(event => ['wait.cancelled', 'wait.timed_out'].includes(event.type) && event.data['waitId'] === 'race');
+        expect(terminal).toHaveLength(1);
+        expect((await other.events()).filter(event => event.type === 'wait.subscriptions.disposed' && event.data['waitId'] === 'race')).toHaveLength(1);
+      } finally { await otherStore.close(); }
+    });
+
     it('deduplicates identical signal retries and rejects conflicting content', async () => {
       const value = await initialized();
       const first = await value.signal({ id: 'signal-a', name: 'ready', value: { a: 1, b: 2 } });
@@ -247,11 +293,13 @@ export function workstreamConformance(name: string, factory: () => Promise<WorkS
         wait({ conditions: [{ id: 'a', name: '', after: 0 }] }), wait({ conditions: [{ id: 'a', name: 'ready', after: -1 }] }),
         wait({ conditions: [{ id: 'a', name: 'ready', after: 0.5 }] }),
         wait({ conditions: [{ id: 'a', name: 'ready', after: null as unknown as number }] }),
+        wait({ deadlineAtMs: -1 }), wait({ deadlineAtMs: 0.5 }), wait({ deadlineAtMs: null as unknown as number }),
         wait({ conditions: Array.from({ length: 33 }, (_, index) => ({ id: `c-${index}`, name: 'ready' })) }),
       ];
       for (const definition of invalidWaits) await expect(value.register(definition)).rejects.toThrow();
       for (const command of [{ id: '', name: 'ready', value: 1 }, { id: 'signal', name: '', value: 1 }, { id: 'signal', name: 'ready', value: 'x'.repeat(4097) }]) await expect(value.signal(command)).rejects.toThrow();
       for (const query of [{ after: -1 }, { after: 0.5 }, { after: null as unknown as number }, { limit: 0 }, { limit: 1.5 }, { limit: null as unknown as number }]) await expect(value.signals(query)).rejects.toThrow();
+      for (const query of [{ limit: 0 }, { limit: 129 }, { limit: 1.5 }, { unknown: true }]) await expect(value.sweepDeadlines(query as { limit?: number })).rejects.toThrow();
       await expect(value.events(-1)).rejects.toThrow();
       await expect(value.cancel('missing')).rejects.toThrow();
       expect(await value.events()).toEqual(before);
