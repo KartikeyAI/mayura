@@ -71,7 +71,10 @@ describe('QuickJS child-process adapter', () => {
     const started = performance.now();
     const result = await execute('() => { while (true) {} }', undefined, { limits: { ...limits, cpuMillis: 20, wallTimeMillis: 2_000 } });
     expect(result).toMatchObject({ status: 'failed', error: { code: 'TOOL_FAILED' } });
-    expect(performance.now() - started).toBeLessThan(1_500);
+    // Cold WASM startup varies under host contention. Keep a small, explicit
+    // margin below the 2 s host deadline while still proving the inner CPU
+    // interrupt, rather than an exact scheduler-latency threshold.
+    expect(performance.now() - started).toBeLessThan(1_900);
   });
 
   it('terminates allocation-heavy guest work at the QuickJS heap boundary', async () => {

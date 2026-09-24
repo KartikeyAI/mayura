@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**16 of 22 gates closed. Mayura remains an experimental development preview.**
+**17 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V12 — Budget concurrency | **Closed** | `packages/guardrails/test/release-gate-v12.test.ts` proves atomic competing child/root bundle admission, genuine ticket single-start, shared batch and parallel auxiliary ceilings, visible unresolved usage and stopped admission after exhaustion. The persistent equivalents remain covered by paired SQL durable-budget and workflow-tree suites. Contracts: [shared budgets](how-to/shared-budgets.md) and [durable budget ledger](specs/durable-budget-ledger.md). |
 | V13 — Memory/context isolation | **Closed** | Paired native-memory conformance passes 18/18 SQLite (including the capacity fixture) and 17/17 PostgreSQL for scope isolation, read-your-writes, corrections, tombstones and stale no-resurrection. `packages/memory/test/release-gate-v13.test.ts` proves old derivatives are invalid after correction/deletion and an export JSON migration retains exact upstream provenance. No external provider is silently claimed; a future adapter must use the same CAS/tombstone contract. Contracts: [native memory](specs/native-memory.md) and [native context](specs/native-context.md). |
 | V14 — Context continuity | **Closed** | The named `V14` fixture in `packages/context/test/context.test.ts` performs five exact JSON checkpoint/compaction/resume rounds and proves every hard constraint, unresolved blocker, pending approval and outstanding task remains required and selected. Existing overflow/source/sensitivity fixtures fail closed instead of silently dropping required continuity. Contract: [native context](specs/native-context.md). |
-| V15 — Code Mode | Qualification gap | QuickJS and Docker containment plus mediated nested calls and durable phases exist. A complete escape suite and one crash/resume write-deduplication gate suite remain; production hostile-code qualification is explicitly separate. |
+| V15 — Code Mode | **Closed** | The live Docker containment suite executes inside the exact locally built image and proves non-root identity, read-only root, absent host mounts/socket and common credential files/environment, loopback-only networking, zero capabilities, no-new-privileges, non-executable bounded scratch and forced cleanup. The QuickJS and Docker suites prove nested calls cross the ordinary broker. Real-process SQLite and PostgreSQL fixtures terminate workers after the nested write, receipt and completion boundaries and prove restart never repeats the write. This closes the finite V15 scenario only; the adapter remains experimental and is not broad hostile-code, kernel or multi-host production qualification. Contracts: [Docker Code Mode](specs/code-mode-docker.md) and [durable Code Mode phases](specs/code-mode-durable-phases.md). |
 | V16 — Server/client | **Closed** | The server/client suites pass 188/188 for object authorization, authenticated metadata streams, reconnect/deduplication and cancellation. The named `V16` client fixture proves hostile output remains inert data and bounded HTML text encoding escapes executable markup. `test:consumer:optional` passes an isolated one-package browser install/bundle with no Node globals/shims/server/runtime/native closure, while its separate Node profile passes authenticated HTTP/SSE. Contract: [HTTP agent transport](specs/http-agent-transport.md). |
 | V17 — Operational recovery | **Closed** | The [operational recovery matrix](operational-recovery.md) specifies fail-closed outcomes and direct fixtures for disk-full, provider outage, corrupt cache/checkpoint, missing/corrupt artifacts, explicit migration/restore, exporter failure and worker drain. The focused matrix passes 132/132, including injected ENOSPC and real killed-restore recovery. No implicit cache, replay, silent repair or data migration is claimed. |
 | V18 — Standalone consumer conformance | **Closed** | The isolated packed Node consumer is one fresh Arth-free application using only public archives. Its `externalConsumerMatrix` starts two required children concurrently, inspects live lineage, joins child completion before parent success, denies an ungranted host effect with zero callback execution, and commits/audits an artifact; the same app also validates observation and authenticated HTTP/SSE. `test:consumer:optional` passes with exact dependency isolation and no workspace fallback. Contract: [DX validation](dx-validation.md). |
@@ -33,10 +33,9 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Finish production containment qualification for V15.
-2. Finish developer-experience and compatibility gates V20 and V21.
-3. Execute the owner-approved distribution matrix for V19 and release governance for V22.
-4. Add MCP authority parity and close V01 after all invocation paths are stable.
+1. Finish developer-experience and compatibility gates V20 and V21.
+2. Execute the owner-approved distribution matrix for V19 and release governance for V22.
+3. Add MCP authority parity and close V01 after all invocation paths are stable.
 
 ## Owner decisions that block release, not local development
 
