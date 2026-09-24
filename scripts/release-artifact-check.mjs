@@ -64,7 +64,7 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   assert(manifest.private === true && manifest.version === version && manifest.name === `@mayura/${directory.name}`, 'Source package identity is not release-safe.');
   const staging = join(stagingRoot, directory.name);
   await mkdir(staging);
-  for (const name of ['dist', 'src', 'image']) if (existsSync(join(source, name))) await cp(join(source, name), join(staging, name), { recursive: true, errorOnExist: true });
+  for (const name of ['dist', 'src', 'image', 'templates']) if (existsSync(join(source, name))) await cp(join(source, name), join(staging, name), { recursive: true, errorOnExist: true });
   if (existsSync(join(source, 'README.md'))) await cp(join(source, 'README.md'), join(staging, 'README.md'), { errorOnExist: true });
   const dependencies = Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([name, range]) => [name, String(range).startsWith('workspace:') ? version : range]));
   const releaseManifest = { ...manifest, private: undefined, license: 'Apache-2.0', dependencies,
@@ -89,7 +89,9 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   assert(packedManifest.name === manifest.name && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
   assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
   assert(!Object.values(packedManifest.dependencies ?? {}).some(range => String(range).startsWith('workspace:')));
-  assert(!packedManifest.scripts && !packedManifest.bin, `${manifest.name} gained release-time executable behavior.`);
+  assert(!packedManifest.scripts, `${manifest.name} gained release-time lifecycle behavior.`);
+  if (manifest.name === '@mayura/cli') assert.deepEqual(packedManifest.bin, { mayura: './dist/bin.js' }, 'CLI executable mapping changed.');
+  else assert(!packedManifest.bin, `${manifest.name} gained release-time executable behavior.`);
   for (const [path, content] of files) {
     assert(!/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${manifest.name}: ${path}`);
     assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${manifest.name}: ${path}`);

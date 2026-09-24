@@ -14,6 +14,7 @@
     "test:consumer": "node scripts/consumer-check.mjs",
     "test:consumer:optional": "node scripts/optional-consumer-check.mjs",
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
+    "test:templates": "node scripts/template-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
     "model:live-check": "node examples/openai-agent.mjs",
@@ -24,7 +25,9 @@
   "devDependencies": {
     "@mayura/sdk": "workspace:*",
     "@mayura/core": "workspace:*",
+    "@mayura/cli": "workspace:*",
     "@mayura/helpers": "workspace:*",
+    "@mayura/memory": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/runtime": "workspace:*",
     "@mayura/testing": "workspace:*",

@@ -17,6 +17,9 @@ importers:
       '@mayura/adapter-mcp':
         specifier: workspace:*
         version: link:packages/adapter-mcp
+      '@mayura/cli':
+        specifier: workspace:*
+        version: link:packages/cli
       '@mayura/client':
         specifier: workspace:*
         version: link:packages/client
@@ -35,6 +38,9 @@ importers:
       '@mayura/helpers':
         specifier: workspace:*
         version: link:packages/helpers
+      '@mayura/memory':
+        specifier: workspace:*
+        version: link:packages/memory
       '@mayura/provider-openai':
         specifier: workspace:*
         version: link:packages/provider-openai
@@ -127,6 +133,12 @@ importers:
         version: link:../tools
 
   packages/artifacts:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/cli:
     dependencies:
       '@mayura/core':
         specifier: workspace:*

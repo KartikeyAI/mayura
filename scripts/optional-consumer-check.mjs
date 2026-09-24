@@ -13,9 +13,9 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
 const expectedDependencies = {
-  core: [], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
+  core: [], cli: ['@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'exporter-otlp': ['@mayura/core', '@mayura/observability'],
@@ -96,11 +96,12 @@ function inspectMayura(shortName, files) {
   const manifest = JSON.parse(files.get('package.json').toString('utf8'));
   assert.equal(manifest.name, `@mayura/${shortName}`);
   assert.deepEqual(Object.keys(manifest.dependencies ?? {}).sort(), expectedDependencies[shortName], 'Optional package dependency closure changed; review it explicitly.');
-  assert(!manifest.optionalDependencies && !manifest.peerDependencies && !manifest.scripts && !manifest.bin, 'Mayura distribution needs explicit optional/lifecycle review.');
+  assert(!manifest.optionalDependencies && !manifest.peerDependencies && !manifest.scripts, 'Mayura distribution needs explicit optional/lifecycle review.');
+  if (shortName === 'cli') assert.deepEqual(manifest.bin, { mayura: './dist/bin.js' }); else assert(!manifest.bin, 'Unreviewed package executable.');
   for (const version of Object.values(manifest.dependencies ?? {})) assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into archive.');
   let maps = 0;
   for (const [path, bytes] of files) {
-    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
+    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|templates\/[A-Za-z0-9_-]+\.ts|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
     assert(!/\.(?:test|spec)\.ts$/.test(path) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
     if (!path.startsWith('dist/') || !/\.(?:js|d\.ts)$/.test(path)) continue;
     const directives = [...bytes.toString('utf8').matchAll(/^\/\/# sourceMappingURL=([^\r\n]+)$/gm)];
@@ -178,6 +179,7 @@ async function main() {
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
+    ['cli', ['@mayura/cli'], 'optional-cli.test.ts'],
     ['helpers', ['@mayura/helpers'], 'optional-helpers.test.ts'],
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing', '@mayura/artifacts'], 'optional-node.test.ts'],
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
@@ -220,6 +222,10 @@ async function main() {
       if (name === 'helpers') {
         assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
         assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true);
+      }
+      if (name === 'cli') {
+        assert.equal(execution.eightTemplates, true); assert.equal(execution.planFirst, true);
+        assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -300,6 +306,7 @@ async function main() {
     'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard', 'artifact-backup-restore');
   result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting');
   result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
+  result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
