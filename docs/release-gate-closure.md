@@ -4,12 +4,12 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**7 of 22 gates closed. Mayura remains an experimental development preview.**
+**8 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
 | V01 — Unified authority | Implementation gap | Direct, batch, delegated, workflow-as-tool and required-hook paths exist. MCP invocation and an exact cross-path policy-decision matrix are missing; Code Mode parity must be proven in the same matrix. |
-| V02 — Durable effects | Qualification gap | Scheduled profiles cover intent/dispatch/receipt/completion crash boundaries and conservative unknown outcomes. One named gate suite must cover every boundary, inspection replay and both SQL adapters without relying on scattered tests. |
+| V02 — Durable effects | **Closed** | Paired scheduler process-kill fixtures cover committed claim/intent, start/dispatch and receipt boundaries; paired scheduled-workflow process fixtures cover start, receipt and completion/result commits. Recovery either safely reclaims never-started intent or exposes/preserves unknown/known evidence with zero handler replay. The `V02` paired conformance scenario proves repeated inspection and event replay cause zero effects. These matrices pass on SQLite and PostgreSQL. Contracts: [durable execution](specs/durable-execution.md), [leased scheduler](specs/leased-scheduler.md), and [process recovery](testing-process-recovery.md). |
 | V03 — Fencing | **Closed** | The shared scheduler conformance matrix passes 22/22 on SQLite and 22/22 on PostgreSQL. Its `persists expiry observation and rejects stale control before and after pre-start recovery`, `commits stale observation without falsely journaling a failed completion`, `never reclaims a started effect` and `serializes declared resources` scenarios prove sticky ownership transfer, stale start/commit rejection and conflicting-resource exclusion. Contract: [leased scheduler](specs/leased-scheduler.md). |
 | V04 — WorkStream races | Implementation gap | Durable registration, signals, composites, cancellation, restart and cursor gaps exist. A durable deadline transition and explicit losing-subscription disposal evidence are missing. |
 | V05 — Bounded orchestration | Qualification gap | Ephemeral nesting and bounded format-4 one-level children exist. A constrained-capacity matrix must jointly prove progress, cycle rejection and depth/concurrency/budget bounds for every supported orchestration profile. |
@@ -33,12 +33,11 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Close qualification-heavy V02 before adding more feature surface.
-2. Implement the narrow missing contracts for V06 and V04, then close their deterministic matrices.
-3. Close composition and containment gates V05, V14, V15 and V18.
-4. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
-5. Execute the owner-approved distribution matrix for V19 and release governance for V22.
-6. Add MCP authority parity and close V01 after all invocation paths are stable.
+1. Implement the narrow missing contracts for V06 and V04, then close their deterministic matrices.
+2. Close composition and containment gates V05, V14, V15 and V18.
+3. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
+4. Execute the owner-approved distribution matrix for V19 and release governance for V22.
+5. Add MCP authority parity and close V01 after all invocation paths are stable.
 
 ## Owner decisions that block release, not local development
 

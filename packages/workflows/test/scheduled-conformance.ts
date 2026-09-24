@@ -126,6 +126,25 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       expect(Object.isFrozen(completed)).toBe(true); expect(Object.isFrozen(completed.steps)).toBe(true);
     });
 
+    it('V02 keeps inspection and event replay observational with zero repeated effects', async () => {
+      let effects = 0;
+      const definition = single(tool({ execute: input => { effects++; return input; } }));
+      const engine = runtime();
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'v02-inspection' });
+
+      const before = await engine.inspect(run.id);
+      const beforeAgain = await engine.inspect(run.id);
+      const initialEvents = await engine.events(run.id);
+      const replayedEvents = await engine.events(run.id);
+      expect(beforeAgain).toEqual(before); expect(replayedEvents).toEqual(initialEvents); expect(effects).toBe(0);
+
+      const completed = await engine.runUntilSettled(definition, run.id);
+      expect(completed.status).toBe('succeeded'); expect(effects).toBe(1);
+      expect(await engine.inspect(run.id)).toEqual(await engine.inspect(run.id));
+      expect(await engine.events(run.id)).toEqual(await engine.events(run.id));
+      expect(effects).toBe(1);
+    });
+
     it('atomically settles verified dynamic usage and retains only unresolved cost', async () => {
       const exact = single(tool({ costMicros: 10, execute: (input, context) => {
         context.reportUsage({ knownCostMicros: 3, unknownCostMicros: 0 }); return input;
