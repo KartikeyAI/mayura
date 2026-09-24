@@ -30,7 +30,8 @@ export function useMayuraHumanResponseCommand(controller: HumanResponseControlle
 /** Subscribe to caller-owned workflow command state without reading or mutating on mount. */
 export function useMayuraWorkflowCommand(controller: WorkflowCommandController): WorkflowCommandState {
   if (!controller || typeof controller.getSnapshot !== 'function' || typeof controller.subscribe !== 'function'
-    || typeof controller.cancel !== 'function' || typeof controller.approve !== 'function' || typeof controller.signal !== 'function' || typeof controller.reset !== 'function'
+    || typeof controller.cancel !== 'function' || typeof controller.approve !== 'function' || typeof controller.signal !== 'function'
+    || typeof controller.resume !== 'function' || typeof controller.reset !== 'function'
     || typeof controller.dispose !== 'function') throw new MayuraReactError('INVALID_WORKFLOW_CONTROLLER');
   return useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 }

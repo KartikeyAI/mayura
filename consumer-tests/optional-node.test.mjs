@@ -110,6 +110,7 @@ const server = await listenAgentServer({
   workflowControls: { cancel: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1, status: 'cancelled' } }),
     approve: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
   workflowSignals: { deliver: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
+  workflowResumes: { resume: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
   authenticate: async ({ token: supplied, signal }) => {
     if (signal.aborted || expiresAtMs <= Date.now() || !/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied, 'hex'), secret)) return null;
     return { scope: { principalId: 'consumer-user', projectId: 'consumer-project' }, agentIds: ['consumer.http'], capabilities: ['runs:read', 'runs:submit', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'], expiresAtMs };
@@ -134,6 +135,7 @@ try {
     { commandId: 'packed-approve' })).revision, 3);
   assert.equal((await client.signalWorkflow(workflowRunId, { revision: 3, signalId: 'ready/1', signalName: 'ready', value: { accepted: true } },
     { commandId: 'packed-signal' })).revision, 4);
+  assert.equal((await client.resumeWorkflow(workflowRunId, 4, { commandId: 'packed-resume' })).revision, 5);
   assert.equal(humanActor, 'consumer-user');
   const denied = createClient({ baseUrl: server.origin, token: () => 'incorrect' });
   await assert.rejects(denied.agents(), { code: 'HTTP_ERROR', status: 401 });
@@ -146,6 +148,6 @@ try {
   assert(!JSON.stringify({ result, events }).includes(token)); assert(!JSON.stringify({ result, events }).includes('PRIVATE'));
   assert.equal(globalThis.Request, globals.Request); assert.equal(globalThis.Response, globals.Response); assert.equal(globalThis.fetch, globals.fetch);
   httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true, operationalSurface: true, humanTransport: true,
-    workflowTransport: true, workflowIndex: true, workflowControls: true, workflowSignals: true };
+    workflowTransport: true, workflowIndex: true, workflowControls: true, workflowSignals: true, workflowResume: true };
 } finally { await server.close(); }
 console.log(JSON.stringify({ status: externalConsumerMatrix ? 'passed' : 'failed', batchOutputReferences: true, externalConsumerMatrix, observation: observationReport, http: httpReport }));

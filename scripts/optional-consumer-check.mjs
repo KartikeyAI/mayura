@@ -253,7 +253,7 @@ async function main() {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
-      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); assert.equal(execution.http.workflowIndex, true); assert.equal(execution.http.workflowControls, true); assert.equal(execution.http.workflowSignals, true); }
+      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); assert.equal(execution.http.workflowIndex, true); assert.equal(execution.http.workflowControls, true); assert.equal(execution.http.workflowSignals, true); assert.equal(execution.http.workflowResume, true); }
       if (name === 'helpers') {
         assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
         assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true); assert.equal(execution.credentialStore, true);
@@ -356,13 +356,13 @@ async function main() {
           ? { items: [{ format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1, status: 'running' }], next: null }
           : path.startsWith('/v1/workflow-runs/')
           ? { workflow: { format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64),
-            revision: path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : path.endsWith('/signals') ? 4 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
+            revision: path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : path.endsWith('/signals') ? 4 : path.endsWith('/resume') ? 5 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
             nodes: [{ id: 'step', kind: 'tool', dependsOn: [] }], steps: [{ id: 'step', kind: 'tool', status: 'pending' }] } }
           : { agents: [] };
         return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, authenticatedWorkflowIndex: true, explicitWorkflowControls: true, explicitWorkflowSignals: true, workflowCommandState: true, workflowSignalCommandState: true, digestBoundResponseForms: true, humanResponseCommandState: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, authenticatedWorkflowIndex: true, explicitWorkflowControls: true, explicitWorkflowSignals: true, explicitWorkflowResume: true, workflowCommandState: true, workflowSignalCommandState: true, workflowResumeCommandState: true, digestBoundResponseForms: true, humanResponseCommandState: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -408,6 +408,7 @@ async function main() {
   result.checks.push('authenticated-workflow-index-route', 'browser-workflow-index-page', 'cli-workflow-list');
   result.checks.push('authenticated-workflow-signal-route', 'browser-explicit-workflow-signal', 'cli-workflow-signal-file-boundary');
   result.checks.push('browser-workflow-signal-command-state');
+  result.checks.push('authenticated-workflow-resume-route', 'browser-explicit-workflow-resume', 'browser-workflow-resume-command-state', 'cli-workflow-resume');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

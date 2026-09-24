@@ -37,6 +37,7 @@ The same controller can submit one bounded signal when its client implements sig
 
 ```ts
 await controls.signal({ signalId, signalName, value }, { commandId, signal });
+await controls.resume({ commandId, signal });
 ```
 
 Signal values are immutable command inputs and are never copied into command state.
@@ -46,3 +47,4 @@ Create a new controller after accepting the returned view. `reset()` only clears
 On HTTP 409, refresh explicitly and ask the user to reconsider the new state. After an ambiguous transport failure, reconcile using the same command ID before deciding whether another logical command is appropriate. Never generate a new ID and automatically repeat a mutation.
 
 Durable external signals use the separate least-authority adapter and route described in [workflow signals](workflow-signals.md); they are not added to the cancellation/approval controller implicitly.
+Continuation uses the separate [workflow resume](workflow-resume.md) adapter and cannot satisfy a waiting gate by itself.

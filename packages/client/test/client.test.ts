@@ -37,6 +37,7 @@ function fixture(options: {
   workflowIndex?: AgentServerOptions['workflowIndex'];
   workflowControls?: AgentServerOptions['workflowControls'];
   workflowSignals?: AgentServerOptions['workflowSignals'];
+  workflowResumes?: AgentServerOptions['workflowResumes'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -55,6 +56,7 @@ function fixture(options: {
     ...(options.workflowIndex ? { workflowIndex: options.workflowIndex } : {}),
     ...(options.workflowControls ? { workflowControls: options.workflowControls } : {}),
     ...(options.workflowSignals ? { workflowSignals: options.workflowSignals } : {}),
+    ...(options.workflowResumes ? { workflowResumes: options.workflowResumes } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -250,6 +252,17 @@ describe('browser durable workflow view client', () => {
     await expect(client.signalWorkflow(runId, { revision: 2, signalId: 'ready', signalName: 'ready', value: 'x'.repeat(4097) }, { commandId: 'signal-2' }))
       .rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it('requests durable continuation once and preserves conflict truth', async () => {
+    const resume = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3 } }));
+    const { client, transport } = fixture({ workflowResumes: { resume } });
+    expect(await client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).toMatchObject({ revision: 3 });
+    expect(resume).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', runId, revision: 2, commandId: 'resume-1' }));
+    expect(JSON.parse(transport.mock.calls[0]![1]?.body as string)).toEqual({ commandId: 'resume-1', revision: 2 });
+    const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
+    await expect(conflict.client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    expect(conflict.transport).toHaveBeenCalledOnce();
   });
 });
 

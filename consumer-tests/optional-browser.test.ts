@@ -39,6 +39,10 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if ((await signalController.signal({ signalId: 'ready/1', signalName: 'ready', value: { accepted: true } },
     { commandId: 'signal-1' })).revision !== 4 || signalController.getSnapshot().action !== 'signal') throw new Error('Workflow signal state failed.');
   signalController.dispose();
+  const resumeController = createWorkflowCommandController({ workflow, client });
+  if ((await resumeController.resume({ commandId: 'resume-1' })).revision !== 5 || resumeController.getSnapshot().action !== 'resume')
+    throw new Error('Workflow continuation state failed.');
+  resumeController.dispose();
   return agents.length;
 }
 

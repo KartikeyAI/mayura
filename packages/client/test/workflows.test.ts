@@ -116,6 +116,19 @@ describe('durable workflow command controller', () => {
     expect(signalWorkflow).not.toHaveBeenCalled(); expect(controller.getSnapshot().status).toBe('idle');
   });
 
+  it('requests continuation without converting a waiting gate into local success', async () => {
+    const result = view([{ id: 'child', kind: 'child', dependsOn: [] }], [{ id: 'child', kind: 'child', status: 'waiting', childRunId }],
+      { status: 'waiting' }); const cancelWorkflow = vi.fn(async () => result); const approveWorkflow = vi.fn(async () => result);
+    const resumeWorkflow = vi.fn<MayuraClient['resumeWorkflow']>(async () => result);
+    const controller = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow, resumeWorkflow } });
+    await expect(controller.resume({ commandId: 'resume-1' })).resolves.toBe(result);
+    expect(resumeWorkflow).toHaveBeenCalledWith(runId, 7, expect.objectContaining({ commandId: 'resume-1' }));
+    expect(controller.getSnapshot()).toMatchObject({ status: 'succeeded', action: 'resume', workflowRevision: 7, workflowStatus: 'waiting' });
+    const missing = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });
+    await expect(missing.resume({ commandId: 'resume-2' })).rejects.toMatchObject({ code: 'INVALID_WORKFLOW_CONTROLLER' });
+    expect(missing.getSnapshot().status).toBe('idle');
+  });
+
   it('enforces single flight and never retries or reveals an unknown failure', async () => {
     const pending = deferred<WorkflowViewInput>(); const cancelWorkflow = vi.fn(() => pending.promise); const approveWorkflow = vi.fn(() => pending.promise);
     const controller = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });
