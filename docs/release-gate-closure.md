@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**3 of 22 gates closed. Mayura remains an experimental development preview.**
+**4 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V05 — Bounded orchestration | Qualification gap | Ephemeral nesting and bounded format-4 one-level children exist. A constrained-capacity matrix must jointly prove progress, cycle rejection and depth/concurrency/budget bounds for every supported orchestration profile. |
 | V06 — Tool batch semantics | Implementation gap | Success, denial, failure, unknown, receipts, references and no-rollback behavior are covered. The batch contract has no truthful waiting outcome, so the exact mandatory scenario cannot yet pass. |
 | V07 — Human intervention | Qualification gap | Durable exact approvals survive restart and bind candidate digests. A single stale-approval matrix must independently mutate target, tool version/code identity, arguments and policy. |
-| V08 — Processor/hook integrity | Qualification gap | Candidate versions, final-gate revalidation and fail-closed callbacks exist. The exact transform/verdict invalidation and post-final mutation matrix must be consolidated across model, tool and output paths. |
+| V08 — Processor/hook integrity | **Closed** | `packages/runtime/test/release-gate-v08.test.ts` proves transformed candidates receive new version/digest-bound verdicts, unsafe transforms cannot reuse an earlier decision, post-final hook replacement fails closed, callback failure preserves a completed effect as succeeded/withheld, and failed denial notification cannot release or falsify content. Contracts: [processors](specs/processors.md) and [lifecycle hooks](specs/lifecycle-hooks.md). |
 | V09 — Guardrail barriers | **Closed** | `packages/runtime/test/release-gate-v09.test.ts` proves mandatory local denial causes zero primary/tool dispatch, managed auxiliary denial is a single tool-free/continuation-free accounted call, and an unaffordable required barrier rejects atomically before any model dispatch. Contracts: [runtime-managed guardrails](specs/runtime-managed-guardrails.md) and [auxiliary guardrails](specs/auxiliary-guardrails.md). |
 | V10 — Streaming disclosure | **Closed** | `packages/guardrails/test/release-gate-v10.test.ts` covers split secrets/PII, privileged tool previews, raw events, error messages, citations and byte/chunk overflow through the configured release boundary. Contract: [processors and guardrails](specs/processors.md). |
 | V11 — Language handling | **Closed** | `packages/guardrails/test/release-gate-v11.test.ts` proves separately tracked and metered detection/translation calls, immutable original evidence, exact protected-code preservation, low-confidence preservation without translation, and fail-closed accounted translation failure. Contract: [auxiliary guardrails](specs/auxiliary-guardrails.md#language-detection-and-translation). |
@@ -33,7 +33,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Close qualification-heavy V02, V03, V07, V08 and V12 before adding more feature surface.
+1. Close qualification-heavy V02, V03, V07 and V12 before adding more feature surface.
 2. Implement the narrow missing contracts for V06 and V04, then close their deterministic matrices.
 3. Close composition and containment gates V05, V14, V15 and V18.
 4. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
