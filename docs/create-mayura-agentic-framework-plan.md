@@ -519,6 +519,8 @@ Implementation checkpoint (2026-09-24): the Fetch server now keeps public livene
 
 Implementation checkpoint (2026-09-24): the Node-only CLI now consumes those two read-only operational routes through explicit typed functions and executable commands. Short-lived credentials enter the executable only through piped stdin; destinations, redirects, response sizes, timeouts and page traversal are fail-closed. Durable mutating administration, fleet aggregation and storage migrations remain M8 work.
 
+Implementation checkpoint (2026-09-24): the same Node-only CLI now exposes authenticated ephemeral `run-get`, bounded read-only `run-wait` and single-attempt `run-cancel` over the existing server authority. Inspection returns only status, budget totals and sanitized effect receipts; outcome output/error payloads are withheld. Cancellation has no automatic retry after an ambiguous acknowledgement. Durable workflow/fleet control, run submission, exact-action approval, cache/evidence administration and migrations remain M8 work.
+
 Validate caller identity and ownership on every object operation, not just route entry. A submitted tenant/project ID is not proof of access. Propagate verified scope to storage queries, queues, events, artifacts, traces, memory, and caches. Use scoped credentials and never forward tokens to an unrelated destination.
 
 Public deployments require TLS, authentication integration, appropriate authorization, rate/payload limits, origin controls, and CSRF protection where cookies are used. Do not put tokens in event-stream URLs. A browser-capable authenticated streaming client can use a fetch-based stream rather than requiring unprotected EventSource endpoints.

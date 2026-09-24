@@ -1,8 +1,8 @@
 # Authenticated operational CLI
 
-Status: implementation contract for read-only server inspection.
+Status: implementation contract for server inspection, human response and ephemeral-run control.
 
-`@mayura/cli` exposes typed health/tool functions plus typed human request list, inspect and respond functions. The executable provides `server-health`, `server-tools`, `human-list`, `human-get` and `human-respond`. These commands consume the authenticated routes defined by the [HTTP agent transport](http-agent-transport.md). They do not submit or cancel runs, answer exact-action tool approvals, migrate storage, load application modules or discover credentials.
+`@mayura/cli` exposes typed health/tool functions, typed human request list/inspect/respond functions, and ephemeral-run inspect/wait/cancel functions. The executable provides `server-health`, `server-tools`, `human-list`, `human-get`, `human-respond`, `run-get`, `run-wait` and `run-cancel`. These commands consume the authenticated routes defined by the [HTTP agent transport](http-agent-transport.md). They do not submit runs, control durable workflow fleets, answer exact-action tool approvals, migrate storage, load application modules or discover credentials.
 
 ## Credential and destination boundary
 
@@ -12,8 +12,10 @@ Human response values come from an explicit regular UTF-8 JSON file capped at 1 
 
 Only exact HTTPS origins and loopback HTTP origins are accepted. Requests use `Authorization: Bearer`, omit cookies, disable caching, reject redirects and never retry. Timeouts cover credential resolution, transport and bounded response reads, including non-cooperative injected callbacks. Errors contain stable generic text and never include a token or response body.
 
+Run inspection exposes status, budget totals and sanitized effect receipts only. Outcome output and error payloads are discarded even when the server returns them. `run-wait` performs bounded sequential read-only polling with a 250–10,000 ms interval and at most five minutes total; any failed read stops the wait. `run-cancel` sends exactly one bodyless command. An unavailable acknowledgement is reported as ambiguous failure and never causes an automatic retry. These routes currently control the server's bounded in-memory ephemeral runs, not durable scheduled/workflow records.
+
 ## Response boundary
 
 Readiness accepts HTTP 200 or the defined degraded HTTP 503 response, then validates the complete fixed report. A degraded dependency is observable state rather than a hidden transport error. Tool inspection reads exactly one explicit page of at most 100 metadata entries; it never follows a cursor automatically. Both results are immutable and reject unknown or malformed fields. Tool descriptions, schemas, prompts, handlers, credentials and server exception details are outside the wire contract.
 
-Unit tests cover origin, credential header, degraded readiness, exact catalog shape, human pagination/inspection/response, hostile responses, callback timeout, the real executable stdin boundary and the bounded response-file path. The isolated packed CLI consumer type-checks and executes all read-only and human operations without installing server/runtime packages.
+Unit tests cover origin, credential header, degraded readiness, exact catalog shape, human pagination/inspection/response, run output withholding, bounded waits, cancellation ambiguity, hostile responses, callback timeout, real executable stdin boundaries and the bounded response-file path. The isolated packed CLI consumer type-checks and executes all operational, human and run operations without installing server/runtime packages.

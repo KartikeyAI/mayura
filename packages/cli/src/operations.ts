@@ -26,9 +26,19 @@ export interface OperationalHumanRequest {
   readonly subjectDigest?: string; readonly deadlineAtMs?: number;
 }
 export interface OperationalHumanRequestPage { readonly items: readonly OperationalHumanRequest[]; readonly next: string | null }
+export interface OperationalRunReceipt {
+  readonly runId: string; readonly receipt: { readonly callId: string; readonly toolId: string;
+    readonly execution: 'not_started' | 'succeeded' | 'failed' | 'unknown'; readonly disclosure: 'released' | 'withheld' };
+}
+export interface OperationalRun {
+  readonly id: string; readonly status: 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+  readonly budget: { readonly spentMicros: number | string; readonly reservedMicros: number; readonly calls: number };
+  readonly evidence: readonly OperationalRunReceipt[];
+}
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u;
 const capabilityIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
+const runIdentifier = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 function fail(): never { throw new MayuraError('INVALID_OUTPUT', 'The operational server returned an invalid response.'); }
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value))) return fail();
@@ -40,6 +50,7 @@ function exact(value: Record<string, unknown>, keys: readonly string[]): void {
 function id(value: unknown): string { if (typeof value !== 'string' || !identifier.test(value)) return fail(); return value; }
 function capability(value: unknown): string { if (typeof value !== 'string' || !capabilityIdentifier.test(value)) return fail(); return value; }
 function natural(value: unknown): number { if (!Number.isSafeInteger(value) || (value as number) < 0) return fail(); return value as number; }
+function runId(value: unknown): string { if (typeof value !== 'string' || !runIdentifier.test(value)) return fail(); return value; }
 async function bounded<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void Promise.resolve(work).catch(() => {}); throw new MayuraError('TIMEOUT', 'Operational inspection was cancelled or timed out.'); }
   return await new Promise<T>((resolve, reject) => {
@@ -120,6 +131,23 @@ function human(value: unknown): OperationalHumanRequest {
     ...(item['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: item['deadlineAtMs'] as number }) });
 }
 
+function run(value: unknown, expectedId: string): OperationalRun {
+  const item = record(value); const allowed = ['id', 'status', 'budget', 'evidence', 'outcome'];
+  if (Object.keys(item).some(key => !allowed.includes(key)) || !['id', 'status', 'budget', 'evidence'].every(key => Object.hasOwn(item, key))
+    || runId(item['id']) !== expectedId || !['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))) return fail();
+  const budget = record(item['budget']); exact(budget, ['spentMicros', 'reservedMicros', 'calls']); const spent = budget['spentMicros'];
+  if (typeof spent === 'string' ? !/^\d{1,64}$/u.test(spent) : !Number.isSafeInteger(spent) || (spent as number) < 0) return fail();
+  if (!Array.isArray(item['evidence']) || item['evidence'].length > 4_096) return fail();
+  const evidence = item['evidence'].map(raw => { const entry = record(raw); exact(entry, ['runId', 'receipt']); const receipt = record(entry['receipt']);
+    exact(receipt, ['callId', 'toolId', 'execution', 'disclosure']);
+    if (!['not_started', 'succeeded', 'failed', 'unknown'].includes(String(receipt['execution'])) || !['released', 'withheld'].includes(String(receipt['disclosure']))) return fail();
+    return Object.freeze({ runId: runId(entry['runId']), receipt: Object.freeze({ callId: id(receipt['callId']), toolId: id(receipt['toolId']),
+      execution: receipt['execution'] as OperationalRunReceipt['receipt']['execution'], disclosure: receipt['disclosure'] as OperationalRunReceipt['receipt']['disclosure'] }) });
+  });
+  return Object.freeze({ id: expectedId, status: item['status'] as OperationalRun['status'], budget: Object.freeze({ spentMicros: spent as number | string,
+    reservedMicros: natural(budget['reservedMicros']), calls: natural(budget['calls']) }), evidence: Object.freeze(evidence) });
+}
+
 /** Read sanitized readiness metadata. HTTP 503 is a valid degraded report, not a transport failure. */
 export async function inspectServerHealth(options: OperationalClientOptions): Promise<OperationalHealth> {
   const raw = await transport(options, '/v1/operations/health', [200, 503]); exact(raw, ['status', 'checks']);
@@ -179,4 +207,33 @@ export async function respondHumanRequest(options: OperationalClientOptions, inp
     { commandId: input.commandId, requestDigest: input.requestDigest, value: input.value }); exact(raw, ['request']);
   const result = human(raw['request']);
   if (result.id !== input.id || result.digest !== input.requestDigest || result.status === 'waiting') return fail(); return result;
+}
+
+/** Inspect metadata and effect evidence for one authorized run. Output/error payloads are intentionally omitted. */
+export async function inspectRun(options: OperationalClientOptions, id: string): Promise<OperationalRun> {
+  if (!runIdentifier.test(id)) throw new MayuraError('INVALID_CONFIG', 'Run ID is invalid.');
+  return run(await transport(options, `/v1/runs/${id}`, [200]), id);
+}
+
+/** Submit one cancellation request. It is never retried after an ambiguous acknowledgement. */
+export async function cancelRun(options: OperationalClientOptions, id: string): Promise<void> {
+  if (!runIdentifier.test(id)) throw new MayuraError('INVALID_CONFIG', 'Run ID is invalid.');
+  const raw = await transport(options, `/v1/runs/${id}/cancel`, [202], 'POST'); exact(raw, ['id', 'cancellationRequested']);
+  if (raw['id'] !== id || raw['cancellationRequested'] !== true) return fail();
+}
+
+/** Bounded explicit polling of read-only run state; commands are never issued or retried. */
+export async function waitForRun(options: OperationalClientOptions, id: string,
+  settings: { readonly pollIntervalMs?: number; readonly maxWaitMs?: number } = {}): Promise<OperationalRun> {
+  if (!runIdentifier.test(id)) throw new MayuraError('INVALID_CONFIG', 'Run ID is invalid.');
+  const interval = settings.pollIntervalMs ?? 1_000; const maximum = settings.maxWaitMs ?? 60_000;
+  if (!Number.isSafeInteger(interval) || interval < 250 || interval > 10_000 || !Number.isSafeInteger(maximum) || maximum < interval || maximum > 300_000) throw new MayuraError('INVALID_CONFIG', 'Run wait limits are invalid.');
+  const controller = new AbortController(); const abort = (): void => controller.abort(); options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
+  const timer = setTimeout(abort, maximum);
+  const pause = () => new Promise<void>((resolve, reject) => { const done = (): void => { clearTimeout(delay); controller.signal.removeEventListener('abort', cancelled); resolve(); };
+    const cancelled = (): void => { clearTimeout(delay); controller.signal.removeEventListener('abort', cancelled); reject(new MayuraError('TIMEOUT', 'Run wait was cancelled or timed out.')); };
+    const delay = setTimeout(done, interval); controller.signal.addEventListener('abort', cancelled, { once: true }); if (controller.signal.aborted) cancelled(); });
+  try {
+    while (true) { const current = await inspectRun({ ...options, signal: controller.signal }, id); if (current.status !== 'running') return current; await pause(); }
+  } finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); controller.abort(); }
 }

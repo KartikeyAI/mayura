@@ -6,8 +6,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
-import { applyProjectPlan, inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, planProject, readProject,
-  respondHumanRequest, templates, validateProject } from '../src/index.js';
+import { applyProjectPlan, cancelRun, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, planProject, readProject,
+  respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -125,6 +125,32 @@ describe('@mayura/cli authenticated operations', () => {
     expect(JSON.stringify(calls)).not.toContain('actorId');
   });
 
+  it('inspects, waits and cancels runs without disclosing output or retrying commands', async () => {
+    const runId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; let reads = 0; let cancellations = 0;
+    const transport = async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith('/cancel')) { cancellations += 1; expect(init?.method).toBe('POST'); expect(init?.body).toBeUndefined();
+        return new Response(JSON.stringify({ id: runId, cancellationRequested: true }), { status: 202, headers: { 'content-type': 'application/json' } }); }
+      reads += 1; const status = reads === 1 ? 'running' : 'succeeded';
+      return new Response(JSON.stringify({ id: runId, status, budget: { spentMicros: '7', reservedMicros: 0, calls: 1 }, evidence: [],
+        ...(status === 'succeeded' ? { outcome: { status, output: 'PRIVATE OUTPUT' } } : {}) }), { headers: { 'content-type': 'application/json' } });
+    };
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
+    expect(await inspectRun(settings, runId)).toMatchObject({ id: runId, status: 'running' });
+    const completed = await waitForRun(settings, runId, { pollIntervalMs: 250, maxWaitMs: 1_000 });
+    expect(completed.status).toBe('succeeded'); expect(JSON.stringify(completed)).not.toContain('PRIVATE');
+    await cancelRun(settings, runId); expect(cancellations).toBe(1);
+    await expect(waitForRun(settings, runId, { pollIntervalMs: 249, maxWaitMs: 1_000 })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+  });
+
+  it('does not retry an ambiguously acknowledged run cancellation', async () => {
+    const runId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; let calls = 0;
+    const error: unknown = await cancelRun({ baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: async () => {
+      calls += 1; throw new Error('PRIVATE NETWORK DETAIL');
+    } }, runId).catch(caught => caught);
+    expect(calls).toBe(1); expect(error).toMatchObject({ code: 'TOOL_FAILED' }); expect(String(error)).not.toContain('PRIVATE');
+  });
+
   it('accepts a short-lived CLI credential only through piped stdin and never prints it', async () => {
     const host = createServer((request, response) => {
       expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE'); expect(request.url).toBe('/v1/operations/health');
@@ -160,6 +186,22 @@ describe('@mayura/cli authenticated operations', () => {
       const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
       expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|accept/);
       expect(received).toEqual({ commandId: 'answer-1', requestDigest: digest, value: { choice: 'accept' } });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
+  });
+
+  it('sends one executable run cancellation with a piped credential and no body', async () => {
+    const runId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; let requests = 0;
+    const host = createServer(async (request, response) => { requests += 1; expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE');
+      expect(request.url).toBe(`/v1/runs/${runId}/cancel`); let body = ''; for await (const chunk of request) body += String(chunk); expect(body).toBe('');
+      response.writeHead(202, { 'content-type': 'application/json' }); response.end(JSON.stringify({ id: runId, cancellationRequested: true })); });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    try { const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'run-cancel', '--url', `http://127.0.0.1:${address.port}`,
+        '--id', runId, '--token-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; }); child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toContain('TOKEN_PRIVATE'); expect(requests).toBe(1);
+      expect(JSON.parse(stdout)).toEqual({ status: 'succeeded', cancellationRequested: true, id: runId });
     } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 });

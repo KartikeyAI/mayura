@@ -2,8 +2,8 @@
 import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
-import { applyProjectPlan, inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, planProject, readProject,
-  respondHumanRequest, templates, TEMPLATE_NAMES, type TemplateName } from './index.js';
+import { applyProjectPlan, cancelRun, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, planProject, readProject,
+  respondHumanRequest, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -92,7 +92,17 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     if (!requestDigest || !commandId || !file) throw new Error('human-respond requires --digest, --command-id and --response-file.');
     return { status: 'succeeded', request: await respondHumanRequest(settings, { id, requestDigest, commandId, value: await responseFile(file) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond');
+  if (command === 'run-get' || command === 'run-wait' || command === 'run-cancel') {
+    assertArguments(arguments_, command === 'run-wait' ? ['--url', '--id', '--poll-ms', '--wait-ms'] : ['--url', '--id'], ['--token-stdin']);
+    const baseUrl = option(arguments_, '--url'); const id = option(arguments_, '--id');
+    if (!baseUrl || !id || !arguments_.includes('--token-stdin')) throw new Error(`${command} requires --url, --id and --token-stdin.`);
+    const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
+    if (command === 'run-get') return { status: 'succeeded', run: await inspectRun(settings, id) };
+    if (command === 'run-cancel') { await cancelRun(settings, id); return { status: 'succeeded', cancellationRequested: true, id }; }
+    const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
+    return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
+  }
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }
