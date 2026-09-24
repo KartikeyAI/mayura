@@ -317,6 +317,49 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       expect((await current.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
     });
 
+    it('V07 preserves a compute-free approval across restart and rejects stale target, code, arguments and policy', async () => {
+      let effects = 0;
+      const originalTool = tool({ execute: input => { effects++; return input; } });
+      const definition = single(originalTool, true);
+      const old = runtime();
+      const first = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'v07-first' });
+      const second = await old.submit(definition, { input: { value: 2 }, idempotencyKey: 'v07-second' });
+      const firstWaiting = await old.runUntilSettled(definition, first.id);
+      const secondWaiting = await old.runUntilSettled(definition, second.id);
+      const approval = firstWaiting.steps['write']!.approval!;
+      expect(firstWaiting).toMatchObject({ status: 'waiting', budget: { reservedMicros: 0 } });
+      expect((await detail(first.id)).jobs).toEqual([]); expect(effects).toBe(0);
+
+      // A review digest is bound to one exact target run.
+      await expect(old.approve({ id: second.id, nodeId: 'write', digest: approval.digest, credential: 'verified-scheduled-human' }))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(secondWaiting.steps['write']!.approval!.digest).not.toBe(approval.digest);
+
+      // Submission arguments are immutable under the same idempotency identity.
+      await expect(old.submit(definition, { input: { value: 3 }, idempotencyKey: 'v07-first' }))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+
+      const changedTool = defineTool({
+        id: 'scheduled.write', version: '2', description: 'Changed controlled effect.', input: inputSchema,
+        output: z.unknown(), effects: 'write', capabilities: [], costMicros: 1, execute: input => input,
+      });
+      const changedDefinition = single(changedTool, true);
+      await expect(old.runUntilSettled(changedDefinition, first.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+
+      const changedPolicy = runtime({ policyVersion: 'scheduled-policy-2' });
+      await expect(changedPolicy.approve({ id: first.id, nodeId: 'write', digest: approval.digest, credential: 'verified-scheduled-human' }))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+
+      await old.close(); await store.close(); store = fixture.reopen() as ScheduledWorkflowAggregateStore;
+      await store.initialize(); await store.workflows.initialize();
+      const current = runtime();
+      expect((await current.inspect(first.id)).steps['write']!.approval).toEqual(approval);
+      expect((await detail(first.id)).jobs).toEqual([]); expect(effects).toBe(0);
+      await current.approve({ id: first.id, nodeId: 'write', digest: approval.digest, credential: 'verified-scheduled-human' });
+      expect((await current.runUntilSettled(definition, first.id)).status).toBe('succeeded');
+      expect(effects).toBe(1);
+    });
+
     it('uses storage time instead of a future caller clock for approval admission', async () => {
       const definition = single(tool(), true); const engine = runtime();
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'storage-time' });
