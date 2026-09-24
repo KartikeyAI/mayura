@@ -16,7 +16,7 @@ const executeFile = promisify(execFile);
 function promotionProof() {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519'); const now = Date.now();
   const statement: DockerImagePromotionStatement = { format: 'mayura-docker-promotion-v1', subject: { image: image!, provenance: provenance! },
-    builderId: 'mayura-live-test', scan: { scannerId: 'controlled-test-scanner', scannerVersion: '1', databaseDigest: `sha256:${'d'.repeat(64)}`,
+    builderId: 'mayura-live-test', scan: { scannerId: 'controlled-test-scanner', scannerVersion: '1', reportDigest: `sha256:${'d'.repeat(64)}`,
       completedAt: new Date(now - 2_000).toISOString(), critical: 0, high: 0, unknown: 0 },
     issuedAt: new Date(now - 1_000).toISOString(), expiresAt: new Date(now + 60_000).toISOString() };
   return { statement, signature: `base64:${sign(null, Buffer.from(serializeDockerImagePromotion(statement)), privateKey).toString('base64')}`,

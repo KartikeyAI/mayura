@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { createPublicKey, randomUUID, verify } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, randomUUID, sign, verify } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { createQuickJsProtocolAdapter, type QuickJsChildProcess, type QuickJsWorkerProcess } from '@mayura/adapter-code-quickjs';
@@ -24,7 +24,7 @@ export interface DockerImagePromotionStatement {
   readonly subject: { readonly image: string; readonly provenance: string };
   readonly builderId: string;
   readonly scan: {
-    readonly scannerId: string; readonly scannerVersion: string; readonly databaseDigest: string;
+    readonly scannerId: string; readonly scannerVersion: string; readonly reportDigest: string;
     readonly completedAt: string; readonly critical: number; readonly high: number; readonly unknown: number;
   };
   readonly issuedAt: string;
@@ -41,6 +41,20 @@ export interface PromotedDockerQuickJsAdapterOptions extends DockerQuickJsAdapte
   readonly promotion: DockerImagePromotionProof;
   /** Defaults to 24 hours; maximum seven days. */
   readonly maxScanAgeMs?: number;
+}
+export interface DockerImagePromotionIssuance {
+  /** Exact UTF-8 SARIF emitted by the fixed high/critical/unspecified scan command. */
+  readonly sarif: string;
+  readonly image: string;
+  readonly provenance: string;
+  readonly builderId: string;
+  readonly scannerId: string;
+  readonly scannerVersion: string;
+  readonly completedAt: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  /** Ed25519 private key in PKCS#8 PEM. It is never returned. */
+  readonly privateKey: string;
 }
 
 const identity = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
@@ -69,7 +83,7 @@ function statement(value: unknown): DockerImagePromotionStatement {
   const root = own(value, ['format', 'subject', 'builderId', 'scan', 'issuedAt', 'expiresAt']);
   if (root['format']!.value !== 'mayura-docker-promotion-v1') throw new TypeError('Unsupported Docker promotion statement.');
   const subject = own(root['subject']!.value, ['image', 'provenance']);
-  const scan = own(root['scan']!.value, ['scannerId', 'scannerVersion', 'databaseDigest', 'completedAt', 'critical', 'high', 'unknown']);
+  const scan = own(root['scan']!.value, ['scannerId', 'scannerVersion', 'reportDigest', 'completedAt', 'critical', 'high', 'unknown']);
   const issued = instant(root['issuedAt']!.value); const expires = instant(root['expiresAt']!.value); const completed = instant(scan['completedAt']!.value);
   if (completed.time > issued.time || issued.time >= expires.time) throw new TypeError('Docker promotion timestamps are inconsistent.');
   return Object.freeze({
@@ -77,7 +91,7 @@ function statement(value: unknown): DockerImagePromotionStatement {
     subject: Object.freeze({ image: text(subject['image']!.value, imageId), provenance: text(subject['provenance']!.value, provenanceDigest) }),
     builderId: text(root['builderId']!.value),
     scan: Object.freeze({ scannerId: text(scan['scannerId']!.value), scannerVersion: text(scan['scannerVersion']!.value),
-      databaseDigest: text(scan['databaseDigest']!.value, provenanceDigest), completedAt: completed.value,
+      reportDigest: text(scan['reportDigest']!.value, provenanceDigest), completedAt: completed.value,
       critical: count(scan['critical']!.value), high: count(scan['high']!.value), unknown: count(scan['unknown']!.value) }),
     issuedAt: issued.value, expiresAt: expires.value,
   });
@@ -86,6 +100,42 @@ function statement(value: unknown): DockerImagePromotionStatement {
 /** Stable bytes for CI signing; validation rejects extensions and ambiguous data before serialization. */
 export function serializeDockerImagePromotion(value: DockerImagePromotionStatement): string {
   return JSON.stringify(statement(value));
+}
+
+/** Converts a successful empty bounded SARIF report into a signed promotion proof. */
+export function issueDockerImagePromotion(value: DockerImagePromotionIssuance): DockerImagePromotionProof {
+  const fields = own(value, ['sarif', 'image', 'provenance', 'builderId', 'scannerId', 'scannerVersion', 'completedAt', 'issuedAt', 'expiresAt', 'privateKey']);
+  const sarif = fields['sarif']!.value; const privateKey = fields['privateKey']!.value;
+  if (typeof sarif !== 'string' || Buffer.byteLength(sarif) < 2 || Buffer.byteLength(sarif) > 16 * 1_024 * 1_024
+    || typeof privateKey !== 'string' || privateKey.length < 80 || privateKey.length > 16_384) throw new TypeError('Promotion issuance input is malformed.');
+  let report: unknown;
+  try { report = JSON.parse(sarif); } catch { throw new TypeError('Promotion issuance requires valid SARIF JSON.'); }
+  const root = own(report, ['version', 'runs', '$schema'].filter(key => Object.hasOwn(report as object, key)));
+  if (root['version']?.value !== '2.1.0' || !Array.isArray(root['runs']?.value) || root['runs']!.value.length < 1 || root['runs']!.value.length > 16) {
+    throw new TypeError('Promotion issuance requires bounded SARIF 2.1.0 runs.');
+  }
+  for (const item of root['runs']!.value as unknown[]) {
+    if (!item || typeof item !== 'object' || Object.getPrototypeOf(item) !== Object.prototype) throw new TypeError('Promotion SARIF run is malformed.');
+    const results = Object.getOwnPropertyDescriptor(item, 'results');
+    if (!results || !('value' in results) || !Array.isArray(results.value) || results.value.length !== 0) {
+      throw new TypeError('Promotion is denied when the filtered scan reports a finding or omits results.');
+    }
+  }
+  const completed = instant(fields['completedAt']!.value); const issued = instant(fields['issuedAt']!.value); const expires = instant(fields['expiresAt']!.value);
+  if (completed.time > issued.time || issued.time >= expires.time) throw new TypeError('Promotion issuance timestamps are inconsistent.');
+  let key: ReturnType<typeof createPrivateKey>;
+  try { key = createPrivateKey(privateKey); } catch { throw new TypeError('Promotion issuance requires a valid private key.'); }
+  if (key.type !== 'private' || key.asymmetricKeyType !== 'ed25519') throw new TypeError('Promotion issuance requires an Ed25519 private key.');
+  const promoted: DockerImagePromotionStatement = {
+    format: 'mayura-docker-promotion-v1', subject: { image: text(fields['image']!.value, imageId), provenance: text(fields['provenance']!.value, provenanceDigest) },
+    builderId: text(fields['builderId']!.value), scan: { scannerId: text(fields['scannerId']!.value), scannerVersion: text(fields['scannerVersion']!.value),
+      reportDigest: `sha256:${createHash('sha256').update(sarif, 'utf8').digest('hex')}`, completedAt: completed.value,
+      critical: 0, high: 0, unknown: 0 }, issuedAt: issued.value, expiresAt: expires.value,
+  };
+  const serialized = serializeDockerImagePromotion(promoted);
+  const proof = { statement: promoted, signature: `base64:${sign(null, Buffer.from(serialized), key).toString('base64')}`,
+    publicKey: createPublicKey(key).export({ type: 'spki', format: 'pem' }).toString() };
+  return promotion(proof);
 }
 
 function promotion(value: unknown): DockerImagePromotionProof {

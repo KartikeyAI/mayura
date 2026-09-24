@@ -12,7 +12,7 @@ const adapter = createDockerQuickJsSandboxAdapter({
 });
 ```
 
-For a promoted environment, use `createPromotedDockerQuickJsSandboxAdapter` with an application-pinned Ed25519 public key and signed `mayura-docker-promotion-v1` statement. Generate the exact signing bytes with `serializeDockerImagePromotion`. The statement must bind the image/provenance digests, a fresh vulnerability-database digest and scan, and zero critical, high or unknown findings. The strict adapter revalidates promotion before every availability check.
+For a promoted environment, use `createPromotedDockerQuickJsSandboxAdapter` with an application-pinned Ed25519 public key and signed `mayura-docker-promotion-v1` statement. Generate the exact signing bytes with `serializeDockerImagePromotion`, or issue a proof from retained empty SARIF with `issueDockerImagePromotion`. The statement binds image/provenance digests and the exact scan-report digest and requires zero critical, high or unknown findings. The strict adapter revalidates promotion before every availability check.
 
 The CLI path must be absolute and trusted. Mutable image names, PATH lookup, image pulls, host mounts and Docker-socket forwarding are intentionally unsupported. Build the repository image with `pnpm code-sandbox:image`; retain its SPDX document and use the emitted image and provenance digests rather than its convenience tag.
 

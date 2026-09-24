@@ -15,7 +15,8 @@
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
-    "code-sandbox:image": "node scripts/code-sandbox-image.mjs"
+    "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
+    "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },
   "devDependencies": {
     "@mayura/sdk": "workspace:*",
