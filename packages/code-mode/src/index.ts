@@ -203,6 +203,7 @@ const messages: Readonly<Record<ErrorCode, string>> = Object.freeze({
   NOT_FOUND: 'The requested Code Mode resource was not found.',
   CONFLICT: 'The Code Mode execution identity is no longer available.',
   STORAGE_UNAVAILABLE: 'Required Code Mode storage is unavailable.',
+  INTEGRITY_VIOLATION: 'Code Mode evidence failed integrity verification.',
 });
 
 function text(value: unknown, name: string, maxLength: number): asserts value is string {

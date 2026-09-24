@@ -15,7 +15,8 @@ syncBuiltinESMExports();
 
 const packages = ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/sdk', '@mayura/testing', '@mayura/workflows',
   '@mayura/workstream', '@mayura/storage-contracts', '@mayura/context', '@mayura/memory', '@mayura/guardrails',
-  '@mayura/observability', '@mayura/code-mode', '@mayura/code-mode-workflows', '@mayura/adapter-code-quickjs', '@mayura/adapter-code-docker'];
+  '@mayura/observability', '@mayura/code-mode', '@mayura/code-mode-workflows', '@mayura/adapter-code-quickjs', '@mayura/adapter-code-docker',
+  '@mayura/artifacts'];
 const workspace = new URL('../../../../', import.meta.url);
 await Promise.all(packages.map(name => import(new URL(`packages/${name.slice(8)}/dist/index.js`, workspace).href)));
 await new Promise(resolve => setTimeout(resolve, 100));

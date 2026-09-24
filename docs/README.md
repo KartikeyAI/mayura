@@ -21,6 +21,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Tool batches](specs/tool-batches.md) — dependency-aware bounded parallel execution.
 - [Processors and guardrails](specs/processors.md) — immutable content and disclosure barriers.
 - [No-default-phone-home boundary](specs/no-default-phone-home.md) — executable import and source checks for local-only packages.
+- [Local artifact boundary](specs/local-artifacts.md) — scoped staged promotion, integrity-checked content and safe attachment disclosure.
 - [Auxiliary model guardrails](specs/auxiliary-guardrails.md) — metered evaluation, moderation and source-preserving language processing.
 - [Runtime-managed moderation](how-to/managed-guardrails.md) — definition-only authoring with actual run ownership, protected output-check capacity and bounded callbacks.
 - [Required lifecycle hooks](how-to/lifecycle-hooks.md) and [acceptance contract](specs/lifecycle-hooks.md) — control-only checks with mediated read/pure-tool actions, retained callback capacity and truthful output evidence.
@@ -48,7 +49,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,487 tests in 123 files with PostgreSQL and live Docker enabled; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,499 tests in 124 files with PostgreSQL and live Docker enabled; all V01–V22 enterprise release gates remain open.
 
 Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 

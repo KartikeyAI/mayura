@@ -24,6 +24,7 @@
     { "path": "packages/code-mode" },
     { "path": "packages/code-mode-workflows" },
     { "path": "packages/adapter-code-quickjs" },
-    { "path": "packages/adapter-code-docker" }
+    { "path": "packages/adapter-code-docker" },
+    { "path": "packages/artifacts" }
   ]
 }

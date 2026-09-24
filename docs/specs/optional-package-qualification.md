@@ -26,6 +26,12 @@ The gate packs current built packages and installs their actual archives into fr
 
 9. **QuickJS inner interpreter:** `@mayura/adapter-code-quickjs`, Code Mode, core/tools and the exact three-package QuickJS closure are installed from reviewed local archives. npm packing and installation both disable lifecycle scripts. The real packed child worker executes a brokered tool, exposes no Node globals and interrupts an infinite CPU loop. This proves packaging and the inner interpreter boundary, not an outer OS sandbox.
 
+10. **Durable Code Mode definitions:** `@mayura/code-mode-workflows` and its driver-free closure compile exact approval, digest and audit-scope contracts without installing a SQL adapter. This is authoring-boundary evidence, not durable execution evidence.
+
+11. **Docker outer adapter:** `@mayura/adapter-code-docker` and its exact closure issue and verify a signed SARIF-bound promotion, require immutable image/provenance identities and install no Docker client. Live containment evidence remains a separate host-qualified gate.
+
+12. **Local artifacts:** `@mayura/artifacts` and core are installed without a server, database, workflow or Arth package. A public-only fixture stages, commits, scope-separates and discloses a real local artifact, checking its content/reference hashes and forced safe attachment headers. This is local adapter and package-boundary evidence, not production filesystem, object-store, malware-scanning or retention qualification.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

@@ -105,6 +105,12 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
 
+  packages/artifacts:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/client: {}
 
   packages/code-mode:

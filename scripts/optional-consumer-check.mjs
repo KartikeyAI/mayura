@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -25,6 +25,7 @@ const expectedDependencies = {
   'code-mode-workflows': ['@mayura/code-mode', '@mayura/core', '@mayura/storage-contracts', '@mayura/tools', '@mayura/workflows'],
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
   'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode'],
+  artifacts: ['@mayura/core'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -66,7 +67,7 @@ async function run(args, cwd, timeout = 30_000) {
 
 /** Read bounded archive members without extracting links, paths or executing lifecycle hooks. */
 function archive(bytes) {
-  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 }); const files = new Map(); let cursor = 0;
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 }); const files = new Map(); const links = []; const names = new Set(); let cursor = 0;
   while (cursor + 512 <= tar.length) {
     const header = tar.subarray(cursor, cursor + 512); if (header.every(byte => byte === 0)) break;
     const field = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
@@ -75,9 +76,18 @@ function archive(bytes) {
     assert(['', '0', '1', '5'].includes(type) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
     if (type === '1') {
       const link = field(157, 100); assert(size === 0 && link.startsWith('package/') && !link.includes('\\') && !link.split('/').includes('..'), 'Unsafe archive hard link.');
-      const path = name.slice(8); const target = files.get(link.slice(8)); assert(!files.has(path) && target, 'Archive hard link target is unavailable.'); files.set(path, target);
-    } else if (type !== '5') { const path = name.slice(8); assert(!files.has(path), 'Duplicate archive member.'); files.set(path, tar.subarray(cursor + 512, cursor + 512 + size)); }
+      const path = name.slice(8); assert(!names.has(path), 'Duplicate archive member.'); names.add(path); links.push([path, link.slice(8)]);
+    } else if (type !== '5') { const path = name.slice(8); assert(!names.has(path), 'Duplicate archive member.'); names.add(path); files.set(path, tar.subarray(cursor + 512, cursor + 512 + size)); }
     cursor += 512 + Math.ceil(size / 512) * 512;
+  }
+  while (links.length > 0) {
+    let resolved = 0;
+    for (let index = links.length - 1; index >= 0; index--) {
+      const [path, target] = links[index]; const content = files.get(target);
+      if (content === undefined) continue;
+      files.set(path, content); links.splice(index, 1); resolved += 1;
+    }
+    assert(resolved > 0, 'Archive hard link target is unavailable or cyclic.');
   }
   return files;
 }
@@ -177,6 +187,7 @@ async function main() {
     ['code-mode-workflows', ['@mayura/code-mode-workflows'], 'optional-code-mode-workflows.test.ts'],
     ['code-mode-quickjs', ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core', '@mayura/tools'], 'optional-code-mode-quickjs.test.ts'],
     ['code-mode-docker', ['@mayura/adapter-code-docker'], 'optional-code-mode-docker.test.ts'],
+    ['artifacts', ['@mayura/artifacts'], 'optional-artifacts.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -232,6 +243,10 @@ async function main() {
         assert.equal(execution.signedPromotionRequired, true); assert.equal(execution.sarifIssuanceRequired, true);
         assert.equal(execution.noDockerDependency, true);
       }
+      if (name === 'artifacts') {
+        assert.equal(execution.scoped, true); assert.equal(execution.integrityVerified, true);
+        assert.equal(execution.safeAttachment, true); assert.equal(execution.noArthDependency, true);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -266,6 +281,7 @@ async function main() {
   result.checks.push('durable-code-mode-definition', 'code-phase-mandatory-approval', 'code-phase-program-digest-pinning', 'code-phase-usage-audit-v2');
   result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
+  result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
