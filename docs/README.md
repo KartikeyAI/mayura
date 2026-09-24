@@ -38,6 +38,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Local-server how-to](how-to/local-server.md), [Node host contract](specs/node-local-host.md) and [host-adapter decision](adr/0004-http-protocol-before-host-adapter.md) — optional loopback-only Hono hosting.
 - [Native observability](specs/native-observability.md) — bounded metadata subscriptions, uncertain coverage, counters and optional isolated delivery.
 - [Docker tests](testing-docker.md) — disposable PostgreSQL fixture.
+- [Docker promotion attestations](specs/code-mode-docker-promotion.md) — Ed25519 verification of an exact fresh clean-scan promotion statement.
 - [Crash-recovery testing](testing-process-recovery.md) — forced process termination evidence.
 - [Packed consumer validation](dx-validation.md) — public imports, types and source navigation.
 - [Optional-package qualification](specs/optional-package-qualification.md) — isolated offline browser, local host/observer and driver-free workflow installations.
@@ -46,7 +47,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,464 tests in 120 files with PostgreSQL and live Docker enabled; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,466 tests in 120 files with PostgreSQL and live Docker enabled; all V01–V22 enterprise release gates remain open.
 
 Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 

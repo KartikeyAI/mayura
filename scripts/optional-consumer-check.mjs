@@ -227,6 +227,7 @@ async function main() {
       }
       if (name === 'code-mode-docker') {
         assert.equal(execution.immutableImageRequired, true); assert.equal(execution.provenanceRequired, true);
+        assert.equal(execution.signedPromotionRequired, true);
         assert.equal(execution.noDockerDependency, true);
       }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });

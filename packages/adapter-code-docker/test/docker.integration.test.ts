@@ -1,16 +1,27 @@
 import { execFile } from 'node:child_process';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { Budget, type JsonValue, type Outcome, type Schema } from '@mayura/core';
 import { defineTool, invokeTool, type AnyTool } from '@mayura/tools';
 import { createCodeMode, defineCodeProgram } from '@mayura/code-mode';
-import { createDockerQuickJsSandboxAdapter } from '../src/index.js';
+import { createDockerQuickJsSandboxAdapter, createPromotedDockerQuickJsSandboxAdapter, serializeDockerImagePromotion,
+  type DockerImagePromotionStatement } from '../src/index.js';
 
 const dockerPath = process.env['MAYURA_TEST_DOCKER_PATH'];
 const image = process.env['MAYURA_TEST_CODE_SANDBOX_IMAGE'];
 const provenance = process.env['MAYURA_TEST_CODE_SANDBOX_PROVENANCE'];
 const available = dockerPath !== undefined && image !== undefined && provenance !== undefined;
 const executeFile = promisify(execFile);
+function promotionProof() {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519'); const now = Date.now();
+  const statement: DockerImagePromotionStatement = { format: 'mayura-docker-promotion-v1', subject: { image: image!, provenance: provenance! },
+    builderId: 'mayura-live-test', scan: { scannerId: 'controlled-test-scanner', scannerVersion: '1', databaseDigest: `sha256:${'d'.repeat(64)}`,
+      completedAt: new Date(now - 2_000).toISOString(), critical: 0, high: 0, unknown: 0 },
+    issuedAt: new Date(now - 1_000).toISOString(), expiresAt: new Date(now + 60_000).toISOString() };
+  return { statement, signature: `base64:${sign(null, Buffer.from(serializeDockerImagePromotion(statement)), privateKey).toString('base64')}`,
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString() };
+}
 async function containerIds(): Promise<string[]> {
   const listed = await executeFile(dockerPath!, ['ps', '--quiet', '--filter', `ancestor=${image!}`, '--filter', 'name=mayura-code-'],
     { windowsHide: true, timeout: 10_000, maxBuffer: 4_096, env: Object.freeze({}) });
@@ -48,7 +59,8 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     const broker = vi.fn(async (definition: AnyTool, input: JsonValue, context: Parameters<Parameters<typeof createCodeMode>[0]['invokeTool']>[2]): Promise<Outcome<JsonValue>> =>
       invokeTool(definition, input, { runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
         permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>>);
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: broker });
+    const mode = createCodeMode({ adapter: createPromotedDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance!,
+      promotion: promotionProof() }), allowTestAdapter: true, invokeTool: broker });
     const program = defineCodeProgram({ id: 'docker.tool', version: '1', intent: 'Docker tool test.', language: 'javascript',
       source: 'async (input, tools) => (await tools.call("number.double", input)).output', input: schema, output: schema,
       inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', tools: [tool], limits });
