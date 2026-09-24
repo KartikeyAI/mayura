@@ -4,6 +4,7 @@ import { createRuntime } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
   type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
+import { defineWorkflowLifecycle, type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -17,6 +18,12 @@ const compiled = workflowAsAgent(definition, { profile: 'ephemeral' });
 const wrapped = workflowAsTool(definition, { profile: 'ephemeral', id: 'consumer.graph-tool', description: 'Run the graph as a required child.', permissions: { allow: ['model:mayura.workflow', 'tool:consumer.double'] } });
 const expected: WorkflowOutput<typeof definition> = { answer: 6 };
 const expectedTool: ToolOutput<typeof wrapped> = expected;
+const lifecycle = defineWorkflowLifecycle({ id: 'consumer.lifecycle', version: '1', input, output,
+  nodes: [{ kind: 'human', id: 'review', request: { kind: 'information', schemaId: 'consumer/response',
+    schemaDigest: 'a'.repeat(64), prompt: 'Review.', response: number } }],
+  result: { kind: 'step', stepId: 'review', path: [] } });
+const lifecycleOutput: WorkflowOutput<typeof definition> = { answer: 6 };
+void lifecycle; void lifecycleOutput;
 // @ts-expect-error Composition retains the transformed output, not the pre-transform number.
 const invalidTool: ToolOutput<typeof wrapped> = 6;
 void expectedTool; void invalidTool;
@@ -29,6 +36,9 @@ if (result.status === 'succeeded') {
   void answer; void invalid;
 }
 if (false) {
+  // @ts-expect-error Structural values cannot forge format-5 executable definitions.
+  const forgedLifecycle: WorkflowLifecycleDefinition = { id: 'forged' };
+  void forgedLifecycle;
   // @ts-expect-error Submission accepts the schema's original input, not the transformed length.
   runtime.submit(compiled, { input: 3 });
   // @ts-expect-error Composition requires explicit ephemeral opt-in.

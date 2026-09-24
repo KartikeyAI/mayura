@@ -37,6 +37,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Graph discovery guide](how-to/workflow-graph-discovery.md) and [discovery contract](specs/workflow-graph-discovery.md) — finite indexed candidate pages after restart, with explicit non-snapshot semantics and no automatic dispatch.
 - [Registered graph coordinator](how-to/workflow-graph-coordinator.md) and [contract](specs/workflow-graph-coordinator.md) — finite continuation through one shared driver, with explicit catalogs and partial-page retry metadata; not a worker fleet.
 - [Durable required children](how-to/workflow-tree-children.md) and [contract](specs/durable-workflow-children.md) — explicit narrowed one-level child ownership, close/reopen continuation, verified approvals and exact joins.
+- [Workflow lifecycle format 5](specs/workflow-lifecycle-format5.md) — versioned authoring and strict data-only manifests for human/timer suspension nodes; durable execution remains in progress.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
@@ -55,7 +56,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 
 Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. All 22 finite acceptance scenarios are closed with bounded claims recorded in the ledger.
 
-Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
+Next-slice design: [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md) defines the compatibility boundary whose durable state machine and runtime remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 

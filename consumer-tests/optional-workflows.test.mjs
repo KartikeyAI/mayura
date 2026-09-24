@@ -6,10 +6,11 @@ import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
+import { defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
-for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/storage-contracts']) {
+for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/storage-contracts']) {
   const path = relative(root, await realpath(fileURLToPath(import.meta.resolve(name))));
   assert(!isAbsolute(path) && !path.startsWith('..'), 'Workflow consumer escaped its archive installation.');
 }
@@ -31,6 +32,12 @@ const definition = defineWorkflow({ id: 'consumer.graph', version: '1', input, o
   { id: 'right', kind: 'tool', tool: right, input: { kind: 'input', path: [] } },
   { id: 'joined', kind: 'join', dependsOn: ['left', 'right'] },
 ], result: { kind: 'step', stepId: 'joined', path: [] } });
+const lifecycle = defineWorkflowLifecycle({ id: 'consumer.lifecycle', version: '1', input, output, nodes: [
+  { kind: 'human', id: 'review', request: { kind: 'information', schemaId: 'consumer/response',
+    schemaDigest: 'a'.repeat(64), prompt: 'Review.', response: number } },
+], result: { kind: 'step', stepId: 'review', path: [] } });
+assert.equal(lifecycle.format, 5); assert.equal(lifecycleManifest(lifecycle).graph[0].kind, 'human');
+assert(!JSON.stringify(lifecycleManifest(lifecycle)).includes('validate'));
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -64,4 +71,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
-  verifierRouter: true, sqlDriversInstalled: false }));
+  verifierRouter: true, lifecycleManifest: true, sqlDriversInstalled: false }));
