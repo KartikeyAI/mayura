@@ -208,6 +208,7 @@ async function main() {
         assert.equal(execution.interruptedRetryCursor, true);
       }
       if (name === 'workflows') assert.equal(execution.verifierRouter, true);
+      if (name === 'managed') assert.equal(execution.wholeOutputBarrier, true);
       if (name === 'budgets') {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);
         assert.equal(execution.executesEffects, false);

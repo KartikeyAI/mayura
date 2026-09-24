@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Budget, createRuntime, defineAgent, defineHook, defineTool, invokeTool } from '@mayura/sdk';
-import { defineModerationGuard } from '@mayura/guardrails';
+import { createPipeline, defineModerationGuard, protectLiterals, redactPII, releaseBufferedOutput } from '@mayura/guardrails';
 import { assertBudgetTicket, readManagedGuardDefinition, registerManagedGuardDefinition } from '@mayura/core/host';
 import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { createObserver } from '@mayura/observability';
@@ -48,6 +48,14 @@ assert.equal(descriptor.kind, 'moderation'); assert(Object.isFrozen(descriptor))
 assert.equal(readManagedGuardDefinition({ ...guard }), undefined);
 const hostRegistered = registerManagedGuardDefinition({ ...descriptor, id: 'consumer.host-policy' });
 assert.equal(readManagedGuardDefinition(hostRegistered).kind, 'moderation');
+
+async function* textChunks(...values) { yield* values; }
+const outputContext = { runId: 'consumer.stream', callId: 'consumer.stream.output', scope: { principalId: 'consumer', projectId: 'managed-fixture' },
+  boundary: 'output', signal: new AbortController().signal };
+await assert.rejects(releaseBufferedOutput(textChunks('SE', 'CR', 'ET'), createPipeline({ guards: [protectLiterals({ literals: ['SECRET'] })] }), outputContext),
+  { code: 'GUARD_BLOCKED' });
+const buffered = await releaseBufferedOutput(textChunks('person@', 'example.com'), createPipeline({ processors: [redactPII()] }), outputContext);
+assert.equal(buffered.value, '[EMAIL]');
 
 let hookActions = 0;
 const assertion = defineTool({ id: 'consumer.assertion', version: '1', description: 'Private required policy assertion.',
@@ -126,4 +134,5 @@ assert.equal(toolOutcome.status, 'succeeded'); assert.equal(toolOutcome.output, 
 assert.deepEqual(budget.snapshot(), { spentMicros: 2, reservedMicros: 0, calls: 1 });
 bundle.close();
 console.log(JSON.stringify({ status: 'passed', packages: packages.length, observation: observationReport,
-  singlePermit: true, mediatedHooks: true, transformedSchemas: true, sharedHostRegistrations: true, forgedHandlesRejected: true, noProviderOrNativeDependencies: true }));
+  singlePermit: true, mediatedHooks: true, transformedSchemas: true, wholeOutputBarrier: true,
+  sharedHostRegistrations: true, forgedHandlesRejected: true, noProviderOrNativeDependencies: true }));

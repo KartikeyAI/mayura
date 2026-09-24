@@ -1,6 +1,6 @@
 # @mayura/guardrails
 
-Experimental content processors and required guard barriers. Native helpers provide user-envelope normalization, configurable heuristic PII redaction, protected-literal matching, and bounded admitted output batches.
+Experimental content processors and required guard barriers. Native helpers provide user-envelope normalization, configurable heuristic PII redaction, protected-literal matching, bounded independently admitted output batches, and a fail-closed whole-output buffer for cross-chunk checks.
 
 `createAuxiliaryCheck` adds one schema-validated auxiliary model call using an explicitly supplied genuine shared Budget and exact model permission. `detectAndTranslate` preserves source-mapped protected segments locally and meters separate detection/translation calls. `createModerationGuard` supplies a typed model verdict without converting unavailable checks into approval.
 

@@ -1,5 +1,5 @@
 import { Budget, createRuntime, defineAgent, defineTool, type Guard, type JsonValue, type ManagedGuardDefinition, type ModelAdapter, type Schema } from '@mayura/sdk';
-import { defineModerationGuard, type ManagedModerationOptions } from '@mayura/guardrails';
+import { createPipeline, defineModerationGuard, protectLiterals, releaseBufferedOutput, type ManagedModerationOptions } from '@mayura/guardrails';
 import { assertBudgetTicket, readManagedGuardDefinition, registerManagedGuardDefinition, type ManagedGuardDescriptor } from '@mayura/core/host';
 import { bindToolBudgetTicket, type ToolBudgetTicketBinding } from '@mayura/tools/host';
 import { createObserver, type ObservedRun } from '@mayura/observability';
@@ -25,6 +25,12 @@ const local: Guard = { id: 'consumer.local', check: (value, context) => {
 } };
 const options: ManagedModerationOptions = { id: 'consumer.policy', version: '1', model: moderator, instructions: 'Explicit policy.', egressGuards: [local] };
 const guard: ManagedGuardDefinition = defineModerationGuard(options);
+async function* streamed(): AsyncIterable<string> { yield 'safe'; }
+const buffered = await releaseBufferedOutput(streamed(), createPipeline({ guards: [protectLiterals({ literals: ['SECRET'] })] }),
+  { runId: 'consumer.stream', callId: 'consumer.stream.output', scope: { principalId: 'consumer', projectId: 'fixture' },
+    boundary: 'output', signal: new AbortController().signal });
+const bufferedValue: JsonValue = buffered.value;
+void bufferedValue;
 const descriptor: Readonly<ManagedGuardDescriptor> | undefined = readManagedGuardDefinition(guard);
 if (descriptor) {
   const registered: ManagedGuardDefinition = registerManagedGuardDefinition({ ...descriptor, id: 'consumer.second-policy' });

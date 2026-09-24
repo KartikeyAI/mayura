@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MayuraError, type Guard, type GuardContext, type JsonValue } from '@mayura/core';
-import { createPipeline, normalizeUserMessage, protectLiterals, redactPII, releaseBatches,
+import { createPipeline, normalizeUserMessage, protectLiterals, redactPII, releaseBatches, releaseBufferedOutput,
   type BlockEvent, type ContentProcessor, type GuardedContent, type Pipeline,
 } from '../src/index.js';
 
@@ -269,6 +269,48 @@ describe('bounded guarded output batches', () => {
     const source: AsyncIterable<string> = { [Symbol.asyncIterator]: initialize };
     const abort = new AbortController(); abort.abort('SECRET');
     await expect(collect(releaseBatches(source, createPipeline(), context('output', abort.signal)))).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(initialize).not.toHaveBeenCalled();
+  });
+});
+
+describe('whole-output disclosure barrier', () => {
+  it('blocks a protected literal split across arbitrary source chunks before any release', async () => {
+    const pipeline = createPipeline({ guards: [protectLiterals({ literals: ['SECRET'] })] });
+    await expect(releaseBufferedOutput(chunks('prefix SE', 'CR', 'ET suffix'), pipeline, context('output'), { maxChunks: 3 }))
+      .rejects.toMatchObject({ code: 'GUARD_BLOCKED', message: 'The complete output was withheld by its content boundary.' });
+  });
+
+  it('redacts PII split across chunks using one complete transcript candidate', async () => {
+    const pipeline = createPipeline({ processors: [redactPII()] });
+    const admitted = await releaseBufferedOutput(chunks('person', '@example', '.com'), pipeline, context('output'));
+    expect(admitted.value).toBe('[EMAIL]'); expect(JSON.stringify(admitted)).not.toContain('person@example.com');
+  });
+
+  it('fails closed on cumulative byte or chunk overflow without exposing a partial transcript', async () => {
+    await expect(releaseBufferedOutput(chunks('ab', 'cd'), createPipeline(), context('output'), { maxBytes: 3 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+    await expect(releaseBufferedOutput(chunks('a', 'b'), createPipeline(), context('output'), { maxChunks: 1 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+  });
+
+  it('sanitizes source failure and requests bounded cleanup on timeout', async () => {
+    const failed: AsyncIterable<string> = { [Symbol.asyncIterator]: () => ({ next: async () => { throw new Error('SECRET source failure'); } }) };
+    await expect(releaseBufferedOutput(failed, createPipeline(), context('output')))
+      .rejects.toMatchObject({ code: 'INVALID_OUTPUT', message: 'The output source could not provide valid text.' });
+    const cleanup = vi.fn(() => new Promise<IteratorResult<string>>(() => {}));
+    const hanging: AsyncIterable<string> = { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}), return: cleanup }) };
+    await expect(releaseBufferedOutput(hanging, createPipeline(), context('output'), { maxDurationMs: 30 }))
+      .rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('rejects forged pipelines and pre-start cancellation without initializing the source', async () => {
+    const fake: Pipeline = { process: async () => ({ status: 'succeeded', output: { version: 1, digest: 'fake', value: 'raw', checks: [] } }) };
+    await expect(releaseBufferedOutput(chunks('raw'), fake, context('output'))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    const initialize = vi.fn(() => chunks('raw')[Symbol.asyncIterator]());
+    const source: AsyncIterable<string> = { [Symbol.asyncIterator]: initialize };
+    const abort = new AbortController(); abort.abort('SECRET');
+    await expect(releaseBufferedOutput(source, createPipeline(), context('output', abort.signal))).rejects.toMatchObject({ code: 'CANCELLED' });
     expect(initialize).not.toHaveBeenCalled();
   });
 });
