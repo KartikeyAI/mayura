@@ -13,11 +13,12 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote'];
 const expectedDependencies = {
   core: [], cli: ['@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
+  'client-react': ['@mayura/client'],
   'exporter-otlp': ['@mayura/core', '@mayura/observability'],
   'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
   guardrails: ['@mayura/core'],
@@ -100,7 +101,8 @@ function inspectMayura(shortName, files) {
   const manifest = JSON.parse(files.get('package.json').toString('utf8'));
   assert.equal(manifest.name, `@mayura/${shortName}`);
   assert.deepEqual(Object.keys(manifest.dependencies ?? {}).sort(), expectedDependencies[shortName], 'Optional package dependency closure changed; review it explicitly.');
-  assert(!manifest.optionalDependencies && !manifest.peerDependencies && !manifest.scripts, 'Mayura distribution needs explicit optional/lifecycle review.');
+  assert(!manifest.optionalDependencies && !manifest.scripts, 'Mayura distribution needs explicit optional/lifecycle review.');
+  if (shortName === 'client-react') assert.deepEqual(manifest.peerDependencies, { react: '>=18.3.0 <20' }); else assert(!manifest.peerDependencies, 'Unreviewed Mayura peer dependency.');
   if (shortName === 'cli') assert.deepEqual(manifest.bin, { mayura: './dist/bin.js' }); else assert(!manifest.bin, 'Unreviewed package executable.');
   for (const version of Object.values(manifest.dependencies ?? {})) assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into archive.');
   let maps = 0;
@@ -169,6 +171,15 @@ async function main() {
     packages.set(name, { archive: pathToFileURL(destination).href, manifest });
     reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
+  const reactDirectory = await realpath(join(workspace, 'node_modules', 'react'));
+  const reactOriginal = JSON.parse(await readFile(join(reactDirectory, 'package.json'), 'utf8'));
+  assert.equal(reactOriginal.version, '19.3.0'); assert.equal(reactOriginal.license, 'MIT');
+  for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(reactOriginal.scripts?.[script], undefined, 'React has an unreviewed installation script.');
+  const reactDestination = join(tarballs, 'react.tgz'); await run([pnpm, 'pack', '--out', reactDestination], reactDirectory);
+  const reactBytes = await readFile(reactDestination); const reactFiles = archive(reactBytes); const reactManifest = JSON.parse(reactFiles.get('package.json').toString('utf8'));
+  assert.equal(reactManifest.name, 'react'); assert.equal(reactManifest.version, '19.3.0'); assert.deepEqual(reactManifest.dependencies ?? {}, {});
+  packages.set('react', { archive: pathToFileURL(reactDestination).href, manifest: reactManifest });
+  reports.push({ name: 'react', version: reactManifest.version, tarballBytes: reactBytes.length, files: reactFiles.size });
   const closure = roots => {
     const result = new Set(); const visit = name => {
       if (result.has(name)) return; result.add(name); const pkg = packages.get(name); assert(pkg, `Unqualified dependency: ${name}`);
@@ -180,9 +191,11 @@ async function main() {
   assert.deepEqual([...closure(['@mayura/sdk'])].sort(), ['@mayura/core', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
   assert.deepEqual([...closure(['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'])].sort(),
     ['@mayura/core', '@mayura/guardrails', '@mayura/observability', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
+  assert.deepEqual([...closure(['@mayura/client-react'])].sort(), ['@mayura/client', '@mayura/client-react', 'react']);
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
+    ['react', ['@mayura/client-react'], 'optional-react.test.ts'],
     ['cli', ['@mayura/cli'], 'optional-cli.test.ts'],
     ['helpers', ['@mayura/helpers'], 'optional-helpers.test.ts'],
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing', '@mayura/artifacts'], 'optional-node.test.ts'],
@@ -235,6 +248,9 @@ async function main() {
       if (name === 'cli') {
         assert.equal(execution.eightTemplates, true); assert.equal(execution.planFirst, true);
         assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true); assert.equal(execution.authenticatedOperations, true); assert.equal(execution.authenticatedHuman, true); assert.equal(execution.authenticatedRuns, true);
+      }
+      if (name === 'react') {
+        assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -351,6 +367,7 @@ async function main() {
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
   result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'headless-no-implicit-network');
+  result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

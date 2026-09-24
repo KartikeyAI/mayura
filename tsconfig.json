@@ -24,6 +24,7 @@
     { "path": "packages/sdk" },
     { "path": "packages/server" },
     { "path": "packages/client" },
+    { "path": "packages/client-react" },
     { "path": "packages/server-node" },
     { "path": "packages/observability" },
     { "path": "packages/exporter-otlp" },

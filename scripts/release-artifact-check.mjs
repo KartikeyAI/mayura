@@ -89,6 +89,8 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   assert(packedManifest.name === manifest.name && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
   assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
   assert(!Object.values(packedManifest.dependencies ?? {}).some(range => String(range).startsWith('workspace:')));
+  if (manifest.name === '@mayura/client-react') assert.deepEqual(packedManifest.peerDependencies, { react: '>=18.3.0 <20' }, 'React peer contract changed.');
+  else assert(!packedManifest.peerDependencies, `${manifest.name} gained an unreviewed peer dependency.`);
   assert(!packedManifest.scripts, `${manifest.name} gained release-time lifecycle behavior.`);
   if (manifest.name === '@mayura/cli') assert.deepEqual(packedManifest.bin, { mayura: './dist/bin.js' }, 'CLI executable mapping changed.');
   else assert(!packedManifest.bin, `${manifest.name} gained release-time executable behavior.`);
