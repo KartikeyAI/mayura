@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
-import { applyProjectPlan, inspectServerHealth, inspectServerTools, planProject, readProject, templates, validateProject } from '../src/index.js';
+import { applyProjectPlan, inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, planProject, readProject,
+  respondHumanRequest, templates, validateProject } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -105,6 +106,25 @@ describe('@mayura/cli authenticated operations', () => {
     settle();
   });
 
+  it('lists, inspects and submits digest-bound human responses without selecting an actor', async () => {
+    const digest = 'a'.repeat(64); const item = { id: 'review', agentId: 'agent', kind: 'information', schemaId: 'text-v1',
+      schemaDigest: 'b'.repeat(64), prompt: 'Provide evidence.', digest, status: 'waiting' };
+    const calls: Array<{ path: string; body?: unknown }> = [];
+    const transport = async (input: string | URL | Request, init?: RequestInit) => {
+      const path = `${new URL(String(input)).pathname}${new URL(String(input)).search}`;
+      calls.push({ path, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      const payload = path.startsWith('/v1/human-requests?') ? { items: [item], next: null }
+        : { request: init?.method === 'POST' ? { ...item, status: 'answered' } : item };
+      return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } });
+    };
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
+    expect((await inspectHumanRequests(settings, { limit: 1 })).items).toEqual([item]);
+    expect(await inspectHumanRequest(settings, 'review')).toEqual(item);
+    expect((await respondHumanRequest(settings, { id: 'review', requestDigest: digest, commandId: 'answer-1', value: { evidence: true } })).status).toBe('answered');
+    expect(calls[2]).toEqual({ path: '/v1/human-requests/review/responses', body: { commandId: 'answer-1', requestDigest: digest, value: { evidence: true } } });
+    expect(JSON.stringify(calls)).not.toContain('actorId');
+  });
+
   it('accepts a short-lived CLI credential only through piped stdin and never prints it', async () => {
     const host = createServer((request, response) => {
       expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE'); expect(request.url).toBe('/v1/operations/health');
@@ -120,6 +140,26 @@ describe('@mayura/cli authenticated operations', () => {
       const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
       expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toContain('TOKEN_PRIVATE');
       expect(JSON.parse(stdout)).toEqual({ status: 'succeeded', health: { status: 'ready', checks: [{ id: 'server', status: 'ready' }] } });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
+  });
+
+  it('submits a CLI human response from a bounded explicit JSON file', async () => {
+    const digest = 'a'.repeat(64); const target = await directory(); const file = join(target, 'response.json'); await writeFile(file, '{"choice":"accept"}');
+    let received: unknown;
+    const host = createServer(async (request, response) => {
+      let body = ''; for await (const chunk of request) body += String(chunk); received = JSON.parse(body);
+      response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ request: { id: 'review', agentId: 'agent',
+        kind: 'plan_selection', schemaId: 'choice-v1', schemaDigest: 'b'.repeat(64), prompt: 'Choose.', digest, status: 'answered' } }));
+    });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    try {
+      const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'human-respond', '--url', `http://127.0.0.1:${address.port}`,
+        '--id', 'review', '--digest', digest, '--command-id', 'answer-1', '--response-file', file, '--token-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; }); child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|accept/);
+      expect(received).toEqual({ commandId: 'answer-1', requestDigest: digest, value: { choice: 'accept' } });
     } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 });

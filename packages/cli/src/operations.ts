@@ -1,4 +1,4 @@
-import { MayuraError } from '@mayura/core';
+import { freezeJson, jsonValue, MayuraError, type JsonValue } from '@mayura/core';
 
 export interface OperationalClientOptions {
   readonly baseUrl: string;
@@ -19,6 +19,13 @@ export interface OperationalTool {
   readonly timeoutMs: number; readonly costMicros: number;
 }
 export interface OperationalToolPage { readonly tools: readonly OperationalTool[]; readonly next: number | null }
+export interface OperationalHumanRequest {
+  readonly id: string; readonly agentId: string; readonly kind: 'information' | 'correction' | 'plan_selection';
+  readonly schemaId: string; readonly schemaDigest: string; readonly prompt: string; readonly digest: string;
+  readonly status: 'waiting' | 'answered' | 'cancelled' | 'timed_out'; readonly context?: JsonValue;
+  readonly subjectDigest?: string; readonly deadlineAtMs?: number;
+}
+export interface OperationalHumanRequestPage { readonly items: readonly OperationalHumanRequest[]; readonly next: string | null }
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u;
 const capabilityIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
@@ -44,7 +51,7 @@ async function bounded<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T>
   });
 }
 
-async function transport(options: OperationalClientOptions, path: string, accepted: readonly number[]): Promise<Record<string, unknown>> {
+async function transport(options: OperationalClientOptions, path: string, accepted: readonly number[], method: 'GET' | 'POST' = 'GET', body?: JsonValue): Promise<Record<string, unknown>> {
   let base: URL;
   try {
     base = new URL(options.baseUrl);
@@ -69,8 +76,9 @@ async function transport(options: OperationalClientOptions, path: string, accept
     let response: Response;
     try {
       response = await bounded(Promise.resolve().then(() => (options.fetch ?? globalThis.fetch.bind(globalThis))(new URL(path, base), {
-        method: 'GET', headers: { Authorization: `Bearer ${credential}` }, signal: controller.signal,
+        method, headers: { Authorization: `Bearer ${credential}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, signal: controller.signal,
         redirect: 'error', credentials: 'omit', cache: 'no-store',
+        ...(body === undefined ? {} : { body: JSON.stringify(jsonValue(body, { maxBytes: maximum })) }),
       })), controller.signal);
     } catch (error) {
       if (error instanceof MayuraError && error.code === 'TIMEOUT') throw error;
@@ -92,6 +100,24 @@ async function transport(options: OperationalClientOptions, path: string, accept
       try { return record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))); } catch { return fail(); }
     } finally { if (!complete) void reader.cancel().catch(() => {}); reader.releaseLock(); }
   } finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); controller.abort(); }
+}
+
+function human(value: unknown): OperationalHumanRequest {
+  const item = record(value); const allowed = ['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status', 'context', 'subjectDigest', 'deadlineAtMs'];
+  if (Object.keys(item).some(key => !allowed.includes(key)) || !['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status'].every(key => Object.hasOwn(item, key))) return fail();
+  const requestId = typeof item['id'] === 'string' ? item['id'] : ''; const agentId = id(item['agentId']); const schemaId = id(item['schemaId']);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(requestId) || !['information', 'correction', 'plan_selection'].includes(String(item['kind']))
+    || !/^[a-f0-9]{64}$/u.test(String(item['schemaDigest'])) || !/^[a-f0-9]{64}$/u.test(String(item['digest']))
+    || typeof item['prompt'] !== 'string' || new TextEncoder().encode(item['prompt']).byteLength < 1 || new TextEncoder().encode(item['prompt']).byteLength > 1_024
+    || !['waiting', 'answered', 'cancelled', 'timed_out'].includes(String(item['status']))
+    || (item['subjectDigest'] !== undefined && !/^[a-f0-9]{64}$/u.test(String(item['subjectDigest'])))
+    || ((item['kind'] === 'correction') !== (item['subjectDigest'] !== undefined))
+    || (item['deadlineAtMs'] !== undefined && (!Number.isSafeInteger(item['deadlineAtMs']) || (item['deadlineAtMs'] as number) < 0))) return fail();
+  return Object.freeze({ id: requestId, agentId, kind: item['kind'] as OperationalHumanRequest['kind'], schemaId,
+    schemaDigest: item['schemaDigest'] as string, prompt: item['prompt'], digest: item['digest'] as string, status: item['status'] as OperationalHumanRequest['status'],
+    ...(item['context'] === undefined ? {} : { context: freezeJson(jsonValue(item['context'], { maxBytes: 65_536 })) }),
+    ...(item['subjectDigest'] === undefined ? {} : { subjectDigest: item['subjectDigest'] as string }),
+    ...(item['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: item['deadlineAtMs'] as number }) });
 }
 
 /** Read sanitized readiness metadata. HTTP 503 is a valid degraded report, not a transport failure. */
@@ -123,4 +149,34 @@ export async function inspectServerTools(options: OperationalClientOptions, page
       timeoutMs: natural(item['timeoutMs']), costMicros: natural(item['costMicros']) });
   });
   return Object.freeze({ tools: Object.freeze(tools), next: raw['next'] === null ? null : natural(raw['next']) });
+}
+
+/** Read one explicit page of authorized human requests. */
+export async function inspectHumanRequests(options: OperationalClientOptions,
+  page: { readonly after?: string; readonly limit?: number } = {}): Promise<OperationalHumanRequestPage> {
+  const limit = page.limit ?? 50;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (page.after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/u.test(page.after))) throw new MayuraError('INVALID_CONFIG', 'Human request pagination is invalid.');
+  const query = new URLSearchParams({ limit: String(limit), ...(page.after === undefined ? {} : { after: page.after }) });
+  const raw = await transport(options, `/v1/human-requests?${query}`, [200]); exact(raw, ['items', 'next']);
+  if (!Array.isArray(raw['items']) || raw['items'].length > limit || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(raw['next'])))) return fail();
+  const items = raw['items'].map(human); if (new Set(items.map(item => item.id)).size !== items.length) return fail();
+  return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
+}
+
+/** Inspect one authorized human request. */
+export async function inspectHumanRequest(options: OperationalClientOptions, requestId: string): Promise<OperationalHumanRequest> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(requestId)) throw new MayuraError('INVALID_CONFIG', 'Human request ID is invalid.');
+  const raw = await transport(options, `/v1/human-requests/${requestId}`, [200]); exact(raw, ['request']);
+  const result = human(raw['request']); if (result.id !== requestId) return fail(); return result;
+}
+
+/** Submit one response bound to the exact request digest; actor identity comes from server authentication. */
+export async function respondHumanRequest(options: OperationalClientOptions, input: {
+  readonly id: string; readonly requestDigest: string; readonly commandId: string; readonly value: JsonValue;
+}): Promise<OperationalHumanRequest> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(input.id) || !/^[a-f0-9]{64}$/u.test(input.requestDigest) || !identifier.test(input.commandId)) throw new MayuraError('INVALID_CONFIG', 'Human response identity is invalid.');
+  const raw = await transport(options, `/v1/human-requests/${input.id}/responses`, [200], 'POST',
+    { commandId: input.commandId, requestDigest: input.requestDigest, value: input.value }); exact(raw, ['request']);
+  const result = human(raw['request']);
+  if (result.id !== input.id || result.digest !== input.requestDigest || result.status === 'waiting') return fail(); return result;
 }

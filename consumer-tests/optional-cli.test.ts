@@ -1,5 +1,5 @@
-import { applyProjectPlan, inspectServerHealth, inspectServerTools, planProject, templates, validateProject,
-  type InitPlan, type OperationalHealth, type OperationalToolPage } from '@mayura/cli';
+import { applyProjectPlan, inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, planProject, respondHumanRequest, templates, validateProject,
+  type InitPlan, type OperationalHealth, type OperationalHumanRequestPage, type OperationalToolPage } from '@mayura/cli';
 
 const catalog = templates();
 const project = validateProject({ format: 'mayura.project.v1', name: 'consumer', template: 'basic-agent',
@@ -10,4 +10,5 @@ export async function compileCliPlan(directory: string): Promise<InitPlan> {
   return plan;
 }
 declare const health: OperationalHealth; declare const tools: OperationalToolPage;
-void health; void tools; void inspectServerHealth; void inspectServerTools;
+declare const humans: OperationalHumanRequestPage;
+void health; void tools; void humans; void inspectServerHealth; void inspectServerTools; void inspectHumanRequests; void inspectHumanRequest; void respondHumanRequest;

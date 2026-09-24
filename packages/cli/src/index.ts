@@ -4,8 +4,9 @@ import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
 
-export { inspectServerHealth, inspectServerTools, type OperationalClientOptions, type OperationalHealth,
-  type OperationalHealthCheck, type OperationalTool, type OperationalToolPage } from './operations.js';
+export { inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, respondHumanRequest,
+  type OperationalClientOptions, type OperationalHealth, type OperationalHealthCheck, type OperationalHumanRequest,
+  type OperationalHumanRequestPage, type OperationalTool, type OperationalToolPage } from './operations.js';
 
 export const TEMPLATE_NAMES = Object.freeze([
   'typed-tool-runner', 'basic-agent', 'durable-approval', 'parallel-research',

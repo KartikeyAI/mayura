@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
-import { publicError } from '@mayura/core';
-import { applyProjectPlan, inspectServerHealth, inspectServerTools, planProject, readProject, templates, TEMPLATE_NAMES, type TemplateName } from './index.js';
+import { lstat, readFile } from 'node:fs/promises';
+import { jsonValue, publicError, type JsonValue } from '@mayura/core';
+import { applyProjectPlan, inspectHumanRequest, inspectHumanRequests, inspectServerHealth, inspectServerTools, planProject, readProject,
+  respondHumanRequest, templates, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -32,6 +34,13 @@ async function stdinToken(): Promise<string> {
   value = value.replace(/\r?\n$/u, '');
   if (!/^[\x21-\x7e]{1,8192}$/u.test(value)) throw new Error('Operational credential input is invalid.');
   return value;
+}
+
+async function responseFile(path: string): Promise<JsonValue> {
+  const absolute = resolve(path); const details = await lstat(absolute);
+  if (!details.isFile() || details.isSymbolicLink() || details.size < 1 || details.size > 1_048_576) throw new Error('Human response file must be a bounded regular JSON file.');
+  try { return jsonValue(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(absolute))), { maxBytes: 1_048_576 }); }
+  catch { throw new Error('Human response file must contain valid UTF-8 JSON.'); }
 }
 
 async function main(arguments_: readonly string[]): Promise<unknown> {
@@ -67,7 +76,23 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
       ...(after === undefined ? {} : { after: Number(after) }), ...(limit === undefined ? {} : { limit: Number(limit) }),
     }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools');
+  if (command === 'human-list' || command === 'human-get' || command === 'human-respond') {
+    const valued = command === 'human-list' ? ['--url', '--after', '--limit'] : command === 'human-get' ? ['--url', '--id']
+      : ['--url', '--id', '--digest', '--command-id', '--response-file'];
+    assertArguments(arguments_, valued, ['--token-stdin']); const baseUrl = option(arguments_, '--url');
+    if (!baseUrl || !arguments_.includes('--token-stdin')) throw new Error(`${command} requires --url and --token-stdin.`);
+    const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
+    if (command === 'human-list') {
+      const after = option(arguments_, '--after'); const limit = option(arguments_, '--limit');
+      return { status: 'succeeded', page: await inspectHumanRequests(settings, { ...(after === undefined ? {} : { after }), ...(limit === undefined ? {} : { limit: Number(limit) }) }) };
+    }
+    const id = option(arguments_, '--id'); if (!id) throw new Error(`${command} requires --id.`);
+    if (command === 'human-get') return { status: 'succeeded', request: await inspectHumanRequest(settings, id) };
+    const requestDigest = option(arguments_, '--digest'); const commandId = option(arguments_, '--command-id'); const file = option(arguments_, '--response-file');
+    if (!requestDigest || !commandId || !file) throw new Error('human-respond requires --digest, --command-id and --response-file.');
+    return { status: 'succeeded', request: await respondHumanRequest(settings, { id, requestDigest, commandId, value: await responseFile(file) }) };
+  }
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

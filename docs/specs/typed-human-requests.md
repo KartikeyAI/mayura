@@ -1,6 +1,6 @@
 # Typed durable human requests
 
-Status: implemented experimental WorkStream profile plus authenticated server/browser wire contract. The driver-free API, SQLite conformance and optional PostgreSQL conformance exist; CLI bindings and workflow-node integration remain separate work.
+Status: implemented experimental WorkStream profile plus authenticated server/browser/CLI wire contract. The driver-free API, SQLite conformance and optional PostgreSQL conformance exist; headless UI and workflow-node integration remain separate work.
 
 ## Public contract
 
@@ -34,7 +34,9 @@ Deadlines use a trusted synchronized application clock. Request creation and res
 
 The optional server adapter exposes bounded list/inspect/respond callbacks without importing WorkStream or a SQL driver. Separate `humans:read` and `humans:respond` capabilities apply; the verified principal ID is the response actor and cannot be supplied by the browser. The browser-safe client validates immutable metadata and submits the request digest with every response. The application adapter must map verified scope/agent visibility to its registered durable definitions and call the WorkStream API, which remains the authority for schema validation, request binding, deadline and first-response semantics.
 
-This slice does not yet provide pause/resume workflow nodes, batch approval grants, notifications, CLI commands or headless UI components. Existing exact-action workflow approvals remain their own stricter execution-authority contract; human information and correction responses never grant tool authority.
+The CLI uses the same routes and authority split. Credentials arrive only through piped stdin; response content comes from a bounded explicit JSON file and is never echoed in command output.
+
+This slice does not yet provide pause/resume workflow nodes, batch approval grants, notifications or headless UI components. Existing exact-action workflow approvals remain their own stricter execution-authority contract; human information and correction responses never grant tool authority.
 
 ## Evidence
 
