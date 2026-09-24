@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
-import { isAbsolute, relative } from 'node:path';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Budget, batchOutput, createRuntime, defineAgent, defineTool, invokeBatch } from '@mayura/sdk';
 import { scriptedModel } from '@mayura/testing';
 import { listenAgentServer } from '@mayura/server-node';
 import { createClient } from '@mayura/client';
 import { createObserver } from '@mayura/observability';
+import { createLocalArtifactStore } from '@mayura/artifacts';
 
 const root = await realpath(process.cwd());
-for (const name of ['@mayura/sdk', '@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/testing', '@mayura/server', '@mayura/server-node', '@mayura/client', '@mayura/observability', 'hono', '@hono/node-server']) {
+for (const name of ['@mayura/sdk', '@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/testing', '@mayura/server', '@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/artifacts', 'hono', '@hono/node-server']) {
   const path = relative(root, await realpath(fileURLToPath(import.meta.resolve(name))));
   assert(!isAbsolute(path) && !path.startsWith('..'), 'Runtime import escaped the packed consumer installation.');
 }
@@ -53,6 +55,43 @@ try {
   observationReport = { status: summary.status, events: summary.counters.events, coverage: summary.coverage };
 } finally { await observer.close(); await runtime.close(); }
 
+let arrivals = 0; let markStarted; let releaseParallel;
+const bothStarted = new Promise(resolve => { markStarted = resolve; });
+const parallelGate = new Promise(resolve => { releaseParallel = resolve; });
+const parallelModel = id => ({ id, capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0, generate: async () => {
+  arrivals++; if (arrivals === 2) markStarted(); await parallelGate; return { type: 'final', output: 7, usage: { costMicros: 0 } };
+} });
+const matrixRuntime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['agent:delegate', 'model:parent', 'model:parallel'] }, limits: { maxConcurrentOperations: 2 } });
+let parallelChildren = false; let progressInspected = false; let policyEnforced = false; let artifactInspected = false;
+const artifactDirectory = await mkdtemp(join(tmpdir(), 'mayura-v18-consumer-'));
+try {
+  const parent = matrixRuntime.submit(defineAgent({ id: 'matrix.parent', version: '1', instructions: 'parent', input: number, output: number, tools: [],
+    model: { id: 'parent', capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0, generate: async () => ({ type: 'final', output: 1, usage: { costMicros: 0 } }) } }), { input: 1 });
+  const childDefinition = defineAgent({ id: 'matrix.child', version: '1', instructions: 'child', input: number, output: number, tools: [], model: parallelModel('parallel') });
+  const childPermissions = { allow: ['model:parallel'] };
+  const left = matrixRuntime.spawn(parent, childDefinition, { input: 2, permissions: childPermissions });
+  const right = matrixRuntime.spawn(parent, childDefinition, { input: 3, permissions: childPermissions });
+  await bothStarted; const progress = matrixRuntime.inspect(parent); progressInspected = progress.runs.length === 3;
+  releaseParallel(); const joined = await Promise.all([left.result(), right.result(), parent.result()]);
+  parallelChildren = joined.every(outcome => outcome.status === 'succeeded');
+
+  let hostEffects = 0;
+  const hostTool = defineTool({ id: 'matrix.host', version: '1', description: 'Denied host operation.', input: number, output: number,
+    effects: 'host', capabilities: [], execute: value => { hostEffects++; return value; } });
+  const deniedRuntime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:denied', 'tool:matrix.host'] } });
+  try {
+    const denied = deniedRuntime.submit(defineAgent({ id: 'matrix.denied', version: '1', instructions: 'request denied host tool', input: number, output: number, tools: [hostTool],
+      model: { id: 'denied', capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0, generate: async () => ({ type: 'tool_calls', calls: [{ id: 'host-1', toolId: 'matrix.host', input: 1 }], usage: { costMicros: 0 } }) } }), { input: 1 });
+    policyEnforced = (await denied.result()).status === 'blocked' && hostEffects === 0;
+  } finally { await deniedRuntime.close(); }
+
+  const artifactStore = createLocalArtifactStore({ rootDirectory: artifactDirectory, maxArtifactBytes: 1_024 });
+  const artifactScope = { tenantId: 'external', projectId: 'consumer' };
+  const reference = await artifactStore.commit(await artifactStore.stage({ scope: artifactScope, content: new TextEncoder().encode('parallel report'), mediaType: 'text/plain', classification: 'internal' }));
+  artifactInspected = (await artifactStore.audit([reference], artifactScope, { maxTotalBytes: 1_024 })).observations[0]?.status === 'ok';
+} finally { await matrixRuntime.close(); await rm(artifactDirectory, { recursive: true, force: true }); }
+const externalConsumerMatrix = parallelChildren && progressInspected && policyEnforced && artifactInspected;
+
 const secret = randomBytes(32); const token = secret.toString('hex'); const expiresAtMs = Date.now() + 30_000;
 const globals = { Request, Response, fetch };
 const server = await listenAgentServer({
@@ -79,4 +118,4 @@ try {
   assert.equal(globalThis.Request, globals.Request); assert.equal(globalThis.Response, globals.Response); assert.equal(globalThis.fetch, globals.fetch);
   httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true };
 } finally { await server.close(); }
-console.log(JSON.stringify({ status: 'passed', batchOutputReferences: true, observation: observationReport, http: httpReport }));
+console.log(JSON.stringify({ status: externalConsumerMatrix ? 'passed' : 'failed', batchOutputReferences: true, externalConsumerMatrix, observation: observationReport, http: httpReport }));

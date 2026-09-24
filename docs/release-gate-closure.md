@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**15 of 22 gates closed. Mayura remains an experimental development preview.**
+**16 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V15 — Code Mode | Qualification gap | QuickJS and Docker containment plus mediated nested calls and durable phases exist. A complete escape suite and one crash/resume write-deduplication gate suite remain; production hostile-code qualification is explicitly separate. |
 | V16 — Server/client | **Closed** | The server/client suites pass 188/188 for object authorization, authenticated metadata streams, reconnect/deduplication and cancellation. The named `V16` client fixture proves hostile output remains inert data and bounded HTML text encoding escapes executable markup. `test:consumer:optional` passes an isolated one-package browser install/bundle with no Node globals/shims/server/runtime/native closure, while its separate Node profile passes authenticated HTTP/SSE. Contract: [HTTP agent transport](specs/http-agent-transport.md). |
 | V17 — Operational recovery | **Closed** | The [operational recovery matrix](operational-recovery.md) specifies fail-closed outcomes and direct fixtures for disk-full, provider outage, corrupt cache/checkpoint, missing/corrupt artifacts, explicit migration/restore, exporter failure and worker drain. The focused matrix passes 132/132, including injected ENOSPC and real killed-restore recovery. No implicit cache, replay, silent repair or data migration is claimed. |
-| V18 — Standalone consumer conformance | Qualification gap | Framework-owned packed samples use public APIs and cover scope, children and artifacts. Host-code approval and the full observational-policy/parallel-work matrix must be proven in one Arth-free consumer. |
+| V18 — Standalone consumer conformance | **Closed** | The isolated packed Node consumer is one fresh Arth-free application using only public archives. Its `externalConsumerMatrix` starts two required children concurrently, inspects live lineage, joins child completion before parent success, denies an ungranted host effect with zero callback execution, and commits/audits an artifact; the same app also validates observation and authenticated HTTP/SSE. `test:consumer:optional` passes with exact dependency isolation and no workspace fallback. Contract: [DX validation](dx-validation.md). |
 | V19 — Install and dependency boundaries | Owner decision + qualification | Packed profiles prove current Windows x64/Node/pnpm boundaries and browser-safe imports. The owner must approve the supported OS/architecture/package-manager matrix before it can be executed and closed. |
 | V20 — First-agent and progressive DX | Qualification gap | Credential-free and typed first-agent paths exist. Declared time/error-quality budgets, a real-provider recipe and the same-definition durable/server adoption fixture remain. |
 | V21 — Public API and upgrade compatibility | Implementation gap | Consumer/runtime types and adapter conformance exist. Stable versus experimental surfaces, support policy and an actual prior-version upgrade/migration fixture are missing. |
@@ -33,7 +33,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Close remaining containment and consumer gates V15 and V18.
+1. Finish production containment qualification for V15.
 2. Finish developer-experience and compatibility gates V20 and V21.
 3. Execute the owner-approved distribution matrix for V19 and release governance for V22.
 4. Add MCP authority parity and close V01 after all invocation paths are stable.

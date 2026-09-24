@@ -3,6 +3,7 @@ import { scriptedModel } from '@mayura/testing';
 import { listenAgentServer, type LocalAgentServer } from '@mayura/server-node';
 import { createClient, type RemoteOutcome } from '@mayura/client';
 import { createObserver, type Observer, type ObservedRun, type ObserverSnapshot } from '@mayura/observability';
+import { createLocalArtifactStore, type LocalArtifactStore } from '@mayura/artifacts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
 const doubled = defineTool({ id: 'consumer.batch-source', version: '1', description: 'Double a number.', input: number, output: number,
@@ -31,6 +32,13 @@ const observation = observer.observe(handle);
 const reason: string = (await observation.done()).reason;
 const summary: ObservedRun | undefined = observer.inspect(handle.id);
 const snapshot: ObserverSnapshot = observer.inspect();
+declare const artifactRoot: string;
+const artifactStore: LocalArtifactStore = createLocalArtifactStore({ rootDirectory: artifactRoot, maxArtifactBytes: 1_024 });
+void artifactStore;
+const parent = runtime.submit(agent, { input: 2 });
+const child = runtime.spawn(parent, agent, { input: 3, permissions });
+const childResult = await child.result();
+void childResult; void runtime.inspect(parent);
 if (summary) {
   const events: number | string = summary.counters.events;
   // @ts-expect-error Observed counters preserve exact count representation.

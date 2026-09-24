@@ -178,7 +178,7 @@ async function main() {
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
-    ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing'], 'optional-node.test.ts'],
+    ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing', '@mayura/artifacts'], 'optional-node.test.ts'],
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
     ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
     ['otlp', ['@mayura/exporter-otlp'], 'optional-otlp.test.ts'],
@@ -215,7 +215,7 @@ async function main() {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
-      if (name === 'node') assert.equal(execution.batchOutputReferences, true);
+      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
         assert.equal(execution.unknownDefinitionSkipped, true);
@@ -279,7 +279,7 @@ async function main() {
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
-    checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'typed-batch-output-references', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'managed-shared-definition-identity', 'managed-single-permit-budget', 'managed-observer-four-model-calls', 'mediated-control-hooks', 'hook-action-evidence', 'explicit-trusted-host-entries', 'no-managed-provider-native-dependencies', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
+    checks: ['offline-tarball-installs', 'no-install-scripts', 'strict-public-types', 'negative-type-fixtures', 'isolated-public-imports', 'no-ancestor-module-fallback', 'browser-only-dependency-graph', 'browser-target-bundle', 'no-node-globals-smoke', 'loopback-http-sse-roundtrip', 'local-observer-terminal-evidence', 'typed-batch-output-references', 'arth-free-parallel-child-policy-artifact-matrix', 'ephemeral-workflow-fork-join', 'workflow-required-child-tool', 'no-workflow-sql-drivers', 'managed-shared-definition-identity', 'managed-single-permit-budget', 'managed-observer-four-model-calls', 'mediated-control-hooks', 'hook-action-evidence', 'explicit-trusted-host-entries', 'no-managed-provider-native-dependencies', 'private-exports-denied', 'unchanged-base-sdk-closure', 'archive-map-integrity'],
   };
   result.checks.push('driver-free-execution-wait-subpath', 'execution-wait-custom-adapter', 'execution-wait-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
