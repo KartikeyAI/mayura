@@ -2,7 +2,7 @@
 
 Updated: 2026-09-24. Release status: **experimental development preview / not enterprise-qualified**.
 
-The owner authorized independent development in `mayura/`. Its local repository has no remote; nothing has been published or deployed. Packages remain private pending the owner's license and registry namespace decisions. F01–F29, G01–G11 and V01–V22 remain the product contract, not a checklist completed by this foundation.
+The owner authorized independent development in `mayura/`. Its local repository has no remote; nothing has been published or deployed. Packages remain private pending the owner's license and registry namespace decisions. F01–F29 and G01–G11 remain the product contract. V10 is closed by its dedicated acceptance suite; V01–V09 and V11–V22 remain open. See the [release gate closure ledger](release-gate-closure.md).
 
 ## Implemented slices and integration status
 
