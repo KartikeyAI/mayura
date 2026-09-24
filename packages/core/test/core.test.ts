@@ -68,6 +68,15 @@ describe('budget reservations', () => {
     expect(() => reservation.settle(0)).toThrow(MayuraError);
     expect(budget.snapshot()).toEqual({ spentMicros: 6, reservedMicros: 0, calls: 1 });
   });
+  it('atomically retains only unresolved usage and releases unused capacity', () => {
+    const budget = new Budget(10, 3); const reservation = budget.reserve(8);
+    reservation.settleUsage(3, 2);
+    expect(budget.snapshot()).toEqual({ spentMicros: 3, reservedMicros: 2, calls: 1 });
+    expect(() => reservation.settleUsage(3, 0)).toThrow(MayuraError);
+    budget.reserve(5).settle(5);
+    expect(budget.snapshot()).toEqual({ spentMicros: 8, reservedMicros: 2, calls: 2 });
+    expect(() => budget.reserve(1)).toThrow(MayuraError);
+  });
   it('records known provider overruns instead of truncating spending', () => {
     const budget = new Budget(10, 10);
     const reservation = budget.reserve(8);

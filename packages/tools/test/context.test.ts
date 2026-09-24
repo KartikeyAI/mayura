@@ -27,7 +27,7 @@ describe('opaque per-key tool context', () => {
       seen = execution;
       expect(privateSlot.get(execution)).toBe(credentials); expect(otherSlot.get(execution)).toBeUndefined();
       expect(privateSlot.get({ ...execution })).toBeUndefined();
-      expect(Object.keys(execution).sort()).toEqual(['callId', 'runId', 'scope', 'signal']);
+      expect(Object.keys(execution).sort()).toEqual(['callId', 'reportUsage', 'runId', 'scope', 'signal']);
       expect(Object.isFrozen(execution)).toBe(true); expect(Object.isFrozen(execution.scope)).toBe(true);
       expect(input).toBe('public-input'); return 'public-output';
     });

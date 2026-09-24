@@ -1,6 +1,6 @@
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { workflowManifest, workflowPolicy, workflowResources, workflowGraphManifest, workflowGraphResources, type ScheduledWorkflowStore, type WorkflowGraphStore } from '@mayura/storage-contracts';
-import { claim, fields, hash, immutable, integer, invalid, object, receipt } from './scheduler-validation.js';
+import { claim, fields, hash, immutable, integer, invalid, object, receipt, settlement } from './scheduler-validation.js';
 import { identifier } from './validation.js';
 
 export type ScheduledMethod = keyof ScheduledWorkflowStore;
@@ -36,7 +36,7 @@ export function scheduledCommand(method: ScheduledMethod, value: unknown, profil
     case 'claim': fields(raw, [...common,'workerId','limit','leaseMs']); identifier(raw['workerId'], 'Worker'); integer(raw['limit'],1,32); integer(raw['leaseMs'],1000,300_000); break;
     case 'renew': fields(raw, [...common,'claim','leaseMs']); claim(raw['claim']); integer(raw['leaseMs'],1000,300_000); break;
     case 'start': fields(raw, [...common,'claim','input']); claim(raw['claim']); input(); break;
-    case 'recordReceipt': fields(raw, [...common,'jobId','fence','evidenceId','receipt']); identifier(raw['jobId'],'Job'); integer(raw['fence'],1,128); identifier(raw['evidenceId'],'Evidence'); receipt(raw['receipt']); break;
+    case 'recordReceipt': fields(raw, [...common,'jobId','fence','evidenceId','receipt'], ['settlement']); identifier(raw['jobId'],'Job'); integer(raw['fence'],1,128); identifier(raw['evidenceId'],'Evidence'); receipt(raw['receipt']); if (raw['settlement'] !== undefined) settlement(raw['settlement']); break;
     case 'complete': fields(raw, [...common,'claim','evidenceId','outcome','output']); claim(raw['claim']); identifier(raw['evidenceId'],'Evidence');
       if (!['succeeded','failed','blocked'].includes(raw['outcome'] as string) || (raw['outcome'] !== 'succeeded' && raw['output'] !== null)) invalid();
       try { raw['output'] = jsonValue(raw['output'], { maxBytes: 65_536 }); } catch { invalid(); } break;

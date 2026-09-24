@@ -209,8 +209,34 @@ describe('mandatory execution receipt persistence', () => {
   it('records unknown external execution without laundering it into success', async () => {
     const record = vi.fn(async () => {});
     const pending = await invokeTool(tool({ effects: 'write', execute: () => { throw new Error(); } }), { value: 1 }, context({ permissions: { allow: ['tool:number.double', 'effect:write'] }, onExecutionReceipt: record }));
-    expect(record).toHaveBeenCalledWith({ callId: 'call-1', toolId: 'number.double', execution: 'unknown', disclosure: 'withheld' });
+    expect(record).toHaveBeenCalledWith(
+      { callId: 'call-1', toolId: 'number.double', execution: 'unknown', disclosure: 'withheld' },
+      { knownCostMicros: 0, unknownCostMicros: 0 },
+    );
     expect(pending.status).toBe('outcome_unknown');
+  });
+
+  it('settles a trusted dynamic usage report below the declared maximum', async () => {
+    const budget = new Budget(10, 1); const record = vi.fn(async () => {});
+    const definition = tool({ costMicros: 10, execute: (input, executionContext) => {
+      executionContext.reportUsage({ knownCostMicros: 3, unknownCostMicros: 0 }); return { result: input.value };
+    } });
+    const result = await invokeTool(definition, { value: 2 }, context({ budget, onExecutionReceipt: record }));
+    expect(result.status).toBe('succeeded');
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ execution: 'succeeded' }), { knownCostMicros: 3, unknownCostMicros: 0 });
+    expect(budget.snapshot()).toEqual({ spentMicros: 3, reservedMicros: 0, calls: 1 });
+  });
+
+  it('withholds success when reported usage remains unresolved', async () => {
+    const budget = new Budget(10, 1); const record = vi.fn(async () => {});
+    const definition = tool({ effects: 'write', costMicros: 10, execute: (input, executionContext) => {
+      executionContext.reportUsage({ knownCostMicros: 2, unknownCostMicros: 3 }); return { result: input.value };
+    } });
+    const result = await invokeTool(definition, { value: 2 }, context({ budget,
+      permissions: { allow: ['tool:number.double', 'effect:write'] }, onExecutionReceipt: record }));
+    expect(result).toMatchObject({ status: 'outcome_unknown', receipt: { execution: 'unknown' } });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ execution: 'unknown' }), { knownCostMicros: 2, unknownCostMicros: 3 });
+    expect(budget.snapshot()).toEqual({ spentMicros: 2, reservedMicros: 3, calls: 1 });
   });
 
   it('cannot use persistence hooks to bypass authorization', async () => {

@@ -3,6 +3,8 @@ import { MayuraError, assertPositiveInteger } from './errors.js';
 export interface Reservation {
   /** Settle only confirmed cost. Unknown cost deliberately retains the complete reservation. */
   settle(actualMicros: number): void;
+  /** Atomically charge confirmed usage, retain an unresolved bound and release unused capacity. */
+  settleUsage(knownCostMicros: number, unknownCostMicros: number): void;
 }
 
 /** One fixed-cost future execution; IDs remain unique throughout their shared ledger's lifetime. */
@@ -75,7 +77,7 @@ interface TicketState {
   readonly path: readonly Account[];
   readonly maxCostMicros: number;
   readonly bound: bigint;
-  status: 'held' | 'started' | 'cancelled' | 'settled';
+  status: 'held' | 'started' | 'cancelled' | 'settled' | 'unknown';
 }
 interface BundleState { readonly tickets: readonly TicketState[]; closed: boolean }
 
@@ -179,21 +181,28 @@ function bundleOperations(value: readonly BundleOperation[]): readonly BundleOpe
 /** Existing settlement semantics, shared by ordinary reservations and consumed bundle tickets. */
 function reservationFor(account: Account, path: readonly Account[], maxMicros: number, ticket?: TicketState): Reservation {
   const bound = BigInt(maxMicros); let settled = false;
+  const settleUsage = (knownCostMicros: number, unknownCostMicros: number): void => {
+    if (settled) throw new MayuraError('CONFLICT', 'Reservation is already settled.');
+    if (!Number.isSafeInteger(knownCostMicros) || knownCostMicros < 0
+      || !Number.isSafeInteger(unknownCostMicros) || unknownCostMicros < 0) {
+      throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost is invalid; reservation retained.');
+    }
+    settled = true;
+    const known = BigInt(knownCostMicros); const unknown = BigInt(unknownCostMicros);
+    // Closing, cancellation, or another reservation's overrun never discards known late usage.
+    for (const ancestor of path) { ancestor.reserved -= bound; ancestor.reserved += unknown; ancestor.spent += known; }
+    if (ticket) {
+      ticket.status = unknownCostMicros === 0 ? 'settled' : 'unknown';
+      if (unknownCostMicros === 0) account.ledger.outstandingTickets--;
+    }
+    if (known + unknown > bound) {
+      account.ledger.blocked = true;
+      throw new MayuraError('BUDGET_EXCEEDED', 'Reported usage exceeded its bound; known and unresolved usage were retained.');
+    }
+  };
   return Object.freeze({
-    settle: (actualMicros: number): void => {
-      if (settled) throw new MayuraError('CONFLICT', 'Reservation is already settled.');
-      if (!Number.isSafeInteger(actualMicros) || actualMicros < 0) {
-        throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost is invalid; reservation retained.');
-      }
-      settled = true;
-      // Closing, cancellation, or another reservation's overrun never discards known late usage.
-      for (const ancestor of path) { ancestor.reserved -= bound; ancestor.spent += BigInt(actualMicros); }
-      if (ticket) { ticket.status = 'settled'; account.ledger.outstandingTickets--; }
-      if (actualMicros > maxMicros) {
-        account.ledger.blocked = true;
-        throw new MayuraError('BUDGET_EXCEEDED', 'Reported cost exceeded its bound; full actual usage recorded.');
-      }
-    },
+    settle: (actualMicros: number): void => { settleUsage(actualMicros, 0); },
+    settleUsage,
   });
 }
 

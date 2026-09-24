@@ -157,7 +157,8 @@ export function assertWorkflowGraphStateMatchesManifest(state: WorkflowGraphForm
       if (node.kind === 'tool') {
         if (step['receipt'] !== null && object(step['receipt'])['toolId'] !== node.tool) corrupt();
         const amount = integer(step['costReserved']);
-        if ((step['approval'] !== null && !node.approval) || (amount !== 0 && amount !== node.costMicros)) corrupt();
+        if ((step['approval'] !== null && !node.approval) || amount > node.costMicros
+          || (amount !== 0 && amount !== node.costMicros && step['status'] !== 'unknown')) corrupt();
         if (node.approval && step['candidateHash'] !== null && (step['approval'] === null || object(step['approval'])['digest'] !== step['candidateHash'])) corrupt();
       } else if (node.kind === 'wait' && step['status'] === 'succeeded') {
         const output = observations(step['output']);

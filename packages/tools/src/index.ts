@@ -10,6 +10,7 @@ import {
   type Effect,
   type ExecutionContext,
   type ExecutionReceipt,
+  type ExecutionSettlement,
   type PublicError,
   type Guard,
   type InferInput,
@@ -29,6 +30,11 @@ import { claimToolBudgetTicket, type ToolBudgetTicketBinding } from './budget-bi
 export type { ToolBudgetTicketBinding } from './budget-binding.js';
 
 /** Authoring contract. Executors are trusted application code, not sandboxed callbacks. */
+export interface ToolExecutionContext extends ExecutionContext {
+  /** Report dynamic usage once. Omission conservatively charges the declared maximum. */
+  readonly reportUsage: (settlement: ExecutionSettlement) => void;
+}
+
 export interface ToolOptions<I extends Schema, O extends Schema> {
   readonly id: string;
   readonly version: string;
@@ -37,7 +43,7 @@ export interface ToolOptions<I extends Schema, O extends Schema> {
   readonly output: O;
   readonly effects: Effect;
   readonly capabilities: readonly string[];
-  readonly execute: (input: InferOutput<I>, context: ExecutionContext) => InferInput<O> | Promise<InferInput<O>>;
+  readonly execute: (input: InferOutput<I>, context: ToolExecutionContext) => InferInput<O> | Promise<InferInput<O>>;
   readonly timeoutMs?: number;
   readonly costMicros?: number;
   readonly inputJsonSchema?: JsonObject;
@@ -75,11 +81,11 @@ export interface InvokeToolContext extends ExecutionContext {
   /** Trusted admission recheck for persisted claims/digests; cannot alter input or grant authority. */
   readonly beforeDispatch?: (validatedInput: JsonValue) => Promise<void>;
   /** Trusted mandatory persistence seam, not an observational or authorization hook. */
-  readonly onExecutionReceipt?: (receipt: ExecutionReceipt) => Promise<void>;
+  readonly onExecutionReceipt?: (receipt: ExecutionReceipt, settlement: ExecutionSettlement) => Promise<void>;
 }
 
 interface Registration {
-  readonly execute: (input: unknown, context: ExecutionContext) => unknown;
+  readonly execute: (input: unknown, context: ToolExecutionContext) => unknown;
   readonly inputGuards: readonly Guard[];
   readonly outputGuards: readonly Guard[];
 }
@@ -219,6 +225,8 @@ export async function invokeTool<T extends AnyTool>(
   let persistenceStarted = false;
   let persistenceConfirmed = false;
   let hasCallbackLimiter = false;
+  let reportedUsage: ExecutionSettlement | undefined;
+  let handlerActive = false;
   const receipt = (disclosure: ExecutionReceipt['disclosure']): ExecutionReceipt | undefined => context && registered
     ? Object.freeze({ callId: context.callId, toolId: tool.id, execution, disclosure })
     : undefined;
@@ -251,13 +259,32 @@ export async function invokeTool<T extends AnyTool>(
     externalSignal = options.signal;
     controller = new AbortController();
     const signal = controller.signal;
+    const reportUsage = (value: ExecutionSettlement): void => {
+      if (!handlerActive || reportedUsage !== undefined || !value || typeof value !== 'object'
+        || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+        throw new MayuraError('INVALID_CONFIG', 'Tool usage must be reported exactly once during execution.');
+      }
+      const descriptors = Object.getOwnPropertyDescriptors(value);
+      if (Reflect.ownKeys(descriptors).length !== 2 || !descriptors['knownCostMicros'] || !descriptors['unknownCostMicros']
+        || !('value' in descriptors['knownCostMicros']) || !('value' in descriptors['unknownCostMicros'])) {
+        throw new MayuraError('INVALID_CONFIG', 'Tool usage must contain exact known and unknown cost fields.');
+      }
+      const knownCostMicros = descriptors['knownCostMicros'].value;
+      const unknownCostMicros = descriptors['unknownCostMicros'].value;
+      if (!Number.isSafeInteger(knownCostMicros) || knownCostMicros < 0 || !Number.isSafeInteger(unknownCostMicros)
+        || unknownCostMicros < 0 || knownCostMicros > tool.costMicros - unknownCostMicros) {
+        throw new MayuraError('BUDGET_EXCEEDED', 'Reported tool usage exceeds its admitted cost bound.');
+      }
+      reportedUsage = Object.freeze({ knownCostMicros, unknownCostMicros });
+    };
     context = Object.freeze({
       runId: options.runId,
       callId: options.callId,
       scope: Object.freeze({ principalId: options.scope.principalId, projectId: options.scope.projectId }),
       signal,
-    });
-    const executionContext = context;
+      reportUsage,
+    }) as ToolExecutionContext;
+    const executionContext = context as ToolExecutionContext;
     const startReservation = options.budgetBinding === undefined ? undefined
       : claimToolBudgetTicket(options.budgetBinding, tool, { ...executionContext, budget, signal: externalSignal });
     attachToolContext(executionContext, options.contextBindings);
@@ -353,11 +380,15 @@ export async function invokeTool<T extends AnyTool>(
       }
       catch (error) { releaseExecution?.(); throw error; }
       dispatched = true;
+      let settlement: ExecutionSettlement | undefined;
+      const usage = (): ExecutionSettlement => settlement ??= reportedUsage ?? Object.freeze(execution === 'unknown'
+        ? { knownCostMicros: 0, unknownCostMicros: tool.costMicros }
+        : { knownCostMicros: tool.costMicros, unknownCostMicros: 0 });
       const persistReceipt = async (): Promise<void> => {
         const knownReceipt = receipt('withheld');
         if (onExecutionReceipt && knownReceipt) {
           persistenceStarted = true;
-          try { await onExecutionReceipt(knownReceipt); }
+          try { await onExecutionReceipt(knownReceipt, usage()); }
           catch { throw new MayuraError('OUTCOME_UNKNOWN', 'Execution receipt could not be confirmed in persistent storage. Do not replay this operation.'); }
           persistenceConfirmed = true;
         }
@@ -365,13 +396,21 @@ export async function invokeTool<T extends AnyTool>(
       let rawOutput: unknown;
       let releaseFailure: unknown;
       try {
+        handlerActive = true;
         rawOutput = await registration.execute(parsedInput, executionContext);
+        handlerActive = false;
+        if (reportedUsage && reportedUsage.unknownCostMicros > 0) {
+          execution = 'unknown';
+          throw new MayuraError('OUTCOME_UNKNOWN', 'Reported usage contains unresolved external cost.');
+        }
         execution = 'succeeded';
-        reservation.settle(tool.costMicros);
+        reservation.settle(usage().knownCostMicros);
       }
       catch {
-        execution = tool.effects === 'none' ? 'failed' : 'unknown';
-        if (tool.effects === 'none') reservation.settle(tool.costMicros);
+        handlerActive = false;
+        if (execution !== 'unknown') execution = tool.effects === 'none' ? 'failed' : 'unknown';
+        const observed = usage();
+        reservation.settleUsage(observed.knownCostMicros, observed.unknownCostMicros);
         await persistReceipt();
         assertActive();
         throw new MayuraError('TOOL_FAILED', 'The tool executor failed; raw exception details are withheld.');
@@ -400,7 +439,8 @@ export async function invokeTool<T extends AnyTool>(
     else if (dispatched && observedExecution === 'not_started') execution = 'unknown';
     // A cancelled pure computation can still finish later. Its execution evidence is unknown,
     // while the requested result is cancelled/timed out; only uncertain effects force reconciliation.
-    const unknown = (execution === 'unknown' && tool.effects !== 'none') || (persistenceStarted && !persistenceConfirmed);
+    const unknown = (execution === 'unknown' && (tool.effects !== 'none' || (reportedUsage?.unknownCostMicros ?? 0) > 0))
+      || (persistenceStarted && !persistenceConfirmed);
     const safeError = unknown
       ? { code: 'OUTCOME_UNKNOWN' as const, message: 'The external operation may have occurred. Reconcile its outcome before retrying.' }
       : safeToolFailure(error);

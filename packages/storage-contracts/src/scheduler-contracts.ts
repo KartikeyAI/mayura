@@ -1,4 +1,4 @@
-import type { ExecutionReceipt, JsonObject, JsonValue } from '@mayura/core';
+import type { ExecutionReceipt, ExecutionSettlement, JsonObject, JsonValue } from '@mayura/core';
 import type { AggregateStore, StoredEvent } from './contracts.js';
 
 export type JobState = 'ready' | 'leased' | 'started' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
@@ -28,10 +28,13 @@ export interface JobRecord extends JobKey {
 export type EvidenceDisposition = 'current' | 'late' | 'conflicting';
 export interface SchedulerEvidence {
   readonly evidenceId: string; readonly receipt: ExecutionReceipt;
+  /** Optional for generic scheduler users; integrated metered workflows require it. */
+  readonly settlement?: ExecutionSettlement;
   readonly disposition: EvidenceDisposition; readonly recordedAtMs: number;
 }
 export interface ReceiptCommand extends JobKey {
   readonly fence: number; readonly evidenceId: string; readonly receipt: ExecutionReceipt;
+  readonly settlement?: ExecutionSettlement;
 }
 export interface CompleteJobCommand {
   readonly claim: Claim; readonly commandId: string; readonly evidenceId: string;

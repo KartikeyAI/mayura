@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { defineTool, type AnyTool } from '@mayura/tools';
-import type { ExecutionContext, Guard, JsonObject, Scope } from '@mayura/core';
+import { defineTool, type AnyTool, type ToolExecutionContext } from '@mayura/tools';
+import type { Guard, JsonObject, Scope } from '@mayura/core';
 import { StorageError, type ScheduledWorkflowAggregateStore, type ScheduledWorkflowStore } from '@mayura/storage-contracts';
 import { createScheduledWorkflowRuntime, createWorkflowRuntime, defineWorkflow } from '../src/index.js';
 import { digest } from '../src/definition.js';
@@ -31,7 +31,7 @@ async function bounded<T>(promise: Promise<T>, milliseconds = 3_000): Promise<T>
 }
 
 function tool(options: {
-  id?: string; execute?: (input: { value: number }, context: ExecutionContext) => unknown;
+  id?: string; execute?: (input: { value: number }, context: ToolExecutionContext) => unknown;
   costMicros?: number; output?: z.ZodType; timeoutMs?: number;
   guards?: { input?: readonly Guard[]; output?: readonly Guard[] };
 } = {}) {
@@ -123,6 +123,25 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const before = await detail(run.id); await engine.inspect(run.id); await engine.events(run.id);
       expect(await detail(run.id)).toEqual(before); expect(effects).toHaveLength(2);
       expect(Object.isFrozen(completed)).toBe(true); expect(Object.isFrozen(completed.steps)).toBe(true);
+    });
+
+    it('atomically settles verified dynamic usage and retains only unresolved cost', async () => {
+      const exact = single(tool({ costMicros: 10, execute: (input, context) => {
+        context.reportUsage({ knownCostMicros: 3, unknownCostMicros: 0 }); return input;
+      } }));
+      const exactEngine = runtime(); const exactRun = await exactEngine.submit(exact, { input: { value: 2 }, idempotencyKey: 'dynamic-exact' });
+      expect(await exactEngine.runUntilSettled(exact, exactRun.id)).toMatchObject({
+        status: 'succeeded', budget: { spentMicros: 3, reservedMicros: 0 },
+      });
+
+      const uncertain = single(tool({ costMicros: 10, execute: (input, context) => {
+        context.reportUsage({ knownCostMicros: 2, unknownCostMicros: 3 }); return input;
+      } }));
+      const uncertainEngine = runtime(); const uncertainRun = await uncertainEngine.submit(uncertain, { input: { value: 2 }, idempotencyKey: 'dynamic-uncertain' });
+      expect(await uncertainEngine.runUntilSettled(uncertain, uncertainRun.id)).toMatchObject({
+        status: 'outcome_unknown', budget: { spentMicros: 2, reservedMicros: 3 },
+        steps: { write: { status: 'unknown' } },
+      });
     });
 
     it('deduplicates concurrent submission and retries after completion without replacing intent', async () => {

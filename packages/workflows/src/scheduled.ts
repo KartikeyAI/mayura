@@ -1,4 +1,4 @@
-import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type JsonValue, type Schema, type InferInput } from '@mayura/core';
+import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonValue, type Schema, type InferInput } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import {
   StorageError, executionRef, workflowPolicy, workflowResources, workflowOutputs,
@@ -219,7 +219,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       } catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'Scheduled graph state does not match its registered definition.'); }
     }
   };
-  const receiptId = (jobId: string, fence: number, receipt: ExecutionReceipt): string => digest('mayura:workflow-receipt:v1', { jobId, fence, receipt });
+  const receiptId = (jobId: string, fence: number, receipt: ExecutionReceipt, settlement: ExecutionSettlement): string =>
+    digest('mayura:workflow-receipt:v2', { jobId, fence, receipt, settlement });
   const pendingNode = (current: ScheduledStoredSnapshot, nodeId: string): boolean => {
     const state = stateFrom(current.record);
     return !terminal.has(state.status) && !current.jobs.some(job => job.nodeId === nodeId)
@@ -239,6 +240,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     let renewal: ReturnType<typeof setTimeout> | undefined;
     let renewing: Promise<void> | undefined;
     let finished = false; let acquired = false; let handlerSettled = false; let logicalSettled = false; let released = false;
+    let observedSettlement: ExecutionSettlement | undefined;
     const releaseSlot = (): void => {
       if (!released && logicalSettled && (!acquired || handlerSettled)) { released = true; slots--; }
     };
@@ -264,11 +266,11 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         && job.fence === originalClaim.fence && job.workerId === originalClaim.workerId
         && !job.cancelRequested && !job.leaseRevoked;
     };
-    const record = async (receipt: ExecutionReceipt): Promise<string> => {
+    const record = async (receipt: ExecutionReceipt, settlement: ExecutionSettlement): Promise<string> => {
       const withheld = Object.freeze({ ...receipt, disclosure: 'withheld' as const });
-      const evidenceId = receiptId(jobId, originalClaim.fence, withheld);
+      const evidenceId = receiptId(jobId, originalClaim.fence, withheld, settlement);
       // Actual completion evidence outlives worker shutdown; only its wait is deadline-bounded.
-      const result = await scheduledStorage(() => api.recordReceipt({ ...access(id), jobId, fence: originalClaim.fence, evidenceId, receipt: withheld }), true);
+      const result = await scheduledStorage(() => api.recordReceipt({ ...access(id), jobId, fence: originalClaim.fence, evidenceId, receipt: withheld, settlement }), true);
       view(result, id);
       return evidenceId;
     };
@@ -291,7 +293,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
           const started = await write(id, command => api.start({ ...command, claim: token, input }), dispatchSignal);
           if (started.status !== 'started') throw new MayuraError('CONFLICT', 'The claim does not grant a fresh dispatch.');
         },
-        onExecutionReceipt: async receipt => { await record(receipt); },
+        onExecutionReceipt: async (receipt, settlement) => { observedSettlement = settlement; await record(receipt, settlement); },
       });
       const current = await load(id);
       const currentJob = current.jobs.find(item => item.jobId === jobId);
@@ -307,7 +309,11 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         return;
       }
       if (!result.receipt) return;
-      const evidenceId = await scheduledCallback(() => record(result.receipt!), storageTimeoutMs, shutdown.signal);
+      const settlement = observedSettlement ?? Object.freeze(result.receipt.execution === 'unknown'
+        ? { knownCostMicros: 0, unknownCostMicros: node.tool.costMicros }
+        : result.receipt.execution === 'not_started' ? { knownCostMicros: 0, unknownCostMicros: 0 }
+          : { knownCostMicros: node.tool.costMicros, unknownCostMicros: 0 });
+      const evidenceId = await scheduledCallback(() => record(result.receipt!, settlement), storageTimeoutMs, shutdown.signal);
       if (result.receipt.execution === 'unknown') return;
       const outcome = result.status === 'succeeded' ? 'succeeded' : result.receipt.execution === 'failed' ? 'failed' : 'blocked';
       await stopRenewal();

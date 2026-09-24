@@ -116,7 +116,10 @@ describe('tool boundary security regressions', () => {
       // Let both the callback rejection and Node's unhandled-rejection checkpoint run.
       await nextTurn();
       await nextTurn();
-      expect(receiptCallback).toHaveBeenCalledExactlyOnceWith({ callId: 'write.1', toolId: 'write', execution: 'succeeded', disclosure: 'withheld' });
+      expect(receiptCallback).toHaveBeenCalledExactlyOnceWith(
+        { callId: 'write.1', toolId: 'write', execution: 'succeeded', disclosure: 'withheld' },
+        { knownCostMicros: 1, unknownCostMicros: 0 },
+      );
       expect(unhandled).not.toHaveBeenCalled();
       expect(outputGuard).not.toHaveBeenCalled();
       expect(budget.snapshot()).toEqual({ spentMicros: 1, reservedMicros: 0, calls: 1 });

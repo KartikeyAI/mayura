@@ -137,6 +137,20 @@ describe('scheduled storage clock and evidence review', () => {
     expect(await current.scheduler.execute('claim', { scope: competitor.record.scope, workerId: 'standalone', limit: 32, leaseMs: 1_000 })).toEqual([]);
   });
 
+  it('accepts monotonic unknown-cost refinement without reopening an uncertain effect', async () => {
+    const run = await started();
+    await current.store.recordReceipt({ ...run.evidence, evidenceId: 'coarse', receipt: { ...run.receipt, execution: 'unknown' },
+      settlement: { knownCostMicros: 0, unknownCostMicros: 7 } });
+    const refined = await current.store.recordReceipt({ ...run.evidence, evidenceId: 'refined', receipt: { ...run.receipt, execution: 'unknown' },
+      settlement: { knownCostMicros: 3, unknownCostMicros: 2 } });
+    expect(workflowState(refined.record)).toMatchObject({ status: 'running', spentMicros: 3, reservedMicros: 2,
+      steps: { action: { status: 'unknown', costReserved: 2, receipt: { execution: 'unknown' } } } });
+    const stale = await current.store.recordReceipt({ ...run.evidence, evidenceId: 'stale-coarse', receipt: { ...run.receipt, execution: 'unknown' },
+      settlement: { knownCostMicros: 0, unknownCostMicros: 7 } });
+    expect(workflowState(stale.record)).toMatchObject({ spentMicros: 3, reservedMicros: 2,
+      steps: { action: { status: 'unknown', costReserved: 2 } } });
+  });
+
   it('keeps proven not-started settlement free under a later contradictory success claim', async () => {
     const run = await started();
     const notStarted = await current.store.recordReceipt({ ...run.evidence, evidenceId: 'not-started', receipt: { ...run.receipt, execution: 'not_started' } });

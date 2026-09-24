@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { freezeJson, jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
+import { freezeJson, jsonValue, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError } from './contracts.js';
 import { identifier } from './validation.js';
 import type { Claim, JobReservation, SchedulerStore } from './scheduler-contracts.js';
@@ -43,6 +43,12 @@ export function receipt(value: unknown): ExecutionReceipt {
   if (!['not_started', 'succeeded', 'failed', 'unknown'].includes(raw['execution'] as string) || raw['disclosure'] !== 'withheld') invalid();
   return raw as unknown as ExecutionReceipt;
 }
+export function settlement(value: unknown): ExecutionSettlement {
+  const raw = object(value, 512); fields(raw, ['knownCostMicros', 'unknownCostMicros']);
+  integer(raw['knownCostMicros']); integer(raw['unknownCostMicros']);
+  if ((raw['knownCostMicros'] as number) > Number.MAX_SAFE_INTEGER - (raw['unknownCostMicros'] as number)) invalid();
+  return raw as unknown as ExecutionSettlement;
+}
 export function claim(value: unknown): Claim {
   const raw = object(value, 2048); fields(raw, ['scope', 'jobId', 'workerId', 'fence', 'leaseUntilMs']);
   for (const key of ['scope','jobId','workerId']) identifier(raw[key], key);
@@ -73,7 +79,7 @@ export function schedulerCommand(method: SchedulerMethod, value: unknown): JsonO
     case 'renew': fields(raw, ['claim','leaseMs']); claim(raw['claim']); integer(raw['leaseMs'], 1_000, 300_000); break;
     case 'start': fields(raw, ['claim','candidateHash']); claim(raw['claim']); hash(raw['candidateHash']); break;
     case 'receipts': fields(raw, ['scope','jobId','fence']); key(); integer(raw['fence'], 1, 128); break;
-    case 'recordReceipt': fields(raw, ['scope','jobId','fence','evidenceId','receipt']); key(); integer(raw['fence'], 1, 128); identifier(raw['evidenceId'], 'Evidence'); receipt(raw['receipt']); break;
+    case 'recordReceipt': fields(raw, ['scope','jobId','fence','evidenceId','receipt'], ['settlement']); key(); integer(raw['fence'], 1, 128); identifier(raw['evidenceId'], 'Evidence'); receipt(raw['receipt']); if (raw['settlement'] !== undefined) settlement(raw['settlement']); break;
     case 'complete': fields(raw, ['claim','commandId','evidenceId','outcome','output']); claim(raw['claim']); identifier(raw['commandId'], 'Command'); identifier(raw['evidenceId'], 'Evidence');
       if (!['succeeded','failed','blocked'].includes(raw['outcome'] as string) || (raw['outcome'] !== 'succeeded' && raw['output'] !== null)) invalid();
       try { jsonValue(raw['output'], { maxBytes: 65_536 }); } catch { invalid(); } break;

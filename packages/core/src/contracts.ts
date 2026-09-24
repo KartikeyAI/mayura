@@ -17,6 +17,11 @@ export interface ExecutionReceipt {
   readonly execution: 'not_started' | 'succeeded' | 'failed' | 'unknown';
   readonly disclosure: 'released' | 'withheld';
 }
+/** Confirmed and unresolved cost within one pre-admitted execution bound. */
+export interface ExecutionSettlement {
+  readonly knownCostMicros: number;
+  readonly unknownCostMicros: number;
+}
 /** Run-qualified evidence: call identifiers alone are not unique across descendants. */
 export interface ExecutionEvidence {
   readonly runId: string;

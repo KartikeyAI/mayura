@@ -221,7 +221,8 @@ export function assertWorkflowStateMatchesManifest(state: WorkflowFormat2State, 
       if (step['status'] === 'succeeded' && node.dependsOn.some(id => object(steps[id])['status'] !== 'succeeded')) corrupt();
       if (node.kind === 'tool') {
         const reserved = integer(step['costReserved']);
-        if ((step['approval'] !== null && !node.approval) || (reserved !== 0 && reserved !== node.costMicros)) corrupt();
+        if ((step['approval'] !== null && !node.approval) || reserved > node.costMicros
+          || (reserved !== 0 && reserved !== node.costMicros && step['status'] !== 'unknown')) corrupt();
         if (node.approval && step['candidateHash'] !== null
           && (step['approval'] === null || object(step['approval'])['digest'] !== step['candidateHash'])) corrupt();
       }

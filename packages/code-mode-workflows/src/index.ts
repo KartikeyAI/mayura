@@ -222,6 +222,7 @@ function phaseTool(mode: CodeMode, audit: DurableCodeAudit, phaseId: string, pro
         || outcome.usage.unknownCostMicros < evidencedUnknownCost) {
         throw new MayuraError('OUTCOME_UNKNOWN', 'Code Mode usage could not be bound to the approved program.');
       }
+      context.reportUsage({ knownCostMicros: outcome.usage.knownCostMicros, unknownCostMicros: outcome.usage.unknownCostMicros });
       await recordAudit(audit, Object.freeze({ format: 2, runId: context.runId, phaseId, executionId: `${context.callId}:sandbox`,
         programDigest: program.manifest.digest, outcome: outcome.status, evidence: Object.freeze([...(outcome.evidence ?? [])]),
         usage: outcome.usage }));

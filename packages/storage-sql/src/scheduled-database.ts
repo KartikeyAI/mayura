@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
+import { jsonValue, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue } from '@mayura/core';
 import {
   assertWorkflowStateMatchesManifest, initialWorkflowState, mergeWorkflowReceipt, workflowHashMaterial,
   workflowManifest, workflowPolicy, workflowResources, workflowState,
@@ -59,6 +59,20 @@ function limited(): never { throw new StorageError('LIMIT_EXCEEDED', 'Scheduled 
 function digest(domain: string, value: unknown): string { return createHash('sha256').update(workflowHashMaterial(domain, value)).digest('hex'); }
 function same(a: unknown, b: unknown): boolean { return workflowHashMaterial('compare', a) === workflowHashMaterial('compare', b); }
 function graphManifest(manifest: Manifest): manifest is WorkflowGraphManifest { return 'format' in manifest && manifest.format === 3; }
+interface AccountingProjection { readonly receipt: ExecutionReceipt; readonly settlement: ExecutionSettlement }
+
+function executionSettlement(value: ExecutionSettlement | undefined, receipt: ExecutionReceipt, maximum: number): ExecutionSettlement {
+  const fallback = receipt.execution === 'unknown' ? {knownCostMicros:0,unknownCostMicros:maximum}
+    : receipt.execution === 'not_started' ? {knownCostMicros:0,unknownCostMicros:0}
+      : {knownCostMicros:maximum,unknownCostMicros:0};
+  const result = value ?? fallback;
+  if (!Number.isSafeInteger(result.knownCostMicros) || result.knownCostMicros < 0
+    || !Number.isSafeInteger(result.unknownCostMicros) || result.unknownCostMicros < 0
+    || result.knownCostMicros > maximum - result.unknownCostMicros
+    || (receipt.execution !== 'unknown' && result.unknownCostMicros !== 0)
+    || (receipt.execution === 'not_started' && result.knownCostMicros !== 0)) failed();
+  return Object.freeze({knownCostMicros:result.knownCostMicros,unknownCostMicros:result.unknownCostMicros});
+}
 
 /** Finite integrated reducer. Every mutation uses its caller-owned connection/transaction. */
 export class ScheduledWorkflowDatabase {
@@ -209,17 +223,13 @@ export class ScheduledWorkflowDatabase {
           cancelled: ['skipped','failed','blocked'], outcome_unknown: ['unknown'],
         };
         if (!allowed[job.state].includes(step.status) || (node.approval && !step.approval?.humanId)) failed();
-        let projected: ExecutionReceipt | null = null;
-        if (job.fence > 0) {
-          const evidence = await this.local(tx,run).execute('receipts',{scope:run.row.scope,jobId:job.jobId,fence:job.fence}) as SchedulerEvidence[];
-          for (const item of evidence) if (item.disposition !== 'conflicting') projected = mergeWorkflowReceipt(projected,item.receipt);
-        }
+        const accounting = await this.accounting(tx,run,job,node); let projected = accounting?.receipt ?? null;
         if (projected && job.state === 'succeeded') projected = { ...projected,disclosure:'released' };
         if (!same(projected,step.receipt)) failed();
-        const known = projected !== null && projected.execution !== 'unknown';
-        const expectedReservation = known || (job.startedAtMs === null && ['cancelled','blocked'].includes(job.state)) ? 0 : node.costMicros;
+        const expectedReservation = accounting ? accounting.settlement.unknownCostMicros
+          : job.startedAtMs === null && ['cancelled','blocked'].includes(job.state) ? 0 : node.costMicros;
         if (step.costReserved !== expectedReservation) failed();
-        if (known && projected && projected.execution !== 'not_started') spent = nextCounter(spent,node.costMicros);
+        if (accounting) spent = nextCounter(spent,accounting.settlement.knownCostMicros);
       }
       if (spent !== run.state.spentMicros || (['succeeded','failed','blocked','outcome_unknown'].includes(run.state.status)
         && Object.values(run.state.steps).some(step => !terminalSteps.has(step.status)))) failed();
@@ -228,6 +238,32 @@ export class ScheduledWorkflowDatabase {
   private snapshot(run: LockedRun): Snapshot {
     return { record: aggregateRecord(run.row), profile:run.owner.format === 1 ? 'scheduled-v1' : 'scheduled-v2', manifestHash:run.ownerRow.definition_hash,
       policyHash:run.ownerRow.policy_hash, resourceHash:run.ownerRow.resource_hash, jobs:run.jobs };
+  }
+  /** Reconstruct cost facts from immutable attempt evidence; legacy evidence remains conservatively fixed-cost. */
+  private async accounting(tx: SchedulerSession,run: LockedRun,job: JobRecord,node: ToolNode): Promise<AccountingProjection | undefined> {
+    if (job.fence === 0) return undefined;
+    const evidence = await this.local(tx,run).execute('receipts',{scope:run.row.scope,jobId:job.jobId,fence:job.fence}) as SchedulerEvidence[];
+    let projected: AccountingProjection | undefined;
+    for (const item of evidence) if (item.disposition !== 'conflicting') {
+      const current = executionSettlement(item.settlement,item.receipt,node.costMicros);
+      if (!projected) projected = {receipt:mergeWorkflowReceipt(null,item.receipt),settlement:current};
+      else {
+        const merged = mergeWorkflowReceipt(projected.receipt,item.receipt);
+        if (projected.receipt.execution === 'unknown' && item.receipt.execution !== 'unknown') projected = {receipt:merged,settlement:current};
+        else if (projected.receipt.execution === 'unknown' && item.receipt.execution === 'unknown' && !same(projected.settlement,current)) {
+          const refines = (next: ExecutionSettlement,before: ExecutionSettlement): boolean => next.knownCostMicros >= before.knownCostMicros
+            && next.unknownCostMicros <= before.unknownCostMicros
+            && next.knownCostMicros + next.unknownCostMicros <= before.knownCostMicros + before.unknownCostMicros;
+          if (refines(current,projected.settlement)) projected = {receipt:merged,settlement:current};
+          else if (!refines(projected.settlement,current)) failed();
+        }
+        else {
+          if (!same(projected.settlement,current) && !(projected.receipt.execution !== 'unknown' && item.receipt.execution === 'unknown')) failed();
+          projected = {receipt:merged,settlement:projected.settlement};
+        }
+      }
+    }
+    return projected && Object.freeze({receipt:projected.receipt,settlement:projected.settlement});
   }
   private local(tx: SchedulerSession, run: LockedRun, jobId?: string, admissionExpiresAt?: number): SchedulerDatabase {
     return this.scheduler.inSession(tx,run.row.id,run.events,jobId,run.clock,admissionExpiresAt);
@@ -538,12 +574,19 @@ export class ScheduledWorkflowDatabase {
       if (this.retry(run,method,input)) return method === 'start' ? {status:'already_started',snapshot:this.snapshot(run)} : this.snapshot(run);
       if (input['expectedVersion'] !== undefined && input['expectedVersion'] !== storedInteger(run.row.version)) conflict();
       if (method === 'recordReceipt') {
-        const job = this.job(run,input); const result = await this.local(tx,run).execute('recordReceipt',{scope,jobId:job.jobId,fence:input['fence'],evidenceId:input['evidenceId'],receipt:input['receipt']}) as {disposition:EvidenceDisposition;job:JobRecord};
+        const job = this.job(run,input); const node = this.node(run,job.nodeId); const prior = await this.accounting(tx,run,job,node);
+        const result = await this.local(tx,run).execute('recordReceipt',{scope,jobId:job.jobId,fence:input['fence'],evidenceId:input['evidenceId'],receipt:input['receipt'],
+          ...(input['settlement'] === undefined ? {} : {settlement:input['settlement']})}) as {disposition:EvidenceDisposition;job:JobRecord};
         if (run.events.length === 0) return this.snapshot(run);
         this.replaceJob(run,result.job); const step = run.state.steps[job.nodeId]!; const receipt = input['receipt'] as unknown as ExecutionReceipt;
         if (result.disposition !== 'conflicting') {
           step.receipt = mergeWorkflowReceipt(step.receipt,receipt);
-          if (receipt.execution !== 'unknown' && step.costReserved > 0) this.refund(run,step,receipt.execution !== 'not_started');
+          const projected = await this.accounting(tx,run,result.job,node); if (!projected) failed();
+          const priorKnown = prior?.settlement.knownCostMicros ?? 0;
+          if (projected.settlement.knownCostMicros < priorKnown) failed();
+          run.state.spentMicros = nextCounter(run.state.spentMicros,projected.settlement.knownCostMicros-priorKnown);
+          run.state.reservedMicros -= step.costReserved; step.costReserved = projected.settlement.unknownCostMicros;
+          run.state.reservedMicros = nextCounter(run.state.reservedMicros,step.costReserved);
         }
         this.mirrorJob(run,result.job); await this.save(tx,run); return this.snapshot(run);
       }

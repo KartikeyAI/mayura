@@ -69,7 +69,7 @@ describe('durable Code Mode workflow bridge', () => {
         .rejects.toMatchObject({ code: 'CONFLICT' });
       await second.approve({ id: submitted.id, nodeId: 'execute', digest: approval.digest, credential: 'approved' });
       const completed = await second.runUntilSettled(reopenedDefinition, submitted.id);
-      expect(completed).toMatchObject({ status: 'succeeded', output: { value: 3 }, budget: { spentMicros: 6, reservedMicros: 0 } });
+      expect(completed).toMatchObject({ status: 'succeeded', output: { value: 3 }, budget: { spentMicros: 3, reservedMicros: 0 } });
       expect(completed.steps['execute']!.approval?.humanId).toBe('reviewer');
       expect(executions).toBe(1);
       expect((await second.runUntilSettled(reopenedDefinition, submitted.id)).status).toBe('succeeded');
@@ -166,6 +166,7 @@ describe('durable Code Mode workflow bridge', () => {
       await runtime.approve({ id: submitted.id, nodeId: 'execute', digest: waiting.steps['execute']!.approval!.digest, credential: 'trusted' });
       const result = await runtime.runUntilSettled(definition, submitted.id);
       expect(result.status).toBe('outcome_unknown'); expect(result.output).toBeNull();
+      expect(result.budget).toEqual({ spentMicros: 3, reservedMicros: 0, maxCostMicros: 6 });
       expect(result.steps['execute']!.receipt).toMatchObject({ execution: 'unknown', disclosure: 'withheld' });
       expect(await audit.inspect(submitted.id, 'execute')).toMatchObject({ outcome: 'failed',
         usage: { toolCalls: 1, unknownCalls: 0, knownCostMicros: 3, unknownCostMicros: 0, maximumCostMicros: 6 },
@@ -221,10 +222,14 @@ describe('durable Code Mode workflow bridge', () => {
         const recovered = await runtime.runUntilSettled(definition, runId!);
         if (scenario === 'completion') {
           expect(recovered).toMatchObject({ status: 'succeeded', output: { value: 1 },
+            budget: { spentMicros: 3, reservedMicros: 0 },
             steps: { execute: { receipt: { execution: 'succeeded', disclosure: 'released' } } } });
         } else {
           expect(['outcome_unknown', 'blocked']).toContain(recovered.status); expect(recovered.output).toBeNull();
-          if (scenario === 'receipt') expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+          if (scenario === 'receipt') {
+            expect(recovered.steps['execute']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
+            expect(recovered.budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 });
+          } else expect(recovered.budget).toMatchObject({ spentMicros: 0, reservedMicros: 6 });
         }
         const evidence = await audit.inspect(runId!, 'execute');
         if (scenario === 'effect') expect(evidence).toBeUndefined();
