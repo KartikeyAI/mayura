@@ -39,6 +39,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Durable required children](how-to/workflow-tree-children.md) and [contract](specs/durable-workflow-children.md) — explicit narrowed one-level child ownership, close/reopen continuation, verified approvals and exact joins.
 - [Durable workflow lifecycle guide](how-to/workflow-lifecycle.md) and [format-5 contract](specs/workflow-lifecycle-format5.md) — versioned human/timer suspension with typed idempotent responses and restart-safe wake evidence.
 - [Lifecycle fleet discovery](specs/workflow-lifecycle-fleet.md) — durable sharded active-run indexing, finite cursors and catalog-bound due-wake coordination over any aggregate adapter.
+- [Durable workflow sagas](specs/workflow-sagas.md) and [saga guide](how-to/workflow-sagas.md) — stable format-5 child identities and restart-safe reverse compensation.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
@@ -57,7 +58,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 
 Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. All 22 finite acceptance scenarios are closed with bounded claims recorded in the ledger.
 
-Next-slice design: [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md) now has a conservative durable runtime; fleet discovery, automatic wake dispatch, loops and compensation remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
+Next-slice design: [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md) now has a conservative durable runtime and explicit fleet coordination; [durable workflow sagas](specs/workflow-sagas.md) add reverse compensation without changing formats 2–5. General loops and a continuously hosted coordinator remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 

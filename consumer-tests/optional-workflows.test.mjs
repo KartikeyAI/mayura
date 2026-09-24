@@ -7,10 +7,11 @@ import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
+import { createWorkflowSagaRuntime, defineWorkflowSaga, sagaManifest } from '@mayura/workflows/sagas';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
-for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/storage-contracts']) {
+for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/workflows/sagas', '@mayura/storage-contracts']) {
   const path = relative(root, await realpath(fileURLToPath(import.meta.resolve(name))));
   assert(!isAbsolute(path) && !path.startsWith('..'), 'Workflow consumer escaped its archive installation.');
 }
@@ -78,6 +79,21 @@ await humanController.transport.respond({ scope: { principalId: 'consumer', proj
   id: humanRouteId, requestDigest: lifecycleRequest, commandId: 'answer', value: 3, signal: new AbortController().signal });
 assert.equal((await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id)).status, 'succeeded');
 lifecycleRuntime.close();
+const sagaChild = defineWorkflowLifecycle({ id: 'consumer.saga-child', version: '1', input: number, output: number,
+  nodes: [{ kind: 'join', id: 'done', dependsOn: [] }], result: { kind: 'input', path: [] } });
+const saga = defineWorkflowSaga({ id: 'consumer.saga', version: '1', input: number, output: number,
+  steps: [{ id: 'child', forward: sagaChild, input: { kind: 'input', path: [] } }],
+  result: { kind: 'step', stepId: 'child', path: [] } });
+assert.equal(saga.format, 1); assert.equal(sagaManifest(saga).steps[0].forward.definitionHash, sagaChild.digest);
+assert(!JSON.stringify(sagaManifest(saga)).includes('validate'));
+const sagaRuntime = createWorkflowSagaRuntime({ store: lifecycleStore, scope: { principalId: 'consumer', projectId: 'project' },
+  permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+const sagaRun = await sagaRuntime.submit(saga, { input: 3, idempotencyKey: 'saga' });
+const sagaFinished = await sagaRuntime.runUntilSettled(saga, sagaRun.id); expectSaga(sagaFinished);
+assert.deepEqual(await sagaRuntime.inspect(sagaRun.id), sagaFinished);
+sagaRuntime.close();
+
+function expectSaga(value) { assert.equal(value.status, 'succeeded'); assert.equal(value.output, 3); return value; }
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -111,4 +127,5 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
-  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true, sqlDriversInstalled: false }));
+  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true,
+  sagaManifest: true, sagaRuntime: true, sqlDriversInstalled: false }));

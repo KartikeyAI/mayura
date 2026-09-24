@@ -6,6 +6,8 @@ import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineE
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle,
   type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
+import { createWorkflowSagaRuntime, defineWorkflowSaga, type WorkflowSagaDefinition,
+  type WorkflowSagaOutput } from '@mayura/workflows/sagas';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -25,6 +27,12 @@ const lifecycle = defineWorkflowLifecycle({ id: 'consumer.lifecycle', version: '
   result: { kind: 'step', stepId: 'review', path: [] } });
 const lifecycleOutput: WorkflowOutput<typeof definition> = { answer: 6 };
 void lifecycle; void lifecycleOutput;
+const sagaChild = defineWorkflowLifecycle({ id: 'consumer.saga-child', version: '1', input: number, output: number,
+  nodes: [{ kind: 'join', id: 'done', dependsOn: [] }], result: { kind: 'input', path: [] } });
+const saga = defineWorkflowSaga({ id: 'consumer.saga', version: '1', input: number, output: number,
+  steps: [{ id: 'child', forward: sagaChild, input: { kind: 'input', path: [] } }],
+  result: { kind: 'step', stepId: 'child', path: [] } });
+const sagaOutput: WorkflowSagaOutput<typeof saga> = 3; void sagaOutput;
 // @ts-expect-error Composition retains the transformed output, not the pre-transform number.
 const invalidTool: ToolOutput<typeof wrapped> = 6;
 void expectedTool; void invalidTool;
@@ -40,6 +48,9 @@ if (false) {
   // @ts-expect-error Structural values cannot forge format-5 executable definitions.
   const forgedLifecycle: WorkflowLifecycleDefinition = { id: 'forged' };
   void forgedLifecycle;
+  // @ts-expect-error Structural values cannot forge format-1 executable sagas.
+  const forgedSaga: WorkflowSagaDefinition = { id: 'forged' };
+  void forgedSaga;
   // @ts-expect-error Submission accepts the schema's original input, not the transformed length.
   runtime.submit(compiled, { input: 3 });
   // @ts-expect-error Composition requires explicit ephemeral opt-in.
@@ -77,6 +88,15 @@ function checkLifecycleAdapter(store: AggregateStore): void {
   void runtime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
 }
 void checkLifecycleAdapter;
+function checkSagaAdapter(store: AggregateStore): void {
+  const runtime = createWorkflowSagaRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
+    permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+  const profile: 'saga-v1' = runtime.profile; void profile;
+  void runtime.submit(saga, { input: 3, idempotencyKey: 'saga' });
+  // @ts-expect-error Saga submission accepts the original schema input.
+  void runtime.submit(saga, { input: '3', idempotencyKey: 'invalid' });
+}
+void checkSagaAdapter;
 const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.double', toolVersion: '1',
   verify: async request => ({ attestationId: request.jobId, execution: 'succeeded', knownCostMicros: request.maximumCostMicros }) });
 const verification = composeExternalEffectVerifiers([verifier]);

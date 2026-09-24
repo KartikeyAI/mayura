@@ -11,6 +11,7 @@
     "./graphs": { "types": "./dist/graphs.d.ts", "import": "./dist/graphs.js" },
     "./children": { "types": "./dist/children.d.ts", "import": "./dist/children.js" },
     "./lifecycle": { "types": "./dist/lifecycle.d.ts", "import": "./dist/lifecycle.js" },
+    "./sagas": { "types": "./dist/sagas.d.ts", "import": "./dist/sagas.js" },
     "./agents": { "types": "./dist/agents.d.ts", "import": "./dist/agents.js" }
   },
   "engines": { "node": ">=24.14.1 <25" },
