@@ -4,7 +4,8 @@ import { createRuntime } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
   type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle, type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleHumanTransport, createWorkflowLifecycleRuntime, defineWorkflowLifecycle,
+  type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -71,6 +72,8 @@ function checkLifecycleAdapter(store: AggregateStore): void {
     permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0,
     verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: false }) });
   const profile: 'lifecycle-v1' = runtime.profile; void profile;
+  const humans = createWorkflowLifecycleHumanTransport({ scope: { principalId: 'consumer', projectId: 'project' } });
+  humans.register({ agentId: 'consumer', definition: lifecycle, runtime, runId: 'a'.repeat(64) });
   void runtime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
 }
 void checkLifecycleAdapter;

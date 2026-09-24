@@ -6,7 +6,7 @@ import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleHumanTransport, createWorkflowLifecycleRuntime, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
@@ -63,8 +63,12 @@ const lifecycleRuntime = createWorkflowLifecycleRuntime({ store: lifecycleStore,
 const lifecycleRun = await lifecycleRuntime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
 const lifecycleWaiting = await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id);
 const lifecycleRequest = lifecycleWaiting.steps.review.requestDigest;
-await lifecycleRuntime.respond(lifecycle, { id: lifecycleRun.id, nodeId: 'review', requestDigest: lifecycleRequest,
-  commandId: 'answer', credential: 'opaque', value: 3 });
+const humanController = createWorkflowLifecycleHumanTransport({ scope: { principalId: 'consumer', projectId: 'project' } });
+const [humanRouteId] = humanController.register({ agentId: 'consumer', definition: lifecycle, runtime: lifecycleRuntime, runId: lifecycleRun.id });
+const humanPage = await humanController.transport.list({ scope: { principalId: 'consumer', projectId: 'project' }, agentIds: ['consumer'], after: null, limit: 10, signal: new AbortController().signal });
+assert.equal(humanPage.items[0].id, humanRouteId); assert.equal(humanPage.items[0].digest, lifecycleRequest);
+await humanController.transport.respond({ scope: { principalId: 'consumer', projectId: 'project' }, agentIds: ['consumer'], actorId: 'reviewer',
+  id: humanRouteId, requestDigest: lifecycleRequest, commandId: 'answer', value: 3, signal: new AbortController().signal });
 assert.equal((await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id)).status, 'succeeded');
 lifecycleRuntime.close();
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
@@ -100,4 +104,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
-  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, sqlDriversInstalled: false }));
+  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleHumanTransport: true, sqlDriversInstalled: false }));

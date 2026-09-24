@@ -50,6 +50,9 @@ export interface WorkflowLifecycleRuntimeOptions {
   readonly verifyHuman?: (credential: unknown) => Promise<VerifiedHuman>;
 }
 
+/** Trusted host assertion. Never deserialize this shape directly from an unauthenticated request. */
+export interface WorkflowLifecycleVerifiedActor { readonly id: string; readonly projectId: string }
+
 export interface WorkflowLifecycleRuntime {
   readonly profile: 'lifecycle-v1';
   submit(definition: AnyWorkflowLifecycle, command: { readonly input: unknown; readonly idempotencyKey: string }): Promise<WorkflowLifecycleSnapshot>;
@@ -60,6 +63,8 @@ export interface WorkflowLifecycleRuntime {
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowLifecycleSnapshot>;
   respond(definition: AnyWorkflowLifecycle, command: { readonly id: string; readonly nodeId: string;
     readonly requestDigest: string; readonly commandId: string; readonly credential: unknown; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
+  respondVerified(definition: AnyWorkflowLifecycle, command: { readonly id: string; readonly nodeId: string;
+    readonly requestDigest: string; readonly commandId: string; readonly actor: WorkflowLifecycleVerifiedActor; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
   cancel(id: string): Promise<WorkflowLifecycleSnapshot>;
   recoverAbandoned(id: string): Promise<WorkflowLifecycleSnapshot>;
   close(): void;
@@ -379,6 +384,41 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     catch { throw new MayuraError('CONFLICT', 'Stored lifecycle steps do not match the pinned definition.'); }
   };
 
+  const respondAs = async (definition: AnyWorkflowLifecycle, command: { readonly id: string; readonly nodeId: string;
+    readonly requestDigest: string; readonly commandId: string; readonly value: unknown }, actor: WorkflowLifecycleVerifiedActor): Promise<WorkflowLifecycleSnapshot> => {
+    ensureOpen(); assertWorkflowLifecycle(definition);
+    if (!hashPattern.test(command.id) || !nodePattern.test(command.nodeId) || !hashPattern.test(command.requestDigest)
+      || typeof command.commandId !== 'string' || command.commandId.length < 1 || command.commandId.length > 128) {
+      throw new MayuraError('INVALID_INPUT', 'Human response requires exact run, node, request and command identifiers.');
+    }
+    if (!actor || typeof actor.id !== 'string' || actor.id.length < 1 || actor.id.length > 256 || actor.projectId !== scope.projectId) {
+      throw new MayuraError('PERMISSION_DENIED', 'Verified human actor does not belong to this lifecycle project.');
+    }
+    const node = definition.nodes.find(candidate => candidate.id === command.nodeId);
+    if (!node || node.kind !== 'human') throw new MayuraError('INVALID_INPUT', 'Human response node is not part of the lifecycle definition.');
+    const before = await load(command.id); verifyDefinition(definition, before, stateFrom(before));
+    const value = jsonValue(await controlled(() => validate(node.request.response, command.value, 'input')), { maxBytes: maxOutputBytes });
+    const responseDigest = digest('mayura:human-response:v1', { requestDigest: command.requestDigest,
+      commandId: command.commandId, actorId: actor.id, value });
+    const observedAtMs = now();
+    return publicSnapshot(await mutate(command.id, state => {
+      const step = state.steps[command.nodeId];
+      if (!step || step.kind !== 'human' || state.policy !== policy || step.requestDigest !== command.requestDigest) {
+        throw new MayuraError('CONFLICT', 'Human request is stale or mismatched.');
+      }
+      if (step.status === 'succeeded') {
+        if (step.responseDigest !== responseDigest) throw new MayuraError('CONFLICT', 'Human request already has a different response.');
+        return false;
+      }
+      if (step.status !== 'waiting' || (step.deadlineAtMs !== null && observedAtMs >= step.deadlineAtMs)) {
+        throw new MayuraError('CONFLICT', 'Human request is no longer accepting responses.');
+      }
+      step.status = 'succeeded'; step.responseDigest = responseDigest; step.actorId = actor.id; step.output = value;
+      state.status = 'running'; return true;
+    }, 'lifecycle.human.responded', { nodeId: command.nodeId, requestDigest: command.requestDigest,
+      responseDigest, actorId: actor.id }));
+  };
+
   return Object.freeze<WorkflowLifecycleRuntime>({
     profile: 'lifecycle-v1',
     submit: async (definition, command) => {
@@ -465,36 +505,14 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       }, 'lifecycle.approval.resolved', { nodeId: command.nodeId, humanId: human.id }));
     },
     respond: async (definition, command) => {
-      ensureOpen(); assertWorkflowLifecycle(definition);
       if (!hashPattern.test(command.id) || !nodePattern.test(command.nodeId) || !hashPattern.test(command.requestDigest)
         || typeof command.commandId !== 'string' || command.commandId.length < 1 || command.commandId.length > 128) {
         throw new MayuraError('INVALID_INPUT', 'Human response requires exact run, node, request and command identifiers.');
       }
-      const node = definition.nodes.find(candidate => candidate.id === command.nodeId);
-      if (!node || node.kind !== 'human') throw new MayuraError('INVALID_INPUT', 'Human response node is not part of the lifecycle definition.');
-      const before = await load(command.id); verifyDefinition(definition, before, stateFrom(before));
       const human = await checkedHuman(command.credential, false);
-      const value = jsonValue(await controlled(() => validate(node.request.response, command.value, 'input')), { maxBytes: maxOutputBytes });
-      const responseDigest = digest('mayura:human-response:v1', { requestDigest: command.requestDigest,
-        commandId: command.commandId, actorId: human.id, value });
-      const observedAtMs = now();
-      return publicSnapshot(await mutate(command.id, state => {
-        const step = state.steps[command.nodeId];
-        if (!step || step.kind !== 'human' || state.policy !== policy || step.requestDigest !== command.requestDigest) {
-          throw new MayuraError('CONFLICT', 'Human request is stale or mismatched.');
-        }
-        if (step.status === 'succeeded') {
-          if (step.responseDigest !== responseDigest) throw new MayuraError('CONFLICT', 'Human request already has a different response.');
-          return false;
-        }
-        if (step.status !== 'waiting' || (step.deadlineAtMs !== null && observedAtMs >= step.deadlineAtMs)) {
-          throw new MayuraError('CONFLICT', 'Human request is no longer accepting responses.');
-        }
-        step.status = 'succeeded'; step.responseDigest = responseDigest; step.actorId = human.id; step.output = value;
-        state.status = 'running'; return true;
-      }, 'lifecycle.human.responded', { nodeId: command.nodeId, requestDigest: command.requestDigest,
-        responseDigest, actorId: human.id }));
+      return respondAs(definition, command, { id: human.id, projectId: human.projectId });
     },
+    respondVerified: (definition, command) => respondAs(definition, command, command.actor),
     cancel: async id => {
       const record = await mutate(id, state => {
         if (finalRunStatuses.has(state.status)) return false;

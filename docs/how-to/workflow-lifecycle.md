@@ -47,7 +47,9 @@ const submitted = await runtime.submit(workflow, { input: request, idempotencyKe
 const waiting = await runtime.runUntilSettled(workflow, submitted.id);
 ```
 
-Use `runtime.humanRequest(workflow, runId, nodeId)` to reconstruct digest-verified display metadata for an authenticated application transport. Submit a response with the exact run ID, node ID, request digest, stable command ID, verified credential and schema input. Then call `runUntilSettled` again. Repeating the exact response command is idempotent; a different response conflicts.
+Use `runtime.humanRequest(workflow, runId, nodeId)` to reconstruct digest-verified display metadata. For the built-in authenticated server, create a `createWorkflowLifecycleHumanTransport` controller, register each active run, and pass `controller.transport` as the server's `humanRequests` option. The controller exposes opaque route IDs and translates the already verified server actor into the runtime's trusted-host response boundary. Registration is in memory and must be rebuilt after restart until durable fleet discovery is configured.
+
+Submit a response with the exact request digest, stable command ID and schema input. Then call `runUntilSettled` again. Repeating the exact response command is idempotent; a different response conflicts.
 
 `nextWakeAtMs` is the earliest persisted human deadline or timer due time. A host scheduler should call `runUntilSettled` at or after that time. The runtime starts no background timers and retains no callback or worker while waiting. After a process restart, reopen the same store, recreate the runtime with the identical definition and policy, and continue by run ID.
 

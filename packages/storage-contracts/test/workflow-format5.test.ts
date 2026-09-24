@@ -64,7 +64,7 @@ describe('format-5 workflow lifecycle metadata', () => {
 
   it.each([
     { requestKind: 'approval' }, { schemaDigest: 'A'.repeat(64) }, { schemaId: '../private' },
-    { prompt: '' }, { prompt: 'x'.repeat(4_097) }, { extra: true },
+    { prompt: '' }, { prompt: 'x'.repeat(1_025) }, { prompt: 'é'.repeat(513) }, { extra: true },
   ])('rejects malformed human material (%#)', patch => {
     const value = manifest(); const review = value.graph[1] as object;
     expect(() => workflowLifecycleManifest({ ...value, graph: [value.graph[0], { ...review, ...patch }, value.graph[2]] })).toThrow(StorageError);

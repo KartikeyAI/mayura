@@ -30,6 +30,6 @@ The runtime persists human request digests, typed response evidence, absolute ti
 
 Tool dispatch uses the conservative effect protocol: authority and budget are persisted before invocation, receipts are monotonic, and abandoned dispatches require explicit reconciliation. Human identity is supplied only through a bounded trusted verifier and is checked against the configured project.
 
-`humanRequest` reconstructs display metadata from the pinned definition and persisted bindings, then verifies the request digest before disclosure. Validator and identity callbacks have finite timeouts and retained-callback admission: a callback that ignores timeout continues to consume capacity until it actually settles.
+`humanRequest` reconstructs display metadata from the pinned definition and persisted bindings, then verifies the request digest before disclosure. The lifecycle human-transport controller maps explicitly registered runs to opaque stable request IDs and structurally implements the authenticated server transport without coupling the workflow package to the server package. Validator and identity callbacks have finite timeouts and retained-callback admission: a callback that ignores timeout continues to consume capacity until it actually settles.
 
-The runtime intentionally does not scan all aggregates or start a background worker. Fleet discovery, automated wake dispatch, direct server/CLI lifecycle bindings, loops and compensation remain separate follow-on capabilities.
+The runtime intentionally does not scan all aggregates or start a background worker. The current server/browser/CLI path requires explicit in-memory run registration; durable fleet discovery, automated wake dispatch, loops and compensation remain separate follow-on capabilities.

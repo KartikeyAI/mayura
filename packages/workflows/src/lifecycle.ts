@@ -16,7 +16,16 @@ export {
   type WorkflowLifecycleRuntimeOptions,
   type WorkflowLifecycleHumanRequest,
   type WorkflowLifecycleSnapshot,
+  type WorkflowLifecycleVerifiedActor,
 } from './lifecycle-runtime.js';
+export {
+  createWorkflowLifecycleHumanTransport,
+  type WorkflowLifecycleHumanRegistration,
+  type WorkflowLifecycleHumanTransport,
+  type WorkflowLifecycleHumanTransportController,
+  type WorkflowLifecycleHumanTransportOptions,
+  type WorkflowLifecycleHumanTransportRecord,
+} from './lifecycle-human-transport.js';
 export type {
   WorkflowLifecycleHumanKind,
   WorkflowLifecycleHumanNodeManifest,

@@ -79,7 +79,7 @@ export interface WorkflowLifecycleState {
 
 const forbidden = new Set(['constructor', 'prototype', '__proto__']);
 const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
-const schemaIdPattern = /^[A-Za-z][A-Za-z0-9._:/-]{0,127}$/;
+const schemaIdPattern = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 const humanKinds = new Set<WorkflowLifecycleHumanKind>(['information', 'correction', 'plan_selection']);
 const lifecycleStatuses = new Set<WorkflowLifecycleStatus>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
@@ -191,7 +191,8 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
       if (!humanKinds.has(node['requestKind'] as WorkflowLifecycleHumanKind)
         || typeof node['schemaId'] !== 'string' || !schemaIdPattern.test(node['schemaId'])
         || typeof node['schemaDigest'] !== 'string' || !hashPattern.test(node['schemaDigest'])
-        || typeof node['prompt'] !== 'string' || node['prompt'].length < 1 || node['prompt'].length > 4_096) invalid();
+        || typeof node['prompt'] !== 'string' || node['prompt'].length < 1
+        || new TextEncoder().encode(node['prompt']).byteLength > 1_024) invalid();
       if ((node['requestKind'] === 'correction') !== (node['subjectDigest'] !== null)) invalid();
       if (node['context'] !== null) binding(node['context'], ids, dependencies);
       if (node['subjectDigest'] !== null) digestBinding(node['subjectDigest'], ids, dependencies);

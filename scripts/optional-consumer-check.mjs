@@ -240,7 +240,7 @@ async function main() {
         assert.equal(execution.unknownDefinitionSkipped, true);
         assert.equal(execution.interruptedRetryCursor, true);
       }
-      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); }
+      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); assert.equal(execution.lifecycleHumanTransport, true); }
       if (name === 'managed') { assert.equal(execution.wholeOutputBarrier, true); assert.equal(execution.structuredDisclosure, true); }
       if (name === 'otlp') {
         assert.equal(execution.explicitDestination, true); assert.equal(execution.noConstructionNetwork, true);
@@ -322,7 +322,7 @@ async function main() {
   result.checks.push('driver-free-timer-subpath', 'restart-safe-timer-sweep', 'timer-negative-types');
   result.checks.push('no-ancestor-declaration-fallback');
   result.checks.push('driver-free-workflow-graph-subpath', 'format3-negative-types', 'finite-graph-wait-custom-adapter');
-  result.checks.push('driver-free-workflow-lifecycle-subpath', 'format5-negative-types', 'format5-data-only-manifest', 'format5-custom-adapter-runtime');
+  result.checks.push('driver-free-workflow-lifecycle-subpath', 'format5-negative-types', 'format5-data-only-manifest', 'format5-custom-adapter-runtime', 'format5-authenticated-human-transport-binding');
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
