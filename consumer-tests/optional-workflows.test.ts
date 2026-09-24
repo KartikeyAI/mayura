@@ -1,7 +1,8 @@
 import { type Schema } from '@mayura/core';
 import { defineTool, type ToolOutput } from '@mayura/tools';
 import { createRuntime } from '@mayura/runtime';
-import { createScheduledWorkflowRuntime, defineWorkflow, type WorkflowOutput } from '@mayura/workflows';
+import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
+  type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
@@ -55,4 +56,9 @@ function checkScheduledAdapter(store: ScheduledWorkflowAggregateStore): void {
   createScheduledWorkflowRuntime({ store: contract, workerId: 'consumer', scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
 }
 void checkScheduledAdapter;
+const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.double', toolVersion: '1',
+  verify: async request => ({ attestationId: request.jobId, execution: 'succeeded', knownCostMicros: request.maximumCostMicros }) });
+const verification = composeExternalEffectVerifiers([verifier]);
+declare const reconciliation: ExternalEffectReconciliationRequest;
+void verification(reconciliation, { token: 'opaque' });
 await runtime.close();

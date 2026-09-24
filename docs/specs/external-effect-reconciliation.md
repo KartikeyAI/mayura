@@ -11,6 +11,8 @@ Mayura may lose local execution authority after a durable tool effect has starte
 - The callback must authenticate its authority and return a bounded data-only attestation containing a stable authority ID, a stable attestation ID, a known execution result, and verified cost.
 - Callback failure, timeout, malformed data, scope mismatch, definition mismatch, and cost above the admitted tool maximum fail closed.
 
+`defineExternalEffectVerifier` declares one exact tool ID/version route and fixes its authority ID outside provider-returned data. `composeExternalEffectVerifiers` accepts only genuine definitions from the same package instance, rejects duplicate routes, snapshots and validates the runtime request before credential dispatch, and validates the provider's exact three-field attestation. The resulting callback can be supplied directly as `verifyExecution`. This is a composition foundation, not a provider API client.
+
 ## State transition
 
 - Only the exact persisted tool node and a started scheduler attempt in `outcome_unknown` may be reconciled.
@@ -21,4 +23,4 @@ Mayura may lose local execution authority after a durable tool effect has starte
 
 ## Non-goals
 
-This boundary does not claim universal exactly-once execution, infer an external provider's state, or define provider credentials. Provider adapters must implement authoritative verification for their own idempotency and audit models.
+This boundary does not claim universal exactly-once execution, infer an external provider's state, or define provider credentials. Concrete provider adapters must still implement authoritative verification for their own idempotency and audit models; no live provider is qualified by the router tests.

@@ -4,7 +4,7 @@ import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
-import { defineWorkflow } from '@mayura/workflows';
+import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { StorageError } from '@mayura/storage-contracts';
 
@@ -54,4 +54,14 @@ try {
   assert.equal(family.inspect(handle).runs.length, 2); assert.equal(effects, 4);
   assert(!JSON.stringify(family.inspect(handle)).includes('PRIVATE'));
 } finally { await family.close(); }
-console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true, sqlDriversInstalled: false }));
+const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.left', toolVersion: '1',
+  verify: async (request, credential) => {
+    assert.deepEqual(credential, { token: 'opaque' });
+    return { attestationId: `consumer/${request.jobId}`, execution: 'succeeded', knownCostMicros: request.maximumCostMicros };
+  } });
+const verification = await composeExternalEffectVerifiers([verifier])({ runId: 'run', definitionHash: 'a'.repeat(64), nodeId: 'left',
+  jobId: 'job', fence: 1, callId: 'run/step:left', toolId: 'consumer.left', toolVersion: '1', maximumCostMicros: 0,
+  scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
+assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
+console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
+  verifierRouter: true, sqlDriversInstalled: false }));

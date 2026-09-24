@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { defineTool, type AnyTool, type ToolExecutionContext } from '@mayura/tools';
 import type { Guard, JsonObject, Scope } from '@mayura/core';
 import { StorageError, type ScheduledWorkflowAggregateStore, type ScheduledWorkflowStore } from '@mayura/storage-contracts';
-import { createScheduledWorkflowRuntime, createWorkflowRuntime, defineWorkflow } from '../src/index.js';
+import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, createWorkflowRuntime, defineExternalEffectVerifier,
+  defineWorkflow } from '../src/index.js';
 import { digest } from '../src/definition.js';
 import type { ScheduledFixture } from './scheduled-fixtures.js';
 
@@ -146,21 +147,20 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
 
     it('reconciles one unknown external effect without releasing output or replaying', async () => {
       let effects = 0; let verifications = 0;
-      let attestation: { authorityId: string; attestationId: string; execution: 'succeeded' | 'failed'; knownCostMicros: number } =
-        { authorityId: 'provider-a', attestationId: 'event/123', execution: 'succeeded', knownCostMicros: 4 };
+      let attestation: { attestationId: string; execution: 'succeeded' | 'failed'; knownCostMicros: number } =
+        { attestationId: 'event/123', execution: 'succeeded', knownCostMicros: 4 };
       const definition = single(tool({ costMicros: 10, execute: (input, context) => {
         effects++; context.reportUsage({ knownCostMicros: 2, unknownCostMicros: 3 }); return input;
       } }));
-      const engine = runtime({
-        resources: { write: ['reconciled-resource'] },
-        verifyExecution: async (request, credential) => {
+      const verifier = defineExternalEffectVerifier({ authorityId: 'provider-a', toolId: 'scheduled.write', toolVersion: '1',
+        verify: async (request, credential) => {
           verifications++;
           expect(credential).toBe('SECRET-provider-credential');
           expect(Object.isFrozen(request)).toBe(true); expect(Object.isFrozen(request.scope)).toBe(true);
           expect(request).toMatchObject({ nodeId: 'write', toolId: 'scheduled.write', toolVersion: '1', maximumCostMicros: 10, scope });
           return attestation;
-        },
-      });
+        } });
+      const engine = runtime({ resources: { write: ['reconciled-resource'] }, verifyExecution: composeExternalEffectVerifiers([verifier]) });
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'external-reconciliation' });
       expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({
         status: 'outcome_unknown', budget: { spentMicros: 2, reservedMicros: 3 },
@@ -172,7 +172,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       });
       const repeated = await engine.reconcile(definition, { id: run.id, nodeId: 'write', credential: 'SECRET-provider-credential' });
       expect(repeated).toEqual(reconciled);
-      attestation = { authorityId: 'provider-a', attestationId: 'event/contradiction', execution: 'failed', knownCostMicros: 5 };
+      attestation = { attestationId: 'event/contradiction', execution: 'failed', knownCostMicros: 5 };
       const contradicted = await engine.reconcile(definition, { id: run.id, nodeId: 'write', credential: 'SECRET-provider-credential' });
       expect(contradicted).toMatchObject({ status: 'outcome_unknown', output: null, budget: { spentMicros: 4, reservedMicros: 0 },
         steps: { write: { receipt: { execution: 'succeeded', disclosure: 'withheld' } } } });
