@@ -49,11 +49,12 @@ function hook(metadata: JsonObject, completed: boolean): void {
 }
 
 /** Strict metadata allowlists are the export boundary; rejected input is never retained. */
-export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
+export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent {
   try {
     const event = object(jsonValue(value, { maxBytes: 4_096, maxDepth: 4, maxNodes: 128 }));
     keys(event, ['runId', 'sequence', 'timestamp', 'type', 'metadata']);
-    if (stableId(event['runId']) !== expectedRunId) throw new Error();
+    const runId = stableId(event['runId']);
+    if (expectedRunId !== undefined && runId !== expectedRunId) throw new Error();
     const sequence = integer(event['sequence'], true); const timestamp = event['timestamp'];
     if (typeof timestamp !== 'string' || timestamp.length > 32 || !Number.isFinite(Date.parse(timestamp)) || new Date(timestamp).toISOString() !== timestamp) throw new Error();
     const metadata = object(event['metadata']);
@@ -62,8 +63,8 @@ export function eventSnapshot(value: unknown, expectedRunId: string): RunEvent {
         keys(metadata, ['profile'], ['rootId', 'parentId', 'agentId']);
         if (metadata['profile'] !== 'ephemeral') throw new Error();
         for (const key of ['rootId', 'parentId', 'agentId']) if (Object.hasOwn(metadata, key)) stableId(metadata[key]);
-        if (metadata['parentId'] === expectedRunId || (metadata['parentId'] !== undefined && (metadata['rootId'] === undefined || metadata['rootId'] === expectedRunId))
-          || (metadata['rootId'] !== undefined && metadata['rootId'] !== expectedRunId && metadata['parentId'] === undefined)) throw new Error();
+        if (metadata['parentId'] === runId || (metadata['parentId'] !== undefined && (metadata['rootId'] === undefined || metadata['rootId'] === runId))
+          || (metadata['rootId'] !== undefined && metadata['rootId'] !== runId && metadata['parentId'] === undefined)) throw new Error();
         break;
       case 'model.started':
         if (managedModel(metadata, false)) break;

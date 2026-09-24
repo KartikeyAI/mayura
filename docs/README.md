@@ -21,6 +21,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Tool batches](specs/tool-batches.md) — dependency-aware bounded parallel execution.
 - [Processors and guardrails](specs/processors.md) — immutable content and disclosure barriers.
 - [No-default-phone-home boundary](specs/no-default-phone-home.md) — executable import and source checks for local-only packages.
+- [OTLP/HTTP JSON logs](specs/otlp-http-json-logs.md) — explicit bounded metadata export with no ambient destination or credentials.
 - [Local artifact boundary](specs/local-artifacts.md) — scoped staged promotion, integrity-checked content and safe attachment disclosure.
 - [Auxiliary model guardrails](specs/auxiliary-guardrails.md) — metered evaluation, moderation and source-preserving language processing.
 - [Runtime-managed moderation](how-to/managed-guardrails.md) — definition-only authoring with actual run ownership, protected output-check capacity and bounded callbacks.

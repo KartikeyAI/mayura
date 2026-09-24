@@ -26,6 +26,9 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:packages/core
+      '@mayura/exporter-otlp':
+        specifier: workspace:*
+        version: link:packages/exporter-otlp
       '@mayura/runtime':
         specifier: workspace:*
         version: link:packages/runtime
@@ -166,6 +169,15 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/exporter-otlp:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/observability':
+        specifier: workspace:*
+        version: link:../observability
 
   packages/guardrails:
     dependencies:

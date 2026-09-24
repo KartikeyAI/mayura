@@ -26,6 +26,7 @@
     "@mayura/testing": "workspace:*",
     "@mayura/client": "workspace:*",
     "@mayura/server-node": "workspace:*",
+    "@mayura/exporter-otlp": "workspace:*",
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*",
     "@mayura/storage": "workspace:*",

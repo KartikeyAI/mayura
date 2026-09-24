@@ -13,11 +13,12 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
+const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
 const expectedDependencies = {
   core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
+  'exporter-otlp': ['@mayura/core', '@mayura/observability'],
   'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
@@ -180,6 +181,7 @@ async function main() {
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing'], 'optional-node.test.ts'],
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
     ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
+    ['otlp', ['@mayura/exporter-otlp'], 'optional-otlp.test.ts'],
     ['executions', ['@mayura/workstream'], 'optional-executions.test.ts'],
     ['graphs', ['@mayura/workflows'], 'optional-graphs.test.ts'],
     ['budgets', ['@mayura/storage-contracts'], 'optional-budgets.test.ts'],
@@ -221,6 +223,10 @@ async function main() {
       }
       if (name === 'workflows') assert.equal(execution.verifierRouter, true);
       if (name === 'managed') { assert.equal(execution.wholeOutputBarrier, true); assert.equal(execution.structuredDisclosure, true); }
+      if (name === 'otlp') {
+        assert.equal(execution.explicitDestination, true); assert.equal(execution.noConstructionNetwork, true);
+        assert.equal(execution.metadataOnly, true); assert.equal(execution.partialAccounting, true);
+      }
       if (name === 'budgets') {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);
         assert.equal(execution.executesEffects, false);
@@ -287,6 +293,7 @@ async function main() {
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
   result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment',
     'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard', 'artifact-backup-restore');
+  result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
