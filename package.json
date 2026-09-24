@@ -2,6 +2,7 @@
   "name": "mayura-workspace",
   "version": "0.1.0-dev.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@10.17.1",
   "engines": { "node": ">=24.14.1 <25" },
@@ -16,6 +17,7 @@
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
     "model:live-check": "node examples/openai-agent.mjs",
+    "release:artifacts": "node scripts/release-artifact-check.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
     "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },

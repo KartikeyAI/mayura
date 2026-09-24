@@ -67,15 +67,30 @@ async function run(args, cwd, { timeout = 30_000, env = {}, diagnostics = true }
 }
 /** Inspect tar members without extracting paths, links or running lifecycle hooks. */
 function archive(bytes) {
-  const tar = gunzipSync(bytes, { maxOutputLength: 128 * 1_048_576 }); const files = new Map(); let offset = 0;
+  const tar = gunzipSync(bytes, { maxOutputLength: 128 * 1_048_576 }); const files = new Map(); const links = []; let offset = 0;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512); if (header.every(byte => byte === 0)) break;
     const field = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
     const name = [field(345, 155), field(0, 100)].filter(Boolean).join('/'); const size = Number.parseInt(field(124, 12).trim(), 8);
     assert(Number.isSafeInteger(size) && size >= 0 && offset + 512 + size <= tar.length, 'Invalid archive length.');
-    assert(['', '0', '5'].includes(field(156, 1)) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
-    if (field(156, 1) !== '5') { const path = name.slice(8); assert(!files.has(path)); files.set(path, tar.subarray(offset + 512, offset + 512 + size)); }
+    const type = field(156, 1);
+    assert(['', '0', '1', '5'].includes(type) && name.startsWith('package/') && !name.includes('\\') && !name.split('/').includes('..'), 'Unreviewed archive member.');
+    const path = name.slice(8);
+    if (type === '1') {
+      const target = field(157, 100);
+      assert(size === 0 && target.startsWith('package/') && !target.includes('\\') && !target.split('/').includes('..'), 'Unsafe archive hard link.');
+      links.push([path, target.slice(8)]);
+    } else if (type !== '5') { assert(!files.has(path)); files.set(path, tar.subarray(offset + 512, offset + 512 + size)); }
     offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  while (links.length > 0) {
+    let resolved = 0;
+    for (let index = links.length - 1; index >= 0; index--) {
+      const [path, target] = links[index]; const content = files.get(target);
+      if (content === undefined) continue;
+      assert(!files.has(path)); files.set(path, content); links.splice(index, 1); resolved++;
+    }
+    assert(resolved > 0, 'Archive hard link target is unavailable or cyclic.');
   }
   return files;
 }
@@ -87,7 +102,7 @@ function inspectMayura(name, files) {
     assert(!version.startsWith('workspace:'), 'Unresolved workspace protocol in archive.');
     assert.equal(version, dependency.startsWith('@mayura/') ? manifest.version : external[dependency]?.[0], 'Archive dependency must retain the exact qualified version.');
   }
-  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./children','./ephemeral','./graphs']:['.'];
+  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./agents','./children','./ephemeral','./graphs']:['.'];
   assert.deepEqual(Object.keys(manifest.exports ?? {}).sort(), expectedExports, 'Public export set changed.');
   let maps = 0;
   for (const [path, bytes] of files) {
@@ -122,6 +137,7 @@ async function main() {
   const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
   assert(inside(workspace, await realpath(artifactRoot)));
   const output = await mkdtemp(join(artifactRoot, 'storage-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
+  const dependencyPackCache = join(output, 'dependency-pack-cache'); await mkdir(dependencyPackCache);
   const packages = new Map(); const reports = [];
   for (const name of Object.keys(mayura)) {
     const directory = join(workspace, 'packages', name); const entry = name === 'storage-sql' ? 'host' : 'index';
@@ -140,7 +156,13 @@ async function main() {
     assert.deepEqual(original.peerDependencies ?? {}, name === 'pg' ? { 'pg-native': '>=3.0.1' } : name === 'pg-pool' ? { pg: '>=8.0' } : {});
     assert.deepEqual(original.peerDependenciesMeta ?? {}, name === 'pg' ? { 'pg-native': { optional: true } } : {});
     for (const key of ['preinstall', 'install', 'postinstall', 'prepare', 'prepack', 'postpack']) assert(!original.scripts?.[key], 'Unreviewed lifecycle script.');
-    const destination = join(tarballs, `${name}.tgz`); await run([pnpm, 'pack', '--out', destination], directory);
+    // npm treats the dependency directory as the package root. pnpm may inherit
+    // this workspace's root LICENSE, which would falsely attribute Mayura's
+    // Apache notice to an MIT dependency that intentionally licenses via README.
+    const packed = JSON.parse((await run([npm, 'pack', directory, '--pack-destination', tarballs, '--ignore-scripts', '--offline', '--json'], workspace,
+      { env: { npm_config_cache: dependencyPackCache } })).stdout);
+    assert(Array.isArray(packed) && packed.length === 1 && typeof packed[0]?.filename === 'string', 'Dependency pack did not return one archive.');
+    const destination = join(tarballs, packed[0].filename);
     const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
     assert.deepEqual(manifest, original, 'Third-party manifests must not be rewritten for the test.');
     const licenses = [...files.keys()].filter(path => /(?:^|\/)(?:licen[cs]e|notice|copying)(?:[.-][^/]*)?$/i.test(path));

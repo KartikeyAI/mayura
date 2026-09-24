@@ -1,6 +1,6 @@
 # Mayura documentation
 
-Mayura is an independent, open-source TypeScript agent development framework. Development is authorized; this checkout is **pre-release**, not enterprise-qualified or ready for publication.
+Mayura is an independent, Apache-2.0 TypeScript agent development framework. All finite V01–V22 acceptance gates are closed; this checkout remains a **development preview**, not a production qualification or published package release.
 
 ## Authority and navigation
 
@@ -51,10 +51,10 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 - [Release gate closure ledger](release-gate-closure.md) — auditable V01–V22 evidence, blockers and closure order.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. V02–V03 and V07–V12 are closed by direct acceptance evidence; V01, V04–V06 and V13–V22 remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. All 22 finite acceptance scenarios are closed with bounded claims recorded in the ledger.
 
 Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 
-The owner selected open-source distribution. The exact license and registry namespace have not been selected, so packages remain private and publication is blocked until those decisions are made. This does not block local development or tests. No archived repository or remote is changed.
+Mayura is licensed under Apache-2.0. Source package manifests remain private to prevent accidental publication; the controlled release process stages inspected public artifacts. Registry and repository ownership must be verified before first publication. No archived repository or remote is changed.

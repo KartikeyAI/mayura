@@ -2,7 +2,7 @@
 
 An independent TypeScript framework for building agents, typed tools and durable workflows.
 
-**Development preview — not enterprise-qualified.** No package is published. Public API, license and supported platforms are not yet stable. See [development status](docs/development-status.md) for tested capabilities and remaining release gates.
+**Development preview — not production-qualified.** No package is published and no public API is stable. Mayura is Apache-2.0 licensed; the currently qualified platforms are intentionally narrow. See [development status](docs/development-status.md) and the [support matrix](docs/support-matrix.md).
 
 ## Developing this checkout
 
@@ -32,10 +32,10 @@ The basic SDK requires no Docker, native database, server or hosted account. [Se
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks, plus a separate experimental [OTLP/HTTP JSON log exporter](docs/specs/otlp-http-json-logs.md); neither is mandatory durable audit.
 - Optional [local artifact storage](docs/specs/local-artifacts.md) with scoped content addressing, staged promotion, integrity-checked reads, bounded attachment disclosure and staging cleanup.
 
-The last clean complete default two-process checkpoint before the OTLP slice passed 2,525 tests in 126 files with PostgreSQL and live Docker enabled. The current slice passes strict types, 2,145 unit tests in 104 files, 141 focused observer/exporter cases and the 13-profile offline optional-package gate; aggregate integration attempts exposed only previously existing timing/storage-sensitive cases that passed unchanged in isolation. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
+The retained verification history includes a clean 2,525-test two-process checkpoint with PostgreSQL and live Docker, later focused slices, packed-consumer profiles, cross-platform base installation checks and exact V01–V22 evidence. Passing those finite gates does not qualify untested production environments; see the [status ledger](docs/development-status.md) and [closure ledger](docs/release-gate-closure.md).
 
 ## Documentation
 
 Start with the [quickstart](docs/quickstart.md), [documentation index](docs/README.md), and [architecture](docs/adr/0001-foundation.md).
 
-Mayura's open-source distribution is confirmed. Until the owner selects the exact license and namespace, all workspace packages are private; this checkout is not represented as an already licensed public release.
+Mayura is open source under Apache-2.0. Workspace manifests remain private as a publication safety control; the controlled release process creates reviewed public artifacts only after registry/repository ownership and provenance are verified.

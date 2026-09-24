@@ -1,0 +1,8 @@
+Mayura
+Copyright 2026 The Mayura Authors
+
+This product includes software developed by the Mayura contributors.
+
+Third-party dependencies retain their own copyright and license terms. Exact
+resolved versions are recorded in pnpm-lock.yaml and reviewed by the release
+artifact and dependency qualification procedures.

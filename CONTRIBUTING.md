@@ -1,6 +1,6 @@
 # Contributing to Mayura
 
-This repository is an unreleased development checkout. Public contribution intake and license terms must be established before accepting external contributions or publishing packages.
+Mayura is licensed under Apache-2.0. Contributions intentionally submitted for inclusion are accepted under the same license, as described by Section 5. Do not submit code you are not authorized to license.
 
 ## Local development
 
@@ -17,4 +17,4 @@ Use Node 24.14.1 and pnpm 10.17.1. Run `pnpm install --frozen-lockfile --ignore-
 
 Generated dependency/build files are produced by their tools. Source edits require review. Security-sensitive changes should be isolated and described without including live secrets or exploitable private data.
 
-The project owner currently controls architecture, license, namespace and release decisions. A public governance/RFC and maintainer succession policy remains a release requirement; no external support SLA is promised.
+Open an issue or proposal before substantial public API, persistence, authority or security-boundary work. Governance and release ownership are defined in `GOVERNANCE.md`; support terms are defined in `SUPPORT.md`. No external support SLA is promised for development previews.
