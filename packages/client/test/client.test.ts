@@ -34,6 +34,7 @@ function fixture(options: {
   responses?: ModelResponse[]; generate?: ModelAdapter['generate']; output?: Schema; guards?: readonly Guard[];
   authenticate?: AgentServerOptions['authenticate']; limits?: AgentServerOptions['limits']; useTool?: boolean; humanRequests?: AgentServerOptions['humanRequests'];
   workflowViews?: AgentServerOptions['workflowViews'];
+  workflowIndex?: AgentServerOptions['workflowIndex'];
   workflowControls?: AgentServerOptions['workflowControls'];
 } = {}) {
   let index = 0;
@@ -50,6 +51,7 @@ function fixture(options: {
       scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control'], expiresAtMs: Date.now() + 60_000,
     } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
     ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
+    ...(options.workflowIndex ? { workflowIndex: options.workflowIndex } : {}),
     ...(options.workflowControls ? { workflowControls: options.workflowControls } : {}),
   });
   servers.push(server);
@@ -230,6 +232,24 @@ describe('browser durable workflow view client', () => {
     expect(transport).toHaveBeenCalledOnce();
     await expect(client.approveWorkflow(runId, { revision: 0, nodeId: '../bad', approvalDigest: 'bad' }, { commandId: '' }))
       .rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).toHaveBeenCalledOnce();
+  });
+});
+
+describe('browser durable workflow index client', () => {
+  const indexedRunId = 'a'.repeat(64);
+  it('reads one explicit authenticated page without following its cursor', async () => {
+    const item = Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: indexedRunId, revision: 2, status: 'running' as const });
+    const list = vi.fn(async () => ({ items: [item], next: 'cursor-2' })); const { client, transport } = fixture({ workflowIndex: { list } });
+    const page = await client.workflows({ after: 'cursor-1', limit: 5 }); expect(page).toEqual({ items: [item], next: 'cursor-2' });
+    expect(Object.isFrozen(page)).toBe(true); expect(Object.isFrozen(page.items)).toBe(true); expect(list).toHaveBeenCalledOnce(); expect(transport).toHaveBeenCalledOnce();
+    expect(new URL(String(transport.mock.calls[0]?.[0])).searchParams.get('after')).toBe('cursor-1');
+  });
+
+  it('rejects malformed local pagination and duplicate or private summaries without retry', async () => {
+    const item = Object.freeze({ format: 4, definitionId: 'workflow', definitionVersion: '1', runId: indexedRunId, revision: 2, status: 'running' });
+    const { client, transport } = fakeClient(() => jsonResponse({ items: [item, { ...item, privatePrompt: 'PRIVATE' }], next: null }));
+    await expect(client.workflows({ after: '../bad', limit: 101 })).rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).not.toHaveBeenCalled();
+    await expect(client.workflows({ limit: 2 })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' }); expect(transport).toHaveBeenCalledOnce();
   });
 });
 

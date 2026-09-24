@@ -36,6 +36,14 @@ export interface WorkflowViewTransport {
   readonly inspect: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly runId: string;
     readonly signal: AbortSignal }) => Promise<WorkflowViewRecord | null>;
 }
+export interface WorkflowIndexRecord {
+  readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
+  readonly revision: number; readonly status: WorkflowViewRecord['status'];
+}
+export interface WorkflowIndexTransport {
+  readonly list: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly after: string | null;
+    readonly limit: number; readonly signal: AbortSignal }) => Promise<{ readonly items: readonly WorkflowIndexRecord[]; readonly next: string | null }>;
+}
 export type WorkflowControlResult = { readonly status: 'applied'; readonly workflow: WorkflowViewRecord }
   | { readonly status: 'conflict' } | { readonly status: 'not_found' };
 interface WorkflowControlBase {
@@ -62,6 +70,7 @@ export interface AgentServerOptions {
   readonly healthChecks?: readonly HealthCheck[];
   readonly humanRequests?: HumanRequestTransport;
   readonly workflowViews?: WorkflowViewTransport;
+  readonly workflowIndex?: WorkflowIndexTransport;
   readonly workflowControls?: WorkflowControlTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
@@ -156,6 +165,16 @@ function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewReco
   if (queue.length !== graph.size) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
   return freezeJson(raw) as unknown as WorkflowViewRecord;
 }
+function workflowIndexRecord(value: unknown): WorkflowIndexRecord {
+  let raw: JsonObject; try { raw = object(value, 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status']);
+  if (![2, 3, 4, 5].includes(raw['format'] as number) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
+    || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion'])
+    || typeof raw['runId'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['runId']) || typeof raw['revision'] !== 'number'
+    || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1 || typeof raw['status'] !== 'string' || !workflowStatuses.has(raw['status']))
+    throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  return freezeJson(raw) as unknown as WorkflowIndexRecord;
+}
 async function bounded<T>(operation: PromiseLike<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void Promise.resolve(operation).catch(() => {}); throw new HttpFailure(408, 'REQUEST_TIMEOUT'); }
   assertActive(signal);
@@ -212,6 +231,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (Reflect.ownKeys(fields).length !== 1 || !fields['inspect'] || !('value' in fields['inspect']) || typeof fields['inspect'].value !== 'function')
       throw new Error('Workflow view transport requires one exact inspect callback.');
     return Object.freeze({ inspect: fields['inspect'].value as WorkflowViewTransport['inspect'] });
+  })();
+  const workflowIndex: WorkflowIndexTransport | undefined = (() => {
+    if (options.workflowIndex === undefined) return undefined;
+    if (options.workflowIndex === null || typeof options.workflowIndex !== 'object') throw new Error('Workflow index transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowIndex);
+    if (Reflect.ownKeys(fields).length !== 1 || !fields['list'] || !('value' in fields['list']) || typeof fields['list'].value !== 'function')
+      throw new Error('Workflow index transport requires one exact list callback.');
+    return Object.freeze({ list: fields['list'].value as WorkflowIndexTransport['list'] });
   })();
   const workflowControls: WorkflowControlTransport | undefined = (() => {
     if (options.workflowControls === undefined) return undefined;
@@ -368,7 +395,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
     const catalogQuery = request.method === 'GET' && url.pathname === '/v1/tools';
     const humanListQuery = request.method === 'GET' && url.pathname === '/v1/human-requests';
-    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery ? !['after', 'limit'].includes(key) : true))
+    const workflowListQuery = request.method === 'GET' && url.pathname === '/v1/workflow-runs';
+    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery || workflowListQuery ? !['after', 'limit'].includes(key) : true))
       || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
       if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, 'ORIGIN_DENIED');
@@ -380,6 +408,25 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const identity = await session(request, signal);
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     const owner = canonical(identity.scope as unknown as JsonValue);
+    if (workflowListQuery) {
+      requireCapability(identity, 'workflows:read'); if (!workflowIndex) throw new HttpFailure(404, 'NOT_FOUND');
+      const after = url.searchParams.get('after'); const limitText = url.searchParams.get('limit') ?? '20';
+      if ((after !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !/^\d+$/.test(limitText)) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const limit = Number(limitText); if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
+      const operation = Promise.resolve().then(() => workflowIndex.list(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
+        after, limit, signal }))).finally(() => { workflowOperations--; });
+      let supplied: unknown; try { supplied = await bounded(operation, signal); }
+      catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      let page: JsonObject; try { page = object(supplied, 524_288); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+      workflowExact(page, ['items', 'next']);
+      if (!Array.isArray(page['items']) || page['items'].length > limit || (page['next'] !== null
+        && (typeof page['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(page['next']) || page['next'] === after)))
+        throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      const items = page['items'].map(workflowIndexRecord); if (new Set(items.map(item => item.runId)).size !== items.length)
+        throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ items, next: page['next'] });
+    }
     const workflowMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})$/.exec(url.pathname);
     if (workflowMatch && request.method === 'GET') {
       requireCapability(identity, 'workflows:read'); if (!workflowViews) throw new HttpFailure(404, 'NOT_FOUND');

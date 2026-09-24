@@ -28,6 +28,8 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
   const workflow = await client.workflow('a'.repeat(64)); const graph = createWorkflowGraphProjection(workflow);
   if (!graph.nodes[0]?.ready) throw new Error('Durable workflow graph projection failed.');
+  const workflowPage = await client.workflows({ limit: 1 });
+  if (workflowPage.items[0]?.runId !== 'a'.repeat(64) || workflowPage.next !== null) throw new Error('Durable workflow index failed.');
   const workflowController = createWorkflowCommandController({ workflow, client });
   if ((await workflowController.cancel({ commandId: 'cancel-1' })).revision !== 2 || workflowController.getSnapshot().status !== 'succeeded')
     throw new Error('Workflow cancellation state failed.'); workflowController.dispose();

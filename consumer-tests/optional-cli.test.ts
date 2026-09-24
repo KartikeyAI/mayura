@@ -1,6 +1,7 @@
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, planProject, respondHumanRequest, templates, validateProject, waitForRun,
-  type InitPlan, type OperationalHealth, type OperationalHumanRequestPage, type OperationalRun, type OperationalToolPage, type OperationalWorkflow } from '@mayura/cli';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, respondHumanRequest, templates, validateProject, waitForRun,
+  type InitPlan, type OperationalHealth, type OperationalHumanRequestPage, type OperationalRun, type OperationalToolPage, type OperationalWorkflow,
+  type OperationalWorkflowIndexPage } from '@mayura/cli';
 
 const catalog = templates();
 const project = validateProject({ format: 'mayura.project.v1', name: 'consumer', template: 'basic-agent',
@@ -14,5 +15,6 @@ declare const health: OperationalHealth; declare const tools: OperationalToolPag
 declare const humans: OperationalHumanRequestPage;
 declare const run: OperationalRun;
 declare const workflow: OperationalWorkflow;
+declare const workflowPage: OperationalWorkflowIndexPage;
 void health; void tools; void humans; void run; void workflow; void inspectServerHealth; void inspectServerTools; void inspectHumanRequests; void inspectHumanRequest;
-void respondHumanRequest; void inspectRun; void waitForRun; void cancelRun; void inspectWorkflow; void cancelWorkflow; void approveWorkflow;
+void workflowPage; void respondHumanRequest; void inspectRun; void waitForRun; void cancelRun; void inspectWorkflow; void inspectWorkflows; void cancelWorkflow; void approveWorkflow;

@@ -52,10 +52,11 @@ const server: LocalAgentServer = await listenAgentServer({ agents: [{ agent, per
   healthChecks: [{ id: 'dependency', check: async ({ signal, scope }) => !signal.aborted && scope.projectId.length > 0 }], authenticate: async () => null });
 const client = createClient({ baseUrl: server.origin, token: () => 'compile-only-fixture' });
 const workflow = await client.workflow('a'.repeat(64));
+const workflowPage = await client.workflows({ limit: 1 });
 const workflowFormat: 2 | 3 | 4 | 5 = workflow.format;
 await client.cancelWorkflow(workflow.runId, workflow.revision, { commandId: 'cancel' });
 await client.approveWorkflow(workflow.runId, { revision: workflow.revision, nodeId: 'step', approvalDigest: 'b'.repeat(64) }, { commandId: 'approve' });
-void workflowFormat;
+void workflowFormat; void workflowPage;
 const humanPage = await client.humanRequests({ limit: 1 });
 if (humanPage.items[0]) await client.respondHumanRequest(humanPage.items[0].id, humanPage.items[0].digest, { accepted: true }, { commandId: 'answer' });
 const remote = client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');

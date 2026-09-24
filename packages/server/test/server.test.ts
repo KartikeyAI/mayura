@@ -468,6 +468,38 @@ describe('authenticated durable workflow view transport', () => {
   });
 });
 
+describe('authenticated durable workflow index transport', () => {
+  const summary = (overrides: Record<string, unknown> = {}) => ({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1',
+    runId: workflowId, revision: 2, status: 'running' as const, ...overrides });
+
+  it('passes verified pagination and returns exact immutable content-free summaries', async () => {
+    const list = vi.fn(async () => ({ items: [summary()], next: 'cursor-2' })); const value = server({ workflowIndex: { list } });
+    const response = await value.fetch(request('/v1/workflow-runs?after=cursor-1&limit=5')); expect(response.status).toBe(200);
+    expect(await json(response)).toEqual({ items: [summary()], next: 'cursor-2' });
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
+      after: 'cursor-1', limit: 5 }));
+  });
+
+  it('denies listing before adapter access and rejects malformed cursors locally', async () => {
+    const list = vi.fn(async () => ({ items: [], next: null }));
+    const denied = server({ authenticate: async () => identity({ capabilities: ['runs:read'] }), workflowIndex: { list } });
+    await error(await denied.fetch(request('/v1/workflow-runs?limit=5')), 403, 'FORBIDDEN'); expect(list).not.toHaveBeenCalled();
+    const value = server({ workflowIndex: { list } });
+    await error(await value.fetch(request('/v1/workflow-runs?after=../private&limit=101')), 400, 'INVALID_CURSOR'); expect(list).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on duplicate, private or cursor-loop adapter pages', async () => {
+    for (const page of [
+      { items: [summary(), summary()], next: null },
+      { items: [summary({ privatePrompt: 'PRIVATE' })], next: null },
+      { items: [summary()], next: 'same' },
+    ]) {
+      const value = server({ workflowIndex: { list: async () => page as never } });
+      await error(await value.fetch(request('/v1/workflow-runs?after=same&limit=2')), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    }
+  });
+});
+
 describe('authenticated durable workflow controls', () => {
   it('passes exact verified cancellation and approval commands and returns admitted views', async () => {
     const cancel = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3, status: 'cancelled' as const } }));

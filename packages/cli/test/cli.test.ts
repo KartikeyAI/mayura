@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, planProject, readProject, respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -155,16 +155,19 @@ describe('@mayura/cli authenticated operations', () => {
     const workflowId = 'a'.repeat(64); const childId = 'b'.repeat(64); const digest = 'd'.repeat(64); const calls: Array<{ path: string; body?: unknown }> = [];
     const workflow = (revision: number, status = 'waiting') => ({ format: 4, definitionId: 'deploy', definitionVersion: '1', runId: workflowId, revision, status,
       nodes: [{ id: 'child', kind: 'child', dependsOn: [] }], steps: [{ id: 'child', kind: 'child', status: status === 'cancelled' ? 'skipped' : 'waiting', childRunId: childId }] });
-    const transport = async (input: string | URL | Request, init?: RequestInit) => { const path = new URL(String(input)).pathname;
+    const transport = async (input: string | URL | Request, init?: RequestInit) => { const url = new URL(String(input)); const path = url.pathname;
       const body = init?.body ? JSON.parse(String(init.body)) : undefined; calls.push({ path, ...(body === undefined ? {} : { body }) });
+      if (path === '/v1/workflow-runs') return new Response(JSON.stringify({ items: [{ format: 4, definitionId: 'deploy', definitionVersion: '1',
+        runId: workflowId, revision: 1, status: 'waiting' }], next: null }), { headers: { 'content-type': 'application/json' } });
       return new Response(JSON.stringify({ workflow: workflow(path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : 1,
         path.endsWith('/cancel') ? 'cancelled' : 'waiting') }), { headers: { 'content-type': 'application/json' } }); };
     const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
+    expect((await inspectWorkflows(settings, { limit: 5 })).items[0]?.runId).toBe(workflowId);
     expect((await inspectWorkflow(settings, workflowId)).revision).toBe(1);
     expect((await cancelWorkflow(settings, { id: workflowId, revision: 1, commandId: 'cancel-1' })).status).toBe('cancelled');
     expect((await approveWorkflow(settings, { id: workflowId, revision: 2, commandId: 'approve-1', nodeId: 'child', approvalDigest: digest,
       childRunId: childId })).revision).toBe(3);
-    expect(calls).toEqual([{ path: `/v1/workflow-runs/${workflowId}` }, { path: `/v1/workflow-runs/${workflowId}/cancel`,
+    expect(calls).toEqual([{ path: '/v1/workflow-runs' }, { path: `/v1/workflow-runs/${workflowId}` }, { path: `/v1/workflow-runs/${workflowId}/cancel`,
       body: { commandId: 'cancel-1', revision: 1 } }, { path: `/v1/workflow-runs/${workflowId}/approvals`,
       body: { commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: digest, childRunId: childId } }]);
   });

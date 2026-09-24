@@ -1,5 +1,5 @@
 /** Browser-safe wire values; this package has no privileged runtime or Node imports. */
-import type { WorkflowViewInput, WorkflowViewNodeKind } from './workflows.js';
+import type { WorkflowViewFormat, WorkflowViewInput, WorkflowViewNodeKind, WorkflowViewRunStatus } from './workflows.js';
 
 export type ClientJson = null | boolean | number | string | readonly ClientJson[] | { readonly [key: string]: ClientJson };
 export interface ClientSchema<T> {
@@ -42,6 +42,11 @@ export interface WorkflowCommandOptions { readonly commandId: string; readonly s
 export interface WorkflowApprovalCommand {
   readonly revision: number; readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string;
 }
+export interface WorkflowIndexEntry {
+  readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
+  readonly revision: number; readonly status: WorkflowViewRunStatus;
+}
+export interface WorkflowIndexPage { readonly items: readonly WorkflowIndexEntry[]; readonly next: string | null }
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token: () => string | Promise<string>;
@@ -57,6 +62,7 @@ export interface MayuraClient {
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
   workflow(id: string, options?: { readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  workflows(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<WorkflowIndexPage>;
   cancelWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
@@ -169,6 +175,16 @@ function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
   }
   if (seen.size !== ids.size) return fail();
   return raw as unknown as WorkflowViewInput;
+}
+function workflowIndexEntry(value: unknown): WorkflowIndexEntry {
+  const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status'];
+  if (!Object.isFrozen(raw) || Object.keys(raw).length !== expected.length || expected.some(key => !Object.hasOwn(raw, key))
+    || typeof raw['format'] !== 'number' || ![2, 3, 4, 5].includes(raw['format']) || typeof raw['definitionId'] !== 'string'
+    || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId']) || typeof raw['definitionVersion'] !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion']) || typeof raw['runId'] !== 'string'
+    || !/^[a-f0-9]{64}$/.test(raw['runId']) || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1
+    || typeof raw['status'] !== 'string' || !['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(raw['status'])) return fail();
+  return raw as unknown as WorkflowIndexEntry;
 }
 async function race<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void Promise.resolve(work).catch(() => {}); throw new ClientError('ABORTED'); }
@@ -376,6 +392,17 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!/^[a-f0-9]{64}$/.test(id)) throw new ClientError('INVALID_REQUEST');
       const raw = await command(`/v1/workflow-runs/${id}`, 'GET', settings?.signal);
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async workflows(settings?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }) {
+      const limit = settings?.limit ?? 20; const after = settings?.after;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)))
+        throw new ClientError('INVALID_REQUEST');
+      const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }) });
+      const raw = await command(`/v1/workflow-runs?${query}`, 'GET', settings?.signal); const keys = Object.keys(raw);
+      if (keys.length !== 2 || !Object.hasOwn(raw, 'items') || !Object.hasOwn(raw, 'next') || !Array.isArray(raw['items']) || raw['items'].length > limit
+        || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next']) || raw['next'] === after))) return fail();
+      const items = raw['items'].map(workflowIndexEntry); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
+      return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
     },
     async cancelWorkflow(id: string, revision: number, settings: WorkflowCommandOptions) {
       if (!/^[a-f0-9]{64}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1 || !settings

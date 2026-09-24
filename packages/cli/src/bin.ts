@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, planProject, readProject, respondHumanRequest, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -102,22 +102,24 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
-  if (command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve') {
-    const valued = command === 'workflow-get' ? ['--url', '--id'] : command === 'workflow-cancel'
+  if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve') {
+    const valued = command === 'workflow-list' ? ['--url', '--after', '--limit'] : command === 'workflow-get' ? ['--url', '--id'] : command === 'workflow-cancel'
       ? ['--url', '--id', '--revision', '--command-id'] : ['--url', '--id', '--revision', '--command-id', '--node', '--digest', '--child-id'];
     assertArguments(arguments_, valued, ['--token-stdin']); const baseUrl = option(arguments_, '--url'); const id = option(arguments_, '--id');
-    if (!baseUrl || !id || !arguments_.includes('--token-stdin')) throw new Error(`${command} requires --url, --id and --token-stdin.`);
+    if (!baseUrl || !arguments_.includes('--token-stdin') || (command !== 'workflow-list' && !id)) throw new Error(`${command} requires --url${command === 'workflow-list' ? '' : ', --id'} and --token-stdin.`);
     const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
-    if (command === 'workflow-get') return { status: 'succeeded', workflow: await inspectWorkflow(settings, id) };
+    if (command === 'workflow-list') { const after = option(arguments_, '--after'); const limit = option(arguments_, '--limit');
+      return { status: 'succeeded', page: await inspectWorkflows(settings, { ...(after === undefined ? {} : { after }), ...(limit === undefined ? {} : { limit: Number(limit) }) }) }; }
+    if (command === 'workflow-get') return { status: 'succeeded', workflow: await inspectWorkflow(settings, id!) };
     const revision = option(arguments_, '--revision'); const commandId = option(arguments_, '--command-id');
     if (!revision || !commandId) throw new Error(`${command} requires --revision and --command-id.`);
-    if (command === 'workflow-cancel') return { status: 'succeeded', workflow: await cancelWorkflow(settings, { id, revision: Number(revision), commandId }) };
+    if (command === 'workflow-cancel') return { status: 'succeeded', workflow: await cancelWorkflow(settings, { id: id!, revision: Number(revision), commandId }) };
     const nodeId = option(arguments_, '--node'); const approvalDigest = option(arguments_, '--digest'); const childRunId = option(arguments_, '--child-id');
     if (!nodeId || !approvalDigest) throw new Error('workflow-approve requires --node and --digest.');
-    return { status: 'succeeded', workflow: await approveWorkflow(settings, { id, revision: Number(revision), commandId, nodeId, approvalDigest,
+    return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-get | workflow-cancel | workflow-approve');
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

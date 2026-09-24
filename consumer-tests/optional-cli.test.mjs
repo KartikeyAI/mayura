@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, planProject, readProject, respondHumanRequest, templates, waitForRun } from '@mayura/cli';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, templates, waitForRun } from '@mayura/cli';
 
 const target = resolve('generated-agent'); const catalog = templates();
 const plan = await planProject('basic-agent', target); const beforeApply = plan.changes.every(change => change.operation === 'create');
@@ -14,6 +14,7 @@ const operationalFetch = async (url, options) => { const path = new URL(url).pat
   : path === '/v1/human-requests' ? { items: [human], next: null }
   : path === `/v1/runs/${runId}/cancel` ? (cancellationCalls++, { id: runId, cancellationRequested: true })
   : path === `/v1/runs/${runId}` ? { id: runId, status: 'succeeded', budget: { spentMicros: 1, reservedMicros: 0, calls: 1 }, evidence: [], outcome: { status: 'succeeded', output: 'PRIVATE' } }
+  : path === '/v1/workflow-runs' ? { items: [{ format: 2, definitionId: 'workflow', definitionVersion: '1', runId: workflowId, revision: 1, status: 'running' }], next: null }
   : path.startsWith(`/v1/workflow-runs/${workflowId}`) ? (options?.method === 'POST' && (workflowCommands += 1), { workflow: { format: 2, definitionId: 'workflow', definitionVersion: '1',
     runId: workflowId, revision: path.endsWith('/approvals') ? 3 : path.endsWith('/cancel') ? 2 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
     nodes: [{ id: 'step', kind: 'tool', dependsOn: [] }], steps: [{ id: 'step', kind: 'tool', status: path.endsWith('/approvals') ? 'approved' : path.endsWith('/cancel') ? 'skipped' : 'waiting' }] } })
@@ -24,7 +25,7 @@ const health = await inspectServerHealth(operational); const tools = await inspe
 const humanPage = await inspectHumanRequests(operational, { limit: 1 }); const inspected = await inspectHumanRequest(operational, 'review');
 const answered = await respondHumanRequest(operational, { id: 'review', requestDigest: digest, commandId: 'answer', value: true });
 const inspectedRun = await inspectRun(operational, runId); const waitedRun = await waitForRun(operational, runId); await cancelRun(operational, runId);
-const inspectedWorkflow = await inspectWorkflow(operational, workflowId);
+const workflowPage = await inspectWorkflows(operational, { limit: 1 }); const inspectedWorkflow = await inspectWorkflow(operational, workflowId);
 await cancelWorkflow(operational, { id: workflowId, revision: 1, commandId: 'cancel' });
 await approveWorkflow(operational, { id: workflowId, revision: 2, commandId: 'approve', nodeId: 'step', approvalDigest: 'd'.repeat(64) });
 console.log(JSON.stringify({ status: 'passed', eightTemplates: catalog.length === 8, planFirst: beforeApply,
@@ -32,4 +33,4 @@ console.log(JSON.stringify({ status: 'passed', eightTemplates: catalog.length ==
   authenticatedOperations: health.status === 'ready' && tools.tools.length === 0,
   authenticatedHuman: humanPage.items.length === 1 && inspected.id === 'review' && answered.status === 'answered',
   authenticatedRuns: inspectedRun.status === 'succeeded' && waitedRun.status === 'succeeded' && !('outcome' in inspectedRun) && cancellationCalls === 1,
-  authenticatedWorkflows: inspectedWorkflow.revision === 1 && workflowCommands === 2 }));
+  authenticatedWorkflows: workflowPage.items[0]?.runId === workflowId && inspectedWorkflow.revision === 1 && workflowCommands === 2 }));
