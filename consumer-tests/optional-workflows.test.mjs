@@ -6,7 +6,7 @@ import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleHumanTransport, createWorkflowLifecycleRuntime, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
@@ -57,12 +57,19 @@ const lifecycleStore = {
   },
   async events() { return []; }, async close() {},
 };
-const lifecycleRuntime = createWorkflowLifecycleRuntime({ store: lifecycleStore, scope: { principalId: 'consumer', projectId: 'project' },
+const lifecycleRuntime = createWorkflowLifecycleFleetRuntime({ store: lifecycleStore, scope: { principalId: 'consumer', projectId: 'project' },
   permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0,
   verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: false }) });
 const lifecycleRun = await lifecycleRuntime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
 const lifecycleWaiting = await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id);
 const lifecycleRequest = lifecycleWaiting.steps.review.requestDigest;
+let lifecycleCursor = null; let lifecycleDiscovered = false;
+for (let page = 0; page < 9 && !lifecycleDiscovered; page++) {
+  const discovered = await lifecycleRuntime.scan({ cursor: lifecycleCursor, maxShardReads: 32 });
+  lifecycleDiscovered = discovered.candidates.some(candidate => candidate.runId === lifecycleRun.id);
+  lifecycleCursor = discovered.nextCursor; if (!lifecycleCursor) break;
+}
+assert.equal(lifecycleDiscovered, true);
 const humanController = createWorkflowLifecycleHumanTransport({ scope: { principalId: 'consumer', projectId: 'project' } });
 const [humanRouteId] = humanController.register({ agentId: 'consumer', definition: lifecycle, runtime: lifecycleRuntime, runId: lifecycleRun.id });
 const humanPage = await humanController.transport.list({ scope: { principalId: 'consumer', projectId: 'project' }, agentIds: ['consumer'], after: null, limit: 10, signal: new AbortController().signal });
@@ -104,4 +111,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
-  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleHumanTransport: true, sqlDriversInstalled: false }));
+  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true, sqlDriversInstalled: false }));

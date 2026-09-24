@@ -26,6 +26,16 @@ export {
   type WorkflowLifecycleHumanTransportOptions,
   type WorkflowLifecycleHumanTransportRecord,
 } from './lifecycle-human-transport.js';
+export {
+  createWorkflowLifecycleFleetRuntime,
+  type WorkflowLifecycleFleetCandidate,
+  type WorkflowLifecycleFleetCursor,
+  type WorkflowLifecycleFleetOutcome,
+  type WorkflowLifecycleFleetPage,
+  type WorkflowLifecycleFleetReport,
+  type WorkflowLifecycleFleetRuntime,
+  type WorkflowLifecycleFleetRuntimeOptions,
+} from './lifecycle-fleet.js';
 export type {
   WorkflowLifecycleHumanKind,
   WorkflowLifecycleHumanNodeManifest,

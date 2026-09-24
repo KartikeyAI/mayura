@@ -89,7 +89,8 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
     expect(digest).not.toBe(expiredDigest); expect(refreshed.nextWakeAtMs).toBe(200);
     await expect(runtime.approve({ id: submitted.id, nodeId: 'draft', digest: expiredDigest, credential: 'approver' })).rejects.toMatchObject({ code: 'CONFLICT' });
     await expect(runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'reviewer' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
-    await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' });
+    const approved = await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' });
+    expect((await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' })).version).toBe(approved.version);
     expect(await runtime.runUntilSettled(approvalDefinition, submitted.id)).toMatchObject({ status: 'succeeded' });
 
     const pending = await runtime.submit(definition, { input: { payload: 'draft', subjectDigest: hash, reviewBy: 1_000, publishAt: 500 }, idempotencyKey: 'cancel' });

@@ -498,9 +498,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const human = await checkedHuman(command.credential, true); const observedAtMs = now();
       return publicSnapshot(await mutate(command.id, state => {
         const step = state.steps[command.nodeId];
-        if (!step || step.kind !== 'tool' || state.status === 'cancelled' || state.policy !== policy
-          || step.status !== 'waiting' || !step.approval || step.approval.digest !== command.digest
-          || step.approval.expiresAt <= observedAtMs) throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
+        if (!step || step.kind !== 'tool' || state.policy !== policy || !step.approval || step.approval.digest !== command.digest) {
+          throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
+        }
+        if (step.status !== 'waiting' && step.approval.humanId === human.id) return false;
+        if (state.status === 'cancelled' || step.status !== 'waiting' || step.approval.expiresAt <= observedAtMs) {
+          throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
+        }
         step.approval.humanId = human.id; step.status = 'approved'; state.status = 'running'; return true;
       }, 'lifecycle.approval.resolved', { nodeId: command.nodeId, humanId: human.id }));
     },

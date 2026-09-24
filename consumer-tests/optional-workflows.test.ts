@@ -4,7 +4,7 @@ import { createRuntime } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
   type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleHumanTransport, createWorkflowLifecycleRuntime, defineWorkflowLifecycle,
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle,
   type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
@@ -68,7 +68,7 @@ function checkScheduledAdapter(store: ScheduledWorkflowAggregateStore): void {
 }
 void checkScheduledAdapter;
 function checkLifecycleAdapter(store: AggregateStore): void {
-  const runtime = createWorkflowLifecycleRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
+  const runtime = createWorkflowLifecycleFleetRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
     permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0,
     verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: false }) });
   const profile: 'lifecycle-v1' = runtime.profile; void profile;

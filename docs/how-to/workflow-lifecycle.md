@@ -53,4 +53,6 @@ Submit a response with the exact request digest, stable command ID and schema in
 
 `nextWakeAtMs` is the earliest persisted human deadline or timer due time. A host scheduler should call `runUntilSettled` at or after that time. The runtime starts no background timers and retains no callback or worker while waiting. After a process restart, reopen the same store, recreate the runtime with the identical definition and policy, and continue by run ID.
 
+For a fleet, use `createWorkflowLifecycleFleetRuntime` instead. Its `scan` method returns finite scoped pages of active runs; `runPage([workflow], { cursor })` advances running or due executions and defers future waits. Continue with `page.nextCursor` until it is `null`, then begin a new sweep from `null` on the next host-scheduled interval. Definitions absent from the supplied catalog are reported and never executed.
+
 The conservative driver records an effect as dispatching before executing it. If the process dies after dispatch, use `recoverAbandoned` only after operator reconciliation; it never redispatches an uncertain effect automatically.
