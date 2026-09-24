@@ -13,9 +13,9 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
+const names = ['core', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
 const expectedDependencies = {
-  core: [], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
+  core: [], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'exporter-otlp': ['@mayura/core', '@mayura/observability'],
@@ -178,6 +178,7 @@ async function main() {
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
+    ['helpers', ['@mayura/helpers'], 'optional-helpers.test.ts'],
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing', '@mayura/artifacts'], 'optional-node.test.ts'],
     ['workflows', ['@mayura/workflows'], 'optional-workflows.test.ts'],
     ['managed', ['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'], 'managed/consumer.test.ts'],
@@ -216,6 +217,10 @@ async function main() {
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
       if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); }
+      if (name === 'helpers') {
+        assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
+        assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true);
+      }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
         assert.equal(execution.unknownDefinitionSkipped, true);
@@ -294,6 +299,7 @@ async function main() {
   result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment',
     'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard', 'artifact-backup-restore');
   result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting');
+  result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

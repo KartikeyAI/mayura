@@ -1,0 +1,28 @@
+# Development-roadmap completion audit
+
+Updated: 2026-09-24. This audit distinguishes the finite V01–V22 acceptance scenarios from the broader M0–M9 product roadmap in the governing plan. All 22 gates are closed, but that fact alone does not complete every roadmap deliverable.
+
+| Phase | State | Evidence and remaining work |
+| --- | --- | --- |
+| M0 — Source-of-truth plan | Complete | The governing plan, traceability and acceptance scenarios exist. |
+| M1 — Concrete specifications | Partial | Core ADRs, API recipes, threat model, install budgets, Apache-2.0 license and a narrow support matrix exist. Repository/registry ownership, the complete performance workload specification and remaining integration ADRs are not complete. |
+| M2 — Contracts and trusted kernel | Complete for the declared preview | Core, tools, policy admission, budgets, cancellation, storage and audit foundations have direct gate evidence. |
+| M3 — Workflows, waits and humans | Partial | Durable tools/joins, signals, external-run waits, approvals, required children and migration evidence exist. General loops, timers, compensation and the complete typed information-request/correction lifecycle are not implemented. |
+| M4 — Agents and composition | Partial | The model/tool loop, bounded sub-agents, agent/workflow-as-tool and tool DAGs exist. The required second hosted model provider, compatible local-model path and broader autonomous correction/planning contracts are not complete. |
+| M5 — Processors and guardrails | Substantially complete, audit pending | Required hooks, immutable processors, managed moderation, PII/language controls, protected streaming and budget barriers have gate evidence. The full documented hook catalog and broader quality evaluation remain to be reconciled against Sections 8–10. |
+| M6 — Native memory and context | Partial | Native scoped memory/context, provenance, correction/deletion and continuity fixtures exist. Mem0, Supermemory.ai and OpenViking adapters, graph memory, provider import/export/deletion conformance, cache invalidation and speculation are not complete. |
+| M7 — Code Mode and standalone conformance | Complete for the finite preview profile | Provider-neutral programs, QuickJS/Docker adapters, durable phases and standalone conformance close V15/V18. Production hostile-code qualification remains explicitly outside the preview claim. |
+| M8 — Full-stack distribution | Partial | Authenticated server/client, observer, OTLP logs and the packed `@mayura/helpers` battery exist. CLI, required starter templates, UI bindings, traces/metrics and several operational adapters remain incomplete. |
+| M9 — Release qualification | Partial | V01–V22, legal/governance files, inspected artifacts, Windows/Linux base installation and local test evidence exist. Protected remote CI, registry provenance, complete performance report, provider/model evaluation and broader supported-adapter qualification remain incomplete. |
+
+## Required work queue
+
+1. **Complete:** packed `@mayura/helpers` covers configuration, secret references, retry/deadline/cancellation, cleanup, polling, pagination, safe artifact transfer, provider-schema binding, redacted logging and budget-aware concurrency. Unit, no-phone-home and isolated offline consumer evidence pass.
+2. Ship the Mayura CLI and all eight required starter templates; run them from packed artifacts and add them to release CI.
+3. Complete model-provider diversity: a second hosted provider plus an explicitly configured local compatible path.
+4. Complete Mem0, Supermemory.ai and OpenViking adapters against native provenance, scope, deletion and no-resurrection contracts.
+5. Complete missing workflow/human lifecycle primitives and operational adapters: timers, loops/compensation, typed input/correction, credential stores, blob storage, authenticated deduplicated webhooks, triggers, health probes and tool catalogs.
+6. Complete UI bindings and OpenTelemetry traces/metrics while preserving browser/server and audit/telemetry boundaries.
+7. Define and execute the complete performance/evaluation suite, protected CI release workflow and first registry-provenance rehearsal.
+
+Every item requires public contracts, denied/failure-path tests, packed-consumer evidence, documentation and a local Git checkpoint. This file must be updated as each slice closes; the active development goal remains open until every roadmap item has direct evidence.

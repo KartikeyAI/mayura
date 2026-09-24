@@ -24,6 +24,7 @@
   "devDependencies": {
     "@mayura/sdk": "workspace:*",
     "@mayura/core": "workspace:*",
+    "@mayura/helpers": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/runtime": "workspace:*",
     "@mayura/testing": "workspace:*",

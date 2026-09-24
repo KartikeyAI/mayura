@@ -13,7 +13,7 @@ for (const [name, methods] of [['node:http', ['request', 'get']], ['node:https',
 }
 syncBuiltinESMExports();
 
-const packages = ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/sdk', '@mayura/testing', '@mayura/workflows',
+const packages = ['@mayura/core', '@mayura/helpers', '@mayura/tools', '@mayura/runtime', '@mayura/sdk', '@mayura/testing', '@mayura/workflows',
   '@mayura/workstream', '@mayura/storage-contracts', '@mayura/context', '@mayura/memory', '@mayura/guardrails',
   '@mayura/observability', '@mayura/code-mode', '@mayura/code-mode-workflows', '@mayura/adapter-code-quickjs', '@mayura/adapter-code-docker',
   '@mayura/artifacts'];

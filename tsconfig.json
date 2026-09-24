@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/runtime" },
     { "path": "packages/testing" },
