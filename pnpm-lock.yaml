@@ -14,6 +14,9 @@ importers:
       '@mayura/adapter-code-quickjs':
         specifier: workspace:*
         version: link:packages/adapter-code-quickjs
+      '@mayura/adapter-mcp':
+        specifier: workspace:*
+        version: link:packages/adapter-mcp
       '@mayura/client':
         specifier: workspace:*
         version: link:packages/client
@@ -108,6 +111,15 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
 
+  packages/adapter-mcp:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+
   packages/artifacts:
     dependencies:
       '@mayura/core':
@@ -149,6 +161,12 @@ importers:
 
   packages/consumer-tests:
     dependencies:
+      '@mayura/adapter-mcp':
+        specifier: workspace:*
+        version: link:../adapter-mcp
+      '@mayura/code-mode':
+        specifier: workspace:*
+        version: link:../code-mode
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
@@ -161,6 +179,9 @@ importers:
       '@mayura/tools':
         specifier: workspace:*
         version: link:../tools
+      '@mayura/workflows':
+        specifier: workspace:*
+        version: link:../workflows
 
   packages/context:
     dependencies:

@@ -13,6 +13,7 @@
     { "path": "packages/workflows" },
     { "path": "packages/guardrails" },
     { "path": "packages/provider-openai" },
+    { "path": "packages/adapter-mcp" },
     { "path": "packages/workstream" },
     { "path": "packages/context" },
     { "path": "packages/memory" },

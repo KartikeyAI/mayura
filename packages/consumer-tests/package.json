@@ -7,6 +7,9 @@
     "@mayura/core": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/runtime": "workspace:*",
-    "@mayura/testing": "workspace:*"
+    "@mayura/testing": "workspace:*",
+    "@mayura/workflows": "workspace:*",
+    "@mayura/code-mode": "workspace:*",
+    "@mayura/adapter-mcp": "workspace:*"
   }
 }
