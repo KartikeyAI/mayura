@@ -10,7 +10,7 @@ const identitySchema: Schema<unknown> = { '~standard': { version: 1, vendor: 'te
 const servers: AgentServer[] = [];
 function identity(overrides: Partial<ServerIdentity> = {}): ServerIdentity {
   return { scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
-    capabilities: ['runs:read', 'runs:submit', 'runs:cancel'], expiresAtMs: Date.now() + 60_000, ...overrides };
+    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read'], expiresAtMs: Date.now() + 60_000, ...overrides };
 }
 function fixture(generate: ModelAdapter['generate'] = async request => ({ type: 'final', output: request.messages[0]!.role === 'user' ? request.messages[0]!.content : null, usage: { costMicros: 0 } })) {
   return defineAgent({ id: 'echo', version: '1', instructions: 'PRIVATE_INSTRUCTIONS', tools: [], input: identitySchema, output: identitySchema,
@@ -199,6 +199,67 @@ describe('authenticated Fetch server admission', () => {
     verdict.resolve({ decision: 'block', reason: 'PRIVATE_REASON' });
     const state = await terminal(value, id); expect(state['outcome']).toMatchObject({ status: 'blocked', error: { code: 'GUARD_BLOCKED' } });
     expect(JSON.stringify(state) + await (await events(value, id)).text()).not.toMatch(/PRIVATE_CANDIDATE|PRIVATE_REASON/);
+  });
+});
+
+describe('operational health and tool discovery', () => {
+  it('keeps public liveness opt-in and content-free', async () => {
+    const authenticate = vi.fn(async () => identity()); const disabled = server({ authenticate });
+    await error(await disabled.fetch(request('/healthz', {}, null)), 401, 'UNAUTHORIZED');
+    const enabled = server({ publicLiveness: true, authenticate });
+    const response = await enabled.fetch(request('/healthz', {}, null));
+    expect(response.status).toBe(200); expect(await json(response)).toEqual({ status: 'ok' });
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it('runs access-controlled readiness checks in parallel and sanitizes failures', async () => {
+    const first = deferred<boolean>(); const second = deferred<boolean>(); const started: string[] = [];
+    const value = server({ healthChecks: [
+      { id: 'database', check: async () => { started.push('database'); return first.promise; } },
+      { id: 'queue', check: async () => { started.push('queue'); return second.promise; } },
+      { id: 'provider', check: async () => { throw new Error('CREDENTIAL_PRIVATE'); } },
+    ] });
+    const pending = value.fetch(request('/v1/operations/health'));
+    await vi.waitFor(() => expect(started).toEqual(['database', 'queue'])); first.resolve(true); second.resolve(false);
+    const response = await pending; expect(response.status).toBe(503);
+    const text = await response.text(); expect(text).not.toContain('CREDENTIAL_PRIVATE');
+    expect(JSON.parse(text)).toEqual({ status: 'degraded', checks: [
+      { id: 'server', status: 'ready' }, { id: 'database', status: 'ready' },
+      { id: 'queue', status: 'unavailable' }, { id: 'provider', status: 'unavailable' },
+    ] });
+  });
+
+  it('requires separate operational authority and retains hanging-check admission', async () => {
+    const hanging = deferred<boolean>(); const check = vi.fn(() => hanging.promise);
+    const value = server({ limits: { requestTimeoutMs: 25, maxHealthOperations: 1 }, healthChecks: [{ id: 'database', check }],
+      authenticate: async () => identity({ capabilities: ['runs:read'] }) });
+    await error(await value.fetch(request('/v1/operations/health')), 403, 'FORBIDDEN'); expect(check).not.toHaveBeenCalled();
+    const authorized = server({ limits: { requestTimeoutMs: 25, maxHealthOperations: 1 }, healthChecks: [{ id: 'database', check }] });
+    await error(await authorized.fetch(request('/v1/operations/health')), 408, 'REQUEST_TIMEOUT');
+    const unavailable = await authorized.fetch(request('/v1/operations/health')); expect(unavailable.status).toBe(503); expect(check).toHaveBeenCalledTimes(1);
+    hanging.resolve(true);
+  });
+
+  it('returns a bounded authorized metadata-only tool catalog', async () => {
+    const tool = defineTool({ id: 'lookup', version: '2', description: 'PRIVATE_DESCRIPTION', input: identitySchema, output: identitySchema,
+      inputJsonSchema: { type: 'string', description: 'PRIVATE_SCHEMA' }, effects: 'read', capabilities: ['network:public'], timeoutMs: 500, costMicros: 7,
+      execute: async value => value });
+    const echo = defineAgent({ ...fixture(), tools: [tool] }); const other = defineAgent({ ...fixture(), id: 'other', tools: [tool] });
+    const value = server({ agents: [echo, other].map(agent => ({ agent, permissions: { allow: ['model:fixture', 'tool:lookup', 'network:public'] } })) });
+    const response = await value.fetch(request('/v1/tools?limit=1')); expect(response.status).toBe(200);
+    const text = await response.text(); expect(text).not.toMatch(/PRIVATE_DESCRIPTION|PRIVATE_SCHEMA|instructions|execute/);
+    expect(JSON.parse(text)).toEqual({ tools: [{ agentId: 'echo', agentVersion: '1', id: 'lookup', version: '2', effects: 'read',
+      capabilities: ['network:public'], timeoutMs: 500, costMicros: 7 }], next: null });
+  });
+
+  it('validates operational configuration and catalog cursors', async () => {
+    expect(() => server({ publicLiveness: 'yes' as unknown as boolean })).toThrow();
+    expect(() => server({ healthChecks: [{ id: 'same', check: () => true }, { id: 'same', check: () => true }] })).toThrow();
+    expect(() => server({ limits: { maxHealthOperations: 0 } })).toThrow();
+    const value = server();
+    for (const suffix of ['?after=-1', '?limit=0', '?limit=101', '?after=1', '?token=PRIVATE']) {
+      await error(await value.fetch(request(`/v1/tools${suffix}`)), 400, suffix.includes('token') ? 'INVALID_QUERY' : 'INVALID_CURSOR');
+    }
   });
 });
 

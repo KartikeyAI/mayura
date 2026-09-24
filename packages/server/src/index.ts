@@ -4,8 +4,13 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read')[];
   readonly expiresAtMs: number;
+}
+export interface HealthCheck {
+  readonly id: string;
+  /** Trusted application callback. Returning false or throwing marks the dependency unavailable. */
+  readonly check: (context: { readonly signal: AbortSignal; readonly scope: Scope }) => boolean | Promise<boolean>;
 }
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
@@ -16,12 +21,16 @@ export interface AgentServerOptions {
   readonly publicOrigin: string;
   readonly allowedOrigins?: readonly string[];
   readonly agents: readonly RegisteredAgent[];
+  /** Expose only a content-free process liveness response at GET /healthz. */
+  readonly publicLiveness?: boolean;
+  /** Access-controlled readiness checks. Credentials and exception details must remain inside callbacks. */
+  readonly healthChecks?: readonly HealthCheck[];
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
-    readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
+    readonly maxHealthOperations?: number; readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
   };
 }
 export interface AgentServer { fetch(request: Request): Promise<Response>; close(): Promise<void> }
@@ -73,10 +82,30 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const origins = new Set((options.allowedOrigins ?? []).map(origin));
   if (typeof options.authenticate !== 'function' || !Array.isArray(options.agents) || options.agents.length > 256) throw new Error('Explicit authentication and a bounded agent registry are required.');
   const authenticate = options.authenticate;
+  if (options.publicLiveness !== undefined && typeof options.publicLiveness !== 'boolean') throw new Error('Public liveness must be explicit.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
-    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
-  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
+    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32,
+    requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
+  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 16_777_216) throw new Error('Server limits must be bounded positive integers.');
+  const healthChecks: readonly HealthCheck[] = (() => {
+    const supplied = options.healthChecks ?? [];
+    if (!Array.isArray(supplied) || supplied.length > 32) throw new Error('Health checks must be a bounded dense list.');
+    const descriptors = Object.getOwnPropertyDescriptors(supplied);
+    if (Reflect.ownKeys(descriptors).length !== supplied.length + 1) throw new Error('Health checks must be a bounded dense list.');
+    const ids = new Set<string>(); const captured: HealthCheck[] = [];
+    for (let index = 0; index < supplied.length; index++) {
+      const entry = descriptors[String(index)];
+      if (!entry || !('value' in entry) || entry.value === null || typeof entry.value !== 'object') throw new Error('Health checks must contain data entries.');
+      const fields = Object.getOwnPropertyDescriptors(entry.value as object);
+      if (Reflect.ownKeys(fields).some(key => !['id', 'check'].includes(String(key)))) throw new Error('Health checks contain unknown fields.');
+      const id = fields['id']; const check = fields['check'];
+      if (!id || !('value' in id) || typeof id.value !== 'string' || !identifier.test(id.value) || ids.has(id.value)
+        || !check || !('value' in check) || typeof check.value !== 'function') throw new Error('Health checks require unique IDs and callbacks.');
+      ids.add(id.value); captured.push(Object.freeze({ id: id.value, check: check.value as HealthCheck['check'] }));
+    }
+    return Object.freeze(captured);
+  })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
     assertAgent(config.agent);
@@ -88,6 +117,10 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     void check.close();
     registry.set(config.agent.id, Object.freeze({ agent: config.agent, permissions, limits: settings }));
   }
+  const toolCatalog = Object.freeze([...registry.values()].flatMap(config => config.agent.tools.map(tool => Object.freeze({
+    agentId: config.agent.id, agentVersion: config.agent.version, id: tool.id, version: tool.version,
+    effects: tool.effects, capabilities: tool.capabilities, timeoutMs: tool.timeoutMs, costMicros: tool.costMicros,
+  }))).sort((left, right) => left.agentId.localeCompare(right.agentId) || left.id.localeCompare(right.id) || left.version.localeCompare(right.version)));
   const runtimes = new Map<string, Runtime>();
   const runs = new Map<string, Entry>();
   const submissions = new Map<string, Entry>();
@@ -95,6 +128,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   let closed = false;
   let requests = 0;
   let authentications = 0;
+  let healthOperations = 0;
 
   const response = (value: unknown, status = 200, extra: Record<string, string> = {}): Response => {
     let text: string;
@@ -121,7 +155,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 3 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 4 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -196,19 +230,48 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const requestOrigin = request.headers.get('origin');
     if (requestOrigin !== null && !origins.has(requestOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
-    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || !eventMatch || key !== 'after') || url.searchParams.getAll('after').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
+    const catalogQuery = request.method === 'GET' && url.pathname === '/v1/tools';
+    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery ? !['after', 'limit'].includes(key) : true))
+      || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
       if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, 'ORIGIN_DENIED');
       const headers = (request.headers.get('access-control-request-headers') ?? '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
       if (headers.some(value => !['authorization', 'content-type', 'idempotency-key'].includes(value))) throw new HttpFailure(403, 'ORIGIN_DENIED');
       return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key' } });
     }
+    if (request.method === 'GET' && url.pathname === '/healthz' && options.publicLiveness === true) return response({ status: 'ok' });
     const identity = await session(request, signal);
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     const owner = canonical(identity.scope as unknown as JsonValue);
     if (request.method === 'GET' && url.pathname === '/v1/agents') {
       requireCapability(identity, 'runs:read');
       return response({ agents: [...registry.values()].filter(config => identity.agentIds.includes(config.agent.id)).map(config => ({ id: config.agent.id, version: config.agent.version })) });
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/operations/health') {
+      requireCapability(identity, 'operations:read');
+      const results = await Promise.all(healthChecks.map(async health => {
+        if (healthOperations >= limits.maxHealthOperations) return { id: health.id, status: 'unavailable' as const };
+        healthOperations++;
+        const operation = Promise.resolve().then(() => health.check(Object.freeze({ signal, scope: identity.scope })))
+          .finally(() => { healthOperations--; });
+        try { return { id: health.id, status: await bounded(operation, signal) === true ? 'ready' as const : 'unavailable' as const }; }
+        catch { return { id: health.id, status: 'unavailable' as const }; }
+      }));
+      assertActive(signal); requireCapability(identity, 'operations:read');
+      const checks = [{ id: 'server', status: 'ready' as const }, ...results];
+      const ready = checks.every(check => check.status === 'ready');
+      return response({ status: ready ? 'ready' : 'degraded', checks }, ready ? 200 : 503);
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/tools') {
+      requireCapability(identity, 'operations:read');
+      const afterText = url.searchParams.get('after') ?? '0'; const limitText = url.searchParams.get('limit') ?? '50';
+      if (!/^\d+$/.test(afterText) || !/^\d+$/.test(limitText)) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const after = Number(afterText); const limit = Number(limitText);
+      if (!Number.isSafeInteger(after) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const visible = toolCatalog.filter(tool => identity.agentIds.includes(tool.agentId));
+      if (after > visible.length) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const tools = visible.slice(after, after + limit); const next = after + tools.length;
+      return response({ tools, next: next < visible.length ? next : null });
     }
     if (request.method === 'POST' && url.pathname === '/v1/runs') {
       requireCapability(identity, 'runs:submit');

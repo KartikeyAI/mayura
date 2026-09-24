@@ -507,6 +507,8 @@ Routes below describe the planned versioned resource contract; final schema deta
 | Memory/context operations | Inspect/search/correct/forget/export under per-source access and write policy. |
 | Health/readiness/metrics | Minimal public health if configured; operational detail is access-controlled. |
 
+Implementation checkpoint (2026-09-24): the Fetch server now keeps public liveness disabled by default and content-free when enabled, while authenticated readiness and tool discovery require separate `operations:read` authority. Readiness callbacks are parallel, bounded, cancellation-aware and failure-sanitized; non-cooperative callbacks retain admission until settlement. Tool pages expose only fixed execution metadata for authorized agents, never handlers, prompts, descriptions or schemas. Durable fleet health aggregation and an operational CLI remain M8 work.
+
 Validate caller identity and ownership on every object operation, not just route entry. A submitted tenant/project ID is not proof of access. Propagate verified scope to storage queries, queues, events, artifacts, traces, memory, and caches. Use scoped credentials and never forward tokens to an unrelated destination.
 
 Public deployments require TLS, authentication integration, appropriate authorization, rate/payload limits, origin controls, and CSRF protection where cookies are used. Do not put tokens in event-stream URLs. A browser-capable authenticated streaming client can use a fetch-based stream rather than requiring unprotected EventSource endpoints.

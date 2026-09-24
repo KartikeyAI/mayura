@@ -48,7 +48,8 @@ if (summary) {
   void events; void invalid;
 }
 void reason; void snapshot;
-const server: LocalAgentServer = await listenAgentServer({ agents: [{ agent, permissions }], authenticate: async () => null });
+const server: LocalAgentServer = await listenAgentServer({ agents: [{ agent, permissions }], publicLiveness: true,
+  healthChecks: [{ id: 'dependency', check: async ({ signal, scope }) => !signal.aborted && scope.projectId.length > 0 }], authenticate: async () => null });
 const client = createClient({ baseUrl: server.origin, token: () => 'compile-only-fixture' });
 const remote = client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 const result: RemoteOutcome<number> | undefined = await remote.result(number);
