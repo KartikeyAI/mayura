@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { publicError } from '@mayura/core';
-import { applyProjectPlan, planProject, readProject, templates, TEMPLATE_NAMES, type TemplateName } from './index.js';
+import { applyProjectPlan, inspectServerHealth, inspectServerTools, planProject, readProject, templates, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -18,6 +18,20 @@ function assertArguments(arguments_: readonly string[], valued: readonly string[
       const value = arguments_[++index]; if (value === undefined || value.startsWith('--')) throw new Error('CLI option value is missing.');
     }
   }
+}
+
+async function stdinToken(): Promise<string> {
+  if (process.stdin.isTTY) throw new Error('Operational credentials must be piped through stdin.');
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of process.stdin) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string); size += bytes.byteLength;
+    if (size > 8_194) throw new Error('Operational credential input is too large.'); chunks.push(bytes);
+  }
+  let value: string;
+  try { value = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); } catch { throw new Error('Operational credential input is invalid.'); }
+  value = value.replace(/\r?\n$/u, '');
+  if (!/^[\x21-\x7e]{1,8192}$/u.test(value)) throw new Error('Operational credential input is invalid.');
+  return value;
 }
 
 async function main(arguments_: readonly string[]): Promise<unknown> {
@@ -42,7 +56,18 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return command === 'validate' ? { status: 'succeeded', project: project.name, template: project.template }
       : { status: 'succeeded', project };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect');
+  if (command === 'server-health' || command === 'server-tools') {
+    assertArguments(arguments_, command === 'server-tools' ? ['--url', '--after', '--limit'] : ['--url'], ['--token-stdin']);
+    const baseUrl = option(arguments_, '--url');
+    if (!baseUrl || !arguments_.includes('--token-stdin')) throw new Error(`${command} requires --url and --token-stdin.`);
+    const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
+    if (command === 'server-health') return { status: 'succeeded', health: await inspectServerHealth(settings) };
+    const after = option(arguments_, '--after'); const limit = option(arguments_, '--limit');
+    return { status: 'succeeded', page: await inspectServerTools(settings, {
+      ...(after === undefined ? {} : { after: Number(after) }), ...(limit === undefined ? {} : { limit: Number(limit) }),
+    }) };
+  }
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

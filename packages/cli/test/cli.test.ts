@@ -1,9 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
-import { applyProjectPlan, planProject, readProject, templates, validateProject } from '../src/index.js';
+import { applyProjectPlan, inspectServerHealth, inspectServerTools, planProject, readProject, templates, validateProject } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -63,5 +66,60 @@ describe('@mayura/cli catalog validation', () => {
     expect(() => validateProject(hostile)).toThrow(MayuraError); expect(reads).toBe(0);
     expect(() => validateProject({ format: 'mayura.project.v1', name: 'agent', template: 'basic-agent', tools: [],
       definitions: [{ kind: 'agent', id: 'agent', version: '1', source: 'src/../secret.ts' }] })).toThrow(MayuraError);
+  });
+});
+
+describe('@mayura/cli authenticated operations', () => {
+  it('reads degraded health as sanitized operational state', async () => {
+    const transport = async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new URL(String(input)).pathname).toBe('/v1/operations/health');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer TOKEN_PRIVATE');
+      expect(init).toMatchObject({ method: 'GET', redirect: 'error', credentials: 'omit', cache: 'no-store' });
+      return new Response(JSON.stringify({ status: 'degraded', checks: [
+        { id: 'server', status: 'ready' }, { id: 'database', status: 'unavailable' },
+      ] }), { status: 503, headers: { 'content-type': 'application/json' } });
+    };
+    const result = await inspectServerHealth({ baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport });
+    expect(result).toEqual({ status: 'degraded', checks: [{ id: 'server', status: 'ready' }, { id: 'database', status: 'unavailable' }] });
+    expect(Object.isFrozen(result)).toBe(true); expect(Object.isFrozen(result.checks)).toBe(true);
+  });
+
+  it('reads one exact tool page without following its cursor or exposing richer fields', async () => {
+    const transport = async (input: string | URL | Request) => {
+      expect(new URL(String(input)).search).toBe('?after=10&limit=1');
+      return new Response(JSON.stringify({ tools: [{ agentId: 'agent', agentVersion: '1', id: 'lookup', version: '2', effects: 'read',
+        capabilities: ['network:public'], timeoutMs: 500, costMicros: 7 }], next: 11 }), { headers: { 'content-type': 'application/json' } });
+    };
+    const result = await inspectServerTools({ baseUrl: 'https://agent.example.test', token: () => 'token', fetch: transport }, { after: 10, limit: 1 });
+    expect(result).toMatchObject({ tools: [{ id: 'lookup', effects: 'read' }], next: 11 }); expect(Object.isFrozen(result.tools[0])).toBe(true);
+  });
+
+  it('fails closed on hostile destinations, malformed reports and non-cooperative timeouts', async () => {
+    await expect(inspectServerHealth({ baseUrl: 'http://public.example.test', token: () => 'PRIVATE' })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    await expect(inspectServerHealth({ baseUrl: 'https://agent.example.test', token: () => 'PRIVATE',
+      fetch: async () => new Response(JSON.stringify({ status: 'ready', checks: [{ id: 'server', status: 'unavailable' }] }), { headers: { 'content-type': 'application/json' } })
+    })).rejects.toMatchObject({ code: 'INVALID_OUTPUT' });
+    let settle!: () => void; const hanging = new Promise<Response>(resolve => { settle = () => { resolve(new Response('{}')); }; });
+    await expect(inspectServerHealth({ baseUrl: 'https://agent.example.test', token: () => 'PRIVATE', fetch: () => hanging, requestTimeoutMs: 10 }))
+      .rejects.toMatchObject({ code: 'TIMEOUT' });
+    settle();
+  });
+
+  it('accepts a short-lived CLI credential only through piped stdin and never prints it', async () => {
+    const host = createServer((request, response) => {
+      expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE'); expect(request.url).toBe('/v1/operations/health');
+      response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ status: 'ready', checks: [{ id: 'server', status: 'ready' }] }));
+    });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    try {
+      const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'server-health', '--url', `http://127.0.0.1:${address.port}`, '--token-stdin'],
+        { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; }); child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toContain('TOKEN_PRIVATE');
+      expect(JSON.parse(stdout)).toEqual({ status: 'succeeded', health: { status: 'ready', checks: [{ id: 'server', status: 'ready' }] } });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 });
