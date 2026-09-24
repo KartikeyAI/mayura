@@ -49,6 +49,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
 - [Headless UI bindings](specs/headless-ui-bindings.md) and [framework integration guide](how-to/headless-ui.md) — browser-safe explicit run stores and human-request presentation metadata.
 - [React bindings](specs/react-bindings.md) and [React integration guide](how-to/react-bindings.md) — optional inert hooks over caller-owned headless stores.
+- [Durable workflow UI projection](specs/workflow-ui-projection.md) and [integration guide](how-to/workflow-ui-projection.md) — strict content-free DAGs for formats 2–5.
 - [Local-server how-to](how-to/local-server.md), [Node host contract](specs/node-local-host.md) and [host-adapter decision](adr/0004-http-protocol-before-host-adapter.md) — optional loopback-only Hono hosting.
 - [Native observability](specs/native-observability.md) — bounded metadata subscriptions, uncertain coverage, counters and optional isolated delivery.
 - [Docker tests](testing-docker.md) — disposable PostgreSQL fixture.
@@ -64,7 +65,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 
 Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. All 22 finite acceptance scenarios are closed with bounded claims recorded in the ledger.
 
-Current implementation focus: M3's declared preview is complete through [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md), [durable workflow sagas](specs/workflow-sagas.md), [bounded loops](specs/workflow-loops.md), hosted lifecycle coordination and composite-parent continuation. M8 now includes [authenticated webhook triggers](specs/webhook-triggers.md), [headless UI bindings](specs/headless-ui-bindings.md) and optional [React hooks](specs/react-bindings.md); workflow-graph bindings, rendered components and durable operational administration remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
+Current implementation focus: M3's declared preview is complete through [workflow lifecycle format 5](specs/workflow-lifecycle-format5.md), [durable workflow sagas](specs/workflow-sagas.md), [bounded loops](specs/workflow-loops.md), hosted lifecycle coordination and composite-parent continuation. M8 now includes [authenticated webhook triggers](specs/webhook-triggers.md), [headless UI bindings](specs/headless-ui-bindings.md), optional [React hooks](specs/react-bindings.md) and strict [durable workflow UI projections](specs/workflow-ui-projection.md); rendered components and durable operational administration remain in progress. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
 ## Distribution
 

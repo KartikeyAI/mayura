@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHeadlessRunStore, type HeadlessRunState, type HeadlessRunStore } from '../../client/src/headless.js';
 import type { RemoteHumanRequest, RemoteRun, RemoteSnapshot } from '../../client/src/index.js';
-import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, type MayuraRunActions } from '../src/index.js';
+import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowGraph, type MayuraRunActions } from '../src/index.js';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -67,5 +67,13 @@ describe('@mayura/client-react', () => {
     function View(): ReactNode { const state = useMayuraRun(observed); return createElement('span', null, `${useMayuraRunActivity(state).items.length}`); }
     await act(async () => { root.render(createElement(View)); }); expect(element.textContent).toBe('0'); expect(subscriptions).toBe(1);
     await act(async () => { base.dispose(); });
+  });
+
+  it('derives a durable workflow DAG during render without effects', () => {
+    const input = Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,
+      status: 'running' as const, nodes: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, dependsOn: Object.freeze([]) })]),
+      steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'pending' as const })]) });
+    function View(): ReactNode { const graph = useMayuraWorkflowGraph(input); return createElement('span', null, `${graph.nodes[0]?.ready}`); }
+    expect(renderToString(createElement(View))).toContain('true');
   });
 });

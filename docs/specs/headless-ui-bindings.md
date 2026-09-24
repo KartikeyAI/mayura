@@ -1,6 +1,6 @@
 # Headless UI bindings
 
-Status: dependency-free development preview. The contract is browser-safe and exercised from the isolated packed browser bundle. Optional React hooks are available separately; workflow graph projection, rendered components, approval forms, localization and visual/accessibility qualification remain M8 work.
+Status: dependency-free development preview. The contract is browser-safe and exercised from the isolated packed browser bundle. Optional React hooks and a separate strict durable-workflow projector are available; rendered components, approval forms, localization and visual/accessibility qualification remain M8 work.
 
 `@mayura/client/headless` provides an explicit external store over an authenticated `RemoteRun`. Construction performs no network access. Applications explicitly call `refresh()`, `observe()` and `cancel()`; cancellation is sent once and is never retried after an ambiguous failure.
 

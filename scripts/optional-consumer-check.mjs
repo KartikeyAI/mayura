@@ -251,7 +251,7 @@ async function main() {
       }
       if (name === 'react') {
         assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
-        assert.equal(execution.activityHook, true);
+        assert.equal(execution.activityHook, true); assert.equal(execution.workflowGraphHook, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -327,13 +327,14 @@ async function main() {
       const chunks = (Array.isArray(built) ? built.flatMap(value => value.output) : built.output).filter(chunk => chunk.type === 'chunk');
       assert.equal(chunks.length, 1); assert.equal(chunks[0].imports.length, 0); assert.equal(chunks[0].dynamicImports.length, 0);
       assert(included.size >= 3 && [...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/headless.js')), 'Bundler did not include the installed headless client.');
+      assert([...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/workflows.js')), 'Bundler did not include the installed workflow projector.');
       const code = chunks[0].code; assert(!code.includes('__vite-browser-external'), 'Browser bundle contains a Node compatibility shim.');
       const context = { TextEncoder, TextDecoder, URL, AbortController, setTimeout, clearTimeout };
       runInNewContext(code, context, { timeout: 1_000 });
       const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -367,8 +368,8 @@ async function main() {
   result.checks.push('cli-run-inspect-wait-cancel', 'cli-run-output-withheld', 'cli-cancel-no-retry');
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
-  result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'browser-headless-activity-projection', 'headless-no-implicit-network');
-  result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network', 'react-activity-hook');
+  result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'browser-headless-activity-projection', 'browser-durable-workflow-graph-projection', 'headless-no-implicit-network');
+  result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network', 'react-activity-hook', 'react-workflow-graph-hook');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

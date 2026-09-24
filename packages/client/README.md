@@ -5,3 +5,5 @@ Experimental browser-safe HTTP/SSE client. It includes authenticated typed human
 The dependency-free `@mayura/client/headless` subpath provides an inert external run store, conservative content-free activity projection and text-only human-request view metadata for React/Vue/Svelte/DOM adapters. Network reads, SSE observation and cancellation remain explicit; disposal stops local observation but never cancels a run. It is not a policy engine, workflow graph or HTML sanitizer.
 
 React applications may add the separate `@mayura/client-react` peer adapter. The base client remains framework-independent.
+
+The dependency-free `@mayura/client/workflows` subpath validates deeply immutable, content-free durable workflow views and projects bounded DAG nodes, edges, depths, readiness and progress. A trusted application adapter must derive the view from a matched authoritative manifest and snapshot; this is not an execution or mutation API.

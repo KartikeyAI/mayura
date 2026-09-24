@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { createHumanRequestView, createRunActivityProjection, type HeadlessRunState, type HeadlessRunStore, type HumanRequestView,
   type RunActivityProjection } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
+import { createWorkflowGraphProjection, type WorkflowGraphProjection, type WorkflowViewInput } from '@mayura/client/workflows';
 
 export interface MayuraRunActions {
   readonly refresh: HeadlessRunStore['refresh'];
@@ -40,4 +41,9 @@ export function useMayuraHumanRequest(request: RemoteHumanRequest, nowMs: number
 /** Derive a stable, content-free activity timeline from the current bounded run state. */
 export function useMayuraRunActivity(state: HeadlessRunState): RunActivityProjection {
   return useMemo(() => createRunActivityProjection(state), [state]);
+}
+
+/** Validate and memoize one content-free durable workflow DAG supplied by an authenticated application adapter. */
+export function useMayuraWorkflowGraph(input: WorkflowViewInput): WorkflowGraphProjection {
+  return useMemo(() => createWorkflowGraphProjection(input), [input]);
 }

@@ -1,5 +1,6 @@
 import { createClient, type ClientSchema, type RemoteOutcome } from '@mayura/client';
 import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '@mayura/client/headless';
+import { createWorkflowGraphProjection } from '@mayura/client/workflows';
 
 const output: ClientSchema<{ answer: number }> = {
   '~standard': { version: 1, validate: value => typeof value === 'number' ? { value: { answer: value } } : { issues: [] } },
@@ -14,6 +15,10 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if (!view.canRespond || view.actionText !== 'Provide information') throw new Error('Headless human view failed.');
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
+  const graph = createWorkflowGraphProjection(Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,
+    status: 'running' as const, nodes: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, dependsOn: Object.freeze([]) })]),
+    steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'pending' as const })]) }));
+  if (!graph.nodes[0]?.ready) throw new Error('Durable workflow graph projection failed.');
   return agents.length;
 }
 

@@ -10,6 +10,7 @@ Status: implemented experimental hook layer, locally qualified on 2026-09-24 wit
 - `useMayuraRunActions(store)` returns stable `refresh`, `observe` and `cancel` references for explicit application event/effect policy.
 - `useMayuraHumanRequest(request, nowMs)` derives text-only `HumanRequestView` metadata from immutable inputs.
 - `useMayuraRunActivity(state)` memoizes the headless content-free timeline without adding a subscription.
+- `useMayuraWorkflowGraph(input)` validates and memoizes one content-free durable workflow DAG without effects.
 
 Mounting or server-rendering a hook does not inspect a run, open SSE, retry, cancel, start a timer or persist credentials. The caller creates, owns and disposes the store. Multiple components should share that store when they need one observation stream.
 
@@ -19,4 +20,4 @@ Prompts and status labels remain data. Applications must render prompts through 
 
 A structurally invalid store fails with `MayuraReactError` code `INVALID_REACT_STORE` before subscription. Store/network failures retain the bounded safe codes defined by the headless client.
 
-Public declarations expose Mayura contracts, not React declaration types. The isolated archive profile installs exactly `@mayura/client-react`, `@mayura/client` and React, compiles without `@types/react`, denies unrelated runtime imports and executes without implicit network work. This proves the current package boundary, not compatibility with every renderer, React minor, bundler, browser or server-component environment.
+Public declarations expose Mayura contracts, not React declaration types. The isolated archive profile installs exactly `@mayura/client-react`, `@mayura/client` and React, compiles without `@types/react`, denies unrelated runtime imports and executes without implicit network work. The workflow hook does not fetch or authorize its view. This proves the current package boundary, not compatibility with every renderer, React minor, bundler, browser or server-component environment.
