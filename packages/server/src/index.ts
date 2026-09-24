@@ -4,7 +4,7 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
@@ -36,6 +36,17 @@ export interface WorkflowViewTransport {
   readonly inspect: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly runId: string;
     readonly signal: AbortSignal }) => Promise<WorkflowViewRecord | null>;
 }
+export type WorkflowControlResult = { readonly status: 'applied'; readonly workflow: WorkflowViewRecord }
+  | { readonly status: 'conflict' } | { readonly status: 'not_found' };
+interface WorkflowControlBase {
+  readonly scope: Scope; readonly agentIds: readonly string[]; readonly actorId: string; readonly runId: string;
+  readonly revision: number; readonly commandId: string; readonly signal: AbortSignal;
+}
+export interface WorkflowControlTransport {
+  readonly cancel: (input: WorkflowControlBase) => Promise<WorkflowControlResult>;
+  readonly approve: (input: WorkflowControlBase & { readonly nodeId: string; readonly approvalDigest: string;
+    readonly childRunId: string | null }) => Promise<WorkflowControlResult>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -51,6 +62,7 @@ export interface AgentServerOptions {
   readonly healthChecks?: readonly HealthCheck[];
   readonly humanRequests?: HumanRequestTransport;
   readonly workflowViews?: WorkflowViewTransport;
+  readonly workflowControls?: WorkflowControlTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -201,6 +213,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       throw new Error('Workflow view transport requires one exact inspect callback.');
     return Object.freeze({ inspect: fields['inspect'].value as WorkflowViewTransport['inspect'] });
   })();
+  const workflowControls: WorkflowControlTransport | undefined = (() => {
+    if (options.workflowControls === undefined) return undefined;
+    if (options.workflowControls === null || typeof options.workflowControls !== 'object') throw new Error('Workflow control transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowControls);
+    if (Reflect.ownKeys(fields).length !== 2 || ['cancel', 'approve'].some(key => !fields[key] || !('value' in fields[key]!) || typeof fields[key]!.value !== 'function'))
+      throw new Error('Workflow control transport requires exact cancel and approve callbacks.');
+    return Object.freeze({ cancel: fields['cancel']!.value, approve: fields['approve']!.value }) as WorkflowControlTransport;
+  })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
     assertAgent(config.agent);
@@ -271,7 +291,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 7 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 8 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -371,6 +391,34 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       try { item = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
       if (item === null) throw new HttpFailure(404, 'NOT_FOUND'); const record = workflowRecord(item, workflowMatch[1]!);
       assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ workflow: record });
+    }
+    const workflowControlMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/(cancel|approvals)$/.exec(url.pathname);
+    if (workflowControlMatch && request.method === 'POST') {
+      requireCapability(identity, 'workflows:control'); if (!workflowControls) throw new HttpFailure(404, 'NOT_FOUND');
+      const data = await body(request, signal); const action = workflowControlMatch[2]!;
+      const fields = action === 'cancel' ? ['commandId', 'revision'] : ['commandId', 'revision', 'nodeId', 'approvalDigest', 'childRunId']; exact(data, fields);
+      if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
+        || !Number.isSafeInteger(data['revision']) || data['revision'] < 1) throw new HttpFailure(400, 'INVALID_REQUEST');
+      if (action === 'approvals' && (typeof data['nodeId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(data['nodeId'])
+        || typeof data['approvalDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['approvalDigest'])
+        || (data['childRunId'] !== null && (typeof data['childRunId'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['childRunId'])))))
+        throw new HttpFailure(400, 'INVALID_REQUEST');
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
+      const common = { scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId, runId: workflowControlMatch[1]!,
+        revision: data['revision'] as number, commandId: data['commandId'] as string, signal };
+      const operation = Promise.resolve().then(() => action === 'cancel' ? workflowControls.cancel(Object.freeze(common))
+        : workflowControls.approve(Object.freeze({ ...common, nodeId: data['nodeId'] as string, approvalDigest: data['approvalDigest'] as string,
+          childRunId: data['childRunId'] as string | null }))).finally(() => { workflowOperations--; });
+      let result: WorkflowControlResult;
+      try { result = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      assertActive(signal); requireCapability(identity, 'workflows:control');
+      let raw: JsonObject; try { raw = object(result, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+      if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw new HttpFailure(409, 'WORKFLOW_CONFLICT');
+      if (raw['status'] === 'not_found' && Object.keys(raw).length === 1) throw new HttpFailure(404, 'NOT_FOUND');
+      workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      const record = workflowRecord(raw['workflow'], workflowControlMatch[1]!);
+      if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      return response({ workflow: record });
     }
     if (request.method === 'GET' && url.pathname === '/v1/agents') {
       requireCapability(identity, 'runs:read');

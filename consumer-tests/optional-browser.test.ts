@@ -28,6 +28,9 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
   const graph = createWorkflowGraphProjection(await client.workflow('a'.repeat(64)));
   if (!graph.nodes[0]?.ready) throw new Error('Durable workflow graph projection failed.');
+  if ((await client.cancelWorkflow('a'.repeat(64), 1, { commandId: 'cancel-1' })).revision !== 2) throw new Error('Workflow cancellation failed.');
+  if ((await client.approveWorkflow('a'.repeat(64), { revision: 2, nodeId: 'step', approvalDigest: 'c'.repeat(64) },
+    { commandId: 'approve-1' })).revision !== 3) throw new Error('Workflow approval failed.');
   return agents.length;
 }
 

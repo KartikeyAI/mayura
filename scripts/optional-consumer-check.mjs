@@ -253,7 +253,7 @@ async function main() {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
-      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); }
+      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); assert.equal(execution.http.workflowControls, true); }
       if (name === 'helpers') {
         assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
         assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true); assert.equal(execution.credentialStore, true);
@@ -353,13 +353,14 @@ async function main() {
       runInNewContext(code, context, { timeout: 1_000 });
       const fetcher = async (url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
         const path = new URL(url).pathname; const body = path.startsWith('/v1/workflow-runs/')
-          ? { workflow: { format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1, status: 'running',
+          ? { workflow: { format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64),
+            revision: path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
             nodes: [{ id: 'step', kind: 'tool', dependsOn: [] }], steps: [{ id: 'step', kind: 'tool', status: 'pending' }] } }
           : { agents: [] };
         return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, digestBoundResponseForms: true, humanResponseCommandState: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, explicitWorkflowControls: true, digestBoundResponseForms: true, humanResponseCommandState: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -399,6 +400,7 @@ async function main() {
   result.checks.push('browser-digest-bound-response-form', 'react-components-typed-response-form');
   result.checks.push('browser-human-response-command-state', 'react-response-command-hook', 'react-components-command-feedback');
   result.checks.push('authenticated-workflow-view-route', 'browser-authenticated-workflow-read');
+  result.checks.push('authenticated-workflow-control-routes', 'browser-explicit-workflow-controls', 'workflow-controls-no-auto-retry');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

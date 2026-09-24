@@ -10,4 +10,6 @@ The dependency-free `@mayura/client/workflows` subpath validates deeply immutabl
 
 `MayuraClient.workflow(runId)` reads one authenticated content-free durable view from a configured Mayura server. It performs no polling or retry; pass the result to the workflow projector for semantic DAG validation.
 
+`cancelWorkflow` and `approveWorkflow` send one explicit revision-bound command with a caller-owned stable command ID. They never retry; the configured server adapter remains responsible for durable command journaling and conflict semantics.
+
 The dependency-free `@mayura/client/forms` subpath captures a finite schema-driven human-response form and validates a frozen browser draft into a typed value bound to the exact authenticated request ID and digest. Its optional caller-owned response controller provides explicit single-flight pending/success/conflict/failure state around the authenticated client command. Construction performs no work and submission never retries automatically.

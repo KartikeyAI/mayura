@@ -1,6 +1,6 @@
 # Authenticated durable workflow view transport
 
-Status: implemented experimental read-only transport. Unit, Fetch-facade, real loopback-host and isolated browser/archive checks pass. Workflow mutations and a production durable host remain separate work.
+Status: implemented experimental read-only transport. Unit, Fetch-facade, real loopback-host and isolated browser/archive checks pass. Explicit cancellation/approval transport is specified separately; a production durable host remains separate work.
 
 ## Server contract
 
@@ -19,4 +19,3 @@ Pass the result to `createWorkflowGraphProjection` or `useMayuraWorkflowGraph` f
 ## Exclusions
 
 This slice does not expose prompts, tool inputs/outputs, human response values, credentials, budgets, artifacts or private events. It does not implement list/discovery, child expansion, cancellation, approval, retry, resume, signal delivery, durable subscriptions or mutation idempotency.
-

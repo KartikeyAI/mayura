@@ -10,7 +10,7 @@ const identitySchema: Schema<unknown> = { '~standard': { version: 1, vendor: 'te
 const servers: AgentServer[] = [];
 function identity(overrides: Partial<ServerIdentity> = {}): ServerIdentity {
   return { scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
-    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read'], expiresAtMs: Date.now() + 60_000, ...overrides };
+    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'], expiresAtMs: Date.now() + 60_000, ...overrides };
 }
 function fixture(generate: ModelAdapter['generate'] = async request => ({ type: 'final', output: request.messages[0]!.role === 'user' ? request.messages[0]!.content : null, usage: { costMicros: 0 } })) {
   return defineAgent({ id: 'echo', version: '1', instructions: 'PRIVATE_INSTRUCTIONS', tools: [], input: identitySchema, output: identitySchema,
@@ -465,6 +465,48 @@ describe('authenticated durable workflow view transport', () => {
     pending.resolve(workflow()); expect((await first).status).toBe(200);
     const failed = server({ workflowViews: { inspect: async () => { throw new Error('PRIVATE STORAGE DETAILS'); } } });
     await error(await failed.fetch(request(`/v1/workflow-runs/${workflowId}`)), 503, 'WORKFLOW_UNAVAILABLE');
+  });
+});
+
+describe('authenticated durable workflow controls', () => {
+  it('passes exact verified cancellation and approval commands and returns admitted views', async () => {
+    const cancel = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3, status: 'cancelled' as const } }));
+    const approve = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3 } }));
+    const value = server({ workflowControls: { cancel, approve } });
+    const cancelled = await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'cancel-1', revision: 2 }) }));
+    expect(cancelled.status).toBe(200); expect((await json(cancelled))['workflow']).toMatchObject({ revision: 3, status: 'cancelled' });
+    expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', runId: workflowId, revision: 2, commandId: 'cancel-1' }));
+    const approved = await value.fetch(request(`/v1/workflow-runs/${workflowId}/approvals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: 'b'.repeat(64) }) }));
+    expect(approved.status).toBe(200); expect(approve).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', nodeId: 'child',
+      approvalDigest: 'd'.repeat(64), childRunId: 'b'.repeat(64) }));
+  });
+
+  it('denies control before body parsing or adapter access', async () => {
+    const cancel = vi.fn(async () => ({ status: 'conflict' as const })); const approve = vi.fn(async () => ({ status: 'conflict' as const }));
+    const value = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowControls: { cancel, approve } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    expect(cancel).not.toHaveBeenCalled(); expect(approve).not.toHaveBeenCalled();
+  });
+
+  it('maps explicit conflict/not-found results and performs no retry', async () => {
+    const cancel = vi.fn(async () => ({ status: 'conflict' as const })); const approve = vi.fn(async () => ({ status: 'not_found' as const }));
+    const value = server({ workflowControls: { cancel, approve } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'cancel-1', revision: 2 }) })), 409, 'WORKFLOW_CONFLICT'); expect(cancel).toHaveBeenCalledOnce();
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/approvals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: null }) })), 404, 'NOT_FOUND');
+    expect(approve).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed commands and stale or hostile adapter acknowledgements', async () => {
+    const value = server({ workflowControls: { cancel: async () => ({ status: 'applied', workflow: { ...workflow(), revision: 1 } }),
+      approve: async () => ({ status: 'applied', workflow: { ...workflow(), privateOutput: 'PRIVATE' } } as never) } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'cancel-1', revision: 2 }) })), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/approvals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: '../bad', approvalDigest: 'd'.repeat(64), childRunId: null }) })), 400, 'INVALID_REQUEST');
   });
 });
 

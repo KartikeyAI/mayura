@@ -105,9 +105,11 @@ const server = await listenAgentServer({
   humanRequests: { list: async () => ({ items: [humanRequest], next: null }), inspect: async () => humanRequest,
     respond: async input => { humanActor = input.actorId; return { ...humanRequest, status: 'answered' }; } },
   workflowViews: { inspect: async input => input.runId === workflowRunId ? workflowView : null },
+  workflowControls: { cancel: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1, status: 'cancelled' } }),
+    approve: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
   authenticate: async ({ token: supplied, signal }) => {
     if (signal.aborted || expiresAtMs <= Date.now() || !/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied, 'hex'), secret)) return null;
-    return { scope: { principalId: 'consumer-user', projectId: 'consumer-project' }, agentIds: ['consumer.http'], capabilities: ['runs:read', 'runs:submit', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read'], expiresAtMs };
+    return { scope: { principalId: 'consumer-user', projectId: 'consumer-project' }, agentIds: ['consumer.http'], capabilities: ['runs:read', 'runs:submit', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'], expiresAtMs };
   },
 });
 let httpReport;
@@ -123,6 +125,9 @@ try {
   assert.deepEqual((await client.humanRequests({ limit: 1 })).items, [humanRequest]);
   assert.equal((await client.respondHumanRequest('review', humanDigest, { choice: 'accept' }, { commandId: 'packed-answer' })).status, 'answered');
   assert.deepEqual(await client.workflow(workflowRunId), workflowView);
+  assert.equal((await client.cancelWorkflow(workflowRunId, 1, { commandId: 'packed-cancel' })).status, 'cancelled');
+  assert.equal((await client.approveWorkflow(workflowRunId, { revision: 2, nodeId: 'step', approvalDigest: 'd'.repeat(64) },
+    { commandId: 'packed-approve' })).revision, 3);
   assert.equal(humanActor, 'consumer-user');
   const denied = createClient({ baseUrl: server.origin, token: () => 'incorrect' });
   await assert.rejects(denied.agents(), { code: 'HTTP_ERROR', status: 401 });
@@ -134,6 +139,7 @@ try {
   assert.equal((await client.submit('consumer.http', 2, { idempotencyKey: 'packed-consumer' })).id, run.id);
   assert(!JSON.stringify({ result, events }).includes(token)); assert(!JSON.stringify({ result, events }).includes('PRIVATE'));
   assert.equal(globalThis.Request, globals.Request); assert.equal(globalThis.Response, globals.Response); assert.equal(globalThis.fetch, globals.fetch);
-  httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true, operationalSurface: true, humanTransport: true, workflowTransport: true };
+  httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true, operationalSurface: true, humanTransport: true,
+    workflowTransport: true, workflowControls: true };
 } finally { await server.close(); }
 console.log(JSON.stringify({ status: externalConsumerMatrix ? 'passed' : 'failed', batchOutputReferences: true, externalConsumerMatrix, observation: observationReport, http: httpReport }));

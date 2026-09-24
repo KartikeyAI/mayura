@@ -34,6 +34,7 @@ function fixture(options: {
   responses?: ModelResponse[]; generate?: ModelAdapter['generate']; output?: Schema; guards?: readonly Guard[];
   authenticate?: AgentServerOptions['authenticate']; limits?: AgentServerOptions['limits']; useTool?: boolean; humanRequests?: AgentServerOptions['humanRequests'];
   workflowViews?: AgentServerOptions['workflowViews'];
+  workflowControls?: AgentServerOptions['workflowControls'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -46,9 +47,10 @@ function fixture(options: {
   });
   const server = createAgentServer({ publicOrigin: origin, agents: [{ agent, permissions: { allow: ['model:fixture.model','tool:fixture.write','effect:write'] } }],
     authenticate: options.authenticate ?? (async ({ token }) => token === 'test-token' ? {
-      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read'], expiresAtMs: Date.now() + 60_000,
+      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control'], expiresAtMs: Date.now() + 60_000,
     } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
     ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
+    ...(options.workflowControls ? { workflowControls: options.workflowControls } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -207,6 +209,27 @@ describe('browser durable workflow view client', () => {
     const { client, transport } = fakeClient(() => jsonResponse({ workflow: { ...view, privatePrompt: 'PRIVATE' } }));
     await expect(client.workflow('../private')).rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).not.toHaveBeenCalled();
     await expect(client.workflow(runId)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' }); expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it('sends exact cancellation and child-approval commands once through the authenticated facade', async () => {
+    const cancel = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3, status: 'cancelled' as const } }));
+    const approve = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3 } }));
+    const { client, transport } = fixture({ workflowControls: { cancel, approve } });
+    expect(await client.cancelWorkflow(runId, 2, { commandId: 'cancel-1' })).toMatchObject({ revision: 3, status: 'cancelled' });
+    expect(await client.approveWorkflow(runId, { revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: 'b'.repeat(64) },
+      { commandId: 'approve-1' })).toMatchObject({ revision: 3 });
+    expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', revision: 2, commandId: 'cancel-1' }));
+    expect(approve).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', nodeId: 'child', childRunId: 'b'.repeat(64) }));
+    const bodies = transport.mock.calls.map(([, options]) => options?.body && JSON.parse(options.body as string));
+    expect(bodies).toEqual([{ commandId: 'cancel-1', revision: 2 }, { commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: 'b'.repeat(64) }]);
+  });
+
+  it('does not retry conflicts and rejects malformed mutation arguments before transport', async () => {
+    const { client, transport } = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
+    await expect(client.cancelWorkflow(runId, 2, { commandId: 'cancel-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    expect(transport).toHaveBeenCalledOnce();
+    await expect(client.approveWorkflow(runId, { revision: 0, nodeId: '../bad', approvalDigest: 'bad' }, { commandId: '' }))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).toHaveBeenCalledOnce();
   });
 });
 

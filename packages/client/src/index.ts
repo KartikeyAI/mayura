@@ -38,6 +38,10 @@ export interface RemoteHumanRequest {
   readonly subjectDigest?: string; readonly deadlineAtMs?: number;
 }
 export interface RemoteHumanRequestPage { readonly items: readonly RemoteHumanRequest[]; readonly next: string | null }
+export interface WorkflowCommandOptions { readonly commandId: string; readonly signal?: AbortSignal }
+export interface WorkflowApprovalCommand {
+  readonly revision: number; readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string;
+}
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token: () => string | Promise<string>;
@@ -53,6 +57,8 @@ export interface MayuraClient {
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
   workflow(id: string, options?: { readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  cancelWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
+  approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
@@ -369,6 +375,24 @@ export function createClient(options: ClientOptions): MayuraClient {
     async workflow(id: string, settings?: { readonly signal?: AbortSignal }) {
       if (!/^[a-f0-9]{64}$/.test(id)) throw new ClientError('INVALID_REQUEST');
       const raw = await command(`/v1/workflow-runs/${id}`, 'GET', settings?.signal);
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async cancelWorkflow(id: string, revision: number, settings: WorkflowCommandOptions) {
+      if (!/^[a-f0-9]{64}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1 || !settings
+        || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/cancel`, 'POST', settings.signal,
+        json({ commandId: settings.commandId, revision }, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async approveWorkflow(id: string, approval: WorkflowApprovalCommand, settings: WorkflowCommandOptions) {
+      if (!/^[a-f0-9]{64}$/.test(id) || !approval || typeof approval.revision !== 'number' || !Number.isSafeInteger(approval.revision) || approval.revision < 1
+        || typeof approval.nodeId !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(approval.nodeId)
+        || typeof approval.approvalDigest !== 'string' || !/^[a-f0-9]{64}$/.test(approval.approvalDigest)
+        || (approval.childRunId !== undefined && (typeof approval.childRunId !== 'string' || !/^[a-f0-9]{64}$/.test(approval.childRunId)))
+        || !settings || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/approvals`, 'POST', settings.signal,
+        json({ commandId: settings.commandId, revision: approval.revision, nodeId: approval.nodeId,
+          approvalDigest: approval.approvalDigest, childRunId: approval.childRunId ?? null }, maxBytes));
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
     },
     async respondHumanRequest(id: string, requestDigest: string, value: unknown, settings: { readonly commandId: string; readonly signal?: AbortSignal }) {
