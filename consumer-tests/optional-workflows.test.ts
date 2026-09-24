@@ -10,6 +10,8 @@ import { createWorkflowSagaRuntime, defineWorkflowSaga, type WorkflowSagaDefinit
   type WorkflowSagaOutput } from '@mayura/workflows/sagas';
 import { createWorkflowLoopRuntime, defineWorkflowLoop, type WorkflowLoopDefinition,
   type WorkflowLoopOutput } from '@mayura/workflows/loops';
+import { createWorkflowCompositeFleetRuntime, createWorkflowCompositeHost,
+  type WorkflowCompositeFleetRuntime } from '@mayura/workflows/composites';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -127,6 +129,16 @@ function checkLoopAdapter(store: AggregateStore): void {
   void runtime.submit(loop, { input: 3, idempotencyKey: 'invalid' });
 }
 void checkLoopAdapter;
+function checkCompositeAdapter(store: AggregateStore): void {
+  const runtime: WorkflowCompositeFleetRuntime = createWorkflowCompositeFleetRuntime({ store,
+    scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+  void runtime.submitSaga(saga, { input: 3, idempotencyKey: 'saga' });
+  void runtime.submitLoop(loop, { input: { continue: false, value: 3 }, idempotencyKey: 'loop' });
+  const host = createWorkflowCompositeHost({ store, sagaDefinitions: [saga], loopDefinitions: [loop],
+    scope: { principalId: 'consumer-host', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+  host.start(); void host.close();
+}
+void checkCompositeAdapter;
 const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.double', toolVersion: '1',
   verify: async request => ({ attestationId: request.jobId, execution: 'succeeded', knownCostMicros: request.maximumCostMicros }) });
 const verification = composeExternalEffectVerifiers([verifier]);

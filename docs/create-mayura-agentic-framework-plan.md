@@ -357,6 +357,8 @@ Implementation checkpoint (2026-09-24): `@mayura/workflows/loops` adds separatel
 
 Implementation checkpoint (2026-09-24): `createWorkflowLifecycleHost` adds explicit-start continuous format-5 fleet sweeps with finite pages, single-flight dispatch, capped backoff, sanitized health and graceful drain while preserving caller storage ownership. Distributed leader election and hosted discovery for saga/loop parent aggregates remain deployment and M3 work; this checkpoint does not mark M3 complete.
 
+Implementation checkpoint (2026-09-24): `@mayura/workflows/composites` adds a durable sharded active-parent index plus finite and explicitly hosted continuation for saga and loop parents. Stable submission retry repairs parent/index linking, unknown definitions never dispatch, SQLite/PostgreSQL reopen evidence passes, and caller storage remains externally owned. M3 is complete for the declared preview; distributed leader election remains a documented deployment responsibility.
+
 Approval records bind an authenticated human to the run, action/tool version, processed arguments, resolved targets, code/artifact digests, environment, credential identity, policy epoch, expiry, and permitted repetitions. Changing any approval-relevant field invalidates the grant. Editing a proposed tool argument during review creates a new candidate and repeats validation.
 
 Only authorized human identities can resolve approval requests. Child agents, models, tools, hooks, and callbacks cannot impersonate them. A stale or duplicate response is rejected or acknowledged as already resolved. Cancellation, revocation, and expired approval prevent new dispatch. A stored approval never overrides a current hard policy denial.

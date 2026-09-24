@@ -29,4 +29,6 @@ The `@mayura/workflows/lifecycle` entry adds format-5 human/timer suspension, au
 
 `createWorkflowLifecycleHost` is an explicitly started single-flight worker for a registered format-5 fleet. It performs bounded sweeps, applies capped backoff and drains on shutdown without closing caller storage. It does not provide distributed leader election or discover saga/loop parent aggregates.
 
+The `@mayura/workflows/composites` entry supplies the separate durable saga/loop parent index and host. Submit through its wrapper to record the parent index; stable retries repair uncertain parent/index acknowledgements. It does not provide distributed leader election.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.

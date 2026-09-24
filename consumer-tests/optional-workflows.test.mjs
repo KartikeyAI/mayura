@@ -9,10 +9,11 @@ import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, sagaManifest } from '@mayura/workflows/sagas';
 import { createWorkflowLoopRuntime, defineWorkflowLoop, loopManifest } from '@mayura/workflows/loops';
+import { createWorkflowCompositeFleetRuntime } from '@mayura/workflows/composites';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
-for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/workflows/sagas', '@mayura/workflows/loops', '@mayura/storage-contracts']) {
+for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/workflows/sagas', '@mayura/workflows/loops', '@mayura/workflows/composites', '@mayura/storage-contracts']) {
   const path = relative(root, await realpath(fileURLToPath(import.meta.resolve(name))));
   assert(!isAbsolute(path) && !path.startsWith('..'), 'Workflow consumer escaped its archive installation.');
 }
@@ -112,6 +113,14 @@ const host = createWorkflowLifecycleHost({ store: lifecycleStore, definitions: [
   scope: { principalId: 'host-consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
 const hostedRun = await host.runtime.submit(sagaChild, { input: 4, idempotencyKey: 'hosted' });
 assert.equal((await host.runOnce()).completedSweep, true); assert.equal((await host.runtime.inspect(hostedRun.id)).status, 'succeeded'); await host.close();
+const composites = createWorkflowCompositeFleetRuntime({ store: lifecycleStore,
+  scope: { principalId: 'composite-consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+const compositeRun = await composites.submitSaga(saga, { input: 5, idempotencyKey: 'composite' });
+let compositeCursor = null; let compositeCompleted = false;
+do { const report = await composites.runPage({ sagas: [saga] }, { cursor: compositeCursor, maxShardReads: 64 });
+  compositeCompleted ||= report.outcomes.some(outcome => outcome.kind === 'advanced' && outcome.runId === compositeRun.id && outcome.status === 'succeeded');
+  compositeCursor = report.page.nextCursor; } while (compositeCursor);
+assert.equal(compositeCompleted, true); composites.close();
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -146,4 +155,5 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
   verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true,
-  sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, hostedCoordinator: true, sqlDriversInstalled: false }));
+  sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, hostedCoordinator: true,
+  compositeFleet: true, sqlDriversInstalled: false }));
