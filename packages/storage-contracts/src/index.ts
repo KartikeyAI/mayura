@@ -12,3 +12,4 @@ export * from './workflow-format4.js';
 export * from './workflow-tree-discovery.js';
 export * from './workflow-format5.js';
 export * from './workflow-saga-format1.js';
+export * from './workflow-loop-format1.js';

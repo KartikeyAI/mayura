@@ -8,10 +8,11 @@ import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWor
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, sagaManifest } from '@mayura/workflows/sagas';
+import { createWorkflowLoopRuntime, defineWorkflowLoop, loopManifest } from '@mayura/workflows/loops';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
-for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/workflows/sagas', '@mayura/storage-contracts']) {
+for (const name of ['@mayura/core', '@mayura/tools', '@mayura/runtime', '@mayura/workflows', '@mayura/workflows/ephemeral', '@mayura/workflows/lifecycle', '@mayura/workflows/sagas', '@mayura/workflows/loops', '@mayura/storage-contracts']) {
   const path = relative(root, await realpath(fileURLToPath(import.meta.resolve(name))));
   assert(!isAbsolute(path) && !path.startsWith('..'), 'Workflow consumer escaped its archive installation.');
 }
@@ -94,6 +95,19 @@ assert.deepEqual(await sagaRuntime.inspect(sagaRun.id), sagaFinished);
 sagaRuntime.close();
 
 function expectSaga(value) { assert.equal(value.status, 'succeeded'); assert.equal(value.output, 3); return value; }
+const loopState = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'object' && value !== null
+  && typeof value.continue === 'boolean' && typeof value.value === 'number' ? { value } : { issues: [] } } };
+const loopBody = defineWorkflowLifecycle({ id: 'consumer.loop-child', version: '1', input: loopState, output: loopState,
+  nodes: [{ kind: 'join', id: 'done', dependsOn: [] }], result: { kind: 'input', path: [] } });
+const loop = defineWorkflowLoop({ id: 'consumer.loop', version: '1', input: loopState, output: number,
+  body: loopBody, maxIterations: 2, initial: { kind: 'input', path: [] }, next: { kind: 'current', path: [] },
+  continueWhen: { kind: 'current', path: ['continue'] }, result: { kind: 'current', path: ['value'] } });
+assert.equal(loopManifest(loop).maxIterations, 2); assert(!JSON.stringify(loopManifest(loop)).includes('validate'));
+const loopRuntime = createWorkflowLoopRuntime({ store: lifecycleStore, scope: { principalId: 'consumer', projectId: 'project' },
+  permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+const loopRun = await loopRuntime.submit(loop, { input: { continue: false, value: 3 }, idempotencyKey: 'loop' });
+const loopFinished = await loopRuntime.runUntilSettled(loop, loopRun.id);
+assert.equal(loopFinished.status, 'succeeded'); assert.equal(loopFinished.iteration, 1); assert.equal(loopFinished.output, 3); loopRuntime.close();
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -128,4 +142,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
   verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true,
-  sagaManifest: true, sagaRuntime: true, sqlDriversInstalled: false }));
+  sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, sqlDriversInstalled: false }));

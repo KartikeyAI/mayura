@@ -8,6 +8,8 @@ import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransp
   type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, type WorkflowSagaDefinition,
   type WorkflowSagaOutput } from '@mayura/workflows/sagas';
+import { createWorkflowLoopRuntime, defineWorkflowLoop, type WorkflowLoopDefinition,
+  type WorkflowLoopOutput } from '@mayura/workflows/loops';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -33,6 +35,15 @@ const saga = defineWorkflowSaga({ id: 'consumer.saga', version: '1', input: numb
   steps: [{ id: 'child', forward: sagaChild, input: { kind: 'input', path: [] } }],
   result: { kind: 'step', stepId: 'child', path: [] } });
 const sagaOutput: WorkflowSagaOutput<typeof saga> = 3; void sagaOutput;
+const loopState: Schema<{ continue: boolean; value: number }> = { '~standard': { version: 1, vendor: 'consumer',
+  validate: value => typeof value === 'object' && value !== null && typeof (value as { continue?: unknown }).continue === 'boolean'
+    && typeof (value as { value?: unknown }).value === 'number' ? { value: value as { continue: boolean; value: number } } : { issues: [] } } };
+const loopBody = defineWorkflowLifecycle({ id: 'consumer.loop-child', version: '1', input: loopState, output: loopState,
+  nodes: [{ kind: 'join', id: 'done', dependsOn: [] }], result: { kind: 'input', path: [] } });
+const loop = defineWorkflowLoop({ id: 'consumer.loop', version: '1', input: loopState, output: number,
+  body: loopBody, maxIterations: 2, initial: { kind: 'input', path: [] }, next: { kind: 'current', path: [] },
+  continueWhen: { kind: 'current', path: ['continue'] }, result: { kind: 'current', path: ['value'] } });
+const loopOutput: WorkflowLoopOutput<typeof loop> = 3; void loopOutput;
 // @ts-expect-error Composition retains the transformed output, not the pre-transform number.
 const invalidTool: ToolOutput<typeof wrapped> = 6;
 void expectedTool; void invalidTool;
@@ -51,6 +62,9 @@ if (false) {
   // @ts-expect-error Structural values cannot forge format-1 executable sagas.
   const forgedSaga: WorkflowSagaDefinition = { id: 'forged' };
   void forgedSaga;
+  // @ts-expect-error Structural values cannot forge format-1 executable loops.
+  const forgedLoop: WorkflowLoopDefinition = { id: 'forged' };
+  void forgedLoop;
   // @ts-expect-error Submission accepts the schema's original input, not the transformed length.
   runtime.submit(compiled, { input: 3 });
   // @ts-expect-error Composition requires explicit ephemeral opt-in.
@@ -97,6 +111,15 @@ function checkSagaAdapter(store: AggregateStore): void {
   void runtime.submit(saga, { input: '3', idempotencyKey: 'invalid' });
 }
 void checkSagaAdapter;
+function checkLoopAdapter(store: AggregateStore): void {
+  const runtime = createWorkflowLoopRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
+    permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+  const profile: 'loop-v1' = runtime.profile; void profile;
+  void runtime.submit(loop, { input: { continue: false, value: 3 }, idempotencyKey: 'loop' });
+  // @ts-expect-error Loop submission preserves its input schema type.
+  void runtime.submit(loop, { input: 3, idempotencyKey: 'invalid' });
+}
+void checkLoopAdapter;
 const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.double', toolVersion: '1',
   verify: async request => ({ attestationId: request.jobId, execution: 'succeeded', knownCostMicros: request.maximumCostMicros }) });
 const verification = composeExternalEffectVerifiers([verifier]);

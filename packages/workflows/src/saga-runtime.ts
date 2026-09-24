@@ -314,11 +314,18 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
     cancel: async id => {
       let record = await load(id); const state = decoded(record);
       if (terminalSagaStatuses.has(state.status)) return snapshot(record);
-      const active = Object.values(state.steps).find(step => step.status === 'forward_waiting' || step.status === 'compensation_waiting');
+      const activeEntry = Object.entries(state.steps).find(([, step]) => step.status === 'forward_waiting' || step.status === 'compensation_waiting');
+      const active = activeEntry?.[1]; const activeStepId = activeEntry?.[0];
       const childRunId = active?.status === 'forward_waiting' ? active.forwardRunId : active?.compensationRunId;
-      if (childRunId) await lifecycle.cancel(childRunId);
+      const child = childRunId ? await lifecycle.cancel(childRunId) : undefined;
       record = await mutate(id, current => {
         if (terminalSagaStatuses.has(current.status)) return false;
+        if (child && active && activeStepId) {
+          const phase = active.status === 'forward_waiting' ? 'forward' : 'compensation';
+          const target = current.steps[activeStepId];
+          const linked = phase === 'forward' ? target?.forwardRunId : target?.compensationRunId;
+          if (linked === child.id) recordChild(current, activeStepId, phase, child);
+        }
         current.status = 'cancelled'; return true;
       }, 'saga.run.cancelled');
       return snapshot(record);

@@ -12,6 +12,7 @@
     "./children": { "types": "./dist/children.d.ts", "import": "./dist/children.js" },
     "./lifecycle": { "types": "./dist/lifecycle.d.ts", "import": "./dist/lifecycle.js" },
     "./sagas": { "types": "./dist/sagas.d.ts", "import": "./dist/sagas.js" },
+    "./loops": { "types": "./dist/loops.d.ts", "import": "./dist/loops.js" },
     "./agents": { "types": "./dist/agents.d.ts", "import": "./dist/agents.js" }
   },
   "engines": { "node": ">=24.14.1 <25" },
