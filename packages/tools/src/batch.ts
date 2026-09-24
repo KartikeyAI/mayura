@@ -1,12 +1,23 @@
-import { MayuraError, assertBudget, assertPositiveInteger, freezeJson, jsonValue, validate, type JsonValue, type Outcome } from '@mayura/core';
+import { MayuraError, assertBudget, assertPositiveInteger, freezeJson, jsonValue, validate,
+  type JsonPrimitive, type JsonValue, type Outcome } from '@mayura/core';
 import { assertTool, invokeTool, type AnyTool, type InvokeToolContext } from './index.js';
 import { snapshotToolContextBindings } from './context.js';
 
-/** Literal-input call in a finite dependency graph. Resource keys are trusted application declarations. */
+export type BatchOutputPathSegment = string | number;
+declare const batchOutputReferenceBrand: unique symbol;
+export interface BatchOutputReference<T extends JsonValue = JsonValue> {
+  readonly [batchOutputReferenceBrand]: T;
+  readonly format: 'mayura-batch-output-reference-v1';
+  readonly callId: string;
+  readonly path: readonly BatchOutputPathSegment[];
+}
+export type BatchInput = JsonPrimitive | BatchOutputReference | readonly BatchInput[] | { readonly [key: string]: BatchInput };
+
+/** Input-template call in a finite dependency graph. Resource keys are trusted application declarations. */
 export interface BatchCall {
   readonly id: string;
   readonly tool: AnyTool;
-  readonly input: JsonValue;
+  readonly input: BatchInput;
   readonly dependsOn?: readonly string[];
   readonly resources?: readonly string[];
 }
@@ -28,12 +39,18 @@ export interface BatchCallResult {
 }
 
 interface PreparedCall {
-  readonly id: string; readonly tool: AnyTool; readonly input: JsonValue;
+  readonly id: string; readonly tool: AnyTool; readonly input: InputTemplate; readonly dynamic: boolean;
   readonly dependencies: readonly string[]; readonly resources: readonly string[];
-  candidate: string;
+  readonly literalBytes: number;
+  candidate?: string;
 }
 interface CompletedCall { readonly call: PreparedCall; readonly outcome: Outcome<JsonValue> }
+interface OutputReferenceRecord { readonly callId: string; readonly path: readonly BatchOutputPathSegment[] }
+const templateReference = Symbol('mayura.batch-output-template-reference');
+interface TemplateReference { readonly [templateReference]: OutputReferenceRecord }
+type InputTemplate = JsonPrimitive | TemplateReference | readonly InputTemplate[] | { readonly [key: string]: InputTemplate };
 const encoder = new TextEncoder();
+const outputReferences = new WeakMap<object, OutputReferenceRecord>();
 
 function text(value: unknown, label: string, maximum = 256): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0 || value.includes('\0') || encoder.encode(value).length > maximum) {
@@ -47,6 +64,146 @@ function keys(value: readonly string[] | undefined, label: string, maximum: numb
   for (const item of value) text(item, label);
   if (new Set(value).size !== value.length) throw new MayuraError('INVALID_CONFIG', `${label} must not contain duplicates.`);
   return Object.freeze([...value]);
+}
+
+function hasOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function snapshotPath(value: readonly BatchOutputPathSegment[] | undefined): readonly BatchOutputPathSegment[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > 16) {
+    throw new MayuraError('INVALID_CONFIG', 'Batch output path must contain at most 16 plain segments.');
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Object.keys(descriptors).length !== value.length + 1) throw new MayuraError('INVALID_CONFIG', 'Batch output path must be a dense plain array.');
+  const result: BatchOutputPathSegment[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || !hasOwn(descriptor, 'value')) throw new MayuraError('INVALID_CONFIG', 'Batch output path must contain data segments.');
+    const segment = descriptor.value;
+    if (typeof segment === 'string') {
+      if (segment.includes('\0') || encoder.encode(segment).length > 256) throw new MayuraError('INVALID_CONFIG', 'Batch output property segment is invalid.');
+    } else if (!Number.isSafeInteger(segment) || segment < 0 || segment > 99_999) {
+      throw new MayuraError('INVALID_CONFIG', 'Batch output array index is invalid.');
+    }
+    result.push(segment as BatchOutputPathSegment);
+  }
+  return Object.freeze(result);
+}
+
+/** Create a genuine immutable reference to one admitted predecessor output or nested JSON path. */
+export function batchOutput<T extends JsonValue = JsonValue>(callId: string,
+  path?: readonly BatchOutputPathSegment[]): BatchOutputReference<T> {
+  text(callId, 'Batch output call ID', 128);
+  const record = Object.freeze({ callId, path: snapshotPath(path) });
+  const handle = Object.freeze({ format: 'mayura-batch-output-reference-v1' as const, callId, path: record.path }) as BatchOutputReference<T>;
+  outputReferences.set(handle, record);
+  return handle;
+}
+
+function snapshotTemplate(input: BatchInput): { readonly value: InputTemplate; readonly dependencies: readonly string[];
+  readonly bytes: number; readonly references: number } {
+  const ancestors = new Set<object>(); const dependencies: string[] = []; const dependencySet = new Set<string>();
+  let nodes = 0; let bytes = 0; let references = 0;
+  const fail = (message = 'Batch input template must be bounded, acyclic plain JSON or genuine output references.'): never => {
+    throw new MayuraError('INVALID_INPUT', message);
+  };
+  const charge = (amount: number): void => { bytes += amount; if (bytes > 1_048_576) fail('Batch input template exceeds one MiB.'); };
+  const visit = (value: unknown, depth: number): InputTemplate => {
+    if (++nodes > 100_000 || depth > 32) return fail();
+    if (value !== null && typeof value === 'object') {
+      const reference = outputReferences.get(value);
+      if (reference !== undefined) {
+        references += 1; if (references > 64) return fail('Batch input template exceeds 64 output references.');
+        if (!dependencySet.has(reference.callId)) { dependencySet.add(reference.callId); dependencies.push(reference.callId); }
+        charge(encoder.encode(JSON.stringify([reference.callId, reference.path])).length + 2);
+        return Object.freeze({ [templateReference]: reference });
+      }
+    }
+    if (value === null) { charge(4); return null; }
+    if (typeof value === 'string') { charge(encoder.encode(JSON.stringify(value)).length); return value; }
+    if (typeof value === 'boolean') { charge(value ? 4 : 5); return value; }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) return fail();
+      charge(String(value).length); return value;
+    }
+    if (typeof value !== 'object' || ancestors.has(value)) return fail();
+    const array = Array.isArray(value);
+    if (!array && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return fail();
+    if (Object.getOwnPropertySymbols(value).length > 0) return fail();
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const format = descriptors['format'];
+    if (format !== undefined && hasOwn(format, 'value') && format.value === 'mayura-batch-output-reference-v1') {
+      throw new MayuraError('INVALID_CONFIG', 'Batch output references must be genuine handles from batchOutput.');
+    }
+    ancestors.add(value); charge(2);
+    try {
+      if (array) {
+        if (Object.keys(descriptors).length !== value.length + 1 || value.length > 100_000 - nodes) return fail();
+        const result: InputTemplate[] = [];
+        for (let index = 0; index < value.length; index++) {
+          const descriptor = descriptors[String(index)];
+          if (descriptor === undefined || !hasOwn(descriptor, 'value')) return fail();
+          if (index > 0) charge(1);
+          result.push(visit(descriptor.value, depth + 1));
+        }
+        return Object.freeze(result);
+      }
+      const result: Record<string, InputTemplate> = {};
+      let count = 0;
+      for (const [key, descriptor] of Object.entries(descriptors)) {
+        if (!descriptor.enumerable || !hasOwn(descriptor, 'value') || key === '__proto__' || key === 'constructor' || key === 'prototype') return fail();
+        if (count++ > 0) charge(1);
+        charge(encoder.encode(JSON.stringify(key)).length + 1);
+        result[key] = visit(descriptor.value, depth + 1);
+      }
+      return Object.freeze(result);
+    } finally { ancestors.delete(value); }
+  };
+  return Object.freeze({ value: visit(input, 0), dependencies: Object.freeze(dependencies), bytes, references });
+}
+
+function resolveTemplate(template: InputTemplate, results: ReadonlyMap<string, BatchCallResult['outcome']>): JsonValue {
+  const visit = (value: InputTemplate): unknown => {
+    if (value !== null && typeof value === 'object' && hasOwn(value, templateReference)) {
+      const reference = (value as TemplateReference)[templateReference]; const outcome = results.get(reference.callId);
+      if (outcome?.status !== 'succeeded') throw new MayuraError('CONFLICT', 'Referenced batch output is not available.');
+      let selected: JsonValue = outcome.output;
+      for (const segment of reference.path) {
+        if (typeof segment === 'number') {
+          if (!Array.isArray(selected) || segment >= selected.length || !hasOwn(selected, segment)) {
+            throw new MayuraError('INVALID_INPUT', 'Batch output array path does not exist.');
+          }
+          selected = selected[segment]!;
+        } else {
+          if (selected === null || typeof selected !== 'object' || Array.isArray(selected) || !hasOwn(selected, segment)) {
+            throw new MayuraError('INVALID_INPUT', 'Batch output property path does not exist.');
+          }
+          selected = selected[segment]!;
+        }
+      }
+      return selected;
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (value !== null && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, child] of Object.entries(value)) result[key] = visit(child);
+      return result;
+    }
+    return value;
+  };
+  try { return freezeJson(jsonValue(visit(template))); }
+  catch (error) {
+    if (error instanceof MayuraError && ['INVALID_INPUT', 'CONFLICT'].includes(error.code)) throw error;
+    throw new MayuraError('INVALID_INPUT', 'Resolved batch input is not bounded plain JSON.');
+  }
+}
+
+function resolutionFailure(error: unknown): Outcome<JsonValue> {
+  const code = error instanceof MayuraError && error.code === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' as const : 'INVALID_INPUT' as const;
+  const message = code === 'LIMIT_EXCEEDED' ? 'Resolved batch inputs exceed the aggregate limit.' : 'Referenced batch output could not produce a valid input.';
+  return Object.freeze({ status: 'failed', error: Object.freeze({ code, message }) });
 }
 
 /** Deterministic JSON equality independent of object insertion order. */
@@ -98,22 +255,23 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
   if (concurrency > 32 || preflightTimeoutMs > 2_147_483_647 || !['collect-all', 'fail-fast'].includes(failurePolicy)) throw new MayuraError('INVALID_CONFIG', 'Batch execution limits or failure policy are invalid.');
 
   // Capture every mutable caller value before the first asynchronous schema operation.
-  let inputBytes = 0;
+  let inputBytes = 0; let referenceCount = 0;
   const prepared: PreparedCall[] = calls.map(call => {
     if (!call || typeof call !== 'object') throw new MayuraError('INVALID_CONFIG', 'Invalid batch call.');
     text(call.id, 'Call ID', 128);
     assertTool(call.tool);
     const required = [`tool:${call.tool.id}`, ...call.tool.capabilities, ...(call.tool.effects === 'none' ? [] : [`effect:${call.tool.effects}`])];
     if (!required.every(grant => grants.has(grant))) throw new MayuraError('PERMISSION_DENIED', 'The batch includes a tool requiring grants that are not present.');
-    let input: JsonValue;
-    try { input = freezeJson(jsonValue(call.input)); }
-    catch { throw new MayuraError('INVALID_INPUT', 'Batch inputs must be bounded plain JSON.'); }
-    inputBytes += encoder.encode(JSON.stringify(input)).length;
+    const template = snapshotTemplate(call.input);
+    inputBytes += template.bytes; referenceCount += template.references;
     if (inputBytes > 4_194_304) throw new MayuraError('LIMIT_EXCEEDED', 'Combined batch input exceeds four MiB.');
+    if (referenceCount > 512) throw new MayuraError('LIMIT_EXCEEDED', 'Combined batch references exceed 512.');
+    const explicitDependencies = keys(call.dependsOn, 'Dependencies', 128);
+    const dependencies = Object.freeze([...explicitDependencies, ...template.dependencies.filter(id => !explicitDependencies.includes(id))]);
     return {
-      id: call.id, tool: call.tool, input,
-      dependencies: keys(call.dependsOn, 'Dependencies', 128),
-      resources: Object.freeze([...keys(call.resources, 'Resource keys', 32)].sort()), candidate: '',
+      id: call.id, tool: call.tool, input: template.value, dynamic: template.references > 0,
+      dependencies, resources: Object.freeze([...keys(call.resources, 'Resource keys', 32)].sort()),
+      literalBytes: template.references === 0 ? template.bytes : 0,
     };
   });
   const byId = new Map(prepared.map(call => [call.id, call]));
@@ -151,7 +309,7 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
       const preflight = async (): Promise<void> => {
         for (const call of prepared) {
           assertActive();
-          call.candidate = canonical(freezeJson(jsonValue(await validate(call.tool.input, call.input, 'input'))));
+          if (!call.dynamic) call.candidate = canonical(freezeJson(jsonValue(await validate(call.tool.input, call.input, 'input'))));
           assertActive();
         }
       };
@@ -166,6 +324,7 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
     const running = new Map<string, Promise<CompletedCall>>();
     const heldResources = new Set<string>();
     const uncertainResources = new Set<string>();
+    let resolvedInputBytes = prepared.reduce((total, call) => total + call.literalBytes, 0);
     const completion = (call: PreparedCall, outcome: Outcome<JsonValue>): CompletedCall => {
       // Latch on settlement, not later queue consumption: another already-settled success must
       // not free capacity for a new dispatch while an unconsumed failure is sitting in the queue.
@@ -174,16 +333,16 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
       }
       return { call, outcome };
     };
-    const start = (call: PreparedCall): void => {
+    const start = (call: PreparedCall, input: JsonValue): void => {
       pending.delete(call.id);
       for (const key of call.resources) heldResources.add(key);
-      const execution = invokeTool(call.tool, call.input, {
+      const execution = invokeTool(call.tool, input, {
         runId, callId: call.id, scope, permissions, budget, signal: controller.signal, maxOutputBytes,
         ...(onExecutionReceipt ? { onExecutionReceipt } : {}),
         contextBindings,
         ...(acquireExecution ? { acquireExecution } : {}),
         beforeDispatch: async processed => {
-          if (canonical(processed) !== call.candidate) throw new MayuraError('CONFLICT', 'Processed batch input changed after preflight.');
+          if (call.candidate !== undefined && canonical(processed) !== call.candidate) throw new MayuraError('CONFLICT', 'Processed batch input changed after preflight.');
           if (beforeDispatch) await beforeDispatch(processed);
         },
       }).then((outcome): CompletedCall => {
@@ -217,7 +376,21 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
           pending.delete(call.id); progressed = true; continue;
         }
         if (running.size >= concurrency || call.resources.some(key => heldResources.has(key))) continue;
-        start(call); progressed = true;
+        let resolved: JsonValue;
+        try {
+          resolved = call.dynamic ? resolveTemplate(call.input, results) : call.input as JsonValue;
+          if (call.dynamic) {
+            resolvedInputBytes += encoder.encode(JSON.stringify(resolved)).length;
+            if (!Number.isSafeInteger(resolvedInputBytes) || resolvedInputBytes > 4_194_304) {
+              throw new MayuraError('LIMIT_EXCEEDED', 'Resolved batch inputs exceed four MiB.');
+            }
+          }
+        } catch (error) {
+          const outcome = resolutionFailure(error); results.set(call.id, outcome); pending.delete(call.id); progressed = true;
+          if (failurePolicy === 'fail-fast' && stop === undefined) { stop = 'fail_fast'; controller.abort(); }
+          continue;
+        }
+        start(call, resolved); progressed = true;
       }
       if (running.size === 0) {
         if (results.size === prepared.length) break;

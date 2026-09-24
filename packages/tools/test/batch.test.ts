@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { Budget, type ExecutionReceipt, type Schema } from '@mayura/core';
-import { defineTool, invokeBatch, type BatchCall, type InvokeBatchOptions, type ToolOptions } from '../src/index.js';
+import { batchOutput, defineTool, invokeBatch, type BatchCall, type InvokeBatchOptions, type ToolOptions } from '../src/index.js';
 
 const input = z.object({ value: z.number() });
 const output = z.object({ result: z.number() });
@@ -234,5 +234,130 @@ describe('batch scheduling and outcome truth', () => {
     expect(result[0]?.outcome).toMatchObject({ status: 'outcome_unknown', receipt: { execution: 'unknown' } });
     expect(result[1]?.outcome).toMatchObject({ status: 'cancelled', error: { code: 'CANCELLED' } });
     expect(execute).toHaveBeenCalledTimes(1); expect(JSON.stringify(result)).not.toContain('private-cancellation-reason');
+  });
+});
+
+describe('batch output references', () => {
+  const producerOutput = z.object({ nested: z.object({ values: z.array(z.number()) }), label: z.string() });
+  const consumerInput = z.object({ selected: z.number(), label: z.string(), whole: producerOutput });
+  const consumerOutput = z.object({ result: z.number() });
+
+  function referenceTools(overrides: { producerEffects?: 'none' | 'write'; consumer?: (input: z.infer<typeof consumerInput>) => { result: number } } = {}) {
+    const order: string[] = [];
+    const producer = defineTool({ id: 'reference.producer', version: '1', description: 'Reference producer.', input, output: producerOutput,
+      effects: overrides.producerEffects ?? 'none', capabilities: [], execute: value => { order.push('producer'); return { nested: { values: [value.value, value.value + 1] }, label: `value-${value.value}` }; } });
+    const execute = vi.fn((value: z.infer<typeof consumerInput>) => { order.push('consumer'); return overrides.consumer?.(value) ?? { result: value.selected }; });
+    const consumer = defineTool({ id: 'reference.consumer', version: '1', description: 'Reference consumer.', input: consumerInput,
+      output: consumerOutput, effects: 'none', capabilities: [], execute });
+    const permissions = { allow: ['tool:reference.producer', 'tool:reference.consumer', 'effect:write'] };
+    return { producer, consumer, execute, order, permissions };
+  }
+
+  it('resolves exact root, object and array paths and adds dependency edges automatically', async () => {
+    const fixtures = referenceTools({ consumer: value => {
+      expect(value).toEqual({ selected: 3, label: 'value-2', whole: { nested: { values: [2, 3] }, label: 'value-2' } });
+      return { result: value.selected };
+    } });
+    const path: (string | number)[] = ['nested', 'values', 1];
+    const selected = batchOutput<number>('source', path); path[2] = 0;
+    const result = await invokeBatch([
+      { id: 'consume', tool: fixtures.consumer, input: { selected, label: batchOutput<string>('source', ['label']), whole: batchOutput('source') } },
+      { id: 'source', tool: fixtures.producer, input: { value: 2 } },
+    ], options({ permissions: fixtures.permissions, concurrency: 2 }));
+    expect(result.map((entry) => entry.outcome.status)).toEqual(['succeeded', 'succeeded']);
+    expect(fixtures.order).toEqual(['producer', 'consumer']); expect(fixtures.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects unknown, cyclic, cloned and accessor references before effects', async () => {
+    const fixtures = referenceTools();
+    const cases: readonly BatchCall[][] = [
+      [{ id: 'consume', tool: fixtures.consumer, input: { selected: batchOutput<number>('missing'), label: 'x', whole: { nested: { values: [1] }, label: 'x' } } }],
+      [{ id: 'self', tool: fixtures.consumer, input: { selected: batchOutput<number>('self'), label: 'x', whole: { nested: { values: [1] }, label: 'x' } } }],
+      [{ id: 'consume', tool: fixtures.consumer, input: { selected: { ...batchOutput<number>('source') } as never, label: 'x', whole: { nested: { values: [1] }, label: 'x' } } },
+        { id: 'source', tool: fixtures.producer, input: { value: 1 } }],
+    ];
+    for (const calls of cases) await expect(invokeBatch(calls, options({ permissions: fixtures.permissions }))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    let invoked = false; const hostilePath = Object.defineProperty([], '0', { enumerable: true, get: () => { invoked = true; return 'label'; } });
+    expect(() => batchOutput('source', hostilePath)).toThrow(); expect(invoked).toBe(false);
+    expect(fixtures.execute).not.toHaveBeenCalled(); expect(fixtures.order).toEqual([]);
+  });
+
+  it('reports a missing path after a predecessor effect without dispatching the dependent or implying rollback', async () => {
+    const fixtures = referenceTools({ producerEffects: 'write' }); const independent = vi.fn(() => ({ result: 9 }));
+    const result = await invokeBatch([
+      { id: 'source', tool: fixtures.producer, input: { value: 1 } },
+      { id: 'consume', tool: fixtures.consumer, input: { selected: batchOutput<number>('source', ['nested', 'missing']),
+        label: 'x', whole: batchOutput('source') } },
+      { id: 'independent', tool: tool({ execute: independent }), input: { value: 9 } },
+    ], options({ permissions: { allow: [...fixtures.permissions.allow, 'tool:batch.tool'] } }));
+    expect(result[0]?.outcome).toMatchObject({ status: 'succeeded', receipt: { execution: 'succeeded' } });
+    expect(result[1]?.outcome).toEqual({ status: 'failed', error: { code: 'INVALID_INPUT', message: 'Referenced batch output could not produce a valid input.' } });
+    expect(result[2]?.outcome.status).toBe('succeeded'); expect(fixtures.execute).not.toHaveBeenCalled(); expect(independent).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates a resolved dependent schema before dispatch while retaining predecessor success', async () => {
+    const fixtures = referenceTools({ producerEffects: 'write' });
+    const result = await invokeBatch([
+      { id: 'source', tool: fixtures.producer, input: { value: 1 } },
+      { id: 'consume', tool: fixtures.consumer, input: { selected: batchOutput<number>('source', ['label']),
+        label: 'x', whole: batchOutput('source') } },
+    ], options({ permissions: fixtures.permissions }));
+    expect(result[0]?.outcome.status).toBe('succeeded');
+    expect(result[1]?.outcome).toMatchObject({ status: 'failed', error: { code: 'INVALID_INPUT' }, receipt: { execution: 'not_started' } });
+    expect(fixtures.execute).not.toHaveBeenCalled();
+  });
+
+  it('skips automatic reference dependents when predecessor output is withheld', async () => {
+    const fixtures = referenceTools();
+    const blockedProducer = defineTool({
+      id: 'reference.blocked', version: '1', description: 'Blocked reference producer.', input, output: producerOutput,
+      effects: 'none', capabilities: [], execute: value => ({ nested: { values: [value.value] }, label: `value-${value.value}` }),
+      guards: { output: [{ id: 'block', check: () => ({ decision: 'block' as const }) }] },
+    });
+    const result = await invokeBatch([
+      { id: 'source', tool: blockedProducer, input: { value: 1 } },
+      { id: 'consume', tool: fixtures.consumer, input: { selected: batchOutput<number>('source', ['nested', 'values', 0]),
+        label: 'x', whole: { nested: { values: [1] }, label: 'x' } } },
+    ], options({ permissions: { allow: ['tool:reference.blocked', 'tool:reference.consumer'] } }));
+    expect(result[0]?.outcome.status).toBe('blocked');
+    expect(result[1]?.outcome).toEqual({ status: 'skipped', reason: 'dependency_failed', dependencies: ['source'] });
+  });
+
+  it('applies fail-fast to resolution failures before later dispatch', async () => {
+    const fixtures = referenceTools(); const later = vi.fn(() => ({ result: 7 }));
+    const result = await invokeBatch([
+      { id: 'source', tool: fixtures.producer, input: { value: 1 } },
+      { id: 'bad', tool: fixtures.consumer, input: { selected: batchOutput<number>('source', ['missing']), label: 'x', whole: batchOutput('source') } },
+      { id: 'later', tool: tool({ execute: later }), input: { value: 7 } },
+    ], options({ permissions: { allow: [...fixtures.permissions.allow, 'tool:batch.tool'] }, concurrency: 1, failurePolicy: 'fail-fast' }));
+    expect(result[1]?.outcome.status).toBe('failed'); expect(result[2]?.outcome).toEqual({ status: 'skipped', reason: 'fail_fast', dependencies: [] });
+    expect(later).not.toHaveBeenCalled();
+  });
+
+  it('enforces the resolved aggregate byte bound before the dependent dispatch', async () => {
+    const largeOutput = z.object({ data: z.string() });
+    const producer = defineTool({ id: 'reference.large', version: '1', description: 'Large output.', input, output: largeOutput,
+      effects: 'none', capabilities: [], execute: () => ({ data: 'x'.repeat(900_000) }) });
+    const consume = vi.fn(() => ({ result: 1 }));
+    const consumer = defineTool({ id: 'reference.large-consumer', version: '1', description: 'Large consumer.', input: largeOutput,
+      output: consumerOutput, effects: 'none', capabilities: [], execute: consume });
+    const sources = Array.from({ length: 5 }, (_, index) => ({ id: `source-${index}`, tool: producer, input: { value: index } }));
+    const consumers = sources.map((source, index) => ({ id: `consume-${index}`, tool: consumer, input: batchOutput(source.id) }));
+    const result = await invokeBatch([...sources, ...consumers], options({
+      permissions: { allow: ['tool:reference.large', 'tool:reference.large-consumer'] }, maxOutputBytes: 1_000_000, concurrency: 5,
+    }));
+    expect(result.slice(0, 5).every((entry) => entry.outcome.status === 'succeeded')).toBe(true);
+    expect(result.slice(5, 9).every((entry) => entry.outcome.status === 'succeeded')).toBe(true);
+    expect(result[9]?.outcome).toMatchObject({ status: 'failed', error: { code: 'LIMIT_EXCEEDED' } });
+    expect(consume).toHaveBeenCalledTimes(4);
+  });
+
+  it('bounds output handles per template before any handler executes', async () => {
+    const fixtures = referenceTools(); const references = Array.from({ length: 65 }, () => batchOutput('source'));
+    await expect(invokeBatch([
+      { id: 'source', tool: fixtures.producer, input: { value: 1 } },
+      { id: 'consume', tool: fixtures.consumer, input: { selected: 1, label: 'x', whole: { nested: { values: references as never }, label: 'x' } } },
+    ], options({ permissions: fixtures.permissions }))).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(fixtures.order).toEqual([]);
   });
 });

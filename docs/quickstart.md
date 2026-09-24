@@ -35,7 +35,7 @@ Credentials stay in trusted server-side configuration. There is no automatic key
 | Need | Select | Important boundary |
 | --- | --- | --- |
 | One bounded agent | `@mayura/runtime` + tools and a model adapter | Explicitly non-durable. |
-| Parallel independent tools | `invokeBatch` from `@mayura/tools` | Shared budget, bounded concurrency; resource keys are per-batch, not distributed locks. |
+| Parallel or dependent tools | `invokeBatch` + `batchOutput` from `@mayura/tools` | Exact predecessor JSON paths are revalidated by the broker; handles are process-local and resource keys are not distributed locks. |
 | Restartable tool graph and approvals | `@mayura/workflows` + selected SQLite/PostgreSQL adapter | Current conservative engine never automatically replays an uncertain effect. |
 | Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
 | Existing scheduled-run completion joins | `@mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |

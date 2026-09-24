@@ -3,7 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRuntime, defineAgent } from '@mayura/sdk';
+import { Budget, batchOutput, createRuntime, defineAgent, defineTool, invokeBatch } from '@mayura/sdk';
 import { scriptedModel } from '@mayura/testing';
 import { listenAgentServer } from '@mayura/server-node';
 import { createClient } from '@mayura/client';
@@ -20,6 +20,17 @@ for (const name of ['@mayura/client', '@mayura/server-node', '@mayura/observabil
 }
 
 const number = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
+const record = { '~standard': { version: 1, vendor: 'consumer', validate: value => value && typeof value === 'object' && typeof value.result === 'number' ? { value } : { issues: [] } } };
+const batchSource = defineTool({ id: 'consumer.batch-source', version: '1', description: 'Produce a nested result.', input: number, output: record,
+  effects: 'none', capabilities: [], execute: value => ({ result: value * 2 }) });
+const batchTarget = defineTool({ id: 'consumer.batch-target', version: '1', description: 'Consume a referenced result.', input: number, output: number,
+  effects: 'none', capabilities: [], execute: value => value + 1 });
+const batch = await invokeBatch([
+  { id: 'target', tool: batchTarget, input: batchOutput('source', ['result']) },
+  { id: 'source', tool: batchSource, input: 2 },
+], { runId: 'consumer.batch', scope: { principalId: 'consumer', projectId: 'fixture' },
+  permissions: { allow: ['tool:consumer.batch-source', 'tool:consumer.batch-target'] }, budget: new Budget(0, 2), signal: new AbortController().signal });
+assert.equal(batch[0].outcome.status, 'succeeded'); assert.equal(batch[0].outcome.output, 5);
 function agent(id) {
   return defineAgent({ id, version: '1', instructions: 'PRIVATE_CONSUMER_PROMPT', input: number, output: number, tools: [],
     model: scriptedModel([{ type: 'final', output: 4, usage: { costMicros: 0 } }]),
@@ -68,4 +79,4 @@ try {
   assert.equal(globalThis.Request, globals.Request); assert.equal(globalThis.Response, globals.Response); assert.equal(globalThis.fetch, globals.fetch);
   httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true };
 } finally { await server.close(); }
-console.log(JSON.stringify({ status: 'passed', observation: observationReport, http: httpReport }));
+console.log(JSON.stringify({ status: 'passed', batchOutputReferences: true, observation: observationReport, http: httpReport }));

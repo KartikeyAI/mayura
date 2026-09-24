@@ -1,10 +1,25 @@
-import { defineAgent, createRuntime, type Schema } from '@mayura/sdk';
+import { Budget, batchOutput, defineAgent, defineTool, createRuntime, invokeBatch, type JsonValue, type Schema } from '@mayura/sdk';
 import { scriptedModel } from '@mayura/testing';
 import { listenAgentServer, type LocalAgentServer } from '@mayura/server-node';
 import { createClient, type RemoteOutcome } from '@mayura/client';
 import { createObserver, type Observer, type ObservedRun, type ObserverSnapshot } from '@mayura/observability';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
+const doubled = defineTool({ id: 'consumer.batch-source', version: '1', description: 'Double a number.', input: number, output: number,
+  effects: 'none', capabilities: [], execute: value => value * 2 });
+const incremented = defineTool({ id: 'consumer.batch-target', version: '1', description: 'Increment a number.', input: number, output: number,
+  effects: 'none', capabilities: [], execute: value => value + 1 });
+const batch = await invokeBatch([
+  { id: 'target', tool: incremented, input: batchOutput<number>('source') },
+  { id: 'source', tool: doubled, input: 2 },
+], { runId: 'consumer.batch', scope: { principalId: 'consumer', projectId: 'fixture' },
+  permissions: { allow: ['tool:consumer.batch-source', 'tool:consumer.batch-target'] }, budget: new Budget(0, 2), signal: new AbortController().signal });
+if (batch[0]?.outcome.status === 'succeeded') {
+  const batchResult: JsonValue = batch[0].outcome.output;
+  // @ts-expect-error Heterogeneous batch results require status/schema narrowing before a scalar assumption.
+  const invalidBatchResult: number = batch[0].outcome.output;
+  void batchResult; void invalidBatchResult;
+}
 const agent = defineAgent({ id: 'consumer.agent', version: '1', instructions: 'Consume public declarations.', tools: [], input: number, output: number,
   model: scriptedModel([{ type: 'final', output: 4, usage: { costMicros: 0 } }]),
 });
