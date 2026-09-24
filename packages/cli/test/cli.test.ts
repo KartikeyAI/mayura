@@ -6,8 +6,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
-import { applyProjectPlan, cancelRun, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, planProject, readProject,
-  respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
+import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
+  inspectServerTools, inspectWorkflow, planProject, readProject, respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -151,6 +151,32 @@ describe('@mayura/cli authenticated operations', () => {
     expect(calls).toBe(1); expect(error).toMatchObject({ code: 'TOOL_FAILED' }); expect(String(error)).not.toContain('PRIVATE');
   });
 
+  it('inspects, cancels and exactly approves durable workflows without retry', async () => {
+    const workflowId = 'a'.repeat(64); const childId = 'b'.repeat(64); const digest = 'd'.repeat(64); const calls: Array<{ path: string; body?: unknown }> = [];
+    const workflow = (revision: number, status = 'waiting') => ({ format: 4, definitionId: 'deploy', definitionVersion: '1', runId: workflowId, revision, status,
+      nodes: [{ id: 'child', kind: 'child', dependsOn: [] }], steps: [{ id: 'child', kind: 'child', status: status === 'cancelled' ? 'skipped' : 'waiting', childRunId: childId }] });
+    const transport = async (input: string | URL | Request, init?: RequestInit) => { const path = new URL(String(input)).pathname;
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined; calls.push({ path, ...(body === undefined ? {} : { body }) });
+      return new Response(JSON.stringify({ workflow: workflow(path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : 1,
+        path.endsWith('/cancel') ? 'cancelled' : 'waiting') }), { headers: { 'content-type': 'application/json' } }); };
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
+    expect((await inspectWorkflow(settings, workflowId)).revision).toBe(1);
+    expect((await cancelWorkflow(settings, { id: workflowId, revision: 1, commandId: 'cancel-1' })).status).toBe('cancelled');
+    expect((await approveWorkflow(settings, { id: workflowId, revision: 2, commandId: 'approve-1', nodeId: 'child', approvalDigest: digest,
+      childRunId: childId })).revision).toBe(3);
+    expect(calls).toEqual([{ path: `/v1/workflow-runs/${workflowId}` }, { path: `/v1/workflow-runs/${workflowId}/cancel`,
+      body: { commandId: 'cancel-1', revision: 1 } }, { path: `/v1/workflow-runs/${workflowId}/approvals`,
+      body: { commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: digest, childRunId: childId } }]);
+  });
+
+  it('classifies a workflow revision conflict and performs one command request', async () => {
+    let calls = 0; const workflowId = 'a'.repeat(64);
+    await expect(cancelWorkflow({ baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: async () => {
+      calls += 1; return new Response(JSON.stringify({ error: { code: 'WORKFLOW_CONFLICT' } }), { status: 409, headers: { 'content-type': 'application/json' } });
+    } }, { id: workflowId, revision: 1, commandId: 'cancel-1' })).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(calls).toBe(1);
+  });
+
   it('accepts a short-lived CLI credential only through piped stdin and never prints it', async () => {
     const host = createServer((request, response) => {
       expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE'); expect(request.url).toBe('/v1/operations/health');
@@ -202,6 +228,25 @@ describe('@mayura/cli authenticated operations', () => {
       const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
       expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toContain('TOKEN_PRIVATE'); expect(requests).toBe(1);
       expect(JSON.parse(stdout)).toEqual({ status: 'succeeded', cancellationRequested: true, id: runId });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
+  });
+
+  it('sends one executable digest-bound workflow approval with a piped credential', async () => {
+    const workflowId = 'a'.repeat(64); const digest = 'd'.repeat(64); let received: unknown;
+    const host = createServer(async (request, response) => { expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE');
+      expect(request.url).toBe(`/v1/workflow-runs/${workflowId}/approvals`); let body = ''; for await (const chunk of request) body += String(chunk); received = JSON.parse(body);
+      response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ workflow: { format: 2, definitionId: 'deploy',
+        definitionVersion: '1', runId: workflowId, revision: 2, status: 'running', nodes: [{ id: 'review', kind: 'tool', dependsOn: [] }],
+        steps: [{ id: 'review', kind: 'tool', status: 'approved' }] } })); });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    try { const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'workflow-approve', '--url', `http://127.0.0.1:${address.port}`,
+        '--id', workflowId, '--revision', '1', '--command-id', 'approve-1', '--node', 'review', '--digest', digest, '--token-stdin'],
+      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }); child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; }); child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|approve-1|dddddddd/);
+      expect(received).toEqual({ commandId: 'approve-1', revision: 1, nodeId: 'review', approvalDigest: digest, childRunId: null });
     } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 });

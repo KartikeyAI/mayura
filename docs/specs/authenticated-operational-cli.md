@@ -1,8 +1,8 @@
 # Authenticated operational CLI
 
-Status: implementation contract for server inspection, human response and ephemeral-run control.
+Status: implementation contract for server inspection, human response, ephemeral-run control and explicit durable workflow control.
 
-`@mayura/cli` exposes typed health/tool functions, typed human request list/inspect/respond functions, and ephemeral-run inspect/wait/cancel functions. The executable provides `server-health`, `server-tools`, `human-list`, `human-get`, `human-respond`, `run-get`, `run-wait` and `run-cancel`. These commands consume the authenticated routes defined by the [HTTP agent transport](http-agent-transport.md). They do not submit runs, control durable workflow fleets, answer exact-action tool approvals, migrate storage, load application modules or discover credentials.
+`@mayura/cli` exposes typed health/tool functions, typed human request list/inspect/respond functions, ephemeral-run inspect/wait/cancel functions and durable workflow inspect/cancel/exact-approval functions. The executable additionally provides `workflow-get`, `workflow-cancel` and `workflow-approve`. These commands consume the authenticated routes defined by the [HTTP agent transport](http-agent-transport.md) and [workflow control transport](workflow-control-transport.md). They do not submit runs, list or signal workflows, control fleets, migrate storage, load application modules or discover credentials.
 
 ## Credential and destination boundary
 
@@ -14,8 +14,10 @@ Only exact HTTPS origins and loopback HTTP origins are accepted. Requests use `A
 
 Run inspection exposes status, budget totals and sanitized effect receipts only. Outcome output and error payloads are discarded even when the server returns them. `run-wait` performs bounded sequential read-only polling with a 250–10,000 ms interval and at most five minutes total; any failed read stops the wait. `run-cancel` sends exactly one bodyless command. An unavailable acknowledgement is reported as ambiguous failure and never causes an automatic retry. These routes currently control the server's bounded in-memory ephemeral runs, not durable scheduled/workflow records.
 
+Workflow inspection exposes only the exact content-free format 2–5 view and independently validates identities, vocabulary, topology, steps and child links. Cancellation sends `{ commandId, revision }`; approval additionally binds the node, approval digest and optional child run. Commands are sent once, never retried, and HTTP revision conflicts become the stable `CONFLICT` error without exposing the response body. The CLI cannot choose actor, scope or authorized agent visibility.
+
 ## Response boundary
 
 Readiness accepts HTTP 200 or the defined degraded HTTP 503 response, then validates the complete fixed report. A degraded dependency is observable state rather than a hidden transport error. Tool inspection reads exactly one explicit page of at most 100 metadata entries; it never follows a cursor automatically. Both results are immutable and reject unknown or malformed fields. Tool descriptions, schemas, prompts, handlers, credentials and server exception details are outside the wire contract.
 
-Unit tests cover origin, credential header, degraded readiness, exact catalog shape, human pagination/inspection/response, run output withholding, bounded waits, cancellation ambiguity, hostile responses, callback timeout, real executable stdin boundaries and the bounded response-file path. The isolated packed CLI consumer type-checks and executes all operational, human and run operations without installing server/runtime packages.
+Unit tests cover origin, credential header, degraded readiness, exact catalog shape, human pagination/inspection/response, run output withholding, bounded waits, cancellation ambiguity, workflow view/control validation, exact approval bodies, conflicts, hostile responses, callback timeout, real executable stdin boundaries and the bounded response-file path. The isolated packed CLI consumer type-checks and executes all operational, human, run and workflow operations without installing server/runtime packages.

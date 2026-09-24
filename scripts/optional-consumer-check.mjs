@@ -260,7 +260,7 @@ async function main() {
       }
       if (name === 'cli') {
         assert.equal(execution.eightTemplates, true); assert.equal(execution.planFirst, true);
-        assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true); assert.equal(execution.authenticatedOperations, true); assert.equal(execution.authenticatedHuman, true); assert.equal(execution.authenticatedRuns, true);
+        assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true); assert.equal(execution.authenticatedOperations, true); assert.equal(execution.authenticatedHuman, true); assert.equal(execution.authenticatedRuns, true); assert.equal(execution.authenticatedWorkflows, true);
       }
       if (name === 'react') {
         assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
@@ -392,6 +392,7 @@ async function main() {
   result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
   result.checks.push('cli-human-list-inspect-respond', 'cli-human-response-file-boundary');
   result.checks.push('cli-run-inspect-wait-cancel', 'cli-run-output-withheld', 'cli-cancel-no-retry');
+  result.checks.push('cli-workflow-inspect-cancel-approve', 'cli-workflow-command-no-retry', 'cli-workflow-content-free-output');
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
   result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'browser-headless-activity-projection', 'browser-durable-workflow-graph-projection', 'headless-no-implicit-network');

@@ -4,9 +4,12 @@ import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
 
-export { cancelRun, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, respondHumanRequest, waitForRun,
+export { approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, inspectWorkflow,
+  respondHumanRequest, waitForRun,
   type OperationalClientOptions, type OperationalHealth, type OperationalHealthCheck, type OperationalHumanRequest,
-  type OperationalHumanRequestPage, type OperationalRun, type OperationalRunReceipt, type OperationalTool, type OperationalToolPage } from './operations.js';
+  type OperationalHumanRequestPage, type OperationalRun, type OperationalRunReceipt, type OperationalTool, type OperationalToolPage,
+  type OperationalWorkflow, type OperationalWorkflowFormat, type OperationalWorkflowNode, type OperationalWorkflowNodeKind,
+  type OperationalWorkflowStatus, type OperationalWorkflowStep, type OperationalWorkflowStepStatus } from './operations.js';
 
 export const TEMPLATE_NAMES = Object.freeze([
   'typed-tool-runner', 'basic-agent', 'durable-approval', 'parallel-research',

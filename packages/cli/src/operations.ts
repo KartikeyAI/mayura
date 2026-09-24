@@ -35,10 +35,24 @@ export interface OperationalRun {
   readonly budget: { readonly spentMicros: number | string; readonly reservedMicros: number; readonly calls: number };
   readonly evidence: readonly OperationalRunReceipt[];
 }
+export type OperationalWorkflowFormat = 2 | 3 | 4 | 5;
+export type OperationalWorkflowNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+export type OperationalWorkflowStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type OperationalWorkflowStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
+export interface OperationalWorkflowNode { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly dependsOn: readonly string[] }
+export interface OperationalWorkflowStep { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly status: OperationalWorkflowStepStatus; readonly childRunId?: string }
+export interface OperationalWorkflow {
+  readonly format: OperationalWorkflowFormat; readonly definitionId: string; readonly definitionVersion: string;
+  readonly runId: string; readonly revision: number; readonly status: OperationalWorkflowStatus;
+  readonly nodes: readonly OperationalWorkflowNode[]; readonly steps: readonly OperationalWorkflowStep[];
+}
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u;
 const capabilityIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const runIdentifier = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
+const workflowRunIdentifier = /^[a-f0-9]{64}$/u;
+const workflowNodeIdentifier = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
+const workflowVersion = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/u;
 function fail(): never { throw new MayuraError('INVALID_OUTPUT', 'The operational server returned an invalid response.'); }
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value))) return fail();
@@ -96,7 +110,10 @@ async function transport(options: OperationalClientOptions, path: string, accept
       throw new MayuraError('TOOL_FAILED', 'The operational server could not be reached.');
     }
     if (response.redirected || (response.url && new URL(response.url).origin !== base.origin)) { void response.body?.cancel().catch(() => {}); throw new MayuraError('PERMISSION_DENIED', 'Operational redirects are denied.'); }
-    if (!accepted.includes(response.status)) { void response.body?.cancel().catch(() => {}); throw new MayuraError(response.status === 401 || response.status === 403 ? 'PERMISSION_DENIED' : 'TOOL_FAILED', 'Operational request was rejected.'); }
+    if (!accepted.includes(response.status)) { void response.body?.cancel().catch(() => {});
+      const code = response.status === 401 || response.status === 403 ? 'PERMISSION_DENIED' : response.status === 404 ? 'NOT_FOUND'
+        : response.status === 409 || response.status === 412 ? 'CONFLICT' : 'TOOL_FAILED';
+      throw new MayuraError(code, 'Operational request was rejected.'); }
     if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); return fail(); }
     const reader = response.body?.getReader(); if (!reader) return fail();
     const chunks: Uint8Array[] = []; let size = 0; let complete = false;
@@ -146,6 +163,52 @@ function run(value: unknown, expectedId: string): OperationalRun {
   });
   return Object.freeze({ id: expectedId, status: item['status'] as OperationalRun['status'], budget: Object.freeze({ spentMicros: spent as number | string,
     reservedMicros: natural(budget['reservedMicros']), calls: natural(budget['calls']) }), evidence: Object.freeze(evidence) });
+}
+
+function workflow(value: unknown, expectedId: string): OperationalWorkflow {
+  const item = record(value); exact(item, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps']);
+  const format = item['format'] as OperationalWorkflowFormat; const definitionId = item['definitionId']; const definitionVersion = item['definitionVersion'];
+  if (![2, 3, 4, 5].includes(format) || typeof definitionId !== 'string' || !workflowNodeIdentifier.test(definitionId)
+    || typeof definitionVersion !== 'string' || !workflowVersion.test(definitionVersion) || item['runId'] !== expectedId
+    || !Number.isSafeInteger(item['revision']) || (item['revision'] as number) < 1
+    || !['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))
+    || !Array.isArray(item['nodes']) || item['nodes'].length < 1 || item['nodes'].length > 128
+    || !Array.isArray(item['steps']) || item['steps'].length !== item['nodes'].length) return fail();
+  const allowedKinds: Readonly<Record<OperationalWorkflowFormat, ReadonlySet<OperationalWorkflowNodeKind>>> = {
+    2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']), 4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']),
+  };
+  const nodes = new Map<string, OperationalWorkflowNode>(); let edges = 0;
+  for (const raw of item['nodes']) {
+    const source = record(raw); exact(source, ['id', 'kind', 'dependsOn']); const nodeId = source['id']; const kind = source['kind'] as OperationalWorkflowNodeKind;
+    if (typeof nodeId !== 'string' || !workflowNodeIdentifier.test(nodeId) || nodes.has(nodeId) || !allowedKinds[format].has(kind)
+      || !Array.isArray(source['dependsOn']) || source['dependsOn'].length > 127) return fail();
+    const dependsOn = source['dependsOn'].map(value => { if (typeof value !== 'string' || !workflowNodeIdentifier.test(value)) return fail(); return value; });
+    if (new Set(dependsOn).size !== dependsOn.length || (edges += dependsOn.length) > 512) return fail();
+    nodes.set(nodeId, Object.freeze({ id: nodeId, kind, dependsOn: Object.freeze(dependsOn) }));
+  }
+  for (const node of nodes.values()) if (node.dependsOn.some(parent => parent === node.id || !nodes.has(parent))) return fail();
+  const indegree = new Map([...nodes].map(([nodeId, node]) => [nodeId, node.dependsOn.length])); const children = new Map<string, string[]>();
+  for (const node of nodes.values()) for (const parent of node.dependsOn) { const list = children.get(parent) ?? []; list.push(node.id); children.set(parent, list); }
+  const ready = [...indegree].filter(([, count]) => count === 0).map(([nodeId]) => nodeId); let visited = 0;
+  for (let cursor = 0; cursor < ready.length; cursor++) { const nodeId = ready[cursor]!; visited += 1;
+    for (const child of children.get(nodeId) ?? []) { const count = indegree.get(child)! - 1; indegree.set(child, count); if (count === 0) ready.push(child); }
+  }
+  if (visited !== nodes.size) return fail();
+  const statuses = new Set<OperationalWorkflowStepStatus>(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
+  const steps = new Map<string, OperationalWorkflowStep>();
+  for (const raw of item['steps']) {
+    const source = record(raw); const keys = Object.keys(source); if (keys.some(key => !['id', 'kind', 'status', 'childRunId'].includes(key))
+      || !['id', 'kind', 'status'].every(key => Object.hasOwn(source, key))) return fail();
+    const stepId = source['id']; const kind = source['kind'] as OperationalWorkflowNodeKind; const status = source['status'] as OperationalWorkflowStepStatus;
+    const node = typeof stepId === 'string' ? nodes.get(stepId) : undefined; const childRunId = source['childRunId'];
+    if (!node || steps.has(stepId as string) || kind !== node.kind || !statuses.has(status)
+      || (kind === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(status))
+      || (kind === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(status)) || (status === 'timed_out' && kind !== 'human')
+      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !workflowRunIdentifier.test(childRunId)))) return fail();
+    steps.set(stepId as string, Object.freeze({ id: stepId as string, kind, status, ...(childRunId === undefined ? {} : { childRunId: childRunId as string }) }));
+  }
+  return Object.freeze({ format, definitionId, definitionVersion, runId: expectedId, revision: item['revision'] as number,
+    status: item['status'] as OperationalWorkflowStatus, nodes: Object.freeze([...nodes.values()]), steps: Object.freeze([...steps.values()]) });
 }
 
 /** Read sanitized readiness metadata. HTTP 503 is a valid degraded report, not a transport failure. */
@@ -220,6 +283,36 @@ export async function cancelRun(options: OperationalClientOptions, id: string): 
   if (!runIdentifier.test(id)) throw new MayuraError('INVALID_CONFIG', 'Run ID is invalid.');
   const raw = await transport(options, `/v1/runs/${id}/cancel`, [202], 'POST'); exact(raw, ['id', 'cancellationRequested']);
   if (raw['id'] !== id || raw['cancellationRequested'] !== true) return fail();
+}
+
+/** Inspect one authorized content-free durable workflow view. */
+export async function inspectWorkflow(options: OperationalClientOptions, id: string): Promise<OperationalWorkflow> {
+  if (!workflowRunIdentifier.test(id)) throw new MayuraError('INVALID_CONFIG', 'Workflow run ID is invalid.');
+  const raw = await transport(options, `/v1/workflow-runs/${id}`, [200]); exact(raw, ['workflow']); return workflow(raw['workflow'], id);
+}
+
+/** Submit one revision-bound durable cancellation command without automatic retry. */
+export async function cancelWorkflow(options: OperationalClientOptions, input: {
+  readonly id: string; readonly revision: number; readonly commandId: string;
+}): Promise<OperationalWorkflow> {
+  if (!workflowRunIdentifier.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision < 1 || !identifier.test(input.commandId))
+    throw new MayuraError('INVALID_CONFIG', 'Workflow cancellation identity is invalid.');
+  const raw = await transport(options, `/v1/workflow-runs/${input.id}/cancel`, [200], 'POST', { commandId: input.commandId, revision: input.revision });
+  exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
+}
+
+/** Submit one exact digest-bound workflow approval without automatic retry. */
+export async function approveWorkflow(options: OperationalClientOptions, input: {
+  readonly id: string; readonly revision: number; readonly commandId: string; readonly nodeId: string;
+  readonly approvalDigest: string; readonly childRunId?: string;
+}): Promise<OperationalWorkflow> {
+  if (!workflowRunIdentifier.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision < 1 || !identifier.test(input.commandId)
+    || !workflowNodeIdentifier.test(input.nodeId) || !workflowRunIdentifier.test(input.approvalDigest)
+    || (input.childRunId !== undefined && !workflowRunIdentifier.test(input.childRunId)))
+    throw new MayuraError('INVALID_CONFIG', 'Workflow approval identity is invalid.');
+  const raw = await transport(options, `/v1/workflow-runs/${input.id}/approvals`, [200], 'POST', { commandId: input.commandId, revision: input.revision,
+    nodeId: input.nodeId, approvalDigest: input.approvalDigest, childRunId: input.childRunId ?? null });
+  exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
 }
 
 /** Bounded explicit polling of read-only run state; commands are never issued or retried. */
