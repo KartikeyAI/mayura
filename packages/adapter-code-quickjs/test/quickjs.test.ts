@@ -75,8 +75,10 @@ describe('QuickJS child-process adapter', () => {
   });
 
   it('terminates allocation-heavy guest work at the QuickJS heap boundary', async () => {
+    // Keep the host deadline well above cold WASM startup under full-suite contention;
+    // this case asserts the inner heap boundary, not scheduler wall-clock behavior.
     const result = await execute('() => { const values = []; while (true) values.push("x".repeat(65536)); }', undefined,
-      { limits: { ...limits, cpuMillis: 1_000, wallTimeMillis: 2_000, memoryBytes: 8 * 1_024 * 1_024 } });
+      { limits: { ...limits, cpuMillis: 1_000, wallTimeMillis: 10_000, memoryBytes: 8 * 1_024 * 1_024 } });
     expect(result).toMatchObject({ status: 'failed', error: { code: 'TOOL_FAILED' } });
   });
 
