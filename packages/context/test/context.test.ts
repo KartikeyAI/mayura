@@ -262,12 +262,19 @@ describe('native deterministic context assembly', () => {
     await expect(assembleContext(options([], { maxBytes: 10, reservedBytes: 11 }))).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
   });
 
-  it('retains pinned and unresolved state through repeated checkpoint-style assembly without inventing resolution', async () => {
+  it('V14 preserves every continuity category through repeated serialized compaction and resume', async () => {
     let candidates: ContextCandidate[] = continuity.map((kind) => candidate(kind, { kind }));
     for (let round = 0; round < 5; round++) {
       const result = await assembleContext(options(candidates));
       expect(result.selected.map((item) => item.kind).sort()).toEqual([...continuity].sort());
-      candidates = result.selected.map((item) => ({ ...item, content: jsonValue(item.content) }));
+      const checkpoint = JSON.parse(result.serialized) as { readonly items: readonly ContextCandidate[] };
+      candidates = checkpoint.items.map((item) => ({
+        id: item.id, scope: item.scope, source: item.source, provenance: item.provenance, trust: item.trust,
+        sensitivity: item.sensitivity, kind: item.kind,
+        ...(item.priority === undefined ? {} : { priority: item.priority }),
+        ...(item.pinned === undefined ? {} : { pinned: item.pinned }),
+        ...(item.validity === undefined ? {} : { validity: item.validity }), content: jsonValue(item.content),
+      }));
     }
   });
 });

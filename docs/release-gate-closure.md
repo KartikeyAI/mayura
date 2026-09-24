@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**11 of 22 gates closed. Mayura remains an experimental development preview.**
+**12 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -21,7 +21,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V11 — Language handling | **Closed** | `packages/guardrails/test/release-gate-v11.test.ts` proves separately tracked and metered detection/translation calls, immutable original evidence, exact protected-code preservation, low-confidence preservation without translation, and fail-closed accounted translation failure. Contract: [auxiliary guardrails](specs/auxiliary-guardrails.md#language-detection-and-translation). |
 | V12 — Budget concurrency | **Closed** | `packages/guardrails/test/release-gate-v12.test.ts` proves atomic competing child/root bundle admission, genuine ticket single-start, shared batch and parallel auxiliary ceilings, visible unresolved usage and stopped admission after exhaustion. The persistent equivalents remain covered by paired SQL durable-budget and workflow-tree suites. Contracts: [shared budgets](how-to/shared-budgets.md) and [durable budget ledger](specs/durable-budget-ledger.md). |
 | V13 — Memory/context isolation | Implementation gap | Scope, correction, tombstones, stale-sync protection and native read-your-writes exist. Derivative revocation and a provenance-preserving migration fixture are missing. |
-| V14 — Context continuity | Implementation gap | Required-source continuity exists. Repeated compaction/resume does not yet persist and prove all hard constraints, blockers, approvals and outstanding steps as one contract. |
+| V14 — Context continuity | **Closed** | The named `V14` fixture in `packages/context/test/context.test.ts` performs five exact JSON checkpoint/compaction/resume rounds and proves every hard constraint, unresolved blocker, pending approval and outstanding task remains required and selected. Existing overflow/source/sensitivity fixtures fail closed instead of silently dropping required continuity. Contract: [native context](specs/native-context.md). |
 | V15 — Code Mode | Qualification gap | QuickJS and Docker containment plus mediated nested calls and durable phases exist. A complete escape suite and one crash/resume write-deduplication gate suite remain; production hostile-code qualification is explicitly separate. |
 | V16 — Server/client | Implementation gap | Object authorization, authenticated metadata streams, reconnect and cancellation exist. Safe rendering and explicit browser/server bundle separation need gate-specific executable evidence. |
 | V17 — Operational recovery | Implementation gap | Provider/exporter failures, artifacts, corruption and worker draining have partial evidence. Cache corruption, migration/restore as an application operation and the complete documented failure matrix remain open. |
@@ -33,7 +33,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Close remaining composition and containment gates V14, V15 and V18.
+1. Close remaining containment and consumer gates V15 and V18.
 2. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
 3. Execute the owner-approved distribution matrix for V19 and release governance for V22.
 4. Add MCP authority parity and close V01 after all invocation paths are stable.
