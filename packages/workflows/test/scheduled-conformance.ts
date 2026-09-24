@@ -144,6 +144,70 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       });
     });
 
+    it('reconciles one unknown external effect without releasing output or replaying', async () => {
+      let effects = 0; let verifications = 0;
+      let attestation: { authorityId: string; attestationId: string; execution: 'succeeded' | 'failed'; knownCostMicros: number } =
+        { authorityId: 'provider-a', attestationId: 'event/123', execution: 'succeeded', knownCostMicros: 4 };
+      const definition = single(tool({ costMicros: 10, execute: (input, context) => {
+        effects++; context.reportUsage({ knownCostMicros: 2, unknownCostMicros: 3 }); return input;
+      } }));
+      const engine = runtime({
+        resources: { write: ['reconciled-resource'] },
+        verifyExecution: async (request, credential) => {
+          verifications++;
+          expect(credential).toBe('SECRET-provider-credential');
+          expect(Object.isFrozen(request)).toBe(true); expect(Object.isFrozen(request.scope)).toBe(true);
+          expect(request).toMatchObject({ nodeId: 'write', toolId: 'scheduled.write', toolVersion: '1', maximumCostMicros: 10, scope });
+          return attestation;
+        },
+      });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'external-reconciliation' });
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({
+        status: 'outcome_unknown', budget: { spentMicros: 2, reservedMicros: 3 },
+      });
+      const reconciled = await engine.reconcile(definition, { id: run.id, nodeId: 'write', credential: 'SECRET-provider-credential' });
+      expect(reconciled).toMatchObject({
+        status: 'outcome_unknown', output: null, budget: { spentMicros: 4, reservedMicros: 0 },
+        steps: { write: { status: 'unknown', output: null, receipt: { execution: 'succeeded', disclosure: 'withheld' } } },
+      });
+      const repeated = await engine.reconcile(definition, { id: run.id, nodeId: 'write', credential: 'SECRET-provider-credential' });
+      expect(repeated).toEqual(reconciled);
+      attestation = { authorityId: 'provider-a', attestationId: 'event/contradiction', execution: 'failed', knownCostMicros: 5 };
+      const contradicted = await engine.reconcile(definition, { id: run.id, nodeId: 'write', credential: 'SECRET-provider-credential' });
+      expect(contradicted).toMatchObject({ status: 'outcome_unknown', output: null, budget: { spentMicros: 4, reservedMicros: 0 },
+        steps: { write: { receipt: { execution: 'succeeded', disclosure: 'withheld' } } } });
+      expect(contradicted.version).toBeGreaterThan(reconciled.version);
+      expect(effects).toBe(1); expect(verifications).toBe(3);
+      const persisted = await detail(run.id); const job = persisted.jobs[0]!;
+      const evidence = await store.scheduler.receipts({ scope: job.scope, jobId: job.jobId, fence: job.fence });
+      expect(evidence).toHaveLength(3);
+      expect(evidence[1]).toMatchObject({ source: { kind: 'external_reconciliation', authorityId: 'provider-a' } });
+      expect(evidence[1]!.source!.attestationHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(evidence[2]).toMatchObject({ disposition: 'conflicting', receipt: { execution: 'failed' } });
+      expect(JSON.stringify({ persisted, events: await engine.events(run.id) })).not.toContain('SECRET-provider-credential');
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('outcome_unknown'); expect(effects).toBe(1);
+    });
+
+    it('fails closed on unauthorized or malformed external-effect reconciliation', async () => {
+      const definition = single(tool({ costMicros: 3, execute: (input, context) => {
+        context.reportUsage({ knownCostMicros: 0, unknownCostMicros: 3 }); return input;
+      } }));
+      const unconfigured = runtime();
+      const first = await unconfigured.submit(definition, { input: { value: 2 }, idempotencyKey: 'reconcile-disabled' });
+      await unconfigured.runUntilSettled(definition, first.id);
+      await expect(unconfigured.reconcile(definition, { id: first.id, nodeId: 'write', credential: null })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+
+      const malformed = runtime({ verifyExecution: async () => ({
+        authorityId: 'provider-a', attestationId: 'event/invalid', execution: 'not_started', knownCostMicros: 1,
+      }) });
+      const second = await malformed.submit(definition, { input: { value: 2 }, idempotencyKey: 'reconcile-malformed' });
+      await malformed.runUntilSettled(definition, second.id);
+      await expect(malformed.reconcile(definition, { id: second.id, nodeId: 'write', credential: null })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+      expect(await malformed.inspect(second.id)).toMatchObject({ budget: { spentMicros: 0, reservedMicros: 3 } });
+      await malformed.close();
+      await expect(malformed.reconcile(definition, { id: second.id, nodeId: 'write', credential: null })).rejects.toMatchObject({ code: 'CANCELLED' });
+    });
+
     it('deduplicates concurrent submission and retries after completion without replacing intent', async () => {
       let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }));
       const engine = runtime(); const command = { input: { value: 2 }, idempotencyKey: 'deduplicate' };

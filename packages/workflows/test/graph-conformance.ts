@@ -109,6 +109,28 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       const engine = runtime(); expect(engine.profile).toBe('scheduled-v2'); expect('attach' in engine).toBe(false);
     });
 
+    it('reconciles an unknown graph tool attempt through the shared trusted boundary', async () => {
+      let effects = 0;
+      const uncertain = defineTool({
+        id: 'graph.effect', version: '1', description: 'Uncertain graph effect', input: z.unknown(), output: z.unknown(),
+        effects: 'write', capabilities: [], costMicros: 6, timeoutMs: 15_000,
+        execute: (input, context) => { effects++; context.reportUsage({ knownCostMicros: 1, unknownCostMicros: 5 }); return input; },
+      });
+      const definition = defineWorkflowGraph({ id: 'graph.reconcile', version: '1', input: z.unknown(), output: z.unknown(),
+        nodes: [{ kind: 'tool', id: 'effect', tool: uncertain, input: literal(null) }], result: step('effect') });
+      const engine = runtime({ verifyExecution: async request => {
+        expect(request).toMatchObject({ nodeId: 'effect', maximumCostMicros: 6, toolId: 'graph.effect' });
+        return { authorityId: 'graph-provider', attestationId: 'graph-event/1', execution: 'failed', knownCostMicros: 3 };
+      } });
+      const run = await engine.submit(definition, { input: null, idempotencyKey: 'graph-reconciliation' });
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({ status: 'outcome_unknown', budget: { spentMicros: 1, reservedMicros: 5 } });
+      expect(await engine.reconcile(definition, { id: run.id, nodeId: 'effect', credential: null })).toMatchObject({
+        status: 'outcome_unknown', output: null, budget: { spentMicros: 3, reservedMicros: 0 },
+        steps: { effect: { status: 'unknown', output: null, receipt: { execution: 'failed', disclosure: 'withheld' } } },
+      });
+      expect(effects).toBe(1);
+    });
+
     it('waits without a job or charge and resumes from durable facts after close/reopen', async () => {
       const source = await target(); const definition = waitGraph([source.reference]); const engine = runtime();
       const run = await engine.submit(definition, { input: null, idempotencyKey: 'restart' });

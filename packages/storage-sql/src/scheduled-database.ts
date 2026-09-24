@@ -576,7 +576,8 @@ export class ScheduledWorkflowDatabase {
       if (method === 'recordReceipt') {
         const job = this.job(run,input); const node = this.node(run,job.nodeId); const prior = await this.accounting(tx,run,job,node);
         const result = await this.local(tx,run).execute('recordReceipt',{scope,jobId:job.jobId,fence:input['fence'],evidenceId:input['evidenceId'],receipt:input['receipt'],
-          ...(input['settlement'] === undefined ? {} : {settlement:input['settlement']})}) as {disposition:EvidenceDisposition;job:JobRecord};
+          ...(input['settlement'] === undefined ? {} : {settlement:input['settlement']}),
+          ...(input['source'] === undefined ? {} : {source:input['source']})}) as {disposition:EvidenceDisposition;job:JobRecord};
         if (run.events.length === 0) return this.snapshot(run);
         this.replaceJob(run,result.job); const step = run.state.steps[job.nodeId]!; const receipt = input['receipt'] as unknown as ExecutionReceipt;
         if (result.disposition !== 'conflicting') {

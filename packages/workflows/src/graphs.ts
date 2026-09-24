@@ -1,6 +1,6 @@
 import type { InferInput, Schema } from '@mayura/core';
 import type { ExecutionRef, WorkflowGraphAggregateStore, WorkflowGraphFormat3Step } from '@mayura/storage-contracts';
-import { createScheduledDriver, type ScheduledWorkflowRuntimeOptions } from './scheduled.js';
+import { createScheduledDriver, type ReconcileExternalEffectCommand, type ScheduledWorkflowRuntimeOptions } from './scheduled.js';
 import type { WorkflowSnapshot } from './runtime.js';
 import type { AnyWorkflowGraph, WorkflowGraphDefinition } from './graph-definition.js';
 
@@ -27,6 +27,7 @@ export interface WorkflowGraphRuntime {
   reference(id: string): Promise<ExecutionRef>;
   events(id: string, after?: number): ReturnType<WorkflowGraphAggregateStore['events']>;
   runUntilSettled(definition: AnyWorkflowGraph, id: string): Promise<WorkflowGraphSnapshot>;
+  reconcile(definition: AnyWorkflowGraph, command: ReconcileExternalEffectCommand): Promise<WorkflowGraphSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowGraphSnapshot>;
   cancel(id: string): Promise<WorkflowGraphSnapshot>;
   recoverExpired(id: string): Promise<WorkflowGraphSnapshot>;

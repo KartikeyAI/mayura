@@ -26,15 +26,23 @@ export interface JobRecord extends JobKey {
   readonly receipt: ExecutionReceipt | null; readonly output: JsonValue | null;
 }
 export type EvidenceDisposition = 'current' | 'late' | 'conflicting';
+export interface SchedulerEvidenceSource {
+  readonly kind: 'external_reconciliation';
+  readonly authorityId: string;
+  /** Domain-separated digest of the verifier's stable attestation ID; never a credential. */
+  readonly attestationHash: string;
+}
 export interface SchedulerEvidence {
   readonly evidenceId: string; readonly receipt: ExecutionReceipt;
   /** Optional for generic scheduler users; integrated metered workflows require it. */
   readonly settlement?: ExecutionSettlement;
+  readonly source?: SchedulerEvidenceSource;
   readonly disposition: EvidenceDisposition; readonly recordedAtMs: number;
 }
 export interface ReceiptCommand extends JobKey {
   readonly fence: number; readonly evidenceId: string; readonly receipt: ExecutionReceipt;
   readonly settlement?: ExecutionSettlement;
+  readonly source?: SchedulerEvidenceSource;
 }
 export interface CompleteJobCommand {
   readonly claim: Claim; readonly commandId: string; readonly evidenceId: string;

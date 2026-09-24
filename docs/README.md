@@ -16,6 +16,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Choose a storage installation](how-to/storage-installation.md) and [package boundary decision](adr/0006-isolated-sql-installations.md) — selected SQLite/PostgreSQL adapters with one shared engine and a compatible both-adapter facade.
 - [Standalone leased scheduler](specs/leased-scheduler.md) — expiring claims, fences and resource quarantine for separate jobs.
 - [Scheduled workflows](scheduled-workflows.md), [atomic contract](specs/scheduled-workflows.md) and [paired SQL tests](testing-scheduled-workflows.md) — opt-in workflow/job/budget ownership without automatic legacy migration.
+- [External-effect reconciliation](specs/external-effect-reconciliation.md) — trusted exact-attempt attestation and atomic cost refinement without output release or replay.
 - [Initial durable engine](adr/0002-initial-durable-engine.md) — implemented subset and recovery limitations.
 - [Tool batches](specs/tool-batches.md) — dependency-aware bounded parallel execution.
 - [Processors and guardrails](specs/processors.md) — immutable content and disclosure barriers.
@@ -45,7 +46,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Foundation architecture](adr/0001-foundation.md) — implementation boundaries and admission policy.
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,376 tests with two test processes; all V01–V22 enterprise release gates remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status ledger and executable tests determine what this checkout actually supports. The integrated local checkpoint passes 2,464 tests in 120 files with PostgreSQL and live Docker enabled; all V01–V22 enterprise release gates remain open.
 
 Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 

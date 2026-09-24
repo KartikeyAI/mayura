@@ -1,4 +1,4 @@
-import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonValue, type Schema, type InferInput } from '@mayura/core';
+import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import {
   StorageError, executionRef, workflowPolicy, workflowResources, workflowOutputs,
@@ -26,6 +26,32 @@ export interface ScheduledWorkflowRuntimeOptions extends Omit<WorkflowRuntimeOpt
   readonly maxPendingStorageOperations?: number;
   /** Explicit resource identities per tool node; immutable after the run is enrolled. */
   readonly resources?: WorkflowResourcePlan;
+  /** Trusted provider boundary for resolving one persisted unknown external effect. */
+  readonly verifyExecution?: (request: ExternalEffectReconciliationRequest, credential: unknown) => PromiseLike<VerifiedExternalEffect>;
+  readonly reconciliationTimeoutMs?: number;
+}
+export interface ExternalEffectReconciliationRequest {
+  readonly runId: string;
+  readonly definitionHash: string;
+  readonly nodeId: string;
+  readonly jobId: string;
+  readonly fence: number;
+  readonly callId: string;
+  readonly toolId: string;
+  readonly toolVersion: string;
+  readonly maximumCostMicros: number;
+  readonly scope: Scope;
+}
+export interface VerifiedExternalEffect {
+  readonly authorityId: string;
+  readonly attestationId: string;
+  readonly execution: 'not_started' | 'succeeded' | 'failed';
+  readonly knownCostMicros: number;
+}
+export interface ReconcileExternalEffectCommand {
+  readonly id: string;
+  readonly nodeId: string;
+  readonly credential: unknown;
 }
 export interface ScheduledWorkflowRuntime {
   readonly profile: 'scheduled-v1';
@@ -36,6 +62,7 @@ export interface ScheduledWorkflowRuntime {
   reference(id: string): Promise<ExecutionRef>;
   events(id: string, after?: number): ReturnType<ScheduledWorkflowAggregateStore['events']>;
   runUntilSettled(definition: AnyWorkflow, id: string): Promise<WorkflowSnapshot>;
+  reconcile(definition: AnyWorkflow, command: ReconcileExternalEffectCommand): Promise<WorkflowSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowSnapshot>;
   cancel(id: string): Promise<WorkflowSnapshot>;
   recoverExpired(id: string): Promise<WorkflowSnapshot>;
@@ -64,6 +91,7 @@ interface ScheduledDriverRuntime {
   reference(id: string): Promise<ExecutionRef>;
   events(id: string, after?: number): ReturnType<ScheduledWorkflowAggregateStore['events']>;
   runUntilSettled(definition: DriverDefinition, id: string): Promise<ScheduledPublicSnapshot>;
+  reconcile(definition: DriverDefinition, command: ReconcileExternalEffectCommand): Promise<ScheduledPublicSnapshot>;
   approve(command: Parameters<ScheduledWorkflowRuntime['approve']>[0]): Promise<ScheduledPublicSnapshot>;
   cancel(id: string): Promise<ScheduledPublicSnapshot>;
   recoverExpired(id: string): Promise<ScheduledPublicSnapshot>;
@@ -127,10 +155,13 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
   const maxConcurrentRuns = options.maxConcurrentRuns ?? 16;
   const storageTimeoutMs = options.storageTimeoutMs ?? 10_000;
   const maxPendingStorageOperations = options.maxPendingStorageOperations ?? 64;
-  for (const [name, value] of Object.entries({ leaseMs, maxConcurrentJobs, maxConcurrentRuns, storageTimeoutMs, maxPendingStorageOperations })) assertPositiveInteger(value, name);
-  if (leaseMs < 1_000 || leaseMs > 300_000 || maxConcurrentJobs > 32 || maxConcurrentRuns > 128 || storageTimeoutMs > 30_000 || maxPendingStorageOperations > 1_024) throw new MayuraError('INVALID_CONFIG', 'Scheduled worker limits exceed supported bounds.');
+  const reconciliationTimeoutMs = options.reconciliationTimeoutMs ?? 30_000;
+  for (const [name, value] of Object.entries({ leaseMs, maxConcurrentJobs, maxConcurrentRuns, storageTimeoutMs, maxPendingStorageOperations, reconciliationTimeoutMs })) assertPositiveInteger(value, name);
+  if (leaseMs < 1_000 || leaseMs > 300_000 || maxConcurrentJobs > 32 || maxConcurrentRuns > 128 || storageTimeoutMs > 30_000
+    || maxPendingStorageOperations > 1_024 || reconciliationTimeoutMs > 30_000) throw new MayuraError('INVALID_CONFIG', 'Scheduled worker limits exceed supported bounds.');
   const resourceInput = safeScheduledJson(options.resources ?? {}, 1_048_576, 'input') as WorkflowResourcePlan;
   const verifyHuman = options.verifyHuman;
+  const verifyExecution = options.verifyExecution;
   const shutdown = new AbortController();
   let pendingStorage = 0;
   // A cancelled/expired wait never cancels a committed database fact or authorizes a replay.
@@ -467,6 +498,61 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       if (drivers.size >= maxConcurrentRuns) return Promise.reject(new MayuraError('LIMIT_EXCEEDED', 'This worker has reached its active-run limit.'));
       const operation = drive(definition, id).finally(() => { drivers.delete(id); });
       drivers.set(id, { definition, definitionHash: definition.digest, operation }); return operation;
+    },
+    async reconcile(definition, command) {
+      open(); assertDefinition(definition); enrollment(definition);
+      const { id, nodeId, credential } = command; access(id);
+      if (typeof nodeId !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(nodeId)
+        || ['constructor', 'prototype', '__proto__'].includes(nodeId)) throw new MayuraError('INVALID_INPUT', 'Reconciliation requires an exact tool node.');
+      if (!verifyExecution) throw new MayuraError('PERMISSION_DENIED', 'A trusted external-effect verifier is required.');
+      const current = await load(id); matches(definition, current);
+      const state = stateFrom(current.record);
+      const node = definition.nodes.find(item => item.kind === 'tool' && item.id === nodeId);
+      const job = current.jobs.find(item => item.nodeId === nodeId);
+      if (!node || node.kind !== 'tool' || !job || job.state !== 'outcome_unknown' || job.startedAtMs === null || job.fence < 1
+        || job.intent['toolId'] !== node.tool.id || job.intent['callId'] !== `${id}/step:${node.id}`
+        || !state.steps[nodeId] || state.steps[nodeId]!.kind !== 'tool') {
+        throw new MayuraError('CONFLICT', 'Only the exact persisted unknown tool attempt may be reconciled.');
+      }
+      const request = safeScheduledJson({
+        runId: id, definitionHash: definition.digest, nodeId, jobId: job.jobId, fence: job.fence,
+        callId: `${id}/step:${node.id}`, toolId: node.tool.id, toolVersion: node.tool.version,
+        maximumCostMicros: node.tool.costMicros, scope,
+      }, 8_192, 'input') as unknown as ExternalEffectReconciliationRequest;
+      let verified: VerifiedExternalEffect;
+      try {
+        const raw = await scheduledCallback(() => verifyExecution(request, credential), reconciliationTimeoutMs, shutdown.signal);
+        const value = safeScheduledJson(raw, 4_096, 'output');
+        if (value === null || Array.isArray(value) || typeof value !== 'object'
+          || Object.keys(value).length !== 4 || !['authorityId', 'attestationId', 'execution', 'knownCostMicros'].every(key => Object.hasOwn(value, key))
+          || typeof value['authorityId'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(value['authorityId'])
+          || typeof value['attestationId'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(value['attestationId'])
+          || !['not_started', 'succeeded', 'failed'].includes(value['execution'] as string)
+          || typeof value['knownCostMicros'] !== 'number' || !Number.isSafeInteger(value['knownCostMicros'])
+          || value['knownCostMicros'] < 0 || value['knownCostMicros'] > node.tool.costMicros
+          || (value['execution'] === 'not_started' && value['knownCostMicros'] !== 0)) throw new Error();
+        verified = value as unknown as VerifiedExternalEffect;
+      } catch {
+        if (shutdown.signal.aborted) throw new MayuraError('CANCELLED', 'Scheduled worker is closed.');
+        throw new MayuraError('PERMISSION_DENIED', 'External effect verification did not authorize reconciliation.');
+      }
+      open();
+      const latest = await load(id); matches(definition, latest);
+      const latestJob = latest.jobs.find(item => item.jobId === job.jobId);
+      if (!latestJob || latestJob.nodeId !== nodeId || latestJob.fence !== job.fence || latestJob.state !== 'outcome_unknown'
+        || latestJob.startedAtMs === null) throw new MayuraError('CONFLICT', 'The unknown tool attempt changed during reconciliation.');
+      const receipt = Object.freeze({ callId: request.callId, toolId: request.toolId,
+        execution: verified.execution, disclosure: 'withheld' as const });
+      const settlement = Object.freeze({ knownCostMicros: verified.knownCostMicros, unknownCostMicros: 0 });
+      const source = Object.freeze({ kind: 'external_reconciliation' as const, authorityId: verified.authorityId,
+        attestationHash: digest('mayura:external-attestation:v1', { authorityId: verified.authorityId, attestationId: verified.attestationId }) });
+      const evidenceId = digest('mayura:workflow-reconciliation:v1', {
+        jobId: job.jobId, fence: job.fence, source, receipt, settlement,
+      });
+      const result = await scheduledStorage(() => api.recordReceipt({ ...access(id), jobId: job.jobId,
+        fence: job.fence, evidenceId, receipt, settlement, source }), true);
+      const reconciled = view(result, id); matches(definition, reconciled);
+      return snapshot(reconciled.record);
     },
     async approve(command) {
       open(); const { id, nodeId, digest: approvalDigest, credential } = command; access(id);

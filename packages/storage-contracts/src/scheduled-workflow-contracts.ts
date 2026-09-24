@@ -1,6 +1,6 @@
 import type { Effect, ExecutionReceipt, ExecutionSettlement, JsonValue, Scope } from '@mayura/core';
 import type { AggregateStore, StoredRecord } from './contracts.js';
-import type { Claim, JobRecord, SchedulerStore } from './scheduler-contracts.js';
+import type { Claim, JobRecord, SchedulerEvidenceSource, SchedulerStore } from './scheduler-contracts.js';
 
 export type WorkflowBinding =
   | { readonly kind: 'literal'; readonly value: JsonValue }
@@ -55,7 +55,7 @@ export interface ScheduledWorkflowStore {
   renew(command: ScheduledRunAccess & { readonly claim: Claim; readonly leaseMs: number }): Promise<Claim>;
   start(command: ScheduledWrite & { readonly claim: Claim; readonly input: JsonValue }): Promise<{ readonly status: 'started' | 'already_started'; readonly snapshot: ScheduledWorkflowSnapshot }>;
   recordReceipt(command: ScheduledRunAccess & { readonly jobId: string; readonly fence: number; readonly evidenceId: string;
-    readonly receipt: ExecutionReceipt; readonly settlement?: ExecutionSettlement }): Promise<ScheduledWorkflowSnapshot>;
+    readonly receipt: ExecutionReceipt; readonly settlement?: ExecutionSettlement; readonly source?: SchedulerEvidenceSource }): Promise<ScheduledWorkflowSnapshot>;
   complete(command: ScheduledWrite & { readonly claim: Claim; readonly evidenceId: string; readonly outcome: 'succeeded' | 'failed' | 'blocked'; readonly output: JsonValue | null }): Promise<ScheduledWorkflowSnapshot>;
   abandon(command: ScheduledWrite & { readonly claim: Claim; readonly outcome: 'failed' | 'blocked' }): Promise<ScheduledWorkflowSnapshot>;
   failNode(command: ScheduledWrite & { readonly nodeId: string; readonly outcome: 'failed' | 'blocked' }): Promise<ScheduledWorkflowSnapshot>;

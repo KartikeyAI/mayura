@@ -1,7 +1,7 @@
 import { jsonValue, type ExecutionReceipt, type JsonObject } from '@mayura/core';
 import { StorageError, type StoredEvent, type StoredEventInput } from './contracts.js';
 import type { Claim, CompleteJobCommand, EvidenceDisposition, JobKey, JobRecord, JobReservation, ReceiptCommand, SchedulerEvidence } from './scheduler-contracts.js';
-import { canonical, fields, hash, integer, object, reservation, schedulerCommand, schedulerDigest, settlement, type SchedulerMethod } from './scheduler-validation.js';
+import { canonical, evidenceSource, fields, hash, integer, object, reservation, schedulerCommand, schedulerDigest, settlement, type SchedulerMethod } from './scheduler-validation.js';
 import { identifier, nextCounter } from './validation.js';
 import { loadAggregate, lockRunIdentity, ownedRun, writerRequired } from './aggregate-session.js';
 
@@ -73,10 +73,11 @@ function decode(row: Row): Data {
       if (![null,'released','expired','completed','unknown'].includes(attempt['ended'] as string | null) || !Array.isArray(attempt['evidence']) || attempt['evidence'].length > 16 || (attempt['startedAtMs'] === null && attempt['evidence'].length > 0)) failure();
       const evidenceIds = new Set<string>();
       for (const item of attempt['evidence']) {
-        const evidence = object(item); fields(evidence, ['evidenceId','receipt','disposition','recordedAtMs'], ['settlement']);
+        const evidence = object(item); fields(evidence, ['evidenceId','receipt','disposition','recordedAtMs'], ['settlement','source']);
         const id = identifier(evidence['evidenceId'], 'Stored evidence'); if (evidenceIds.has(id)) failure(); evidenceIds.add(id);
         checkReceipt(evidence['receipt']); integer(evidence['recordedAtMs']);
         if (evidence['settlement'] !== undefined) settlement(evidence['settlement']);
+        if (evidence['source'] !== undefined) evidenceSource(evidence['source']);
         if (!['current','late','conflicting'].includes(evidence['disposition'] as string)) failure();
       }
     }
@@ -416,7 +417,9 @@ export class SchedulerDatabase {
     if (existing) {
       const sameSettlement = existing.settlement === undefined || command.settlement === undefined
         ? existing.settlement === command.settlement : same(existing.settlement, command.settlement);
-      if (!same(existing.receipt, command.receipt) || !sameSettlement) conflict();
+      const sameSource = existing.source === undefined || command.source === undefined
+        ? existing.source === command.source : same(existing.source, command.source);
+      if (!same(existing.receipt, command.receipt) || !sameSettlement || !sameSource) conflict();
       return { disposition: existing.disposition, job: data.job };
     }
     if (attempt.evidence.length >= 16) limit();
@@ -426,7 +429,8 @@ export class SchedulerDatabase {
     let disposition: EvidenceDisposition = current ? 'current' : 'late';
     if (known && command.receipt.execution !== 'unknown' && known.receipt.execution !== command.receipt.execution) disposition = 'conflicting';
     attempt.evidence.push({ evidenceId: command.evidenceId, receipt: command.receipt,
-      ...(command.settlement === undefined ? {} : { settlement: command.settlement }), disposition, recordedAtMs: now });
+      ...(command.settlement === undefined ? {} : { settlement: command.settlement }),
+      ...(command.source === undefined ? {} : { source: command.source }), disposition, recordedAtMs: now });
     if (current && disposition === 'current') {
       if (!data.job.receipt || data.job.receipt.execution === 'unknown' || command.receipt.execution !== 'unknown') data.job.receipt = command.receipt;
       if (command.receipt.execution === 'unknown') await this.unknown(tx, data);
