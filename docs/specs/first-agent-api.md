@@ -1,6 +1,6 @@
 # First-agent API and progressive developer experience
 
-Status: experimental first-agent contract. The basic tools/runtime slice is under development; later profile guarantees and release gates remain requirements, not completed capabilities.
+Status: implemented experimental first-agent contract. Stable publication and external live-provider qualification remain separate release work.
 
 Mayura is an independent, open-source TypeScript framework for developers building their own agents. A developer should be able to understand the smallest complete agent without learning storage, deployment, orchestration, or Mayura's internal package graph first. Small examples must preserve the same schema, authorization, bounded-execution, and result contracts used by larger applications.
 
@@ -115,7 +115,7 @@ The experimental runtime validates the entire model-response envelope and prefli
 
 ### `createRuntime`
 
-An execution profile is required. The initial basic implementation supports only `profile: "ephemeral"`; unsupported profiles throw a configuration error before any effect. A durable adapter must never silently degrade to ephemeral behavior after a connection or storage failure.
+An execution profile is required. The basic runtime supports only `profile: "ephemeral"`; unsupported profiles throw a configuration error before any effect. Progressive durable adoption uses the explicit `agentAsDurableWorkflow` compiler and a selected scheduled workflow/storage runtime. It reuses the exact agent definition as one conservative host-effect phase and never silently degrades after a connection or storage failure. The model loop inside that phase is not checkpointed; interruption becomes an unknown outer effect and is not replayed automatically.
 
 `permissions` is default-deny for tool invocation and effects. Omitting a grant never means “allow everything.” Requested authority is intersected with the runtime's policy; agents, model output, tools, and child work cannot expand it. Provider network calls require a scoped model capability just as filesystem, infrastructure, or message-sending tools require their own capabilities. A test fixture has no external model effect.
 
@@ -159,7 +159,7 @@ This is the same run handle, not a separate “streaming agent” definition. A 
 
 ## 6. Real-provider journey
 
-The second tutorial must use an actual supported provider adapter, clearly separated from the scripted fixture. It changes the `model` configuration and adds the provider's scoped permission and usage budget; it does not rewrite the tool or agent contracts. The exact adapter factory and authentication fields are specified in the provider adapter contract rather than invented here.
+The [real OpenAI walkthrough](../how-to/real-openai-agent.md) uses the supported `openAIResponses` adapter and is clearly separated from the scripted fixture. It changes the `model` configuration and adds the provider's scoped permission and usage budget; it does not rewrite the tool or agent contracts.
 
 The tutorial must cover obtaining/configuring a credential without embedding it in source, selecting a tool-capable model, expected cost exposure, timeouts, cancellation limitations, structured-output support, and actionable authentication/rate-limit errors. Credentials are provided to the adapter by the application and never serialized into definitions, events, or fixtures. No fake successful fallback is permitted when the provider is unavailable.
 
@@ -174,7 +174,13 @@ The release gate requires both tutorials to execute against packed release artif
 | Self-hosted server | Configure server authentication, PostgreSQL, workers, and client | Authenticated multi-client access, shared scheduling, and scoped durable state. |
 | Optional capability | Add memory, context, Code Mode, integrations, or UI | Only that capability's documented and tested guarantees. |
 
-Do not show a durable configuration example before its adapter contract is implemented and tested. The same definition must pass cross-profile conformance tests; only the runtime construction and transport change. Profile-specific operations fail clearly where unsupported.
+The [durable agent phase](durable-agent-phase.md) and authenticated server transport now share a same-definition conformance fixture. Only explicit runtime, persistence, authority and transport configuration changes. Profile-specific operations fail clearly where unsupported.
+
+### Declared first-agent DX budgets
+
+On the declared Windows x64, Node 24 and pnpm 10 qualification host, the clean packed offline base install must complete within 60 seconds, strict consumer type-check within 30 seconds, credential-free first-agent execution within 10 seconds, and base SDK import within 2 seconds. The packed consumer check enforces these ceilings and records actual measurements. They are regression ceilings, not cross-machine performance promises.
+
+Common authorization recovery must expose a stable code plus a safe action-oriented message without raw callback/provider data. The packed fixture asserts the default-deny `PERMISSION_DENIED` diagnostic. The provider suite asserts safe authentication/model-access and rate-limit diagnostics while retaining the stable `MODEL_FAILED` code.
 
 ## 8. Developer-experience release gates
 

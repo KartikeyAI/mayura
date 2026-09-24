@@ -15,6 +15,7 @@
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
+    "model:live-check": "node examples/openai-agent.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
     "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },
@@ -37,6 +38,7 @@
     "@mayura/adapter-code-quickjs": "workspace:*",
     "@mayura/adapter-code-docker": "workspace:*",
     "@mayura/adapter-mcp": "workspace:*",
+    "@mayura/provider-openai": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",

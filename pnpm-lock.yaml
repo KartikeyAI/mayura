@@ -32,6 +32,9 @@ importers:
       '@mayura/exporter-otlp':
         specifier: workspace:*
         version: link:packages/exporter-otlp
+      '@mayura/provider-openai':
+        specifier: workspace:*
+        version: link:packages/provider-openai
       '@mayura/runtime':
         specifier: workspace:*
         version: link:packages/runtime
@@ -364,6 +367,9 @@ importers:
         specifier: workspace:*
         version: link:../tools
     devDependencies:
+      '@mayura/server':
+        specifier: workspace:*
+        version: link:../server
       '@mayura/storage':
         specifier: workspace:*
         version: link:../storage

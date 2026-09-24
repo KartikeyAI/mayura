@@ -4,3 +4,4 @@ export { createScheduledWorkflowRuntime, type ScheduledWorkflowRuntime, type Sch
   type ExternalEffectReconciliationRequest, type VerifiedExternalEffect, type ReconcileExternalEffectCommand } from './scheduled.js';
 export { composeExternalEffectVerifiers, defineExternalEffectVerifier, type ExternalEffectProviderAttestation,
   type ExternalEffectVerificationRouter, type ExternalEffectVerifier, type ExternalEffectVerifierOptions } from './reconciliation.js';
+export { agentAsDurableWorkflow, type DurableAgentWorkflowOptions } from './agents.js';

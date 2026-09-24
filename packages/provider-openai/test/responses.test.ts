@@ -117,6 +117,15 @@ describe('HTTP boundaries and cancellation', () => {
     expect(transport.mock.calls[0]?.[1]?.redirect).toBe('error');
   });
 
+  it.each([
+    [401, 'Model provider authentication or model authorization failed. Verify the configured credential and model access.'],
+    [403, 'Model provider authentication or model authorization failed. Verify the configured credential and model access.'],
+    [429, 'The model provider rate limit was reached. Retry only under the application retry and budget policy.'],
+  ] as const)('returns an actionable safe diagnostic for HTTP %s', async (status, message) => {
+    const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: 'PRIVATE' }, { status }));
+    await expect(openAIResponses(options({ fetch: transport })).generate(request())).rejects.toMatchObject({ code: 'MODEL_FAILED', message });
+  });
+
   it('rejects a transport that reports a redirected response', async () => {
     const redirected = response(); Object.defineProperty(redirected, 'redirected', { value: true });
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(redirected);

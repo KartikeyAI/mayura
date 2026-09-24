@@ -12,7 +12,10 @@ export interface OpenAIResponsesOptions {
   /** Trusted test/proxy transport; never selected from model output. Default destination is fixed. */
   readonly fetch?: typeof globalThis.fetch;
 }
-const failed = (): never => { throw new MayuraError('MODEL_FAILED', 'The model provider returned an unavailable, refused or invalid response.'); };
+class ProviderFailure extends MayuraError {
+  constructor(message = 'The model provider returned an unavailable, refused or invalid response.') { super('MODEL_FAILED', message); }
+}
+const failed = (message?: string): never => { throw new ProviderFailure(message); };
 function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failed();
   return value;
@@ -55,6 +58,12 @@ async function responseBody(response: Response, limit: number, signal: AbortSign
   if (!response.ok || response.redirected || !response.body) {
     // Rejected responses still own a stream; release it without reading or exposing its contents.
     void response.body?.cancel().catch(() => undefined);
+    if (!response.redirected && [401, 403].includes(response.status)) {
+      return failed('Model provider authentication or model authorization failed. Verify the configured credential and model access.');
+    }
+    if (!response.redirected && response.status === 429) {
+      return failed('The model provider rate limit was reached. Retry only under the application retry and budget policy.');
+    }
     return failed();
   }
   const length = response.headers.get('content-length');
@@ -176,10 +185,11 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         }
         if (text.length === 0) return failed();
         return { type: 'final', output: jsonValue(JSON.parse(text.join('')), { maxBytes: maxResponseBytes }), usage: accounting };
-      } catch {
+      } catch (error) {
         // HTTP status/body, credentials, model output and arbitrary transport exceptions are private.
         if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
         if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
+        if (error instanceof ProviderFailure) throw error;
         return failed();
       } finally { clearTimeout(timer); }
     },

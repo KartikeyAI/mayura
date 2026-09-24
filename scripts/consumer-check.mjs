@@ -353,6 +353,7 @@ const denied = await invokeTool(tool, { left: 1, right: 2 }, {
   signal: new AbortController().signal, permissions: { allow: [] }, budget: new Budget(0, 1),
 });
 assert.equal(denied.status, 'blocked');
+assert.deepEqual(denied.error, { code: 'PERMISSION_DENIED', message: 'Tool invocation was not authorized.' });
 assert.equal(invocations, 1);
 await runtime.close();
 
@@ -467,6 +468,7 @@ async function main() {
   const installStarted = performance.now();
   await runNode([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--userconfig', npmConfig, '--cache', npmCache], application);
   const installMs = performance.now() - installStarted;
+  assert(installMs <= 60_000, 'Packed offline base installation exceeded the declared 60 second DX budget.');
   const tree = JSON.parse((await runNode([npm, 'ls', '--all', '--json', '--offline', '--cache', npmCache, '--userconfig', npmConfig], application)).stdout);
   const installed = new Set();
   const collect = (node) => {
@@ -499,12 +501,15 @@ async function main() {
   const types = await runNode([tsc, '--project', join(application, 'tsconfig.json'), '--pretty', 'false', '--listFiles'], application);
   const typeFileCount = assertConsumerTypeFiles({ output: types.stdout, application, compilerPath: tsc });
   const typecheckMs = performance.now() - typecheckStarted;
+  assert(typecheckMs <= 30_000, 'Packed strict consumer type-check exceeded the declared 30 second DX budget.');
   const executionStarted = performance.now();
   // Only packed-consumer execution is isolated. Maintainer package-manager/compiler tooling intentionally is not.
   const execution = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, join(application, 'consumer.mjs')], application)).stdout);
   const hooks = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, join(application, 'base-hooks.test.mjs')], application)).stdout);
   assert.equal(hooks.status, 'passed', 'Packed SDK lifecycle hooks did not execute through their owning runtime.');
   const executionMs = performance.now() - executionStarted;
+  assert(executionMs <= 10_000, 'Credential-free first-agent execution exceeded the declared 10 second DX budget.');
+  assert(execution.importMs <= 2_000, 'Base SDK import exceeded the declared 2 second DX budget.');
   const debuggerResult = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, '--enable-source-maps', join(application, 'debugger.mjs')], application)).stdout);
   assert.equal(debuggerResult.sourceMappedStack, true, 'The actual Node debugger stack did not resolve to shipped TypeScript.');
   const frameworkBytes = reports.reduce((sum, item) => sum + item.tarballBytes, 0);
