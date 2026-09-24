@@ -6,4 +6,4 @@ The caller owns and disposes the headless store. Hooks never refresh, observe, r
 
 React is a peer dependency. Public Mayura declarations expose only Mayura types, so the framework does not install or export a second React type universe.
 
-The separate `@mayura/client-react/components` subpath provides unstyled semantic run-summary, durable-workflow and human-request components. It exposes React types by design, performs no implicit I/O and emits response intent only from an explicit button event.
+The separate `@mayura/client-react/components` subpath provides unstyled semantic run-summary, durable-workflow, human-request and schema-driven response-form components. It exposes React types by design, performs no implicit I/O and emits response intent only from an explicit button or form event. The response form is uncontrolled, validates against `@mayura/client/forms`, and returns a typed request/digest-bound submission to the application without sending it.

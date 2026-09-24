@@ -1,5 +1,6 @@
 import { createClient, type ClientSchema, type RemoteOutcome } from '@mayura/client';
 import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '@mayura/client/headless';
+import { defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
 import { createWorkflowGraphProjection } from '@mayura/client/workflows';
 
 const output: ClientSchema<{ answer: number }> = {
@@ -13,6 +14,13 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   const view = createHumanRequestView(Object.freeze({ id: 'review', agentId: 'agent', kind: 'information' as const, schemaId: 'answer-v1',
     schemaDigest: 'a'.repeat(64), prompt: 'Provide evidence.', digest: 'b'.repeat(64), status: 'waiting' as const }), 1_000);
   if (!view.canRespond || view.actionText !== 'Provide information') throw new Error('Headless human view failed.');
+  const request = Object.freeze({ id: 'review', agentId: 'agent', kind: 'information' as const, schemaId: 'answer-v1', schemaDigest: 'a'.repeat(64),
+    prompt: 'Provide evidence.', digest: 'b'.repeat(64), status: 'waiting' as const });
+  const form = defineHumanResponseForm({ schemaId: 'answer-v1', schemaDigest: 'a'.repeat(64), fields: [
+    { kind: 'integer', name: 'answer', label: 'Answer', required: true, minimum: 1, maximum: 5 },
+  ] });
+  const submission = validateHumanResponse(request, form, Object.freeze({ answer: '3' }));
+  if (submission.id !== 'review' || submission.digest !== 'b'.repeat(64) || submission.value['answer'] !== 3) throw new Error('Human response form failed.');
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
   const graph = createWorkflowGraphProjection(Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,

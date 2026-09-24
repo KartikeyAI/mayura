@@ -3,6 +3,7 @@
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./forms": { "types": "./dist/forms.d.ts", "import": "./dist/forms.js" },
     "./headless": { "types": "./dist/headless.d.ts", "import": "./dist/headless.js" },
     "./workflows": { "types": "./dist/workflows.d.ts", "import": "./dist/workflows.js" }
   }

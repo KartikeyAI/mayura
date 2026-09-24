@@ -1,5 +1,6 @@
-import { createElement, useCallback, type ReactElement } from 'react';
-import type { RemoteHumanRequest } from '@mayura/client';
+import { createElement, useCallback, useState, type FormEvent, type ReactElement } from 'react';
+import { ClientError, type RemoteHumanRequest } from '@mayura/client';
+import { validateHumanResponse, type HumanResponseField, type HumanResponseFormDefinition, type HumanResponseSubmission } from '@mayura/client/forms';
 import type { HeadlessRunStore } from '@mayura/client/headless';
 import type { WorkflowViewInput } from '@mayura/client/workflows';
 import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActivity, useMayuraWorkflowGraph } from './index.js';
@@ -9,6 +10,10 @@ export interface MayuraWorkflowGraphProps { readonly input: WorkflowViewInput; r
 export interface MayuraHumanRequestCardProps {
   readonly request: RemoteHumanRequest; readonly nowMs: number; readonly label?: string;
   readonly onRespond?: (request: { readonly id: string; readonly digest: string }) => void;
+}
+export interface MayuraHumanResponseFormProps {
+  readonly request: RemoteHumanRequest; readonly definition: HumanResponseFormDefinition; readonly nowMs: number;
+  readonly label?: string; readonly submitText?: string; readonly onSubmit: (submission: HumanResponseSubmission) => void;
 }
 function label(value: string | undefined, fallback: string): string {
   const selected = value ?? fallback;
@@ -55,4 +60,44 @@ export function MayuraHumanRequestCard({ request, nowMs, label: suppliedLabel, o
   return createElement('article', { 'aria-label': accessibleLabel, 'data-mayura-component': 'human-request' },
     createElement('p', { 'data-mayura-prompt': true }, view.prompt),
     createElement('p', { role: 'status', 'aria-live': 'polite' }, view.statusText), action);
+}
+
+function fieldControl(field: HumanResponseField): ReactElement {
+  const common = { name: field.name, required: field.required, 'aria-label': field.label };
+  if (field.kind === 'textarea') return createElement('textarea', { ...common, minLength: field.minLength, maxLength: field.maxLength });
+  if (field.kind === 'text') return createElement('input', { ...common, type: 'text', minLength: field.minLength, maxLength: field.maxLength });
+  if (field.kind === 'number' || field.kind === 'integer') return createElement('input', {
+    ...common, type: 'number', min: field.minimum, max: field.maximum, step: field.kind === 'integer' ? 1 : 'any',
+  });
+  if (field.kind === 'boolean') return createElement('input', { ...common, type: 'checkbox' });
+  if (field.kind !== 'select') throw new MayuraReactError('INVALID_COMPONENT_PROPS');
+  return createElement('select', common,
+    createElement('option', { value: '' }, 'Select an option'),
+    field.options.map(option => createElement('option', { key: option.value, value: option.value }, option.label)));
+}
+
+/** Schema-bound uncontrolled form. Validation and the application callback run only on an explicit submit event. */
+export function MayuraHumanResponseForm({ request, definition, nowMs, label: suppliedLabel, submitText, onSubmit }: MayuraHumanResponseFormProps): ReactElement {
+  const view = useMayuraHumanRequest(request, nowMs); const accessibleLabel = label(suppliedLabel, 'Human response');
+  const actionText = label(submitText, 'Submit response'); const [errorCode, setErrorCode] = useState<string | null>(null);
+  const submit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!view.canRespond) { setErrorCode('INVALID_FORM_VALUE'); return; }
+    const data = new FormData(event.currentTarget); const draft: Record<string, string | boolean> = Object.create(null) as Record<string, string | boolean>;
+    for (const field of definition.fields) {
+      if (field.kind === 'boolean') { draft[field.name] = data.has(field.name); continue; }
+      const value = data.get(field.name); if (typeof value === 'string') draft[field.name] = value;
+    }
+    let submission: HumanResponseSubmission;
+    try { submission = validateHumanResponse(request, definition, Object.freeze(draft)); }
+    catch (error) { if (error instanceof ClientError) { setErrorCode(error.code); return; } throw error; }
+    setErrorCode(null); onSubmit(submission);
+  }, [definition, onSubmit, request, view.canRespond]);
+  return createElement('form', { 'aria-label': accessibleLabel, 'data-mayura-component': 'human-response-form', onSubmit: submit },
+    createElement('p', { 'data-mayura-prompt': true }, view.prompt),
+    createElement('fieldset', { disabled: !view.canRespond },
+      createElement('legend', null, accessibleLabel),
+      definition.fields.map(field => createElement('label', { key: field.name }, field.label, fieldControl(field))),
+      view.canRespond ? createElement('button', { type: 'submit' }, actionText) : null),
+    errorCode === null ? null : createElement('p', { role: 'alert', 'data-error-code': errorCode }, 'Response values are invalid'));
 }

@@ -268,6 +268,7 @@ async function main() {
       }
       if (name === 'react-components') {
         assert.equal(execution.accessibleComponents, true); assert.equal(execution.explicitEvents, true); assert.equal(execution.noRendererDependency, true);
+        assert.equal(execution.typedResponseForm, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -344,13 +345,14 @@ async function main() {
       assert.equal(chunks.length, 1); assert.equal(chunks[0].imports.length, 0); assert.equal(chunks[0].dynamicImports.length, 0);
       assert(included.size >= 3 && [...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/headless.js')), 'Bundler did not include the installed headless client.');
       assert([...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/workflows.js')), 'Bundler did not include the installed workflow projector.');
+      assert([...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/forms.js')), 'Bundler did not include the installed response forms.');
       const code = chunks[0].code; assert(!code.includes('__vite-browser-external'), 'Browser bundle contains a Node compatibility shim.');
       const context = { TextEncoder, TextDecoder, URL, AbortController, setTimeout, clearTimeout };
       runInNewContext(code, context, { timeout: 1_000 });
       const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, digestBoundResponseForms: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -387,6 +389,7 @@ async function main() {
   result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'browser-headless-activity-projection', 'browser-durable-workflow-graph-projection', 'headless-no-implicit-network');
   result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network', 'react-activity-hook', 'react-workflow-graph-hook');
   result.checks.push('packed-react-components', 'react-components-explicit-events', 'react-components-no-renderer-dependency');
+  result.checks.push('browser-digest-bound-response-form', 'react-components-typed-response-form');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
