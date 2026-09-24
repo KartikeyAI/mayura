@@ -29,6 +29,13 @@ export interface RemoteRun {
   cancel(options?: { readonly signal?: AbortSignal }): Promise<void>;
   events(options?: { readonly after?: number; readonly signal?: AbortSignal }): AsyncIterable<ClientEvent>;
 }
+export interface RemoteHumanRequest {
+  readonly id: string; readonly agentId: string; readonly kind: 'information' | 'correction' | 'plan_selection';
+  readonly schemaId: string; readonly schemaDigest: string; readonly prompt: string; readonly digest: string;
+  readonly status: 'waiting' | 'answered' | 'cancelled' | 'timed_out'; readonly context?: ClientJson;
+  readonly subjectDigest?: string; readonly deadlineAtMs?: number;
+}
+export interface RemoteHumanRequestPage { readonly items: readonly RemoteHumanRequest[]; readonly next: string | null }
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token: () => string | Promise<string>;
@@ -41,6 +48,10 @@ export interface MayuraClient {
   agents(options?: { readonly signal?: AbortSignal }): Promise<readonly { readonly id: string; readonly version: string }[]>;
   submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal }): Promise<RemoteRun>;
   run(id: string): RemoteRun;
+  humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
+  humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
+  respondHumanRequest(id: string, requestDigest: string, value: unknown,
+    options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
 /** Safe machine-readable transport error; server/provider response bodies are never used as its message. */
 export class ClientError extends Error {
@@ -201,6 +212,23 @@ export function createClient(options: ClientOptions): MayuraClient {
     });
     return Object.freeze({ id, status: raw['status'] as RemoteStatus, budget: Object.freeze({ spentMicros: spent as number | string, reservedMicros: natural(budget['reservedMicros']), calls: natural(budget['calls']) }), evidence: Object.freeze(evidence) });
   };
+  const human = (value: unknown): RemoteHumanRequest => {
+    const item = record(value); const allowed = ['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status', 'context', 'subjectDigest', 'deadlineAtMs'];
+    if (Object.keys(item).some(key => !allowed.includes(key)) || !['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status'].every(key => Object.hasOwn(item, key))) return fail();
+    const humanId = text(item['id'], 80); const agentId = text(item['agentId']); const schemaId = text(item['schemaId']);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(humanId) || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(agentId)
+      || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(schemaId) || !['information', 'correction', 'plan_selection'].includes(String(item['kind']))
+      || !/^[a-f0-9]{64}$/.test(String(item['schemaDigest'])) || !/^[a-f0-9]{64}$/.test(String(item['digest']))
+      || !['waiting', 'answered', 'cancelled', 'timed_out'].includes(String(item['status'])) || typeof item['prompt'] !== 'string' || encoder.encode(item['prompt']).byteLength < 1 || encoder.encode(item['prompt']).byteLength > 1_024
+      || (item['subjectDigest'] !== undefined && !/^[a-f0-9]{64}$/.test(String(item['subjectDigest'])))
+      || ((item['kind'] === 'correction') !== (item['subjectDigest'] !== undefined))
+      || (item['deadlineAtMs'] !== undefined && (!Number.isSafeInteger(item['deadlineAtMs']) || (item['deadlineAtMs'] as number) < 0))) return fail();
+    return Object.freeze({ id: humanId, agentId, kind: item['kind'] as RemoteHumanRequest['kind'], schemaId,
+      schemaDigest: item['schemaDigest'] as string, prompt: item['prompt'], digest: item['digest'] as string, status: item['status'] as RemoteHumanRequest['status'],
+      ...(item['context'] === undefined ? {} : { context: json(item['context'], maxBytes) }),
+      ...(item['subjectDigest'] === undefined ? {} : { subjectDigest: item['subjectDigest'] as string }),
+      ...(item['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: item['deadlineAtMs'] as number }) });
+  };
   const run = (id: string): RemoteRun => {
     runId(id); const path = `/v1/runs/${id}`;
     return Object.freeze({
@@ -286,6 +314,28 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(settings.idempotencyKey)) throw new ClientError('INVALID_IDEMPOTENCY_KEY');
       const raw = await command('/v1/runs', 'POST', settings.signal, json({ agentId, input }, maxBytes), settings.idempotencyKey);
       if (raw['profile'] !== 'ephemeral') return fail(); return run(runId(raw['id']));
+    },
+    async humanRequests(settings?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }) {
+      const after = settings?.after; const limit = settings?.limit ?? 50;
+      if ((after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new ClientError('INVALID_CURSOR');
+      const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }) });
+      const raw = await command(`/v1/human-requests?${query}`, 'GET', settings?.signal);
+      if (!Array.isArray(raw['items']) || raw['items'].length > limit || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next'])))) return fail();
+      const items = raw['items'].map(human); if (new Set(items.map(item => item.id)).size !== items.length) return fail();
+      return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
+    },
+    async humanRequest(id: string, settings?: { readonly signal?: AbortSignal }) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id)) throw new ClientError('INVALID_REQUEST');
+      const result = human(record((await command(`/v1/human-requests/${id}`, 'GET', settings?.signal))['request']));
+      if (result.id !== id) return fail(); return result;
+    },
+    async respondHumanRequest(id: string, requestDigest: string, value: unknown, settings: { readonly commandId: string; readonly signal?: AbortSignal }) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id) || !/^[a-f0-9]{64}$/.test(requestDigest)
+        || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/human-requests/${id}/responses`, 'POST', settings.signal,
+        json({ commandId: settings.commandId, requestDigest, value }, maxBytes));
+      const result = human(record(raw['request']));
+      if (result.id !== id || result.digest !== requestDigest || result.status === 'waiting') return fail(); return result;
     },
   });
 }

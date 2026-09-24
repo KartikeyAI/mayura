@@ -1,6 +1,6 @@
 # Typed durable human requests
 
-Status: implemented experimental WorkStream profile. The driver-free API, SQLite conformance and optional PostgreSQL conformance exist; server, CLI, browser bindings and workflow-node integration remain separate work.
+Status: implemented experimental WorkStream profile plus authenticated server/browser wire contract. The driver-free API, SQLite conformance and optional PostgreSQL conformance exist; CLI bindings and workflow-node integration remain separate work.
 
 ## Public contract
 
@@ -32,7 +32,9 @@ This profile inherits the WorkStream aggregate limits: 256 retained signals, 128
 
 Deadlines use a trusted synchronized application clock. Request creation and response submission actively sweep an already-due request; applications must also schedule bounded `sweepDeadlines` calls for unattended expiry. A committed response wins only if it reaches the aggregate before a committed cancellation/timeout transition.
 
-This slice does not yet provide pause/resume workflow nodes, batch approval grants, notifications, server routes, CLI commands or frontend components. Existing exact-action workflow approvals remain their own stricter execution-authority contract; human information and correction responses never grant tool authority.
+The optional server adapter exposes bounded list/inspect/respond callbacks without importing WorkStream or a SQL driver. Separate `humans:read` and `humans:respond` capabilities apply; the verified principal ID is the response actor and cannot be supplied by the browser. The browser-safe client validates immutable metadata and submits the request digest with every response. The application adapter must map verified scope/agent visibility to its registered durable definitions and call the WorkStream API, which remains the authority for schema validation, request binding, deadline and first-response semantics.
+
+This slice does not yet provide pause/resume workflow nodes, batch approval grants, notifications, CLI commands or headless UI components. Existing exact-action workflow approvals remain their own stricter execution-authority contract; human information and correction responses never grant tool authority.
 
 ## Evidence
 

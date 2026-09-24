@@ -4,13 +4,25 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
   readonly id: string;
   /** Trusted application callback. Returning false or throwing marks the dependency unavailable. */
   readonly check: (context: { readonly signal: AbortSignal; readonly scope: Scope }) => boolean | Promise<boolean>;
+}
+export interface HumanRequestRecord {
+  readonly id: string; readonly agentId: string; readonly kind: 'information' | 'correction' | 'plan_selection';
+  readonly schemaId: string; readonly schemaDigest: string; readonly prompt: string; readonly digest: string;
+  readonly status: 'waiting' | 'answered' | 'cancelled' | 'timed_out'; readonly context?: JsonValue;
+  readonly subjectDigest?: string; readonly deadlineAtMs?: number;
+}
+export interface HumanRequestTransport {
+  readonly list: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly after: string | null; readonly limit: number; readonly signal: AbortSignal }) => Promise<{ readonly items: readonly HumanRequestRecord[]; readonly next: string | null }>;
+  readonly inspect: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly id: string; readonly signal: AbortSignal }) => Promise<HumanRequestRecord | null>;
+  readonly respond: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly actorId: string; readonly id: string;
+    readonly requestDigest: string; readonly commandId: string; readonly value: JsonValue; readonly signal: AbortSignal }) => Promise<HumanRequestRecord>;
 }
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
@@ -25,12 +37,13 @@ export interface AgentServerOptions {
   readonly publicLiveness?: boolean;
   /** Access-controlled readiness checks. Credentials and exception details must remain inside callbacks. */
   readonly healthChecks?: readonly HealthCheck[];
+  readonly humanRequests?: HumanRequestTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
-    readonly maxHealthOperations?: number; readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
+    readonly maxHealthOperations?: number; readonly maxHumanOperations?: number; readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
   };
 }
 export interface AgentServer { fetch(request: Request): Promise<Response>; close(): Promise<void> }
@@ -43,6 +56,7 @@ class HttpFailure extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+const humanIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const encoder = new TextEncoder();
 function object(value: unknown, maxBytes = 1_048_576): JsonObject {
   const copy = jsonValue(value, { maxBytes });
@@ -84,9 +98,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const authenticate = options.authenticate;
   if (options.publicLiveness !== undefined && typeof options.publicLiveness !== 'boolean') throw new Error('Public liveness must be explicit.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
-    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32,
+    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32,
     requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
-  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
+  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 16_777_216) throw new Error('Server limits must be bounded positive integers.');
   const healthChecks: readonly HealthCheck[] = (() => {
     const supplied = options.healthChecks ?? [];
@@ -105,6 +119,13 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       ids.add(id.value); captured.push(Object.freeze({ id: id.value, check: check.value as HealthCheck['check'] }));
     }
     return Object.freeze(captured);
+  })();
+  const humanRequests: HumanRequestTransport | undefined = (() => {
+    if (options.humanRequests === undefined) return undefined;
+    if (options.humanRequests === null || typeof options.humanRequests !== 'object') throw new Error('Human request transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.humanRequests);
+    if (Reflect.ownKeys(fields).length !== 3 || ['list', 'inspect', 'respond'].some(key => !fields[key] || !('value' in fields[key]!) || typeof fields[key]!.value !== 'function')) throw new Error('Human request transport requires exact callbacks.');
+    return Object.freeze({ list: fields['list']!.value, inspect: fields['inspect']!.value, respond: fields['respond']!.value }) as HumanRequestTransport;
   })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
@@ -129,6 +150,26 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   let requests = 0;
   let authentications = 0;
   let healthOperations = 0;
+  let humanOperations = 0;
+
+  const humanRecord = (value: unknown, identity: ServerIdentity): HumanRequestRecord => {
+    const raw = object(value, 16_384); const allowed = ['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status', 'context', 'subjectDigest', 'deadlineAtMs'];
+    if (Object.keys(raw).some(key => !allowed.includes(key)) || !['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status'].every(key => Object.hasOwn(raw, key))
+      || typeof raw['id'] !== 'string' || !humanIdentifier.test(raw['id']) || typeof raw['agentId'] !== 'string' || !identity.agentIds.includes(raw['agentId'])
+      || !['information', 'correction', 'plan_selection'].includes(String(raw['kind'])) || typeof raw['schemaId'] !== 'string' || !identifier.test(raw['schemaId'])
+      || typeof raw['schemaDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['schemaDigest']) || typeof raw['digest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['digest'])
+      || typeof raw['prompt'] !== 'string' || encoder.encode(raw['prompt']).byteLength < 1 || encoder.encode(raw['prompt']).byteLength > 1_024
+      || !['waiting', 'answered', 'cancelled', 'timed_out'].includes(String(raw['status']))
+      || (raw['subjectDigest'] !== undefined && (typeof raw['subjectDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['subjectDigest'])))
+      || ((raw['kind'] === 'correction') !== (raw['subjectDigest'] !== undefined))
+      || (raw['deadlineAtMs'] !== undefined && (!Number.isSafeInteger(raw['deadlineAtMs']) || (raw['deadlineAtMs'] as number) < 0))) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
+    return freezeJson(raw) as unknown as HumanRequestRecord;
+  };
+  const humanCall = async <T>(callback: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+    if (humanOperations >= limits.maxHumanOperations) throw new HttpFailure(429, 'HUMAN_LIMIT');
+    humanOperations++; const operation = Promise.resolve().then(callback).finally(() => { humanOperations--; });
+    try { return await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'HUMAN_UNAVAILABLE'); }
+  };
 
   const response = (value: unknown, status = 200, extra: Record<string, string> = {}): Response => {
     let text: string;
@@ -155,7 +196,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 4 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 6 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -231,7 +272,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (requestOrigin !== null && !origins.has(requestOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
     const catalogQuery = request.method === 'GET' && url.pathname === '/v1/tools';
-    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery ? !['after', 'limit'].includes(key) : true))
+    const humanListQuery = request.method === 'GET' && url.pathname === '/v1/human-requests';
+    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery ? !['after', 'limit'].includes(key) : true))
       || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
       if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, 'ORIGIN_DENIED');
@@ -272,6 +314,35 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (after > visible.length) throw new HttpFailure(400, 'INVALID_CURSOR');
       const tools = visible.slice(after, after + limit); const next = after + tools.length;
       return response({ tools, next: next < visible.length ? next : null });
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/human-requests') {
+      requireCapability(identity, 'humans:read'); if (!humanRequests) throw new HttpFailure(404, 'NOT_FOUND');
+      const after = url.searchParams.get('after'); const limitText = url.searchParams.get('limit') ?? '50';
+      if ((after !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !/^\d+$/.test(limitText) || Number(limitText) < 1 || Number(limitText) > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const page = await humanCall(() => humanRequests.list(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, after, limit: Number(limitText), signal })), signal);
+      const raw = object(page, 1_048_576); exact(raw, ['items', 'next']);
+      if (!Array.isArray(raw['items']) || raw['items'].length > Number(limitText) || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next'])))) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
+      const items = raw['items'].map(item => humanRecord(item, identity));
+      if (new Set(items.map(item => item.id)).size !== items.length) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
+      assertActive(signal); requireCapability(identity, 'humans:read'); return response({ items, next: raw['next'] });
+    }
+    const humanMatch = /^\/v1\/human-requests\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/responses)?$/.exec(url.pathname);
+    if (humanMatch && request.method === 'GET' && !url.pathname.endsWith('/responses')) {
+      requireCapability(identity, 'humans:read'); if (!humanRequests) throw new HttpFailure(404, 'NOT_FOUND');
+      const item = await humanCall(() => humanRequests.inspect(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, id: humanMatch[1]!, signal })), signal);
+      if (item === null) throw new HttpFailure(404, 'NOT_FOUND'); const record = humanRecord(item, identity);
+      if (record.id !== humanMatch[1]) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
+      assertActive(signal); requireCapability(identity, 'humans:read'); return response({ request: record });
+    }
+    if (humanMatch && request.method === 'POST' && url.pathname.endsWith('/responses')) {
+      requireCapability(identity, 'humans:respond'); if (!humanRequests) throw new HttpFailure(404, 'NOT_FOUND');
+      const data = await body(request, signal); exact(data, ['commandId', 'requestDigest', 'value']);
+      if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['requestDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['requestDigest'])) throw new HttpFailure(400, 'INVALID_REQUEST');
+      const item = await humanCall(() => humanRequests.respond(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId,
+        id: humanMatch[1]!, commandId: data['commandId'] as string, requestDigest: data['requestDigest'] as string, value: data['value']!, signal })), signal);
+      const record = humanRecord(item, identity);
+      if (record.id !== humanMatch[1] || record.digest !== data['requestDigest'] || record.status === 'waiting') throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
+      assertActive(signal); requireCapability(identity, 'humans:respond'); return response({ request: record });
     }
     if (request.method === 'POST' && url.pathname === '/v1/runs') {
       requireCapability(identity, 'runs:submit');

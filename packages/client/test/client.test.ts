@@ -31,7 +31,7 @@ function fakeClient(response: () => Response | Promise<Response>, options: Parti
 }
 function fixture(options: {
   responses?: ModelResponse[]; generate?: ModelAdapter['generate']; output?: Schema; guards?: readonly Guard[];
-  authenticate?: AgentServerOptions['authenticate']; limits?: AgentServerOptions['limits']; useTool?: boolean;
+  authenticate?: AgentServerOptions['authenticate']; limits?: AgentServerOptions['limits']; useTool?: boolean; humanRequests?: AgentServerOptions['humanRequests'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -44,8 +44,8 @@ function fixture(options: {
   });
   const server = createAgentServer({ publicOrigin: origin, agents: [{ agent, permissions: { allow: ['model:fixture.model','tool:fixture.write','effect:write'] } }],
     authenticate: options.authenticate ?? (async ({ token }) => token === 'test-token' ? {
-      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel'], expiresAtMs: Date.now() + 60_000,
-    } : null), ...(options.limits ? { limits: options.limits } : {}),
+      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond'], expiresAtMs: Date.now() + 60_000,
+    } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -163,6 +163,27 @@ describe('browser client against actual authenticated server Fetch facade', () =
     const { client, generate } = fixture({ authenticate: async () => { throw new Error('PRIVATE TOKEN DATABASE PASSWORD'); } });
     const error = await client.agents().catch(value => value as Error);
     expect(error).toMatchObject({ code: 'HTTP_ERROR', status: 503 }); expect(String(error)).not.toContain('PRIVATE'); expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+describe('browser human request client', () => {
+  const digest = 'a'.repeat(64); const request = { id: 'review', agentId: 'fixture.agent', kind: 'information' as const, schemaId: 'text-v1',
+    schemaDigest: 'b'.repeat(64), prompt: 'Provide deployment evidence.', digest, status: 'waiting' as const };
+
+  it('lists, inspects and submits a digest-bound typed value through the authenticated facade', async () => {
+    const respond = vi.fn(async () => ({ ...request, status: 'answered' as const }));
+    const { client } = fixture({ humanRequests: { list: async () => ({ items: [request], next: 'cursor-1' }), inspect: async () => request, respond } });
+    expect(await client.humanRequests({ limit: 1 })).toEqual({ items: [request], next: 'cursor-1' });
+    expect(await client.humanRequest('review')).toEqual(request);
+    expect(await client.respondHumanRequest('review', digest, { evidence: true }, { commandId: 'answer-1' })).toEqual({ ...request, status: 'answered' });
+    expect(respond).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', requestDigest: digest, value: { evidence: true } }));
+  });
+
+  it('rejects invalid local identifiers, cursors and hostile response fields', async () => {
+    const { client } = fixture({ humanRequests: { list: async () => ({ items: [{ ...request, handler: 'PRIVATE' } as never], next: null }), inspect: async () => request, respond: async () => request } });
+    await expect(client.humanRequest('../private')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.humanRequests({ limit: 101 })).rejects.toMatchObject({ code: 'INVALID_CURSOR' });
+    await expect(client.humanRequests()).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 503 });
   });
 });
 

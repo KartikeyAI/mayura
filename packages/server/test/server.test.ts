@@ -10,7 +10,7 @@ const identitySchema: Schema<unknown> = { '~standard': { version: 1, vendor: 'te
 const servers: AgentServer[] = [];
 function identity(overrides: Partial<ServerIdentity> = {}): ServerIdentity {
   return { scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
-    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read'], expiresAtMs: Date.now() + 60_000, ...overrides };
+    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond'], expiresAtMs: Date.now() + 60_000, ...overrides };
 }
 function fixture(generate: ModelAdapter['generate'] = async request => ({ type: 'final', output: request.messages[0]!.role === 'user' ? request.messages[0]!.content : null, usage: { costMicros: 0 } })) {
   return defineAgent({ id: 'echo', version: '1', instructions: 'PRIVATE_INSTRUCTIONS', tools: [], input: identitySchema, output: identitySchema,
@@ -260,6 +260,46 @@ describe('operational health and tool discovery', () => {
     for (const suffix of ['?after=-1', '?limit=0', '?limit=101', '?after=1', '?token=PRIVATE']) {
       await error(await value.fetch(request(`/v1/tools${suffix}`)), 400, suffix.includes('token') ? 'INVALID_QUERY' : 'INVALID_CURSOR');
     }
+  });
+});
+
+describe('authenticated human request transport', () => {
+  const digest = 'a'.repeat(64);
+  const waiting = { id: 'review', agentId: 'echo', kind: 'plan_selection' as const, schemaId: 'choice-v1', schemaDigest: 'b'.repeat(64),
+    prompt: 'Select the deployment plan.', digest, status: 'waiting' as const, context: { environment: 'production' } };
+
+  it('lists, inspects and responds with verified scope and actor identity', async () => {
+    const list = vi.fn(async () => ({ items: [waiting], next: null })); const inspect = vi.fn(async () => waiting);
+    const respond = vi.fn(async () => ({ ...waiting, status: 'answered' as const }));
+    const value = server({ humanRequests: { list, inspect, respond } });
+    expect(await json(await value.fetch(request('/v1/human-requests?limit=1')))).toEqual({ items: [waiting], next: null });
+    expect(await json(await value.fetch(request('/v1/human-requests/review')))).toEqual({ request: waiting });
+    const response = await value.fetch(request('/v1/human-requests/review/responses', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'answer-1', requestDigest: digest, value: { choice: 'accept' } }) }));
+    expect(response.status).toBe(200); expect(await json(response)).toEqual({ request: { ...waiting, status: 'answered' } });
+    expect(respond).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', id: 'review', requestDigest: digest, commandId: 'answer-1',
+      scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'], value: { choice: 'accept' }, signal: expect.any(AbortSignal) }));
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ after: null, limit: 1 })); expect(inspect).toHaveBeenCalledTimes(1);
+  });
+
+  it('separates read/respond authority and rejects unauthorized adapter records', async () => {
+    const transport = { list: async () => ({ items: [waiting], next: null }), inspect: async () => waiting, respond: async () => waiting };
+    const reader = server({ humanRequests: transport, authenticate: async () => identity({ capabilities: ['humans:read'] }) });
+    await error(await reader.fetch(request('/v1/human-requests/review/responses', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'answer', requestDigest: digest, value: true }) })), 403, 'FORBIDDEN');
+    const hostile = server({ humanRequests: { ...transport, inspect: async () => ({ ...waiting, agentId: 'other', prompt: 'PRIVATE' }) } });
+    await error(await hostile.fetch(request('/v1/human-requests/review')), 503, 'HUMAN_TRANSPORT_INVALID');
+  });
+
+  it('bounds non-cooperative transport admission and sanitizes failures', async () => {
+    const held = deferred<null>(); const inspect = vi.fn(() => held.promise);
+    const value = server({ limits: { requestTimeoutMs: 20, maxHumanOperations: 1 }, humanRequests: {
+      list: async () => ({ items: [], next: null }), inspect, respond: async () => { throw new Error('PRIVATE'); },
+    } });
+    await error(await value.fetch(request('/v1/human-requests/review')), 408, 'REQUEST_TIMEOUT');
+    await error(await value.fetch(request('/v1/human-requests/review')), 429, 'HUMAN_LIMIT'); expect(inspect).toHaveBeenCalledTimes(1); held.resolve(null); await new Promise(resolve => setTimeout(resolve, 0));
+    await error(await value.fetch(request('/v1/human-requests/review/responses', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'answer', requestDigest: digest, value: true }) })), 503, 'HUMAN_UNAVAILABLE');
   });
 });
 
