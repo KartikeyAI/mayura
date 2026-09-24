@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { createHumanRequestView, type HeadlessRunState, type HeadlessRunStore, type HumanRequestView } from '@mayura/client/headless';
+import { createHumanRequestView, createRunActivityProjection, type HeadlessRunState, type HeadlessRunStore, type HumanRequestView,
+  type RunActivityProjection } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
 
 export interface MayuraRunActions {
@@ -34,4 +35,9 @@ export function useMayuraRunActions(value: HeadlessRunStore): MayuraRunActions {
 /** Derive text-only human request metadata during render without copying it into component state. */
 export function useMayuraHumanRequest(request: RemoteHumanRequest, nowMs: number): HumanRequestView {
   return useMemo(() => createHumanRequestView(request, nowMs), [request, nowMs]);
+}
+
+/** Derive a stable, content-free activity timeline from the current bounded run state. */
+export function useMayuraRunActivity(state: HeadlessRunState): RunActivityProjection {
+  return useMemo(() => createRunActivityProjection(state), [state]);
 }

@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ClientError, type ClientEvent, type RemoteHumanRequest, type RemoteRun, type RemoteSnapshot } from '../src/index.js';
-import { createHeadlessRunStore, createHumanRequestView } from '../src/headless.js';
+import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '../src/headless.js';
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 function snapshot(status: RemoteSnapshot['status'] = 'running'): RemoteSnapshot { return Object.freeze({ id, status,
   budget: Object.freeze({ spentMicros: 1, reservedMicros: 2, calls: 3 }), evidence: Object.freeze([]) }); }
-function event(sequence: number, type: ClientEvent['type']): ClientEvent { return Object.freeze({ runId: id, sequence, type,
-  timestamp: '2026-09-24T00:00:00.000Z', metadata: Object.freeze(type === 'events.gap' ? { from: sequence - 1, to: sequence } : {}) }); }
+function event(sequence: number, type: ClientEvent['type'], metadata?: ClientEvent['metadata']): ClientEvent { return Object.freeze({ runId: id, sequence, type,
+  timestamp: '2026-09-24T00:00:00.000Z', metadata: Object.freeze(metadata ?? (type === 'events.gap' ? { from: sequence - 1, to: sequence } : {})) }); }
 function run(overrides: Partial<RemoteRun> = {}): RemoteRun { return Object.freeze({ id, inspect: async () => snapshot(), cancel: async () => {},
   result: async () => undefined, events: async function* () {}, ...overrides }); }
 
@@ -77,5 +77,51 @@ describe('headless human request views', () => {
     expect(createHumanRequestView(request({ status: 'answered' }), 1_000)).toMatchObject({ canRespond: false, urgency: 'resolved', statusText: 'Answered' });
     expect(() => createHumanRequestView({ ...request() }, 1_000)).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
     expect(() => createHumanRequestView(request({ kind: 'correction' }), 1_000)).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
+  });
+});
+
+describe('headless run activity projection', () => {
+  it('pairs content-free model, tool and run events into stable immutable activity', async () => {
+    const remote = run({ inspect: async () => snapshot('succeeded'), events: async function* () {
+      yield event(1, 'run.started'); yield event(2, 'model.started', { step: 1, modelCall: 1 });
+      yield event(3, 'model.completed', { step: 1, response: 'tool_calls' });
+      yield event(4, 'tool.started', { callId: 'call-1', toolId: 'catalog.lookup' });
+      yield event(5, 'tool.completed', { callId: 'call-1', toolId: 'catalog.lookup', status: 'succeeded' });
+      yield event(6, 'run.completed', { status: 'succeeded' });
+    } });
+    const projection = createRunActivityProjection(await createHeadlessRunStore({ run: remote }).observe());
+    expect(projection).toMatchObject({ complete: true, items: [
+      { id: 'run', kind: 'run', status: 'completed', startedSequence: 1, completedSequence: 6 },
+      { id: 'model:primary:step:1', kind: 'model', status: 'completed', startedSequence: 2, completedSequence: 3 },
+      { id: 'tool:call-1', kind: 'tool', label: 'catalog.lookup', status: 'completed', startedSequence: 4, completedSequence: 5 },
+    ] });
+    expect(Object.isFrozen(projection)).toBe(true); expect(projection.items.every(Object.isFrozen)).toBe(true);
+  });
+
+  it('marks incomplete active work unknown after a gap or bounded-history truncation', async () => {
+    const remote = run({ events: async function* () { yield event(3, 'events.gap', { from: 1, to: 3 }); yield event(4, 'tool.started', { callId: 'call-2', toolId: 'write.record' }); } });
+    const projection = createRunActivityProjection(await createHeadlessRunStore({ run: remote }).observe());
+    expect(projection).toMatchObject({ complete: false, items: [{ id: 'tool:call-2', status: 'unknown', completedSequence: null }] });
+  });
+
+  it('does not leave an operation active after a terminal run event', async () => {
+    const remote = run({ inspect: async () => snapshot('failed'), events: async function* () {
+      yield event(1, 'run.started'); yield event(2, 'model.started', { step: 1, modelCall: 1 }); yield event(3, 'run.completed', { status: 'failed' });
+    } });
+    const projection = createRunActivityProjection(await createHeadlessRunStore({ run: remote }).observe());
+    expect(projection).toMatchObject({ complete: true, items: [{ status: 'failed' }, { kind: 'model', status: 'unknown' }] });
+  });
+
+  it('does not expose hostile metadata as an activity identity or label', async () => {
+    const hostile = '<img src=x onerror=alert(1)>'.repeat(20); const remote = run({ events: async function* () {
+      yield event(1, 'tool.started', { callId: hostile, toolId: hostile }); yield event(2, 'tool.completed', { callId: hostile, toolId: hostile, status: 'failed' });
+    } });
+    const projection = createRunActivityProjection(await createHeadlessRunStore({ run: remote }).observe());
+    expect(JSON.stringify(projection)).not.toContain('<img'); expect(projection.items.every(item => item.label === 'Tool call')).toBe(true);
+  });
+
+  it('rejects mutable forged state', () => {
+    expect(() => createRunActivityProjection({ revision: 0, connection: 'idle', snapshot: null, events: [], lastSequence: 0, hasGap: false,
+      activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null })).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
   });
 });

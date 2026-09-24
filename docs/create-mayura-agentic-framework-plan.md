@@ -533,6 +533,8 @@ Implementation checkpoint (2026-09-24): `@mayura/client/headless` provides a dep
 
 Implementation checkpoint (2026-09-24): optional `@mayura/client-react` adds `useSyncExternalStore` run state, stable explicit actions and derived human-request metadata over caller-owned headless stores. React remains a peer; public declarations do not leak React types. Client/server rendering, invalid-store denial and an isolated three-package archive closure pass without implicit network work. Rendered components, workflow graph projection, response forms, localization and visual/accessibility qualification remain M8 work.
 
+Implementation checkpoint (2026-09-24): the headless client and optional React adapter now expose a deterministic content-free activity timeline. Stable run/model/tool/hook identities pair explicit starts/completions, gaps and truncated histories stay incomplete, hostile metadata cannot become labels, and terminal runs cannot leave work falsely active. This is an event-tail projection, not a durable workflow graph. Graph structure, rendered components and visual/accessibility qualification remain M8 work.
+
 Browser state distinguishes running, waiting, blocked, partial, failed, cancelled, and succeeded. Preserve event identity across reconnect to avoid duplicate messages or approvals. Authorization changes and logout clear scoped caches. No privileged action is authorized solely because a button is enabled.
 
 Render only supported public event types. Sanitize HTML/Markdown, validate links/artifact types, and avoid automatic remote loads that disclose user data. Do not expose system prompts, raw provider streams, private reasoning, secret references usable as credentials, or unfiltered tool payloads in inspector components.

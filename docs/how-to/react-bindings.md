@@ -12,7 +12,7 @@ Create one headless store outside render, or memoize it by run identity. Start n
 import { useEffect, useMemo } from 'react';
 import { createClient } from '@mayura/client';
 import { createHeadlessRunStore } from '@mayura/client/headless';
-import { useMayuraRun, useMayuraRunActions } from '@mayura/client-react';
+import { useMayuraRun, useMayuraRunActions, useMayuraRunActivity } from '@mayura/client-react';
 
 export function RunStatus({ runId, token }: { runId: string; token: () => Promise<string> }) {
   const store = useMemo(() => {
@@ -21,9 +21,10 @@ export function RunStatus({ runId, token }: { runId: string; token: () => Promis
   }, [runId, token]);
   const state = useMayuraRun(store);
   const actions = useMayuraRunActions(store);
+  const activity = useMayuraRunActivity(state);
 
   useEffect(() => () => store.dispose(), [store]);
-  return <button type="button" onClick={() => void actions.refresh()}>{state.connection}</button>;
+  return <button type="button" onClick={() => void actions.refresh()}>{state.connection}: {activity.items.length}</button>;
 }
 ```
 

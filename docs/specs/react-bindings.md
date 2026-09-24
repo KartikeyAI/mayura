@@ -9,6 +9,7 @@ Status: implemented experimental hook layer, locally qualified on 2026-09-24 wit
 - `useMayuraRun(store)` subscribes through `useSyncExternalStore` and returns the immutable `HeadlessRunState`. Its server snapshot is the same inert local snapshot.
 - `useMayuraRunActions(store)` returns stable `refresh`, `observe` and `cancel` references for explicit application event/effect policy.
 - `useMayuraHumanRequest(request, nowMs)` derives text-only `HumanRequestView` metadata from immutable inputs.
+- `useMayuraRunActivity(state)` memoizes the headless content-free timeline without adding a subscription.
 
 Mounting or server-rendering a hook does not inspect a run, open SSE, retry, cancel, start a timer or persist credentials. The caller creates, owns and disposes the store. Multiple components should share that store when they need one observation stream.
 

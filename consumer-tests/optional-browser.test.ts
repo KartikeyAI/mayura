@@ -1,5 +1,5 @@
 import { createClient, type ClientSchema, type RemoteOutcome } from '@mayura/client';
-import { createHeadlessRunStore, createHumanRequestView } from '@mayura/client/headless';
+import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '@mayura/client/headless';
 
 const output: ClientSchema<{ answer: number }> = {
   '~standard': { version: 1, validate: value => typeof value === 'number' ? { value: { answer: value } } : { issues: [] } },
@@ -13,7 +13,7 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
     schemaDigest: 'a'.repeat(64), prompt: 'Provide evidence.', digest: 'b'.repeat(64), status: 'waiting' as const }), 1_000);
   if (!view.canRespond || view.actionText !== 'Provide information') throw new Error('Headless human view failed.');
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
-  if (store.getSnapshot().connection !== 'idle') throw new Error('Headless run store performed implicit work.'); store.dispose();
+  if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
   return agents.length;
 }
 

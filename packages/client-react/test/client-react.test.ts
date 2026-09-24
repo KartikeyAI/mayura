@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHeadlessRunStore, type HeadlessRunState, type HeadlessRunStore } from '../../client/src/headless.js';
 import type { RemoteHumanRequest, RemoteRun, RemoteSnapshot } from '../../client/src/index.js';
-import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, type MayuraRunActions } from '../src/index.js';
+import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, type MayuraRunActions } from '../src/index.js';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -59,5 +59,13 @@ describe('@mayura/client-react', () => {
     const forged = Object.freeze({}) as HeadlessRunStore;
     function View(): ReactNode { useMayuraRun(forged); return null; }
     expect(() => renderToString(createElement(View))).toThrowError(expect.objectContaining<Partial<MayuraReactError>>({ code: 'INVALID_REACT_STORE' }));
+  });
+
+  it('derives activity from the subscribed immutable state without another subscription', async () => {
+    let subscriptions = 0; const base = createHeadlessRunStore({ run: remote(async () => snapshot()) });
+    const observed: HeadlessRunStore = Object.freeze({ ...base, subscribe: (listener: () => void) => { subscriptions += 1; return base.subscribe(listener); } });
+    function View(): ReactNode { const state = useMayuraRun(observed); return createElement('span', null, `${useMayuraRunActivity(state).items.length}`); }
+    await act(async () => { root.render(createElement(View)); }); expect(element.textContent).toBe('0'); expect(subscriptions).toBe(1);
+    await act(async () => { base.dispose(); });
   });
 });

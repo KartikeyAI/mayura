@@ -21,6 +21,16 @@ export interface HumanRequestView {
   readonly prompt: string; readonly canRespond: boolean; readonly urgency: 'normal' | 'due_soon' | 'expired' | 'resolved';
   readonly statusText: string; readonly actionText: string | null; readonly deadlineAtMs: number | null;
 }
+export type RunActivityKind = 'run' | 'model' | 'tool' | 'hook';
+export type RunActivityStatus = 'active' | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown' | 'unknown';
+export interface RunActivityItem {
+  readonly id: string; readonly kind: RunActivityKind; readonly label: string; readonly status: RunActivityStatus;
+  readonly startedSequence: number | null; readonly completedSequence: number | null;
+  readonly startedAt: string | null; readonly completedAt: string | null;
+}
+export interface RunActivityProjection {
+  readonly revision: number; readonly complete: boolean; readonly items: readonly RunActivityItem[];
+}
 
 const runStatuses = new Set(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed', 'run.completed', 'events.gap']);
@@ -160,4 +170,61 @@ export function createHumanRequestView(request: RemoteHumanRequest, nowMs: numbe
     : item.kind === 'correction' ? 'Submit correction' : 'Select plan';
   return Object.freeze({ id: item.id, agentId: item.agentId, kind: item.kind, status: item.status, prompt: item.prompt,
     canRespond: actionText !== null, urgency, statusText, actionText, deadlineAtMs: deadline });
+}
+
+function activityIdentity(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(value) ? value : null;
+}
+function activityStatus(value: unknown): Exclude<RunActivityStatus, 'active' | 'completed' | 'unknown'> | null {
+  return typeof value === 'string' && ['failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(value)
+    ? value as Exclude<RunActivityStatus, 'active' | 'completed' | 'unknown'> : null;
+}
+
+/** Project validated, content-free run events into a stable presentation timeline. Missing history remains explicit. */
+export function createRunActivityProjection(state: HeadlessRunState): RunActivityProjection {
+  if (!state || !Object.isFrozen(state) || !Array.isArray(state.events) || !Object.isFrozen(state.events)
+    || !Number.isSafeInteger(state.revision) || state.revision < 0 || state.events.length > 1_024) throw new ClientError('INVALID_VIEW_INPUT');
+  type MutableItem = { id: string; kind: RunActivityKind; label: string; status: RunActivityStatus; startedSequence: number | null;
+    completedSequence: number | null; startedAt: string | null; completedAt: string | null };
+  const items = new Map<string, MutableItem>(); let prior = 0; let terminalSeen = false;
+  let observedRunId: string | null = state.snapshot?.id ?? null; let complete = !state.hasGap;
+  const keyFor = (item: ClientEvent): { key: string; kind: RunActivityKind; label: string } | null => {
+    const metadata = item.metadata;
+    if (item.type.startsWith('run.')) return { key: 'run', kind: 'run', label: 'Run' };
+    if (item.type.startsWith('tool.')) { const id = activityIdentity(metadata['callId']); const label = activityIdentity(metadata['toolId']);
+      return { key: `tool:${id ?? item.sequence}`, kind: 'tool', label: label ?? 'Tool call' }; }
+    if (item.type.startsWith('hook.')) { const id = activityIdentity(metadata['invocationId']); const label = activityIdentity(metadata['hookId']);
+      return { key: `hook:${id ?? item.sequence}`, kind: 'hook', label: label ?? 'Control hook' }; }
+    if (item.type.startsWith('model.')) {
+      const purpose = metadata['purpose'] === 'guardrail' ? 'guardrail' : 'primary';
+      const discriminator = purpose === 'guardrail'
+        ? [activityIdentity(metadata['modelId']), activityIdentity(metadata['checkId']), activityIdentity(metadata['callId'])].filter(Boolean).join(':')
+        : Number.isSafeInteger(metadata['step']) && (metadata['step'] as number) >= 0 ? `step:${metadata['step']}` : '';
+      return { key: `model:${purpose}:${discriminator || item.sequence}`, kind: 'model', label: purpose === 'guardrail' ? 'Guardrail model call' : 'Model call' };
+    }
+    return null;
+  };
+  for (const item of state.events) {
+    if (!item || !Object.isFrozen(item) || (observedRunId !== null && item.runId !== observedRunId)
+      || !Number.isSafeInteger(item.sequence) || item.sequence <= prior || typeof item.timestamp !== 'string' || !Number.isFinite(Date.parse(item.timestamp))
+      || !Object.isFrozen(item.metadata)) throw new ClientError('INVALID_VIEW_INPUT');
+    observedRunId ??= item.runId;
+    if ((prior === 0 && item.sequence !== 1) || (prior !== 0 && item.sequence !== prior + 1)) complete = false;
+    prior = item.sequence; if (item.type === 'events.gap') { complete = false; continue; }
+    const identity = keyFor(item); if (!identity) throw new ClientError('INVALID_VIEW_INPUT'); const started = item.type.endsWith('.started');
+    if (item.type === 'run.completed') terminalSeen = true;
+    const existing = items.get(identity.key);
+    if (started) {
+      if (!existing) items.set(identity.key, { id: identity.key, kind: identity.kind, label: identity.label, status: 'active',
+        startedSequence: item.sequence, completedSequence: null, startedAt: item.timestamp, completedAt: null });
+      else complete = false;
+      continue;
+    }
+    const status = activityStatus(item.metadata['status']) ?? (item.metadata['decision'] === 'block' ? 'blocked' : 'completed');
+    if (existing && existing.status === 'active') { existing.status = status; existing.completedSequence = item.sequence; existing.completedAt = item.timestamp; }
+    else { complete = false; items.set(`${identity.key}:completed:${item.sequence}`, { id: `${identity.key}:completed:${item.sequence}`, kind: identity.kind,
+      label: identity.label, status, startedSequence: null, completedSequence: item.sequence, startedAt: null, completedAt: item.timestamp }); }
+  }
+  const result = [...items.values()].map(item => Object.freeze({ ...item, ...(item.status === 'active' && (!complete || terminalSeen) ? { status: 'unknown' as const } : {}) }));
+  return Object.freeze({ revision: state.revision, complete, items: Object.freeze(result) });
 }
