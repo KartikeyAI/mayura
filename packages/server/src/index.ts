@@ -4,7 +4,7 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
@@ -24,6 +24,18 @@ export interface HumanRequestTransport {
   readonly respond: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly actorId: string; readonly id: string;
     readonly requestDigest: string; readonly commandId: string; readonly value: JsonValue; readonly signal: AbortSignal }) => Promise<HumanRequestRecord>;
 }
+export interface WorkflowViewRecord {
+  readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
+  readonly revision: number; readonly status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+  readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer'; readonly dependsOn: readonly string[] }[];
+  readonly steps: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+    readonly status: 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
+    readonly childRunId?: string }[];
+}
+export interface WorkflowViewTransport {
+  readonly inspect: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly runId: string;
+    readonly signal: AbortSignal }) => Promise<WorkflowViewRecord | null>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -38,12 +50,14 @@ export interface AgentServerOptions {
   /** Access-controlled readiness checks. Credentials and exception details must remain inside callbacks. */
   readonly healthChecks?: readonly HealthCheck[];
   readonly humanRequests?: HumanRequestTransport;
+  readonly workflowViews?: WorkflowViewTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
-    readonly maxHealthOperations?: number; readonly maxHumanOperations?: number; readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
+    readonly maxHealthOperations?: number; readonly maxHumanOperations?: number; readonly maxWorkflowOperations?: number;
+    readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
   };
 }
 export interface AgentServer { fetch(request: Request): Promise<Response>; close(): Promise<void> }
@@ -58,6 +72,10 @@ class HttpFailure extends Error {
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const humanIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const encoder = new TextEncoder();
+const workflowKinds = Object.freeze({ 2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']),
+  4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']) });
+const workflowStatuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const workflowStepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
 function object(value: unknown, maxBytes = 1_048_576): JsonObject {
   const copy = jsonValue(value, { maxBytes });
   if (copy === null || Array.isArray(copy) || typeof copy !== 'object') throw new HttpFailure(400, 'INVALID_REQUEST');
@@ -78,6 +96,54 @@ function origin(value: string): string {
   return url.origin;
 }
 function assertActive(signal: AbortSignal): void { if (signal.aborted) throw new HttpFailure(408, 'REQUEST_TIMEOUT'); }
+function workflowExact(value: JsonObject, keys: readonly string[]): void {
+  if (Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+}
+function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewRecord {
+  let raw: JsonObject;
+  try { raw = object(value, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps']);
+  const format = raw['format']; const nodes = raw['nodes']; const steps = raw['steps'];
+  if (![2, 3, 4, 5].includes(format as number) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
+    || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion'])
+    || raw['runId'] !== expectedRunId || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1
+    || typeof raw['status'] !== 'string' || !workflowStatuses.has(raw['status']) || !Array.isArray(nodes) || nodes.length < 1 || nodes.length > 128
+    || !Array.isArray(steps) || steps.length !== nodes.length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  const admittedKinds = workflowKinds[format as keyof typeof workflowKinds]; const graph = new Map<string, readonly string[]>(); const nodeKinds = new Map<string, string>(); let edges = 0;
+  for (const candidate of nodes) {
+    let node: JsonObject; try { node = object(candidate, 32_768); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+    workflowExact(node, ['id', 'kind', 'dependsOn']);
+    if (typeof node['id'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(node['id']) || graph.has(node['id'])
+      || typeof node['kind'] !== 'string' || !admittedKinds.has(node['kind']) || !Array.isArray(node['dependsOn']) || node['dependsOn'].length > 127
+      || node['dependsOn'].some(item => typeof item !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(item))
+      || new Set(node['dependsOn']).size !== node['dependsOn'].length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    edges += node['dependsOn'].length; if (edges > 512) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    graph.set(node['id'], node['dependsOn'] as readonly string[]); nodeKinds.set(node['id'], node['kind']);
+  }
+  for (const [id, dependencies] of graph) if (dependencies.some(dependency => dependency === id || !graph.has(dependency))) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  const seen = new Set<string>();
+  for (const candidate of steps) {
+    let step: JsonObject; try { step = object(candidate, 16_384); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+    const allowed = ['id', 'kind', 'status', 'childRunId'];
+    if (Object.keys(step).some(key => !allowed.includes(key)) || !['id', 'kind', 'status'].every(key => Object.hasOwn(step, key)) || typeof step['id'] !== 'string'
+      || seen.has(step['id']) || step['kind'] !== nodeKinds.get(step['id']) || typeof step['status'] !== 'string' || !workflowStepStatuses.has(step['status'])
+      || (step['kind'] === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(step['status']))
+      || (step['kind'] === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(step['status']))
+      || (step['status'] === 'timed_out' && step['kind'] !== 'human')
+      || (step['childRunId'] !== undefined && (step['kind'] !== 'child' || typeof step['childRunId'] !== 'string' || !/^[a-f0-9]{64}$/.test(step['childRunId'])))
+      ) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    seen.add(step['id']);
+  }
+  if (seen.size !== graph.size) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  const remaining = new Map([...graph].map(([id, dependencies]) => [id, dependencies.length])); const dependents = new Map<string, string[]>();
+  for (const [id, dependencies] of graph) for (const dependency of dependencies) { const list = dependents.get(dependency) ?? []; list.push(id); dependents.set(dependency, list); }
+  const queue = [...remaining].filter(([, count]) => count === 0).map(([id]) => id);
+  for (let cursor = 0; cursor < queue.length; cursor++) for (const dependent of dependents.get(queue[cursor]!) ?? []) {
+    const count = remaining.get(dependent)! - 1; remaining.set(dependent, count); if (count === 0) queue.push(dependent);
+  }
+  if (queue.length !== graph.size) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  return freezeJson(raw) as unknown as WorkflowViewRecord;
+}
 async function bounded<T>(operation: PromiseLike<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void Promise.resolve(operation).catch(() => {}); throw new HttpFailure(408, 'REQUEST_TIMEOUT'); }
   assertActive(signal);
@@ -98,9 +164,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const authenticate = options.authenticate;
   if (options.publicLiveness !== undefined && typeof options.publicLiveness !== 'boolean') throw new Error('Public liveness must be explicit.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
-    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32,
+    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32, maxWorkflowOperations: 32,
     requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
-  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
+  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'maxWorkflowOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 16_777_216) throw new Error('Server limits must be bounded positive integers.');
   const healthChecks: readonly HealthCheck[] = (() => {
     const supplied = options.healthChecks ?? [];
@@ -127,6 +193,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (Reflect.ownKeys(fields).length !== 3 || ['list', 'inspect', 'respond'].some(key => !fields[key] || !('value' in fields[key]!) || typeof fields[key]!.value !== 'function')) throw new Error('Human request transport requires exact callbacks.');
     return Object.freeze({ list: fields['list']!.value, inspect: fields['inspect']!.value, respond: fields['respond']!.value }) as HumanRequestTransport;
   })();
+  const workflowViews: WorkflowViewTransport | undefined = (() => {
+    if (options.workflowViews === undefined) return undefined;
+    if (options.workflowViews === null || typeof options.workflowViews !== 'object') throw new Error('Workflow view transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowViews);
+    if (Reflect.ownKeys(fields).length !== 1 || !fields['inspect'] || !('value' in fields['inspect']) || typeof fields['inspect'].value !== 'function')
+      throw new Error('Workflow view transport requires one exact inspect callback.');
+    return Object.freeze({ inspect: fields['inspect'].value as WorkflowViewTransport['inspect'] });
+  })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
     assertAgent(config.agent);
@@ -151,6 +225,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   let authentications = 0;
   let healthOperations = 0;
   let humanOperations = 0;
+  let workflowOperations = 0;
 
   const humanRecord = (value: unknown, identity: ServerIdentity): HumanRequestRecord => {
     const raw = object(value, 16_384); const allowed = ['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status', 'context', 'subjectDigest', 'deadlineAtMs'];
@@ -196,7 +271,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 6 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 7 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -285,6 +360,18 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const identity = await session(request, signal);
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     const owner = canonical(identity.scope as unknown as JsonValue);
+    const workflowMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})$/.exec(url.pathname);
+    if (workflowMatch && request.method === 'GET') {
+      requireCapability(identity, 'workflows:read'); if (!workflowViews) throw new HttpFailure(404, 'NOT_FOUND');
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT');
+      workflowOperations++;
+      const operation = Promise.resolve().then(() => workflowViews.inspect(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
+        runId: workflowMatch[1]!, signal }))).finally(() => { workflowOperations--; });
+      let item: WorkflowViewRecord | null;
+      try { item = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      if (item === null) throw new HttpFailure(404, 'NOT_FOUND'); const record = workflowRecord(item, workflowMatch[1]!);
+      assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ workflow: record });
+    }
     if (request.method === 'GET' && url.pathname === '/v1/agents') {
       requireCapability(identity, 'runs:read');
       return response({ agents: [...registry.values()].filter(config => identity.agentIds.includes(config.agent.id)).map(config => ({ id: config.agent.id, version: config.agent.version })) });

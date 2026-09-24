@@ -10,7 +10,7 @@ const identitySchema: Schema<unknown> = { '~standard': { version: 1, vendor: 'te
 const servers: AgentServer[] = [];
 function identity(overrides: Partial<ServerIdentity> = {}): ServerIdentity {
   return { scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
-    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond'], expiresAtMs: Date.now() + 60_000, ...overrides };
+    capabilities: ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read'], expiresAtMs: Date.now() + 60_000, ...overrides };
 }
 function fixture(generate: ModelAdapter['generate'] = async request => ({ type: 'final', output: request.messages[0]!.role === 'user' ? request.messages[0]!.content : null, usage: { costMicros: 0 } })) {
   return defineAgent({ id: 'echo', version: '1', instructions: 'PRIVATE_INSTRUCTIONS', tools: [], input: identitySchema, output: identitySchema,
@@ -61,6 +61,10 @@ function pending() {
 function events(value: AgentServer, id: string, init: RequestInit = {}, suffix = '') {
   return value.fetch(request(`/v1/runs/${id}/events${suffix}`, init));
 }
+const workflowId = 'a'.repeat(64);
+const workflow = () => ({ format: 4 as const, definitionId: 'deployment', definitionVersion: '1', runId: workflowId, revision: 2,
+  status: 'running' as const, nodes: [{ id: 'prepare', kind: 'tool' as const, dependsOn: [] }, { id: 'child', kind: 'child' as const, dependsOn: ['prepare'] }],
+  steps: [{ id: 'prepare', kind: 'tool' as const, status: 'succeeded' as const }, { id: 'child', kind: 'child' as const, status: 'waiting' as const, childRunId: 'b'.repeat(64) }] });
 afterEach(async () => { await Promise.all(servers.splice(0).map(value => value.close())); vi.restoreAllMocks(); });
 
 describe('authenticated Fetch server admission', () => {
@@ -422,6 +426,45 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
       expect(response.status).toBe(202); expect(await json(response)).toEqual({ id, cancellationRequested: true });
     }
     expect(signal.aborted).toBe(true); expect((await terminal(value, id))['outcome']).toMatchObject({ status: 'cancelled' });
+  });
+});
+
+describe('authenticated durable workflow view transport', () => {
+  it('returns one strictly validated content-free view with verified scope and agent bounds', async () => {
+    const inspect = vi.fn(async () => workflow()); const value = server({ workflowViews: { inspect } });
+    const response = await value.fetch(request(`/v1/workflow-runs/${workflowId}`));
+    expect(response.status).toBe(200); expect(await json(response)).toEqual({ workflow: workflow() });
+    expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'], runId: workflowId,
+      signal: expect.any(AbortSignal) }));
+  });
+
+  it('checks workflow authority before transport access and hides absent records', async () => {
+    const inspect = vi.fn(async () => null); let supplied = identity({ capabilities: ['runs:read'] });
+    const value = server({ authenticate: async () => supplied, workflowViews: { inspect } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 403, 'FORBIDDEN'); expect(inspect).not.toHaveBeenCalled();
+    supplied = identity(); await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 404, 'NOT_FOUND'); expect(inspect).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed, cross-run and cyclic adapter data without reflecting private fields', async () => {
+    const candidates = [
+      { ...workflow(), runId: 'c'.repeat(64) },
+      { ...workflow(), privatePrompt: 'PRIVATE' },
+      { ...workflow(), nodes: [{ id: 'prepare', kind: 'tool', dependsOn: ['child'] }, { id: 'child', kind: 'child', dependsOn: ['prepare'] }] },
+    ];
+    for (const candidate of candidates) {
+      const value = server({ workflowViews: { inspect: async () => candidate as never } }); const response = await value.fetch(request(`/v1/workflow-runs/${workflowId}`));
+      await error(response, 503, 'WORKFLOW_TRANSPORT_INVALID');
+    }
+  });
+
+  it('sanitizes adapter failures and bounds concurrent inspections', async () => {
+    const started = deferred<void>(); const pending = deferred<ReturnType<typeof workflow> | null>(); let calls = 0;
+    const value = server({ limits: { maxWorkflowOperations: 1 }, workflowViews: { inspect: async () => { calls += 1; started.resolve(); return pending.promise; } } });
+    const first = value.fetch(request(`/v1/workflow-runs/${workflowId}`)); await started.promise;
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 429, 'WORKFLOW_LIMIT'); expect(calls).toBe(1);
+    pending.resolve(workflow()); expect((await first).status).toBe(200);
+    const failed = server({ workflowViews: { inspect: async () => { throw new Error('PRIVATE STORAGE DETAILS'); } } });
+    await error(await failed.fetch(request(`/v1/workflow-runs/${workflowId}`)), 503, 'WORKFLOW_UNAVAILABLE');
   });
 });
 

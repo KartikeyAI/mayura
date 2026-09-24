@@ -26,9 +26,7 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if (controller.getSnapshot().status !== 'succeeded') throw new Error('Human response command state failed.'); controller.dispose();
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
-  const graph = createWorkflowGraphProjection(Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,
-    status: 'running' as const, nodes: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, dependsOn: Object.freeze([]) })]),
-    steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'pending' as const })]) }));
+  const graph = createWorkflowGraphProjection(await client.workflow('a'.repeat(64)));
   if (!graph.nodes[0]?.ready) throw new Error('Durable workflow graph projection failed.');
   return agents.length;
 }

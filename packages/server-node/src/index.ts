@@ -31,6 +31,7 @@ export async function listenAgentServer(options: LocalServerOptions): Promise<Lo
   ...(options.publicLiveness === undefined ? {} : { publicLiveness: options.publicLiveness }),
   ...(options.healthChecks === undefined ? {} : { healthChecks: Object.freeze(options.healthChecks.map(check => Object.freeze({ id: check.id, check: check.check }))) }),
   ...(options.humanRequests === undefined ? {} : { humanRequests: options.humanRequests }),
+  ...(options.workflowViews === undefined ? {} : { workflowViews: options.workflowViews }),
   ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: Object.freeze([...options.allowedOrigins]) }),
   ...(options.limits === undefined ? {} : { limits: Object.freeze({ ...options.limits }) }),
   };

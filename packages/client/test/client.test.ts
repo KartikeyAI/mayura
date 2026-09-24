@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { createClient, ClientError, escapeHtmlText, type ClientEvent, type ClientOptions, type ClientSchema } from '../src/index.js';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '../../server/src/index.js';
+import { createWorkflowGraphProjection } from '../src/workflows.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
 import type { Guard, JsonValue, ModelAdapter, ModelResponse, Schema } from '../../core/src/index.js';
@@ -32,6 +33,7 @@ function fakeClient(response: () => Response | Promise<Response>, options: Parti
 function fixture(options: {
   responses?: ModelResponse[]; generate?: ModelAdapter['generate']; output?: Schema; guards?: readonly Guard[];
   authenticate?: AgentServerOptions['authenticate']; limits?: AgentServerOptions['limits']; useTool?: boolean; humanRequests?: AgentServerOptions['humanRequests'];
+  workflowViews?: AgentServerOptions['workflowViews'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -44,8 +46,9 @@ function fixture(options: {
   });
   const server = createAgentServer({ publicOrigin: origin, agents: [{ agent, permissions: { allow: ['model:fixture.model','tool:fixture.write','effect:write'] } }],
     authenticate: options.authenticate ?? (async ({ token }) => token === 'test-token' ? {
-      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond'], expiresAtMs: Date.now() + 60_000,
+      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read'], expiresAtMs: Date.now() + 60_000,
     } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
+    ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -184,6 +187,26 @@ describe('browser human request client', () => {
     await expect(client.humanRequest('../private')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     await expect(client.humanRequests({ limit: 101 })).rejects.toMatchObject({ code: 'INVALID_CURSOR' });
     await expect(client.humanRequests()).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 503 });
+  });
+});
+
+describe('browser durable workflow view client', () => {
+  const runId = 'a'.repeat(64); const view = { format: 4 as const, definitionId: 'deployment', definitionVersion: '1', runId, revision: 2,
+    status: 'running' as const, nodes: [{ id: 'prepare', kind: 'tool' as const, dependsOn: [] }, { id: 'child', kind: 'child' as const, dependsOn: ['prepare'] }],
+    steps: [{ id: 'prepare', kind: 'tool' as const, status: 'succeeded' as const }, { id: 'child', kind: 'child' as const, status: 'waiting' as const, childRunId: 'b'.repeat(64) }] };
+
+  it('reads an authenticated view and hands its deeply frozen data to the strict projector', async () => {
+    const inspect = vi.fn(async () => view); const { client, transport } = fixture({ workflowViews: { inspect } });
+    const received = await client.workflow(runId); expect(received).toEqual(view); expect(Object.isFrozen(received)).toBe(true); expect(Object.isFrozen(received.nodes[0])).toBe(true);
+    expect(createWorkflowGraphProjection(received)).toMatchObject({ runId, nodes: [{ id: 'prepare', status: 'succeeded' }, { id: 'child', childRunId: 'b'.repeat(64) }] });
+    expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ runId, scope: { principalId: 'developer', projectId: 'project' } }));
+    expect(new URL(String(transport.mock.calls[0]?.[0])).pathname).toBe(`/v1/workflow-runs/${runId}`);
+  });
+
+  it('rejects invalid local IDs and malformed workflow envelopes without retry', async () => {
+    const { client, transport } = fakeClient(() => jsonResponse({ workflow: { ...view, privatePrompt: 'PRIVATE' } }));
+    await expect(client.workflow('../private')).rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).not.toHaveBeenCalled();
+    await expect(client.workflow(runId)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' }); expect(transport).toHaveBeenCalledOnce();
   });
 });
 

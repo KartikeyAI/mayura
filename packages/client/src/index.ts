@@ -1,4 +1,6 @@
 /** Browser-safe wire values; this package has no privileged runtime or Node imports. */
+import type { WorkflowViewInput, WorkflowViewNodeKind } from './workflows.js';
+
 export type ClientJson = null | boolean | number | string | readonly ClientJson[] | { readonly [key: string]: ClientJson };
 export interface ClientSchema<T> {
   readonly '~standard': { readonly version: 1; validate(value: unknown): { readonly value: T; readonly issues?: undefined } | { readonly issues: readonly unknown[] } | PromiseLike<{ readonly value: T; readonly issues?: undefined } | { readonly issues: readonly unknown[] }> };
@@ -50,6 +52,7 @@ export interface MayuraClient {
   run(id: string): RemoteRun;
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
+  workflow(id: string, options?: { readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
@@ -126,6 +129,40 @@ function json(value: unknown, maximum: number): ClientJson {
     if (encoder.encode(JSON.stringify(result)).byteLength > maximum) throw new Error();
     return result;
   } catch { throw new ClientError('INVALID_JSON'); }
+}
+function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
+  const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps'];
+  if (!Object.isFrozen(raw) || Object.keys(raw).length !== expected.length || expected.some(key => !Object.hasOwn(raw, key))) return fail();
+  const format = raw['format']; const nodes = raw['nodes']; const steps = raw['steps'];
+  const admittedKinds: Readonly<Record<number, readonly string[]>> = { 2: ['tool', 'join'], 3: ['tool', 'join', 'wait'], 4: ['tool', 'join', 'child'], 5: ['tool', 'join', 'human', 'timer'] };
+  const runStatuses = ['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
+  const stepStatuses = ['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out'];
+  if (typeof format !== 'number' || ![2, 3, 4, 5].includes(format) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
+    || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion']) || raw['runId'] !== expectedId
+    || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1 || typeof raw['status'] !== 'string' || !runStatuses.includes(raw['status'])
+    || !Array.isArray(nodes) || !Object.isFrozen(nodes) || nodes.length < 1 || nodes.length > 128 || !Array.isArray(steps) || !Object.isFrozen(steps) || steps.length !== nodes.length) return fail();
+  const ids = new Map<string, WorkflowViewNodeKind>(); let edgeCount = 0;
+  for (const candidate of nodes) {
+    if (!candidate || typeof candidate !== 'object' || !Object.isFrozen(candidate)) return fail(); const node = Object.getOwnPropertyDescriptors(candidate);
+    if (Reflect.ownKeys(node).length !== 3 || ['id', 'kind', 'dependsOn'].some(key => !node[key] || !('value' in node[key]!))) return fail();
+    const nodeId = node['id']!.value; const kind = node['kind']!.value; const dependencies = node['dependsOn']!.value;
+    if (typeof nodeId !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(nodeId) || ids.has(nodeId) || typeof kind !== 'string' || !admittedKinds[format]!.includes(kind)
+      || !Array.isArray(dependencies) || !Object.isFrozen(dependencies) || dependencies.length > 127 || new Set(dependencies).size !== dependencies.length
+      || dependencies.some(dependency => typeof dependency !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(dependency))) return fail();
+    edgeCount += dependencies.length; if (edgeCount > 512) return fail(); ids.set(nodeId, kind as WorkflowViewNodeKind);
+  }
+  const seen = new Set<string>();
+  for (const candidate of steps) {
+    if (!candidate || typeof candidate !== 'object' || !Object.isFrozen(candidate)) return fail(); const step = Object.getOwnPropertyDescriptors(candidate);
+    const keys = Reflect.ownKeys(step); const allowed = ['id', 'kind', 'status', 'childRunId'];
+    if (keys.some(key => typeof key !== 'string' || !allowed.includes(key) || !('value' in step[key]!)) || !['id', 'kind', 'status'].every(key => step[key])) return fail();
+    const stepId = step['id']!.value; const kind = step['kind']!.value; const status = step['status']!.value; const childRunId = step['childRunId']?.value;
+    if (typeof stepId !== 'string' || seen.has(stepId) || kind !== ids.get(stepId) || typeof status !== 'string' || !stepStatuses.includes(status)
+      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !/^[a-f0-9]{64}$/.test(childRunId)))) return fail();
+    seen.add(stepId);
+  }
+  if (seen.size !== ids.size) return fail();
+  return raw as unknown as WorkflowViewInput;
 }
 async function race<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void Promise.resolve(work).catch(() => {}); throw new ClientError('ABORTED'); }
@@ -328,6 +365,11 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id)) throw new ClientError('INVALID_REQUEST');
       const result = human(record((await command(`/v1/human-requests/${id}`, 'GET', settings?.signal))['request']));
       if (result.id !== id) return fail(); return result;
+    },
+    async workflow(id: string, settings?: { readonly signal?: AbortSignal }) {
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}`, 'GET', settings?.signal);
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
     },
     async respondHumanRequest(id: string, requestDigest: string, value: unknown, settings: { readonly commandId: string; readonly signal?: AbortSignal }) {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id) || !/^[a-f0-9]{64}$/.test(requestDigest)

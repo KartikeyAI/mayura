@@ -1,6 +1,6 @@
 # Durable workflow UI projection
 
-Status: implemented experimental browser projection for durable workflow formats 2, 3, 4 and 5. It is a content-free view contract, not a workflow transport or execution authority.
+Status: implemented experimental browser projection for durable workflow formats 2, 3, 4 and 5. Authenticated read transport is available separately; this projector remains a content-free view contract, not execution authority.
 
 `@mayura/client/workflows` accepts one deeply immutable `WorkflowViewInput` produced by a trusted application adapter from a matched, already validated durable manifest and snapshot. The input contains only definition/run identity, revision, run status, node kinds/dependencies, step statuses and optional required-child run identities. It contains no input, output, prompt, approval value, receipt, credential, policy or tool argument.
 

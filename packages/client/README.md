@@ -8,4 +8,6 @@ React applications may add the separate `@mayura/client-react` peer adapter. The
 
 The dependency-free `@mayura/client/workflows` subpath validates deeply immutable, content-free durable workflow views and projects bounded DAG nodes, edges, depths, readiness and progress. A trusted application adapter must derive the view from a matched authoritative manifest and snapshot; this is not an execution or mutation API.
 
+`MayuraClient.workflow(runId)` reads one authenticated content-free durable view from a configured Mayura server. It performs no polling or retry; pass the result to the workflow projector for semantic DAG validation.
+
 The dependency-free `@mayura/client/forms` subpath captures a finite schema-driven human-response form and validates a frozen browser draft into a typed value bound to the exact authenticated request ID and digest. Its optional caller-owned response controller provides explicit single-flight pending/success/conflict/failure state around the authenticated client command. Construction performs no work and submission never retries automatically.
