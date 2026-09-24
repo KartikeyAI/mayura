@@ -51,7 +51,7 @@ Mayura is an independent, open-source TypeScript agent development framework. De
 - [Development status](development-status.md) — verified deliveries and remaining gates.
 - [Release gate closure ledger](release-gate-closure.md) — auditable V01–V22 evidence, blockers and closure order.
 
-Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. V10 and V11 are closed by dedicated acceptance suites; V01–V09 and V12–V22 remain open.
+Documentation is versioned alongside code. A design document does not establish an implemented guarantee. The status and release-gate ledgers plus executable tests determine what this checkout actually supports. V09–V11 are closed by dedicated acceptance suites; V01–V08 and V12–V22 remain open.
 
 Next-slice design: [durable required workflow children](specs/durable-workflow-children.md) remains planned, not implemented. [SQL identity integrity](specs/sql-identity-integrity.md) specifies lossless identifier validation without payload normalization or a persisted-data migration.
 
