@@ -24,7 +24,8 @@ import {
 import { snapshotLocalGuards } from '@mayura/core/host';
 
 export { batchOutput, invokeBatch, type BatchCall, type BatchInput, type BatchOutputPathSegment,
-  type BatchOutputReference, type InvokeBatchOptions, type BatchCallResult, type SkippedBatchOutcome } from './batch.js';
+  type BatchOutputReference, type InvokeBatchOptions, type BatchCallResult, type BatchOutcome,
+  type BatchAdmissionRequest, type BatchAdmissionDecision, type SkippedBatchOutcome, type WaitingBatchOutcome } from './batch.js';
 export { createToolContextSlot, type ToolContextSlot, type ToolContextBinding } from './context.js';
 import { attachToolContext, type ToolContextBinding } from './context.js';
 import { claimToolBudgetTicket, type ToolBudgetTicketBinding } from './budget-binding.js';

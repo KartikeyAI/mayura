@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**9 of 22 gates closed. Mayura remains an experimental development preview.**
+**10 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V03 — Fencing | **Closed** | The shared scheduler conformance matrix passes 22/22 on SQLite and 22/22 on PostgreSQL. Its `persists expiry observation and rejects stale control before and after pre-start recovery`, `commits stale observation without falsely journaling a failed completion`, `never reclaims a started effect` and `serializes declared resources` scenarios prove sticky ownership transfer, stale start/commit rejection and conflicting-resource exclusion. Contract: [leased scheduler](specs/leased-scheduler.md). |
 | V04 — WorkStream races | **Closed** | The paired `V04` scenario in `packages/workstream/test/conformance.ts` proves restart-safe durable deadlines, exactly one terminal winner in cancellation/deadline races, and explicit single disposal evidence for losing/abandoned subscriptions. The same matrix also covers event-before-registration, duplicate signals, deterministic composites, restart and gap-free exclusive signal cursors on SQLite and PostgreSQL; bounded runtime observation separately proves explicit cursor-gap records. Contract: [WorkStream](specs/workstream.md). |
 | V05 — Bounded orchestration | Qualification gap | Ephemeral nesting and bounded format-4 one-level children exist. A constrained-capacity matrix must jointly prove progress, cycle rejection and depth/concurrency/budget bounds for every supported orchestration profile. |
-| V06 — Tool batch semantics | Implementation gap | Success, denial, failure, unknown, receipts, references and no-rollback behavior are covered. The batch contract has no truthful waiting outcome, so the exact mandatory scenario cannot yet pass. |
+| V06 — Tool batch semantics | **Closed** | `packages/tools/test/release-gate-v06.test.ts` proves mixed success, denial, waiting, failure and unknown outcomes in one batch. It verifies stable direct and dependency-wait evidence, zero dispatch for waiting calls, validated downstream output references, preserved successful-but-withheld write receipts, unknown write evidence and no implied rollback. Contract: [standalone tool batches](specs/tool-batches.md). |
 | V07 — Human intervention | **Closed** | The `V07` scenario in `packages/workflows/test/scheduled-conformance.ts` runs on both selected SQL adapters. It proves a wait retains no job or budget reservation, survives close/reopen, dispatches once after verified approval, and rejects stale approval after changing target run, tool version/definition identity, arguments or policy. Contract: [scheduled workflows](specs/scheduled-workflows.md). |
 | V08 — Processor/hook integrity | **Closed** | `packages/runtime/test/release-gate-v08.test.ts` proves transformed candidates receive new version/digest-bound verdicts, unsafe transforms cannot reuse an earlier decision, post-final hook replacement fails closed, callback failure preserves a completed effect as succeeded/withheld, and failed denial notification cannot release or falsify content. Contracts: [processors](specs/processors.md) and [lifecycle hooks](specs/lifecycle-hooks.md). |
 | V09 — Guardrail barriers | **Closed** | `packages/runtime/test/release-gate-v09.test.ts` proves mandatory local denial causes zero primary/tool dispatch, managed auxiliary denial is a single tool-free/continuation-free accounted call, and an unaffordable required barrier rejects atomically before any model dispatch. Contracts: [runtime-managed guardrails](specs/runtime-managed-guardrails.md) and [auxiliary guardrails](specs/auxiliary-guardrails.md). |
@@ -33,11 +33,10 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Implement the narrow missing contract for V06, then close its deterministic matrix.
-2. Close composition and containment gates V05, V14, V15 and V18.
-3. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
-4. Execute the owner-approved distribution matrix for V19 and release governance for V22.
-5. Add MCP authority parity and close V01 after all invocation paths are stable.
+1. Close composition and containment gates V05, V14, V15 and V18.
+2. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
+3. Execute the owner-approved distribution matrix for V19 and release governance for V22.
+4. Add MCP authority parity and close V01 after all invocation paths are stable.
 
 ## Owner decisions that block release, not local development
 

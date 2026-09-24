@@ -26,16 +26,40 @@ export interface InvokeBatchOptions extends Omit<InvokeToolContext, 'callId'> {
   readonly failurePolicy?: 'collect-all' | 'fail-fast';
   readonly concurrency?: number;
   readonly preflightTimeoutMs?: number;
+  readonly admissionTimeoutMs?: number;
+  /** Trusted per-call authority seam. Waiting is observational and dispatches no handler. */
+  readonly admitCall?: (request: BatchAdmissionRequest) => Promise<BatchAdmissionDecision> | BatchAdmissionDecision;
 }
+
+export interface BatchAdmissionRequest {
+  readonly callId: string;
+  readonly toolId: string;
+  readonly toolVersion: string;
+  readonly input: JsonValue;
+  readonly dependencies: readonly string[];
+  readonly resources: readonly string[];
+  readonly signal: AbortSignal;
+}
+export type BatchAdmissionDecision =
+  | { readonly decision: 'allow' }
+  | { readonly decision: 'waiting'; readonly reason: 'approval_required' | 'input_required' | 'resource_capacity'; readonly waitId: string };
 
 export interface SkippedBatchOutcome {
   readonly status: 'skipped';
   readonly reason: 'dependency_failed' | 'fail_fast' | 'resource_uncertain';
   readonly dependencies: readonly string[];
 }
+export interface WaitingBatchOutcome {
+  readonly status: 'waiting';
+  readonly reason: 'approval_required' | 'input_required' | 'resource_capacity' | 'dependency_waiting';
+  readonly waitId?: string;
+  readonly dependencies: readonly string[];
+  readonly receipt: import('@mayura/core').ExecutionReceipt;
+}
+export type BatchOutcome = Outcome<JsonValue> | SkippedBatchOutcome | WaitingBatchOutcome;
 export interface BatchCallResult {
   readonly id: string;
-  readonly outcome: Outcome<JsonValue> | SkippedBatchOutcome;
+  readonly outcome: BatchOutcome;
 }
 
 interface PreparedCall {
@@ -44,7 +68,7 @@ interface PreparedCall {
   readonly literalBytes: number;
   candidate?: string;
 }
-interface CompletedCall { readonly call: PreparedCall; readonly outcome: Outcome<JsonValue> }
+interface CompletedCall { readonly call: PreparedCall; readonly outcome: Outcome<JsonValue> | WaitingBatchOutcome }
 interface OutputReferenceRecord { readonly callId: string; readonly path: readonly BatchOutputPathSegment[] }
 const templateReference = Symbol('mayura.batch-output-template-reference');
 interface TemplateReference { readonly [templateReference]: OutputReferenceRecord }
@@ -221,6 +245,34 @@ function cancelled(): Outcome<JsonValue> {
   return Object.freeze({ status: 'cancelled', error: Object.freeze({ code: 'CANCELLED', message: 'Batch was cancelled before this call was dispatched.' }) });
 }
 
+function waiting(call: PreparedCall, reason: WaitingBatchOutcome['reason'], dependencies: readonly string[] = [], waitId?: string): WaitingBatchOutcome {
+  return Object.freeze({
+    status: 'waiting', reason, ...(waitId === undefined ? {} : { waitId }), dependencies: Object.freeze([...dependencies]),
+    receipt: Object.freeze({ callId: call.id, toolId: call.tool.id, execution: 'not_started', disclosure: 'withheld' }),
+  });
+}
+function admissionBlocked(call: PreparedCall, message = 'Batch call admission could not be established.'): Outcome<JsonValue> {
+  return Object.freeze({
+    status: 'blocked', error: Object.freeze({ code: 'GUARD_UNAVAILABLE', message }),
+    receipt: Object.freeze({ callId: call.id, toolId: call.tool.id, execution: 'not_started', disclosure: 'withheld' }),
+  });
+}
+function admissionOutcome(call: PreparedCall, raw: unknown): WaitingBatchOutcome | Outcome<JsonValue> | undefined {
+  try {
+    if (!raw || typeof raw !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(raw))) throw new Error();
+    const fields = Object.getOwnPropertyDescriptors(raw);
+    if (Object.values(fields).some(field => !field.enumerable || !('value' in field))) throw new Error();
+    const decision = fields['decision']?.value;
+    if (decision === 'allow' && Object.keys(fields).every(key => key === 'decision')) return undefined;
+    if (decision !== 'waiting' || Object.keys(fields).some(key => !['decision', 'reason', 'waitId'].includes(key))) throw new Error();
+    const reason = fields['reason']?.value;
+    const waitId = fields['waitId']?.value;
+    if (!['approval_required', 'input_required', 'resource_capacity'].includes(reason as string)) throw new Error();
+    text(waitId, 'Wait ID', 128);
+    return waiting(call, reason as WaitingBatchOutcome['reason'], [], waitId);
+  } catch { return admissionBlocked(call, 'Batch call admission returned an invalid decision.'); }
+}
+
 /**
  * Validate the whole finite batch before effects, then invoke every runnable call through the
  * ordinary tool broker with shared accounting and bounded local concurrency. This is non-durable.
@@ -244,15 +296,18 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
   const onExecutionReceipt = options.onExecutionReceipt;
   const contextBindings = snapshotToolContextBindings(options.contextBindings);
   const acquireExecution = options.acquireExecution;
+  const admitCall = options.admitCall;
   if (acquireExecution !== undefined && typeof acquireExecution !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireExecution must be a function.');
   if (beforeDispatch !== undefined && typeof beforeDispatch !== 'function') throw new MayuraError('INVALID_CONFIG', 'beforeDispatch must be a function.');
   if (onExecutionReceipt !== undefined && typeof onExecutionReceipt !== 'function') throw new MayuraError('INVALID_CONFIG', 'onExecutionReceipt must be a function.');
+  if (admitCall !== undefined && typeof admitCall !== 'function') throw new MayuraError('INVALID_CONFIG', 'admitCall must be a function.');
   const concurrency = options.concurrency ?? 4;
   const maxOutputBytes = options.maxOutputBytes ?? 1_048_576;
   const preflightTimeoutMs = options.preflightTimeoutMs ?? 30_000;
+  const admissionTimeoutMs = options.admissionTimeoutMs ?? 30_000;
   const failurePolicy = options.failurePolicy ?? 'collect-all';
-  assertPositiveInteger(concurrency, 'concurrency'); assertPositiveInteger(maxOutputBytes, 'maxOutputBytes'); assertPositiveInteger(preflightTimeoutMs, 'preflightTimeoutMs');
-  if (concurrency > 32 || preflightTimeoutMs > 2_147_483_647 || !['collect-all', 'fail-fast'].includes(failurePolicy)) throw new MayuraError('INVALID_CONFIG', 'Batch execution limits or failure policy are invalid.');
+  assertPositiveInteger(concurrency, 'concurrency'); assertPositiveInteger(maxOutputBytes, 'maxOutputBytes'); assertPositiveInteger(preflightTimeoutMs, 'preflightTimeoutMs'); assertPositiveInteger(admissionTimeoutMs, 'admissionTimeoutMs');
+  if (concurrency > 32 || preflightTimeoutMs > 2_147_483_647 || admissionTimeoutMs > 30_000 || !['collect-all', 'fail-fast'].includes(failurePolicy)) throw new MayuraError('INVALID_CONFIG', 'Batch execution limits or failure policy are invalid.');
 
   // Capture every mutable caller value before the first asynchronous schema operation.
   let inputBytes = 0; let referenceCount = 0;
@@ -325,10 +380,10 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
     const heldResources = new Set<string>();
     const uncertainResources = new Set<string>();
     let resolvedInputBytes = prepared.reduce((total, call) => total + call.literalBytes, 0);
-    const completion = (call: PreparedCall, outcome: Outcome<JsonValue>): CompletedCall => {
+    const completion = (call: PreparedCall, outcome: Outcome<JsonValue> | WaitingBatchOutcome): CompletedCall => {
       // Latch on settlement, not later queue consumption: another already-settled success must
       // not free capacity for a new dispatch while an unconsumed failure is sitting in the queue.
-      if (failurePolicy === 'fail-fast' && outcome.status !== 'succeeded' && stop === undefined) {
+      if (failurePolicy === 'fail-fast' && outcome.status !== 'succeeded' && outcome.status !== 'waiting' && stop === undefined) {
         stop = 'fail_fast'; controller.abort();
       }
       return { call, outcome };
@@ -336,7 +391,34 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
     const start = (call: PreparedCall, input: JsonValue): void => {
       pending.delete(call.id);
       for (const key of call.resources) heldResources.add(key);
-      const execution = invokeTool(call.tool, input, {
+      const execution = (async (): Promise<CompletedCall> => {
+        if (admitCall) {
+          let decision: BatchAdmissionDecision;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let stopAdmission: (() => void) | undefined;
+          try {
+            const request = Object.freeze({
+              callId: call.id, toolId: call.tool.id, toolVersion: call.tool.version, input,
+              dependencies: call.dependencies, resources: call.resources, signal: controller.signal,
+            });
+            const interrupted = new Promise<never>((_resolve, reject) => {
+              stopAdmission = (): void => reject(new MayuraError('CANCELLED', 'Batch call admission was cancelled.'));
+              controller.signal.addEventListener('abort', stopAdmission, { once: true });
+            });
+            const timeout = new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => reject(new MayuraError('TIMEOUT', 'Batch call admission exceeded its deadline.')), admissionTimeoutMs);
+            });
+            decision = await Promise.race([Promise.resolve().then(() => admitCall(request)), interrupted, timeout]);
+          } catch {
+            return completion(call, controller.signal.aborted ? cancelled() : admissionBlocked(call));
+          } finally {
+            if (timer !== undefined) clearTimeout(timer);
+            if (stopAdmission) controller.signal.removeEventListener('abort', stopAdmission);
+          }
+          const outcome = admissionOutcome(call, decision);
+          if (outcome) return completion(call, outcome);
+        }
+        return invokeTool(call.tool, input, {
         runId, callId: call.id, scope, permissions, budget, signal: controller.signal, maxOutputBytes,
         ...(onExecutionReceipt ? { onExecutionReceipt } : {}),
         contextBindings,
@@ -345,7 +427,7 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
           if (call.candidate !== undefined && canonical(processed) !== call.candidate) throw new MayuraError('CONFLICT', 'Processed batch input changed after preflight.');
           if (beforeDispatch) await beforeDispatch(processed);
         },
-      }).then((outcome): CompletedCall => {
+        }).then((outcome): CompletedCall => {
         if (outcome.status !== 'succeeded') return completion(call, outcome);
         try { return completion(call, Object.freeze({ ...outcome, output: freezeJson(jsonValue(outcome.output, { maxBytes: maxOutputBytes })) })); }
         catch {
@@ -355,9 +437,10 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
             ...(outcome.receipt ? { receipt: Object.freeze({ ...outcome.receipt, disclosure: 'withheld' }) } : {}),
           }));
         }
-      }).catch((): CompletedCall => completion(call, Object.freeze({
+        }).catch((): CompletedCall => completion(call, Object.freeze({
         status: 'outcome_unknown', error: Object.freeze({ code: 'OUTCOME_UNKNOWN', message: 'Tool outcome could not be established; reconcile before repeating the action.' }),
-      })));
+        })));
+      })();
       running.set(call.id, execution);
     };
 
@@ -370,9 +453,11 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
           pending.delete(call.id); progressed = true; continue;
         }
         if (call.dependencies.some(id => !results.has(id))) continue;
-        const failed = call.dependencies.filter(id => results.get(id)!.status !== 'succeeded');
-        if (failed.length > 0 || call.resources.some(key => uncertainResources.has(key))) {
-          results.set(call.id, failed.length > 0 ? skipped('dependency_failed', failed) : skipped('resource_uncertain'));
+        const waitingDependencies = call.dependencies.filter(id => results.get(id)!.status === 'waiting');
+        const failed = call.dependencies.filter(id => results.get(id)!.status !== 'succeeded' && results.get(id)!.status !== 'waiting');
+        if (waitingDependencies.length > 0 || failed.length > 0 || call.resources.some(key => uncertainResources.has(key))) {
+          results.set(call.id, waitingDependencies.length > 0 ? waiting(call, 'dependency_waiting', waitingDependencies)
+            : failed.length > 0 ? skipped('dependency_failed', failed) : skipped('resource_uncertain'));
           pending.delete(call.id); progressed = true; continue;
         }
         if (running.size >= concurrency || call.resources.some(key => heldResources.has(key))) continue;
@@ -401,7 +486,7 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
       running.delete(completed.call.id);
       results.set(completed.call.id, completed.outcome);
       for (const key of completed.call.resources) heldResources.delete(key);
-      const uncertain = completed.outcome.status !== 'succeeded'
+      const uncertain = completed.outcome.status !== 'succeeded' && completed.outcome.status !== 'waiting'
         && completed.outcome.receipt?.execution !== 'not_started'
         && (completed.outcome.status === 'outcome_unknown' || completed.outcome.status === 'cancelled' || completed.outcome.error.code === 'TIMEOUT' || completed.outcome.receipt?.execution === 'unknown');
       if (uncertain) for (const key of completed.call.resources) uncertainResources.add(key);

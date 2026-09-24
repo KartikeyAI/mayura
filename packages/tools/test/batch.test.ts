@@ -61,6 +61,7 @@ describe('whole-batch preflight', () => {
     const definition = tool(); const call = { id: 'a', tool: definition, input: { value: 1 } };
     await expect(invokeBatch([{ ...call, tool: { ...definition } }], options())).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
     for (const concurrency of [0, -1, 1.5, 33]) await expect(invokeBatch([call], options({ concurrency }))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    for (const admissionTimeoutMs of [0, -1, 1.5, 30_001]) await expect(invokeBatch([call], options({ admissionTimeoutMs }))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
     await expect(invokeBatch([], options())).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
     await expect(invokeBatch(Array.from({ length: 129 }, (_, index) => ({ ...call, id: `${index}` })), options())).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
     await expect(invokeBatch([{ ...call, resources: ['same', 'same'] }], options())).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
@@ -114,6 +115,19 @@ describe('whole-batch preflight', () => {
 });
 
 describe('batch scheduling and outcome truth', () => {
+  it('bounds an unavailable admission callback and never dispatches its tool', async () => {
+    vi.useFakeTimers(); const execute = vi.fn(() => ({ result: 1 })); const definition = tool({ execute });
+    const pending = invokeBatch([{ id: 'a', tool: definition, input: { value: 1 } }], options({
+      admissionTimeoutMs: 20, admitCall: () => new Promise(() => {}),
+    }));
+    await vi.advanceTimersByTimeAsync(25);
+    await expect(pending).resolves.toEqual([{ id: 'a', outcome: {
+      status: 'blocked', error: { code: 'GUARD_UNAVAILABLE', message: 'Batch call admission could not be established.' },
+      receipt: { callId: 'a', toolId: 'batch.tool', execution: 'not_started', disclosure: 'withheld' },
+    } }]);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('runs independent handlers concurrently while returning original call order', async () => {
     const both = deferred<void>(); const releases = [deferred<{ result: number }>(), deferred<{ result: number }>()]; let started = 0;
     const definition = tool({ execute: value => { if (++started === 2) both.resolve(); return releases[value.value - 1]!.promise; } });
