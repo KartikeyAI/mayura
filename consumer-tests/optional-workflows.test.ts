@@ -4,7 +4,7 @@ import { createRuntime } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
   type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle,
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle,
   type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, type WorkflowSagaDefinition,
   type WorkflowSagaOutput } from '@mayura/workflows/sagas';
@@ -102,6 +102,13 @@ function checkLifecycleAdapter(store: AggregateStore): void {
   void runtime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
 }
 void checkLifecycleAdapter;
+function checkLifecycleHost(store: AggregateStore): void {
+  const host = createWorkflowLifecycleHost({ store, definitions: [sagaChild],
+    scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: [] },
+    policyVersion: '1', maxCostMicros: 0 });
+  host.start(); void host.stop(); void host.close();
+}
+void checkLifecycleHost;
 function checkSagaAdapter(store: AggregateStore): void {
   const runtime = createWorkflowSagaRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
     permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });

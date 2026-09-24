@@ -36,6 +36,13 @@ export {
   type WorkflowLifecycleFleetRuntime,
   type WorkflowLifecycleFleetRuntimeOptions,
 } from './lifecycle-fleet.js';
+export {
+  createWorkflowLifecycleHost,
+  type WorkflowLifecycleHost,
+  type WorkflowLifecycleHostCycle,
+  type WorkflowLifecycleHostOptions,
+  type WorkflowLifecycleHostStatus,
+} from './lifecycle-host.js';
 export type {
   WorkflowLifecycleHumanKind,
   WorkflowLifecycleHumanNodeManifest,

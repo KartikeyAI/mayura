@@ -6,7 +6,7 @@ import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, sagaManifest } from '@mayura/workflows/sagas';
 import { createWorkflowLoopRuntime, defineWorkflowLoop, loopManifest } from '@mayura/workflows/loops';
 import { StorageError } from '@mayura/storage-contracts';
@@ -108,6 +108,10 @@ const loopRuntime = createWorkflowLoopRuntime({ store: lifecycleStore, scope: { 
 const loopRun = await loopRuntime.submit(loop, { input: { continue: false, value: 3 }, idempotencyKey: 'loop' });
 const loopFinished = await loopRuntime.runUntilSettled(loop, loopRun.id);
 assert.equal(loopFinished.status, 'succeeded'); assert.equal(loopFinished.iteration, 1); assert.equal(loopFinished.output, 3); loopRuntime.close();
+const host = createWorkflowLifecycleHost({ store: lifecycleStore, definitions: [sagaChild],
+  scope: { principalId: 'host-consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
+const hostedRun = await host.runtime.submit(sagaChild, { input: 4, idempotencyKey: 'hosted' });
+assert.equal((await host.runOnce()).completedSweep, true); assert.equal((await host.runtime.inspect(hostedRun.id)).status, 'succeeded'); await host.close();
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -142,4 +146,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
   verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true,
-  sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, sqlDriversInstalled: false }));
+  sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, hostedCoordinator: true, sqlDriversInstalled: false }));

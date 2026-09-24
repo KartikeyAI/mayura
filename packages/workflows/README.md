@@ -27,4 +27,6 @@ The opt-in `@mayura/workflows/children` entry exports `defineWorkflowTree`, `cre
 
 The `@mayura/workflows/lifecycle` entry adds format-5 human/timer suspension, authenticated human transport binding and finite fleet coordination. The separate `@mayura/workflows/sagas` and `@mayura/workflows/loops` entries compose lifecycle definitions into bounded sequential sagas with reverse compensation and finite conditional iteration. The generic aggregate contract does not provide a cross-aggregate transaction; replay repairs child linking through deterministic submission keys.
 
+`createWorkflowLifecycleHost` is an explicitly started single-flight worker for a registered format-5 fleet. It performs bounded sweeps, applies capped backoff and drains on shutdown without closing caller storage. It does not provide distributed leader election or discover saga/loop parent aggregates.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.

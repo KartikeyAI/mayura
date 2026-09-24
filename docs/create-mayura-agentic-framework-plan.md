@@ -355,6 +355,8 @@ Implementation checkpoint (2026-09-24): workflow format 5 now integrates tool/jo
 
 Implementation checkpoint (2026-09-24): `@mayura/workflows/loops` adds separately versioned finite iteration over format-5 children. Data-only initial/next/condition/result bindings, a hard 1,024-iteration ceiling, preflight worst-case cost/call accounting, deterministic child identities and explicit `limit_exceeded` outcomes have SQLite/PostgreSQL and custom-adapter evidence. A continuously hosted coordinator and headless UI bindings remain M3/M8 work; this checkpoint does not mark M3 complete.
 
+Implementation checkpoint (2026-09-24): `createWorkflowLifecycleHost` adds explicit-start continuous format-5 fleet sweeps with finite pages, single-flight dispatch, capped backoff, sanitized health and graceful drain while preserving caller storage ownership. Distributed leader election and hosted discovery for saga/loop parent aggregates remain deployment and M3 work; this checkpoint does not mark M3 complete.
+
 Approval records bind an authenticated human to the run, action/tool version, processed arguments, resolved targets, code/artifact digests, environment, credential identity, policy epoch, expiry, and permitted repetitions. Changing any approval-relevant field invalidates the grant. Editing a proposed tool argument during review creates a new candidate and repeats validation.
 
 Only authorized human identities can resolve approval requests. Child agents, models, tools, hooks, and callbacks cannot impersonate them. A stale or duplicate response is rejected or acknowledged as already resolved. Cancellation, revocation, and expired approval prevent new dispatch. A stored approval never overrides a current hard policy denial.

@@ -41,6 +41,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Lifecycle fleet discovery](specs/workflow-lifecycle-fleet.md) — durable sharded active-run indexing, finite cursors and catalog-bound due-wake coordination over any aggregate adapter.
 - [Durable workflow sagas](specs/workflow-sagas.md) and [saga guide](how-to/workflow-sagas.md) — stable format-5 child identities and restart-safe reverse compensation.
 - [Durable bounded loops](specs/workflow-loops.md) and [loop guide](how-to/workflow-loops.md) — finite lifecycle iteration with explicit condition and limit outcomes.
+- [Hosted lifecycle coordinator](specs/hosted-lifecycle-coordinator.md) and [hosting guide](how-to/host-lifecycle-coordinator.md) — explicitly started bounded fleet sweeps, backoff and graceful drain.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.

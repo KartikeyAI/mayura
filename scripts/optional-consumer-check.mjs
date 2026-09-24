@@ -240,7 +240,7 @@ async function main() {
         assert.equal(execution.unknownDefinitionSkipped, true);
         assert.equal(execution.interruptedRetryCursor, true);
       }
-      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); assert.equal(execution.lifecycleFleet, true); assert.equal(execution.lifecycleHumanTransport, true); assert.equal(execution.sagaManifest, true); assert.equal(execution.sagaRuntime, true); assert.equal(execution.loopManifest, true); assert.equal(execution.loopRuntime, true); }
+      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); assert.equal(execution.lifecycleFleet, true); assert.equal(execution.lifecycleHumanTransport, true); assert.equal(execution.sagaManifest, true); assert.equal(execution.sagaRuntime, true); assert.equal(execution.loopManifest, true); assert.equal(execution.loopRuntime, true); assert.equal(execution.hostedCoordinator, true); }
       if (name === 'managed') { assert.equal(execution.wholeOutputBarrier, true); assert.equal(execution.structuredDisclosure, true); }
       if (name === 'otlp') {
         assert.equal(execution.explicitDestination, true); assert.equal(execution.noConstructionNetwork, true);
@@ -325,6 +325,7 @@ async function main() {
   result.checks.push('driver-free-workflow-lifecycle-subpath', 'format5-negative-types', 'format5-data-only-manifest', 'format5-custom-adapter-runtime', 'format5-durable-fleet-index', 'format5-authenticated-human-transport-binding');
   result.checks.push('driver-free-workflow-saga-subpath', 'format1-saga-negative-types', 'format1-saga-data-only-manifest', 'format1-saga-custom-adapter-runtime');
   result.checks.push('driver-free-workflow-loop-subpath', 'format1-loop-negative-types', 'format1-loop-data-only-manifest', 'format1-loop-custom-adapter-runtime');
+  result.checks.push('hosted-lifecycle-coordinator', 'single-flight-fleet-sweeps', 'graceful-host-drain');
   result.checks.push('finite-graph-discovery-custom-adapter', 'discovery-optional-capability-types', 'terminal-owner-cursor-progress');
   result.checks.push('registered-graph-coordinator-custom-adapter', 'coordinator-interrupted-page-retry-cursor', 'coordinator-negative-types');
   result.checks.push('driver-free-durable-budget-contracts', 'budget-immutable-boundary', 'budget-negative-types');
