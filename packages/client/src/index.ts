@@ -47,6 +47,13 @@ export class ClientError extends Error {
   constructor(readonly code: string, readonly status?: number) { super(`Mayura request failed (${code}).`); this.name = 'ClientError'; Object.freeze(this); }
 }
 const encoder = new TextEncoder();
+
+/** Encode untrusted text for an HTML text node. Prefer DOM `textContent` when a DOM is available. */
+export function escapeHtmlText(value: string, maxBytes = 1_048_576): string {
+  if (typeof value !== 'string' || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 1_048_576) throw new ClientError('INVALID_RENDER_INPUT');
+  if (encoder.encode(value).length > maxBytes) throw new ClientError('RESPONSE_LIMIT');
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+}
 const statuses: readonly string[] = ['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
 const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed', 'run.completed', 'events.gap'];
 const hookFields = ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt'] as const;

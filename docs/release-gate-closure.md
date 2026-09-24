@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**13 of 22 gates closed. Mayura remains an experimental development preview.**
+**14 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V13 — Memory/context isolation | **Closed** | Paired native-memory conformance passes 18/18 SQLite (including the capacity fixture) and 17/17 PostgreSQL for scope isolation, read-your-writes, corrections, tombstones and stale no-resurrection. `packages/memory/test/release-gate-v13.test.ts` proves old derivatives are invalid after correction/deletion and an export JSON migration retains exact upstream provenance. No external provider is silently claimed; a future adapter must use the same CAS/tombstone contract. Contracts: [native memory](specs/native-memory.md) and [native context](specs/native-context.md). |
 | V14 — Context continuity | **Closed** | The named `V14` fixture in `packages/context/test/context.test.ts` performs five exact JSON checkpoint/compaction/resume rounds and proves every hard constraint, unresolved blocker, pending approval and outstanding task remains required and selected. Existing overflow/source/sensitivity fixtures fail closed instead of silently dropping required continuity. Contract: [native context](specs/native-context.md). |
 | V15 — Code Mode | Qualification gap | QuickJS and Docker containment plus mediated nested calls and durable phases exist. A complete escape suite and one crash/resume write-deduplication gate suite remain; production hostile-code qualification is explicitly separate. |
-| V16 — Server/client | Implementation gap | Object authorization, authenticated metadata streams, reconnect and cancellation exist. Safe rendering and explicit browser/server bundle separation need gate-specific executable evidence. |
+| V16 — Server/client | **Closed** | The server/client suites pass 188/188 for object authorization, authenticated metadata streams, reconnect/deduplication and cancellation. The named `V16` client fixture proves hostile output remains inert data and bounded HTML text encoding escapes executable markup. `test:consumer:optional` passes an isolated one-package browser install/bundle with no Node globals/shims/server/runtime/native closure, while its separate Node profile passes authenticated HTTP/SSE. Contract: [HTTP agent transport](specs/http-agent-transport.md). |
 | V17 — Operational recovery | Implementation gap | Provider/exporter failures, artifacts, corruption and worker draining have partial evidence. Cache corruption, migration/restore as an application operation and the complete documented failure matrix remain open. |
 | V18 — Standalone consumer conformance | Qualification gap | Framework-owned packed samples use public APIs and cover scope, children and artifacts. Host-code approval and the full observational-policy/parallel-work matrix must be proven in one Arth-free consumer. |
 | V19 — Install and dependency boundaries | Owner decision + qualification | Packed profiles prove current Windows x64/Node/pnpm boundaries and browser-safe imports. The owner must approve the supported OS/architecture/package-manager matrix before it can be executed and closed. |
@@ -34,7 +34,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 ## Closure order
 
 1. Close remaining containment and consumer gates V15 and V18.
-2. Finish transport, recovery and compatibility gates V16, V17, V20 and V21.
+2. Finish recovery and compatibility gates V17, V20 and V21.
 3. Execute the owner-approved distribution matrix for V19 and release governance for V22.
 4. Add MCP authority parity and close V01 after all invocation paths are stable.
 

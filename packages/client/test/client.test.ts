@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { createClient, ClientError, type ClientEvent, type ClientOptions, type ClientSchema } from '../src/index.js';
+import { createClient, ClientError, escapeHtmlText, type ClientEvent, type ClientOptions, type ClientSchema } from '../src/index.js';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '../../server/src/index.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
@@ -167,6 +167,15 @@ describe('browser client against actual authenticated server Fetch facade', () =
 });
 
 describe('client response admission and safe failures', () => {
+  it('V16 keeps hostile output as data and provides bounded HTML text encoding', async () => {
+    const hostile = `<img src=x onerror="globalThis.pwned=true">&'`;
+    const { client } = fakeClient(() => jsonResponse(remoteSnapshot({ outcome: { status: 'succeeded', output: hostile, evidence: [] } })));
+    const outcome = await client.run(id).result(identitySchema);
+    expect(outcome).toMatchObject({ status: 'succeeded', output: hostile });
+    expect(escapeHtmlText(hostile)).toBe('&lt;img src=x onerror=&quot;globalThis.pwned=true&quot;&gt;&amp;&#39;');
+    expect(() => escapeHtmlText('xx', 1)).toThrow(expect.objectContaining({ code: 'RESPONSE_LIMIT' }));
+  });
+
   it.each(['file:///private', 'https://user:secret@mayura.test', `${origin}/nested`, `${origin}/?token=secret`, `${origin}/#secret`])('rejects unsafe configuration %s', baseUrl => {
     expect(() => createClient({ baseUrl, token: () => 'token' })).toThrow(ClientError);
   });
