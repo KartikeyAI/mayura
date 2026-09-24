@@ -111,6 +111,49 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     await expect(execution).resolves.toMatchObject({ status: 'succeeded', output: { value: 1 } });
   }, 30_000);
 
+  it('denies filesystem, privilege, network and executable-scratch escape primitives', async () => {
+    let admit!: () => void;
+    let release!: () => void;
+    const admitted = new Promise<void>(resolve => { admit = resolve; });
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const holdingTool = defineTool({ id: 'number.escape-hold', version: '1', description: 'Hold for escape probes.', input: schema, output: schema,
+      effects: 'none', capabilities: [], execute: async input => { admit(); await blocked; return input; } });
+    const budget = new Budget(0, 1);
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }),
+      allowTestAdapter: true, invokeTool: (definition, input, context) => invokeTool(definition, input, { runId: context.runId,
+        callId: context.callId, scope: context.scope, signal: context.signal, permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>> });
+    const program = defineCodeProgram({ id: 'docker.escape', version: '1', intent: 'Docker escape boundary test.', language: 'javascript',
+      source: 'async (input, tools) => (await tools.call("number.escape-hold", input)).output', input: schema, output: schema,
+      inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', tools: [holdingTool], limits });
+    const execution = mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-escape',
+      scope: { principalId: 'alice', projectId: 'project' }, signal: new AbortController().signal });
+    await admitted;
+    try {
+      const ids = await waitForContainerCount(1);
+      const probe = [
+        'set -eu',
+        'test "$(id -u):$(id -g)" = "65532:65532"',
+        'test ! -w /sandbox',
+        '! touch /sandbox/mayura-escape-probe',
+        'test ! -e /var/run/docker.sock',
+        'test "$(ls -1 /sys/class/net)" = "lo"',
+        `awk '/^CapEff:/ { if ($2 != "0000000000000000") exit 1; found=1 } END { if (!found) exit 1 }' /proc/self/status`,
+        `awk '/^NoNewPrivs:/ { if ($2 != "1") exit 1; found=1 } END { if (!found) exit 1 }' /proc/self/status`,
+        `awk '$2=="/" { if ($4 !~ /(^|,)ro(,|$)/) exit 1; found=1 } END { if (!found) exit 1 }' /proc/mounts`,
+        `awk '$2=="/tmp" { if ($3 != "tmpfs" || $4 !~ /(^|,)noexec(,|$)/ || $4 !~ /(^|,)nosuid(,|$)/ || $4 !~ /(^|,)nodev(,|$)/) exit 1; found=1 } END { if (!found) exit 1 }' /proc/mounts`,
+        `printf '#!/bin/sh\\nexit 0\\n' > /tmp/mayura-exec-probe`,
+        'chmod 700 /tmp/mayura-exec-probe',
+        'if /tmp/mayura-exec-probe 2>/dev/null; then exit 1; fi',
+        'rm /tmp/mayura-exec-probe',
+        'printf mayura-boundary-denied',
+      ].join('; ');
+      const checked = await executeFile(dockerPath!, ['exec', ids[0]!, '/bin/sh', '-c', probe],
+        { windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1_024, env: Object.freeze({}) });
+      expect(checked.stdout).toBe('mayura-boundary-denied');
+    } finally { release(); }
+    await expect(execution).resolves.toMatchObject({ status: 'succeeded', output: { value: 1 } });
+  }, 30_000);
+
   it('force-removes the disposable container when the caller cancels', async () => {
     const controller = new AbortController();
     const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: vi.fn() });
