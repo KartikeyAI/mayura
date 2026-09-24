@@ -32,7 +32,7 @@ The basic SDK requires no Docker, native database, server or hosted account. [Se
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks; it is not mandatory durable audit.
 - Optional [local artifact storage](docs/specs/local-artifacts.md) with scoped content addressing, staged promotion, integrity-checked reads, bounded attachment disclosure and staging cleanup.
 
-The integrated local checkpoint passes 2,519 tests in 124 files with PostgreSQL and live Docker enabled, strict types, thirteen credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/graph/artifact/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
+The integrated local checkpoint passes 2,525 tests in 126 files with PostgreSQL and live Docker enabled, strict types, thirteen credential-free examples and isolated offline base/client/host/workflow/managed-guard-and-hook/completion-wait/graph/artifact/selected-SQL installs. This is Windows x64 / Node 24.14.1 evidence, not enterprise qualification; the [status ledger](docs/development-status.md) keeps every full release gate open.
 
 ## Documentation
 

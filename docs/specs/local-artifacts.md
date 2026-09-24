@@ -28,9 +28,11 @@ The retained set must be complete for the scope, not one database page. Applicat
 
 `restore` accepts only bounded unshared bytes, validates the complete UTF-8 JSON envelope, digest, scope, sorted reference set, content hashes, expiry, object count and cumulative bytes before creating any object. The destination may be empty or contain an exact subset of the archive; any unrelated object or corrupt existing object fails closed. Missing objects are installed through a same-filesystem staging file and atomic hard-link publication, so retry after interruption is idempotent and never overwrites an existing identity. A storage failure after some links succeed can leave an exact partial restore; it does not claim transaction-wide rollback. Retry the same archive after repairing storage, then run `audit` before reopening application access.
 
+Storage exhaustion is fail-closed. A failed stage write best-effort removes any short file before returning `STORAGE_UNAVAILABLE`; restart reconciliation remains the fallback after process death. Failed promotion retains the genuine staged handle for explicit retry or discard. Backup read failure returns no archive. Restore removes its temporary file when writing or publication fails, publishes no partial object, and can be retried. A real-process fixture kills restore after at least one atomic publication; a new store accepts the exact subset, restores only missing identities, audits every byte and removes abandoned staging data. Injected `ENOSPC` errors and this local process-kill fixture do not qualify a physical filesystem, quota implementation, power-loss durability or SQL storage behavior.
+
 This finite profile supports at most 256 artifacts and 64 MiB of decoded content per archive, with a 96 MiB encoded ceiling. The caller can impose smaller limits. The application must protect archive confidentiality, store archives separately, retain the matching application database/reference snapshot, test restore regularly and define retention/erasure policy. Restoring artifact bytes alone does not restore owning application records.
 
-The initial adapter is same-host storage, not a shared network filesystem, object store, encrypted vault, malware scanner or scheduled backup service. Symlink/reparse-point hardening, multi-process promotion races, crash/disk-full injection, encrypted remote retention and supported-host qualification remain required before V10, V17 or V18 can close.
+The initial adapter is same-host storage, not a shared network filesystem, object store, encrypted vault, malware scanner or scheduled backup service. Symlink/reparse-point hardening, multi-process promotion races, physical disk-full/power-loss qualification, encrypted remote retention and supported-host qualification remain required before V10, V17 or V18 can close.
 
 ## Required evidence for this slice
 
@@ -41,4 +43,5 @@ The initial adapter is same-host storage, not a shared network filesystem, objec
 - bounded audit distinguishes available, missing, expired and tampered objects without releasing bytes;
 - two-phase committed reconciliation is scope-bound, one-use, link-averse, change-detecting and retains every authoritative digest;
 - deterministic backup requires a complete clean scope; restore rejects tampering/cross-scope/unrelated objects, enforces caller limits and resumes an exact partial destination idempotently;
+- injected stage/promotion/backup/restore exhaustion releases no unverified result, and a real killed restore resumes from its exact published subset;
 - an isolated packed consumer uses only public exports and performs stage, commit, disclosure, audit, dry-run reconciliation and backup/restore paths.

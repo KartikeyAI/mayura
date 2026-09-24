@@ -410,7 +410,13 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
       const expiresAt = normalizedExpiry(fields.get('expiresAt'), clock());
       const stageId = randomUUID();
       const path = join(stagingDirectory, `${stageId}.stage`);
-      await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
+      try { await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); }
+      catch (error) {
+        // A full device can leave a short file even though writeFile rejects. Remove it before
+        // returning; restart reconciliation remains the fallback if the process dies first.
+        await unlink(path).catch(() => undefined);
+        throw error;
+      }
       const handle = Object.freeze({ format: 'mayura-staged-artifact-v1' as const, stageId, digest, bytes: bytes.byteLength });
       stages.set(handle, {
         handle, path, scopeDigest: normalizedScopeDigest, mediaType, classification,
