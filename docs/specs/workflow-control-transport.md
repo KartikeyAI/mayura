@@ -22,6 +22,12 @@ The adapter must durably journal `commandId` with the authenticated scope, actio
 
 Callbacks share the bounded workflow-operation pool with reads. A timed-out or cancelled non-cooperative callback retains its slot until settlement. Exceptions are sanitized as `WORKFLOW_UNAVAILABLE`; malformed, hostile, cross-run or stale acknowledgements become `WORKFLOW_TRANSPORT_INVALID`. Capability and request cancellation are rechecked before release.
 
+## Browser command state
+
+`createWorkflowCommandController` is an inert, caller-owned external store bound to one validated workflow view and revision. It starts exactly one cancellation or approval only when the application invokes that method, publishes immutable pending/success/conflict/failure state and never retries. Approval intent must identify one waiting projected node; a required-child identity must exactly match the admitted view. A successful response must retain run and definition identity and cannot move revision backwards.
+
+The controller owns a local abort signal, bounds subscribers and sanitizes unknown callback errors. Disposal aborts local waiting but does not claim that the durable command did not commit. Resetting presentation state does not advance the bound workflow revision: applications must construct a new controller from a newly authenticated view before authorizing a subsequent state-dependent command. The optional React hook only subscribes to this state and starts no I/O.
+
 ## Limits
 
 This boundary does not expose arbitrary step transitions, tool dispatch, retry, resume, signal delivery, definition changes, output injection or credential forwarding. It does not itself make a storage adapter durable. Existing format-specific runtimes and stores remain authoritative for approval consumption, cancellation races, effect receipts, budget settlement and required-child ownership.

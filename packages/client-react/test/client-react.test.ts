@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHeadlessRunStore, type HeadlessRunState, type HeadlessRunStore } from '../../client/src/headless.js';
 import type { RemoteHumanRequest, RemoteRun, RemoteSnapshot } from '../../client/src/index.js';
 import { createHumanResponseController, defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
+import { createWorkflowCommandController } from '@mayura/client/workflows';
 import { MayuraReactError, useMayuraHumanRequest, useMayuraHumanResponseCommand, useMayuraRun, useMayuraRunActions, useMayuraRunActivity,
-  useMayuraWorkflowGraph, type MayuraRunActions } from '../src/index.js';
+  useMayuraWorkflowCommand, useMayuraWorkflowGraph, type MayuraRunActions } from '../src/index.js';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -94,5 +95,24 @@ describe('@mayura/client-react', () => {
   it('rejects a forged response controller before subscribing', () => {
     function View(): ReactNode { useMayuraHumanResponseCommand(Object.freeze({}) as never); return null; }
     expect(() => renderToString(createElement(View))).toThrowError(expect.objectContaining<Partial<MayuraReactError>>({ code: 'INVALID_RESPONSE_CONTROLLER' }));
+  });
+
+  it('subscribes to explicit workflow command feedback without mutating on mount', async () => {
+    const input = Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,
+      status: 'waiting' as const, nodes: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, dependsOn: Object.freeze([]) })]),
+      steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'waiting' as const })]) }); let calls = 0;
+    const result = Object.freeze({ ...input, revision: 2, status: 'cancelled' as const, steps: Object.freeze([
+      Object.freeze({ id: 'step', kind: 'tool' as const, status: 'skipped' as const })]) });
+    const controller = createWorkflowCommandController({ workflow: input, client: { cancelWorkflow: async () => { calls += 1; return result; },
+      approveWorkflow: async () => { calls += 1; return result; } } });
+    function View(): ReactNode { return createElement('span', null, useMayuraWorkflowCommand(controller).status); }
+    await act(async () => { root.render(createElement(View)); }); expect(element.textContent).toBe('idle'); expect(calls).toBe(0);
+    await act(async () => { await controller.cancel({ commandId: 'cancel-1' }); });
+    expect(element.textContent).toBe('succeeded'); expect(calls).toBe(1); await act(async () => { controller.dispose(); });
+  });
+
+  it('rejects a forged workflow controller before subscribing', () => {
+    function View(): ReactNode { useMayuraWorkflowCommand(Object.freeze({}) as never); return null; }
+    expect(() => renderToString(createElement(View))).toThrowError(expect.objectContaining<Partial<MayuraReactError>>({ code: 'INVALID_WORKFLOW_CONTROLLER' }));
   });
 });

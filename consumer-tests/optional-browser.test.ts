@@ -1,7 +1,7 @@
 import { createClient, type ClientSchema, type RemoteOutcome } from '@mayura/client';
 import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '@mayura/client/headless';
 import { createHumanResponseController, defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
-import { createWorkflowGraphProjection } from '@mayura/client/workflows';
+import { createWorkflowCommandController, createWorkflowGraphProjection } from '@mayura/client/workflows';
 
 const output: ClientSchema<{ answer: number }> = {
   '~standard': { version: 1, validate: value => typeof value === 'number' ? { value: { answer: value } } : { issues: [] } },
@@ -26,9 +26,11 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if (controller.getSnapshot().status !== 'succeeded') throw new Error('Human response command state failed.'); controller.dispose();
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
-  const graph = createWorkflowGraphProjection(await client.workflow('a'.repeat(64)));
+  const workflow = await client.workflow('a'.repeat(64)); const graph = createWorkflowGraphProjection(workflow);
   if (!graph.nodes[0]?.ready) throw new Error('Durable workflow graph projection failed.');
-  if ((await client.cancelWorkflow('a'.repeat(64), 1, { commandId: 'cancel-1' })).revision !== 2) throw new Error('Workflow cancellation failed.');
+  const workflowController = createWorkflowCommandController({ workflow, client });
+  if ((await workflowController.cancel({ commandId: 'cancel-1' })).revision !== 2 || workflowController.getSnapshot().status !== 'succeeded')
+    throw new Error('Workflow cancellation state failed.'); workflowController.dispose();
   if ((await client.approveWorkflow('a'.repeat(64), { revision: 2, nodeId: 'step', approvalDigest: 'c'.repeat(64) },
     { commandId: 'approve-1' })).revision !== 3) throw new Error('Workflow approval failed.');
   return agents.length;

@@ -3,7 +3,8 @@ import { createHumanRequestView, createRunActivityProjection, type HeadlessRunSt
   type RunActivityProjection } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
 import type { HumanResponseCommandState, HumanResponseController } from '@mayura/client/forms';
-import { createWorkflowGraphProjection, type WorkflowGraphProjection, type WorkflowViewInput } from '@mayura/client/workflows';
+import { createWorkflowGraphProjection, type WorkflowCommandController, type WorkflowCommandState, type WorkflowGraphProjection,
+  type WorkflowViewInput } from '@mayura/client/workflows';
 
 export interface MayuraRunActions {
   readonly refresh: HeadlessRunStore['refresh'];
@@ -13,7 +14,9 @@ export interface MayuraRunActions {
 
 export class MayuraReactError extends Error {
   override readonly name = 'MayuraReactError';
-  constructor(readonly code: 'INVALID_REACT_STORE' | 'INVALID_RESPONSE_CONTROLLER' | 'INVALID_COMPONENT_PROPS') { super(`Mayura React binding failed (${code}).`); Object.freeze(this); }
+  constructor(readonly code: 'INVALID_REACT_STORE' | 'INVALID_RESPONSE_CONTROLLER' | 'INVALID_WORKFLOW_CONTROLLER' | 'INVALID_COMPONENT_PROPS') {
+    super(`Mayura React binding failed (${code}).`); Object.freeze(this);
+  }
 }
 
 /** Subscribe to caller-owned human command state without submitting, retrying or starting any effect. */
@@ -21,6 +24,14 @@ export function useMayuraHumanResponseCommand(controller: HumanResponseControlle
   if (!controller || typeof controller.getSnapshot !== 'function' || typeof controller.subscribe !== 'function'
     || typeof controller.submit !== 'function' || typeof controller.reset !== 'function' || typeof controller.dispose !== 'function')
     throw new MayuraReactError('INVALID_RESPONSE_CONTROLLER');
+  return useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+}
+
+/** Subscribe to caller-owned workflow command state without reading or mutating on mount. */
+export function useMayuraWorkflowCommand(controller: WorkflowCommandController): WorkflowCommandState {
+  if (!controller || typeof controller.getSnapshot !== 'function' || typeof controller.subscribe !== 'function'
+    || typeof controller.cancel !== 'function' || typeof controller.approve !== 'function' || typeof controller.reset !== 'function'
+    || typeof controller.dispose !== 'function') throw new MayuraReactError('INVALID_WORKFLOW_CONTROLLER');
   return useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 }
 

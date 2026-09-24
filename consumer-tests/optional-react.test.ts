@@ -1,8 +1,9 @@
-import { useMayuraHumanRequest, useMayuraHumanResponseCommand, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowGraph,
-  type MayuraRunActions } from '@mayura/client-react';
+import { useMayuraHumanRequest, useMayuraHumanResponseCommand, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowCommand,
+  useMayuraWorkflowGraph, type MayuraRunActions } from '@mayura/client-react';
 import type { HeadlessRunState, HeadlessRunStore } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
 import type { HumanResponseController } from '@mayura/client/forms';
+import type { WorkflowCommandController } from '@mayura/client/workflows';
 
 /** Compile-only public hook signatures contain Mayura contracts without requiring React declarations. */
 export function consumeReactBindings(store: HeadlessRunStore, request: RemoteHumanRequest, nowMs: number): HeadlessRunState {
@@ -15,4 +16,8 @@ export function consumeReactBindings(store: HeadlessRunStore, request: RemoteHum
 
 export function consumeHumanResponseCommand(controller: HumanResponseController): string {
   return useMayuraHumanResponseCommand(controller).status;
+}
+
+export function consumeWorkflowCommand(controller: WorkflowCommandController): string {
+  return useMayuraWorkflowCommand(controller).status;
 }

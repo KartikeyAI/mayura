@@ -10,6 +10,7 @@ Status: implemented experimental hook layer, locally qualified on 2026-09-24 wit
 - `useMayuraRunActions(store)` returns stable `refresh`, `observe` and `cancel` references for explicit application event/effect policy.
 - `useMayuraHumanRequest(request, nowMs)` derives text-only `HumanRequestView` metadata from immutable inputs.
 - `useMayuraHumanResponseCommand(controller)` subscribes to caller-owned, explicit single-flight submission state without starting or retrying a command.
+- `useMayuraWorkflowCommand(controller)` subscribes to caller-owned, revision-bound cancellation/approval state without starting, refreshing or retrying a command.
 - `useMayuraRunActivity(state)` memoizes the headless content-free timeline without adding a subscription.
 - `useMayuraWorkflowGraph(input)` validates and memoizes one content-free durable workflow DAG without effects.
 

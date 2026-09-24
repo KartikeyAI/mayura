@@ -360,7 +360,7 @@ async function main() {
         return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, explicitWorkflowControls: true, digestBoundResponseForms: true, humanResponseCommandState: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, authenticatedWorkflowRead: true, explicitWorkflowControls: true, workflowCommandState: true, digestBoundResponseForms: true, humanResponseCommandState: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -401,6 +401,7 @@ async function main() {
   result.checks.push('browser-human-response-command-state', 'react-response-command-hook', 'react-components-command-feedback');
   result.checks.push('authenticated-workflow-view-route', 'browser-authenticated-workflow-read');
   result.checks.push('authenticated-workflow-control-routes', 'browser-explicit-workflow-controls', 'workflow-controls-no-auto-retry');
+  result.checks.push('browser-workflow-command-state', 'react-workflow-command-hook', 'workflow-command-single-flight');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

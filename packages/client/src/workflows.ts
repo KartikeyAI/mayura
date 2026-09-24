@@ -1,4 +1,4 @@
-import { ClientError } from './index.js';
+import { ClientError, type MayuraClient } from './index.js';
 
 export type WorkflowViewFormat = 2 | 3 | 4 | 5;
 export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
@@ -21,6 +21,25 @@ export interface WorkflowGraphProjection {
   readonly runId: string; readonly revision: number; readonly status: WorkflowViewRunStatus;
   readonly nodes: readonly WorkflowGraphNode[]; readonly edges: readonly WorkflowGraphEdge[];
   readonly progress: { readonly total: number; readonly terminal: number; readonly succeeded: number; readonly active: number; readonly waiting: number; readonly failed: number };
+}
+export type WorkflowCommandStatus = 'idle' | 'submitting' | 'succeeded' | 'conflict' | 'failed' | 'disposed';
+export type WorkflowCommandAction = 'cancel' | 'approve';
+export interface WorkflowCommandState {
+  readonly stateRevision: number; readonly status: WorkflowCommandStatus; readonly runId: string;
+  readonly workflowRevision: number; readonly workflowStatus: WorkflowViewRunStatus; readonly action: WorkflowCommandAction | null;
+  readonly nodeId: string | null; readonly errorCode: string | null;
+}
+export interface WorkflowApprovalIntent { readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string }
+export interface WorkflowCommandControllerOptions {
+  readonly client: Pick<MayuraClient, 'cancelWorkflow' | 'approveWorkflow'>; readonly workflow: WorkflowViewInput; readonly maxSubscribers?: number;
+}
+export interface WorkflowCommandController {
+  getSnapshot(): WorkflowCommandState;
+  subscribe(listener: () => void): () => void;
+  cancel(options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  approve(command: WorkflowApprovalIntent, options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  reset(): WorkflowCommandState;
+  dispose(): void;
 }
 
 const identifier = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
@@ -107,4 +126,96 @@ export function createWorkflowGraphProjection(input: WorkflowViewInput): Workflo
 function frozenArrayAllowEmpty(value: unknown, maximum: number): readonly unknown[] {
   if (!Array.isArray(value) || !Object.isFrozen(value) || value.length > maximum) return invalid();
   return value;
+}
+
+const commandId = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+function workflowCommandState(state: WorkflowCommandState): WorkflowCommandState { return Object.freeze({ ...state }); }
+function safeWorkflowCommandError(error: unknown): ClientError {
+  const allowed = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT', 'INVALID_REQUEST']);
+  return error instanceof ClientError && allowed.has(error.code) ? error : new ClientError('WORKFLOW_COMMAND_FAILED');
+}
+function approvalIntent(value: unknown, projection: WorkflowGraphProjection): WorkflowApprovalIntent {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value)))
+    throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  const fields = Object.getOwnPropertyDescriptors(value); const keys = Reflect.ownKeys(fields);
+  if (keys.some(key => typeof key !== 'string' || !['nodeId', 'approvalDigest', 'childRunId'].includes(key) || !('value' in fields[key]!))
+    || !fields['nodeId'] || !fields['approvalDigest']) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  const nodeId = fields['nodeId'].value; const approvalDigest = fields['approvalDigest'].value; const childRunId = fields['childRunId']?.value;
+  const node = projection.nodes.find(candidate => candidate.id === nodeId);
+  if (typeof nodeId !== 'string' || !identifier.test(nodeId) || typeof approvalDigest !== 'string' || !digest.test(approvalDigest)
+    || (childRunId !== undefined && (typeof childRunId !== 'string' || !digest.test(childRunId)))
+    || !node || node.status !== 'waiting' || node.childRunId !== (childRunId ?? null)) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  return Object.freeze({ nodeId, approvalDigest, ...(childRunId === undefined ? {} : { childRunId }) });
+}
+
+/** Caller-owned, inert single-flight command state for one exact durable workflow revision. */
+export function createWorkflowCommandController(options: WorkflowCommandControllerOptions): WorkflowCommandController {
+  if (!options || !options.client || typeof options.client.cancelWorkflow !== 'function' || typeof options.client.approveWorkflow !== 'function')
+    throw new ClientError('INVALID_WORKFLOW_CONTROLLER');
+  let projection: WorkflowGraphProjection;
+  try { projection = createWorkflowGraphProjection(options.workflow); } catch { throw new ClientError('INVALID_WORKFLOW_CONTROLLER'); }
+  const maxSubscribers = options.maxSubscribers ?? 64;
+  if (!Number.isSafeInteger(maxSubscribers) || maxSubscribers < 1 || maxSubscribers > 256) throw new ClientError('INVALID_WORKFLOW_CONTROLLER');
+  const client = options.client; const workflow = options.workflow; const listeners = new Set<() => void>(); let active: AbortController | null = null; let disposed = false;
+  let state = workflowCommandState({ stateRevision: 0, status: 'idle', runId: workflow.runId, workflowRevision: workflow.revision,
+    workflowStatus: workflow.status, action: null, nodeId: null, errorCode: null });
+  const publish = (change: Omit<Partial<WorkflowCommandState>, 'stateRevision' | 'runId'>): WorkflowCommandState => {
+    state = workflowCommandState({ ...state, ...change, stateRevision: state.stateRevision + 1 });
+    for (const listener of [...listeners]) { try { listener(); } catch { /* Presentation listeners cannot alter command state. */ } }
+    return state;
+  };
+  const execute = async (action: WorkflowCommandAction, nodeId: string | null, settings: { readonly commandId: string; readonly signal?: AbortSignal },
+    invoke: (signal: AbortSignal) => Promise<WorkflowViewInput>): Promise<WorkflowViewInput> => {
+    if (disposed) throw new ClientError('WORKFLOW_CONTROLLER_DISPOSED');
+    if (active) throw new ClientError('WORKFLOW_CONTROLLER_BUSY');
+    if (state.status === 'succeeded') throw new ClientError('WORKFLOW_CONTROLLER_STALE');
+    if (state.status !== 'idle') throw new ClientError('WORKFLOW_CONTROLLER_NOT_READY');
+    if (!settings || typeof settings.commandId !== 'string' || !commandId.test(settings.commandId)) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+    const controller = new AbortController(); const abort = (): void => controller.abort(); active = controller;
+    settings.signal?.addEventListener('abort', abort, { once: true }); if (settings.signal?.aborted) abort();
+    publish({ status: 'submitting', action, nodeId, errorCode: null });
+    try {
+      if (controller.signal.aborted) throw new ClientError('ABORTED');
+      const result = await invoke(controller.signal);
+      if (disposed || controller.signal.aborted) throw new ClientError('ABORTED');
+      let next: WorkflowGraphProjection;
+      try { next = createWorkflowGraphProjection(result); } catch { throw new ClientError('INVALID_RESPONSE'); }
+      if (next.runId !== projection.runId || next.definitionId !== projection.definitionId || next.definitionVersion !== projection.definitionVersion
+        || next.revision < projection.revision) throw new ClientError('INVALID_RESPONSE');
+      publish({ status: 'succeeded', workflowRevision: next.revision, workflowStatus: next.status, errorCode: null }); return result;
+    } catch (error) {
+      const safe = safeWorkflowCommandError(error);
+      if (!disposed) {
+        const conflict = safe.code === 'HTTP_ERROR' && (safe.status === 409 || safe.status === 412);
+        publish({ status: conflict ? 'conflict' : 'failed', errorCode: conflict ? 'WORKFLOW_COMMAND_CONFLICT' : safe.code });
+      }
+      throw safe;
+    } finally { settings.signal?.removeEventListener('abort', abort); if (active === controller) active = null; }
+  };
+  return Object.freeze<WorkflowCommandController>({
+    getSnapshot: () => state,
+    subscribe: listener => {
+      if (disposed) throw new ClientError('WORKFLOW_CONTROLLER_DISPOSED');
+      if (typeof listener !== 'function') throw new ClientError('INVALID_WORKFLOW_CONTROLLER');
+      if (listeners.size >= maxSubscribers) throw new ClientError('WORKFLOW_SUBSCRIBER_LIMIT');
+      listeners.add(listener); let subscribed = true; return () => { if (subscribed) { subscribed = false; listeners.delete(listener); } };
+    },
+    cancel: settings => {
+      if (['succeeded', 'failed', 'cancelled', 'outcome_unknown'].includes(workflow.status)) return Promise.reject(new ClientError('INVALID_WORKFLOW_COMMAND'));
+      return execute('cancel', null, settings, signal => client.cancelWorkflow(workflow.runId, workflow.revision, { commandId: settings.commandId, signal }));
+    },
+    approve: async (command, settings) => {
+      const captured = approvalIntent(command, projection);
+      return await execute('approve', captured.nodeId, settings, signal => client.approveWorkflow(workflow.runId, { revision: workflow.revision, ...captured },
+        { commandId: settings.commandId, signal }));
+    },
+    reset: () => {
+      if (disposed) throw new ClientError('WORKFLOW_CONTROLLER_DISPOSED'); if (active) throw new ClientError('WORKFLOW_CONTROLLER_BUSY');
+      if (state.status === 'succeeded') throw new ClientError('WORKFLOW_CONTROLLER_STALE');
+      return publish({ status: 'idle', action: null, nodeId: null, errorCode: null });
+    },
+    dispose: () => {
+      if (disposed) return; disposed = true; active?.abort(); publish({ status: 'disposed', action: null, nodeId: null, errorCode: null }); listeners.clear();
+    },
+  });
 }

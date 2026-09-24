@@ -8,6 +8,8 @@ React applications may add the separate `@mayura/client-react` peer adapter. The
 
 The dependency-free `@mayura/client/workflows` subpath validates deeply immutable, content-free durable workflow views and projects bounded DAG nodes, edges, depths, readiness and progress. A trusted application adapter must derive the view from a matched authoritative manifest and snapshot; this is not an execution or mutation API.
 
+The same subpath exposes `createWorkflowCommandController` for caller-owned, inert, single-flight cancellation and exact-approval feedback bound to one admitted workflow revision. It starts no work until an explicit method call, owns local cancellation, sanitizes callback failures and never retries.
+
 `MayuraClient.workflow(runId)` reads one authenticated content-free durable view from a configured Mayura server. It performs no polling or retry; pass the result to the workflow projector for semantic DAG validation.
 
 `cancelWorkflow` and `approveWorkflow` send one explicit revision-bound command with a caller-owned stable command ID. They never retry; the configured server adapter remains responsible for durable command journaling and conflict semantics.
