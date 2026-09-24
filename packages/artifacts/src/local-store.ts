@@ -1,15 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, opendir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { MayuraError, assertPositiveInteger } from '@mayura/core';
 import type {
+  ArtifactAuditOptions,
+  ArtifactAuditResult,
   ArtifactClassification,
   ArtifactDisclosure,
   ArtifactDisclosurePolicy,
   ArtifactReference,
+  ArtifactReconciliationCursor,
+  ArtifactReconciliationPlan,
+  ArtifactReconciliationResult,
   ArtifactScope,
   LocalArtifactStore,
   LocalArtifactStoreOptions,
+  PlanArtifactReconciliationOptions,
   StageArtifactInput,
   StagedArtifact,
   StagingReconciliationOptions,
@@ -22,6 +28,9 @@ const STAGE_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const CLASSIFICATIONS = new Set<ArtifactClassification>(['public', 'internal', 'confidential', 'restricted']);
 const MAX_BUFFERED_ARTIFACT_BYTES = 64 * 1_024 * 1_024;
 const MAX_STAGED_ARTIFACTS = 4_096;
+const MAX_COMMITTED_ARTIFACTS_PER_SCOPE = 65_536;
+const OBJECT_NAME = /^[0-9a-f]{64}$/u;
+const OBJECT_PREFIX = /^[0-9a-f]{2}$/u;
 
 interface StageRecord {
   readonly handle: StagedArtifact;
@@ -31,6 +40,20 @@ interface StageRecord {
   readonly classification: ArtifactClassification;
   readonly filename?: string;
   readonly expiresAt?: number;
+}
+
+interface StoredObject {
+  readonly referenceDigest: `sha256:${string}`;
+  readonly path: string;
+  readonly bytes: number;
+  readonly modifiedAt: number;
+  readonly device: number;
+  readonly inode: number;
+}
+
+interface InternalReconciliationPlan {
+  readonly scopeDigest: `sha256:${string}`;
+  readonly candidates: readonly StoredObject[];
 }
 
 function sha256(value: Uint8Array | string): `sha256:${string}` {
@@ -103,6 +126,25 @@ function plainData(value: unknown, field: string, allowed: ReadonlySet<string>):
   return data;
 }
 
+function plainArray(value: unknown, field: string, maximum: number, minimum = 0): readonly unknown[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum || Object.getPrototypeOf(value) !== Array.prototype) {
+    invalid(`${field} must contain ${minimum}–${maximum} entries.`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value); const result: unknown[] = [];
+  for (const key of Object.keys(descriptors)) {
+    if (key === 'length') continue;
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length) invalid(`${field} contains an unsupported field.`);
+  }
+  for (let index = 0; index < value.length; index++) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || !hasOwn(descriptor, 'value') || descriptor.get !== undefined || descriptor.set !== undefined) {
+      invalid(`${field} must be dense and contain only data entries.`);
+    }
+    result.push(descriptor.value);
+  }
+  return Object.freeze(result);
+}
+
 function integrity(message = 'Artifact integrity verification failed.'): never {
   throw new MayuraError('INTEGRITY_VIOLATION', message);
 }
@@ -151,10 +193,14 @@ function validateReference(value: ArtifactReference): ArtifactReference {
   return Object.freeze(reference);
 }
 
-function objectPath(objectsDirectory: string, reference: ArtifactReference): string {
-  const scope = reference.scopeDigest.slice(7);
-  const digest = reference.referenceDigest.slice(7);
-  return join(objectsDirectory, scope, digest.slice(0, 2), digest);
+function validatedCursor(value: ArtifactReconciliationCursor, expectedScope: `sha256:${string}`): ArtifactReconciliationCursor {
+  const fields = plainData(value, 'reconciliation cursor', new Set(['format', 'scopeDigest', 'after']));
+  const cursorScope = fields.get('scopeDigest'); const after = fields.get('after');
+  if (fields.get('format') !== 'mayura-artifact-reconciliation-cursor-v1' || typeof cursorScope !== 'string' ||
+    !DIGEST.test(cursorScope) || typeof after !== 'string' || !DIGEST.test(after)) invalid('reconciliation cursor is invalid.');
+  if (cursorScope !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Reconciliation cursor scope does not match.');
+  return Object.freeze({ format: 'mayura-artifact-reconciliation-cursor-v1', scopeDigest: cursorScope as `sha256:${string}`,
+    after: after as `sha256:${string}` });
 }
 
 function safeDownloadName(value: string | undefined, digest: string): string {
@@ -189,16 +235,24 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
   const maxStagedArtifacts = options.maxStagedArtifacts ?? 128;
   assertPositiveInteger(maxStagedArtifacts, 'maxStagedArtifacts');
   if (maxStagedArtifacts > MAX_STAGED_ARTIFACTS) throw new MayuraError('INVALID_CONFIG', 'maxStagedArtifacts exceeds the local adapter limit.');
+  const maxCommittedArtifactsPerScope = options.maxCommittedArtifactsPerScope ?? 4_096;
+  assertPositiveInteger(maxCommittedArtifactsPerScope, 'maxCommittedArtifactsPerScope');
+  if (maxCommittedArtifactsPerScope > MAX_COMMITTED_ARTIFACTS_PER_SCOPE) {
+    throw new MayuraError('INVALID_CONFIG', 'maxCommittedArtifactsPerScope exceeds the local adapter limit.');
+  }
   if (options.clock !== undefined && typeof options.clock !== 'function') throw new MayuraError('INVALID_CONFIG', 'clock must be a function.');
 
   const root = resolve(options.rootDirectory);
   const stagingDirectory = join(root, 'staging');
   const objectsDirectory = join(root, 'objects');
   const stages = new WeakMap<object, StageRecord>();
+  const issuedStages = new WeakSet<object>();
   const activeStageIds = new Set<string>();
+  const reconciliationPlans = new WeakMap<object, InternalReconciliationPlan>();
   const configuredClock = options.clock ?? Date.now;
   let initialized: Promise<void> | undefined;
   let stageTail = Promise.resolve();
+  let commitTail = Promise.resolve();
 
   const clock = (): number => {
     const value = configuredClock();
@@ -212,12 +266,89 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
     return result;
   };
 
+  const withCommitLock = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = commitTail.then(operation, operation);
+    commitTail = result.then(() => undefined, () => undefined);
+    return result;
+  };
+
   const initialize = (): Promise<void> => {
     initialized ??= Promise.all([
       mkdir(stagingDirectory, { recursive: true, mode: 0o700 }),
       mkdir(objectsDirectory, { recursive: true, mode: 0o700 }),
-    ]).then(() => undefined);
+    ]).then(async () => {
+      for (const path of [stagingDirectory, objectsDirectory]) {
+        const details = await lstat(path);
+        if (!details.isDirectory() || details.isSymbolicLink()) integrity('Artifact store contains an unsafe internal directory.');
+      }
+    });
     return initialized;
+  };
+
+  const storagePath = async (targetScopeDigest: `sha256:${string}`, referenceDigest: `sha256:${string}`,
+    create: boolean): Promise<string | undefined> => {
+    await initialize();
+    const scopeDirectory = join(objectsDirectory, targetScopeDigest.slice(7));
+    const prefixDirectory = join(scopeDirectory, referenceDigest.slice(7, 9));
+    for (const path of [scopeDirectory, prefixDirectory]) {
+      if (create) await mkdir(path, { recursive: true, mode: 0o700 });
+      let details;
+      try { details = await lstat(path); }
+      catch (error) {
+        if (!create && (error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
+      }
+      if (!details.isDirectory() || details.isSymbolicLink()) integrity('Artifact store contains an unsafe object directory.');
+    }
+    return join(prefixDirectory, referenceDigest.slice(7));
+  };
+
+  const listScopeObjects = async (targetScopeDigest: `sha256:${string}`): Promise<{ readonly objects: readonly StoredObject[]; readonly anomalies: number }> => {
+    await initialize();
+    const scopeDirectory = join(objectsDirectory, targetScopeDigest.slice(7));
+    try {
+      const scopeDetails = await lstat(scopeDirectory);
+      if (!scopeDetails.isDirectory() || scopeDetails.isSymbolicLink()) integrity('Artifact store contains an unsafe scope directory.');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { objects: Object.freeze([]), anomalies: 0 };
+      throw error;
+    }
+    let directory: Awaited<ReturnType<typeof opendir>>;
+    try { directory = await opendir(scopeDirectory); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { objects: Object.freeze([]), anomalies: 0 };
+      throw error;
+    }
+    const prefixes: string[] = []; let anomalies = 0; let outerExamined = 0;
+    try {
+      for await (const entry of directory) {
+        outerExamined += 1;
+        if (outerExamined > 512) integrity('Artifact scope directory exceeds its structural bound.');
+        if (!OBJECT_PREFIX.test(entry.name)) { anomalies += 1; continue; }
+        const path = join(scopeDirectory, entry.name); const details = await lstat(path);
+        if (!details.isDirectory() || details.isSymbolicLink()) { anomalies += 1; continue; }
+        prefixes.push(entry.name);
+      }
+    } finally { await directory.close().catch(() => undefined); }
+    prefixes.sort();
+    const objects: StoredObject[] = []; let innerExamined = 0;
+    for (const prefix of prefixes) {
+      const prefixDirectory = join(scopeDirectory, prefix); const handle = await opendir(prefixDirectory);
+      try {
+        for await (const entry of handle) {
+          innerExamined += 1;
+          if (innerExamined > maxCommittedArtifactsPerScope + 1_024) integrity('Artifact scope contains excessive unrecognized entries.');
+          if (!OBJECT_NAME.test(entry.name) || !entry.name.startsWith(prefix)) { anomalies += 1; continue; }
+          const path = join(prefixDirectory, entry.name); const details = await lstat(path);
+          if (!details.isFile() || details.isSymbolicLink()) { anomalies += 1; continue; }
+          objects.push(Object.freeze({ referenceDigest: `sha256:${entry.name}` as const, path, bytes: details.size,
+            modifiedAt: details.mtimeMs, device: details.dev, inode: details.ino }));
+          if (objects.length > maxCommittedArtifactsPerScope) throw new MayuraError('LIMIT_EXCEEDED', 'Committed artifact scope exceeds its configured capacity.');
+        }
+      } finally { await handle.close().catch(() => undefined); }
+    }
+    objects.sort((left, right) => left.referenceDigest < right.referenceDigest ? -1 : left.referenceDigest > right.referenceDigest ? 1 : 0);
+    return { objects: Object.freeze(objects), anomalies };
   };
 
   const readVerified = async (rawReference: ArtifactReference, rawScope: ArtifactScope): Promise<{ reference: ArtifactReference; bytes: Uint8Array }> => {
@@ -226,8 +357,8 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
     if (reference.scopeDigest !== scopeDigest(rawScope)) throw new MayuraError('PERMISSION_DENIED', 'Artifact scope does not match.');
     if (reference.expiresAt !== undefined && reference.expiresAt <= clock()) throw new MayuraError('NOT_FOUND', 'Artifact is unavailable.');
     if (reference.bytes > options.maxArtifactBytes) integrity();
-    const path = objectPath(objectsDirectory, reference);
-    if (!(await regularFile(path))) throw new MayuraError('NOT_FOUND', 'Artifact is unavailable.');
+    const path = await storagePath(reference.scopeDigest, reference.referenceDigest, false);
+    if (path === undefined || !(await regularFile(path))) throw new MayuraError('NOT_FOUND', 'Artifact is unavailable.');
     const details = await stat(path);
     if (details.size !== reference.bytes) integrity();
     const bytes = new Uint8Array(await readFile(path));
@@ -263,13 +394,14 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
         ...(filename === undefined ? {} : { filename }),
         ...(expiresAt === undefined ? {} : { expiresAt }),
       });
+      issuedStages.add(handle);
       activeStageIds.add(stageId);
       return handle;
       }));
     },
 
     async commit(staged: StagedArtifact): Promise<ArtifactReference> {
-      return safeStorage(async () => {
+      return safeStorage(() => withStageLock(() => withCommitLock(async () => {
       await initialize();
       if (staged === null || typeof staged !== 'object') {
         invalid('staged artifact handle is invalid.');
@@ -293,19 +425,36 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
         ...(record.filename === undefined ? {} : { filename: record.filename }),
         ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
       });
-      const destination = objectPath(objectsDirectory, reference);
-      await mkdir(resolve(destination, '..'), { recursive: true, mode: 0o700 });
+      const destination = (await storagePath(reference.scopeDigest, reference.referenceDigest, true))!;
       if (await regularFile(destination)) {
         const existing = new Uint8Array(await readFile(destination));
         if (existing.byteLength !== reference.bytes || sha256(existing) !== reference.digest) integrity('Committed artifact content conflicts with its digest.');
         await unlink(record.path);
       } else {
+        const inventory = await listScopeObjects(record.scopeDigest);
+        if (inventory.objects.length >= maxCommittedArtifactsPerScope) throw new MayuraError('LIMIT_EXCEEDED', 'Committed artifact scope capacity is exhausted.');
         await rename(record.path, destination);
       }
       stages.delete(staged);
       activeStageIds.delete(record.handle.stageId);
       return reference;
-      });
+      })));
+    },
+
+    async discard(staged: StagedArtifact): Promise<boolean> {
+      return safeStorage(() => withStageLock(async () => {
+        if (staged === null || typeof staged !== 'object' || !issuedStages.has(staged)) invalid('staged artifact handle was not issued by this store.');
+        const record = stages.get(staged);
+        if (record === undefined) return false;
+        let removed = true;
+        try { await unlink(record.path); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') removed = false;
+          else throw error;
+        }
+        stages.delete(staged); activeStageIds.delete(record.handle.stageId);
+        return removed;
+      }));
     },
 
     async read(reference: ArtifactReference, scope: ArtifactScope): Promise<Uint8Array> {
@@ -320,17 +469,15 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
       if (typeof maxBytes !== 'number') invalid('policy.maxBytes must be a number.');
       assertPositiveInteger(maxBytes, 'policy.maxBytes');
       const requestedClassifications = fields.get('classifications');
-      if (!Array.isArray(requestedClassifications) || requestedClassifications.length === 0 || requestedClassifications.length > CLASSIFICATIONS.size) {
-        invalid('policy.classifications must be a bounded non-empty array.');
-      }
-      const classifications = new Set(requestedClassifications.map(normalizedClassification));
-      if (classifications.size !== requestedClassifications.length) invalid('policy.classifications must not contain duplicates.');
+      const classificationEntries = plainArray(requestedClassifications, 'policy.classifications', CLASSIFICATIONS.size, 1);
+      const classifications = new Set(classificationEntries.map(normalizedClassification));
+      if (classifications.size !== classificationEntries.length) invalid('policy.classifications must not contain duplicates.');
       let mediaTypes: Set<string> | undefined;
       const requestedMediaTypes = fields.get('mediaTypes');
       if (requestedMediaTypes !== undefined) {
-        if (!Array.isArray(requestedMediaTypes) || requestedMediaTypes.length === 0 || requestedMediaTypes.length > 64) invalid('policy.mediaTypes must be a bounded non-empty array.');
-        mediaTypes = new Set(requestedMediaTypes.map((entry) => normalizedMediaType(entry, 'policy.mediaTypes')));
-        if (mediaTypes.size !== requestedMediaTypes.length) invalid('policy.mediaTypes must not contain duplicates.');
+        const mediaTypeEntries = plainArray(requestedMediaTypes, 'policy.mediaTypes', 64, 1);
+        mediaTypes = new Set(mediaTypeEntries.map((entry) => normalizedMediaType(entry, 'policy.mediaTypes')));
+        if (mediaTypes.size !== mediaTypeEntries.length) invalid('policy.mediaTypes must not contain duplicates.');
       }
       const verified = await readVerified(reference, scope);
       if (!classifications.has(verified.reference.classification)) throw new MayuraError('PERMISSION_DENIED', 'Artifact classification is not permitted.');
@@ -351,16 +498,125 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
       });
     },
 
-    async delete(reference: ArtifactReference, scope: ArtifactScope): Promise<boolean> {
+    async audit(references: readonly ArtifactReference[], scope: ArtifactScope, auditOptions: ArtifactAuditOptions): Promise<ArtifactAuditResult> {
       return safeStorage(async () => {
+        const referenceEntries = plainArray(references, 'audit references', 128, 1);
+        const fields = plainData(auditOptions, 'audit options', new Set(['maxTotalBytes']));
+        const maxTotalBytes = fields.get('maxTotalBytes');
+        if (typeof maxTotalBytes !== 'number') invalid('maxTotalBytes must be a number.');
+        assertPositiveInteger(maxTotalBytes, 'maxTotalBytes');
+        const expectedScope = scopeDigest(scope); const validated: ArtifactReference[] = []; const seen = new Set<string>(); let admittedBytes = 0;
+        for (const rawReference of referenceEntries) {
+          const reference = validateReference(rawReference as ArtifactReference);
+          if (reference.scopeDigest !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Artifact scope does not match.');
+          if (seen.has(reference.referenceDigest)) invalid('audit references must not contain duplicates.');
+          seen.add(reference.referenceDigest); admittedBytes += reference.bytes;
+          if (!Number.isSafeInteger(admittedBytes) || admittedBytes > maxTotalBytes) throw new MayuraError('LIMIT_EXCEEDED', 'Artifact audit exceeds maxTotalBytes.');
+          validated.push(reference);
+        }
+        const observations = [];
+        for (const reference of validated) {
+          let status: 'ok' | 'missing' | 'expired' | 'integrity_failed';
+          if (reference.expiresAt !== undefined && reference.expiresAt <= clock()) status = 'expired';
+          else {
+            try { await readVerified(reference, scope); status = 'ok'; }
+            catch (error) {
+              if (error instanceof MayuraError && error.code === 'NOT_FOUND') status = 'missing';
+              else if (error instanceof MayuraError && error.code === 'INTEGRITY_VIOLATION') status = 'integrity_failed';
+              else throw error;
+            }
+          }
+          observations.push(Object.freeze({ referenceDigest: reference.referenceDigest, status }));
+        }
+        return Object.freeze({ observations: Object.freeze(observations), admittedBytes });
+      });
+    },
+
+    async planReconciliation(rawOptions: PlanArtifactReconciliationOptions): Promise<ArtifactReconciliationPlan> {
+      return safeStorage(async () => {
+        const fields = plainData(rawOptions, 'reconciliation plan options', new Set([
+          'scope', 'retainedReferences', 'authoritativeSetComplete', 'olderThan', 'maxExamined', 'maxDeletes', 'cursor',
+        ]));
+        if (fields.get('authoritativeSetComplete') !== true) invalid('authoritativeSetComplete must be true.');
+        const expectedScope = scopeDigest(fields.get('scope') as ArtifactScope);
+        const retainedInput = plainArray(fields.get('retainedReferences'), 'retainedReferences', maxCommittedArtifactsPerScope);
+        const retained = new Set<string>();
+        for (const rawReference of retainedInput) {
+          const reference = validateReference(rawReference as ArtifactReference);
+          if (reference.scopeDigest !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Retained artifact scope does not match.');
+          if (retained.has(reference.referenceDigest)) invalid('retainedReferences must not contain duplicates.');
+          retained.add(reference.referenceDigest);
+        }
+        const olderThan = fields.get('olderThan'); const maxExamined = fields.get('maxExamined'); const maxDeletes = fields.get('maxDeletes');
+        if (typeof olderThan !== 'number' || !Number.isSafeInteger(olderThan) || olderThan < 0 || olderThan > clock()) {
+          invalid('olderThan must be a past Unix millisecond timestamp.');
+        }
+        if (typeof maxExamined !== 'number' || typeof maxDeletes !== 'number') invalid('reconciliation limits must be numbers.');
+        assertPositiveInteger(maxExamined, 'maxExamined'); assertPositiveInteger(maxDeletes, 'maxDeletes');
+        if (maxExamined > 256 || maxDeletes > maxExamined) invalid('reconciliation limits exceed their supported bounds.');
+        const rawCursor = fields.get('cursor');
+        const cursor = rawCursor === undefined ? undefined : validatedCursor(rawCursor as ArtifactReconciliationCursor, expectedScope);
+        const inventory = await listScopeObjects(expectedScope);
+        const available = inventory.objects.filter((entry) => cursor === undefined || entry.referenceDigest > cursor.after);
+        const candidates: StoredObject[] = []; let examined = 0;
+        for (const entry of available) {
+          if (examined >= maxExamined || candidates.length >= maxDeletes) break;
+          examined += 1;
+          if (!retained.has(entry.referenceDigest) && entry.modifiedAt <= olderThan) candidates.push(entry);
+        }
+        const last = examined === 0 ? undefined : available[examined - 1];
+        const nextCursor = last !== undefined && available.length > examined
+          ? Object.freeze({ format: 'mayura-artifact-reconciliation-cursor-v1' as const, scopeDigest: expectedScope, after: last.referenceDigest })
+          : undefined;
+        const publicCandidates = Object.freeze(candidates.map((entry) => Object.freeze({ referenceDigest: entry.referenceDigest,
+          bytes: entry.bytes, modifiedAt: Math.trunc(entry.modifiedAt) })));
+        const plan = Object.freeze({ format: 'mayura-artifact-reconciliation-plan-v1' as const, scopeDigest: expectedScope,
+          examined, anomalies: inventory.anomalies, candidates: publicCandidates,
+          ...(nextCursor === undefined ? {} : { nextCursor }) }) as ArtifactReconciliationPlan;
+        reconciliationPlans.set(plan, { scopeDigest: expectedScope, candidates: Object.freeze(candidates) });
+        return plan;
+      });
+    },
+
+    async applyReconciliation(plan: ArtifactReconciliationPlan): Promise<ArtifactReconciliationResult> {
+      return safeStorage(() => withCommitLock(async () => {
+        if (plan === null || typeof plan !== 'object') invalid('reconciliation plan is invalid.');
+        const internal = reconciliationPlans.get(plan);
+        if (internal === undefined) invalid('reconciliation plan was not issued by this store or was already consumed.');
+        reconciliationPlans.delete(plan);
+        let deleted = 0; let changed = 0; let missing = 0;
+        for (const candidate of internal.candidates) {
+          const expectedPath = await storagePath(internal.scopeDigest, candidate.referenceDigest, false);
+          if (expectedPath === undefined) { missing += 1; continue; }
+          if (expectedPath !== candidate.path) integrity('Reconciliation candidate path changed.');
+          let details;
+          try { details = await lstat(candidate.path); }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') { missing += 1; continue; }
+            throw error;
+          }
+          if (!details.isFile() || details.isSymbolicLink() || details.size !== candidate.bytes || details.mtimeMs !== candidate.modifiedAt ||
+            details.dev !== candidate.device || details.ino !== candidate.inode) { changed += 1; continue; }
+          try { await unlink(candidate.path); deleted += 1; }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') missing += 1;
+            else throw error;
+          }
+        }
+        return Object.freeze({ deleted, changed, missing });
+      }));
+    },
+
+    async delete(reference: ArtifactReference, scope: ArtifactScope): Promise<boolean> {
+      return safeStorage(() => withCommitLock(async () => {
       await initialize();
       const validated = validateReference(reference);
       if (validated.scopeDigest !== scopeDigest(scope)) throw new MayuraError('PERMISSION_DENIED', 'Artifact scope does not match.');
-      const path = objectPath(objectsDirectory, validated);
-      if (!(await regularFile(path))) return false;
+      const path = await storagePath(validated.scopeDigest, validated.referenceDigest, false);
+      if (path === undefined || !(await regularFile(path))) return false;
       await unlink(path);
       return true;
-      });
+      }));
     },
 
     async reconcileStaging(reconciliation: StagingReconciliationOptions): Promise<StagingReconciliationResult> {

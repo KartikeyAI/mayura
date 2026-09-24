@@ -10,14 +10,22 @@ try {
   const reference = await store.commit(await store.stage({ scope, content: new TextEncoder().encode('packed report'),
     mediaType: 'text/plain', classification: 'internal', filename: '../packed report.txt' }));
   const disclosure = await store.disclose(reference, scope, { classifications: ['internal'], maxBytes: 100 });
+  const audit = await store.audit([reference], scope, { maxTotalBytes: 100 });
+  const plan = await store.planReconciliation({ scope, retainedReferences: [reference], authoritativeSetComplete: true,
+    olderThan: Date.now(), maxExamined: 10, maxDeletes: 10 });
+  const reconciliation = await store.applyReconciliation(plan);
+  const disposable = await store.stage({ scope, content: new Uint8Array(), mediaType: 'text/plain', classification: 'internal' });
+  const stagedDiscard = await store.discard(disposable) && !(await store.discard(disposable));
   let separated = false;
   try { await store.read(reference, { tenantId: 'other' }); } catch (error) { separated = error?.code === 'PERMISSION_DENIED'; }
   const scoped = separated && reference.scopeDigest.startsWith('sha256:');
   const integrityVerified = new TextDecoder().decode(disclosure.body) === 'packed report' && reference.digest.startsWith('sha256:');
   const safeAttachment = disclosure.headers['Content-Disposition'] === 'attachment; filename="packed_report.txt"'
     && disclosure.headers['X-Content-Type-Options'] === 'nosniff';
-  console.log(JSON.stringify({ status: scoped && integrityVerified && safeAttachment ? 'passed' : 'failed', scoped,
-    integrityVerified, safeAttachment, noArthDependency: true }));
+  const artifactAudit = audit.observations.length === 1 && audit.observations[0]?.status === 'ok';
+  const retentionPlan = plan.candidates.length === 0 && reconciliation.deleted === 0;
+  console.log(JSON.stringify({ status: scoped && integrityVerified && safeAttachment && artifactAudit && retentionPlan && stagedDiscard ? 'passed' : 'failed', scoped,
+    integrityVerified, safeAttachment, artifactAudit, retentionPlan, stagedDiscard, noArthDependency: true }));
 } finally {
   await rm(directory, { recursive: true, force: true });
 }

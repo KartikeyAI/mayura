@@ -245,7 +245,9 @@ async function main() {
       }
       if (name === 'artifacts') {
         assert.equal(execution.scoped, true); assert.equal(execution.integrityVerified, true);
-        assert.equal(execution.safeAttachment, true); assert.equal(execution.noArthDependency, true);
+        assert.equal(execution.safeAttachment, true); assert.equal(execution.artifactAudit, true);
+        assert.equal(execution.retentionPlan, true); assert.equal(execution.stagedDiscard, true);
+        assert.equal(execution.noArthDependency, true);
       }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
@@ -281,7 +283,8 @@ async function main() {
   result.checks.push('durable-code-mode-definition', 'code-phase-mandatory-approval', 'code-phase-program-digest-pinning', 'code-phase-usage-audit-v2');
   result.checks.push('packed-quickjs-child-adapter', 'quickjs-node-globals-absent', 'quickjs-mediated-tool-call', 'quickjs-cpu-interrupt');
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
-  result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment');
+  result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment',
+    'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
