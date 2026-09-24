@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**1 of 22 gates closed. Mayura remains an experimental development preview.**
+**2 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V08 — Processor/hook integrity | Qualification gap | Candidate versions, final-gate revalidation and fail-closed callbacks exist. The exact transform/verdict invalidation and post-final mutation matrix must be consolidated across model, tool and output paths. |
 | V09 — Guardrail barriers | Qualification gap | Required admission barriers and bounded accounted auxiliary checks exist. A direct zero-primary-generation/zero-tool-dispatch denial suite plus non-recursive auxiliary admission proof is still required. |
 | V10 — Streaming disclosure | **Closed** | `packages/guardrails/test/release-gate-v10.test.ts` covers split secrets/PII, privileged tool previews, raw events, error messages, citations and byte/chunk overflow through the configured release boundary. Contract: [processors and guardrails](specs/processors.md). |
-| V11 — Language handling | Qualification gap | Original text/protected spans, segment mappings, separate metering and fallback behavior exist. The gate needs one acceptance suite that proves tracked separate calls, evidence/code preservation and every documented translation-failure policy. |
+| V11 — Language handling | **Closed** | `packages/guardrails/test/release-gate-v11.test.ts` proves separately tracked and metered detection/translation calls, immutable original evidence, exact protected-code preservation, low-confidence preservation without translation, and fail-closed accounted translation failure. Contract: [auxiliary guardrails](specs/auxiliary-guardrails.md#language-detection-and-translation). |
 | V12 — Budget concurrency | Qualification gap | Atomic hierarchical and durable bundles exist. A cross-root/child/batch/auxiliary contention suite must prove no reservation double-spend, retained unknown usage and admission stop on exhaustion. |
 | V13 — Memory/context isolation | Implementation gap | Scope, correction, tombstones, stale-sync protection and native read-your-writes exist. Derivative revocation and a provenance-preserving migration fixture are missing. |
 | V14 — Context continuity | Implementation gap | Required-source continuity exists. Repeated compaction/resume does not yet persist and prove all hard constraints, blockers, approvals and outstanding steps as one contract. |
@@ -33,7 +33,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Closure order
 
-1. Close qualification-heavy V02, V03, V07, V08, V09, V11 and V12 before adding more feature surface.
+1. Close qualification-heavy V02, V03, V07, V08, V09 and V12 before adding more feature surface.
 2. Implement the narrow missing contracts for V06 and V04, then close their deterministic matrices.
 3. Close composition and containment gates V05, V14, V15 and V18.
 4. Finish transport, recovery and compatibility gates V13, V16, V17, V20 and V21.
