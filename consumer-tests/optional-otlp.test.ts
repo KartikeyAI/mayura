@@ -1,5 +1,6 @@
 import type { RunEvent } from '@mayura/core';
-import { createOtlpHttpJsonLogExporter, type OtlpHttpJsonLogExporter, type OtlpLogExporterSnapshot } from '@mayura/exporter-otlp';
+import { createOtlpHttpJsonLogExporter, createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter,
+  type OtlpHttpJsonLogExporter, type OtlpLogExporterSnapshot, type OtlpMetricPoint, type OtlpTraceSpan } from '@mayura/exporter-otlp';
 
 const transport: typeof globalThis.fetch = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 const exporter: OtlpHttpJsonLogExporter = createOtlpHttpJsonLogExporter({
@@ -14,3 +15,11 @@ const invalid: boolean = snapshot.metrics.recordsAccepted;
 // @ts-expect-error OTLP destinations are explicit and mandatory.
 createOtlpHttpJsonLogExporter({ serviceName: 'invalid' });
 void accepted; void invalid;
+
+const span: OtlpTraceSpan = { traceId: '1'.repeat(32), spanId: '2'.repeat(16), name: 'mayura.run', startTimeUnixNano: '1', endTimeUnixNano: '2', status: 'ok' };
+const point: OtlpMetricPoint = { name: 'mayura.events', kind: 'sum', value: 1, startTimeUnixNano: '1', timeUnixNano: '2', monotonic: true };
+await createOtlpHttpJsonTraceExporter({ endpoint: 'https://collector.example/v1/traces', serviceName: 'packed-consumer', fetch: transport }).sink([span], { signal: new AbortController().signal });
+await createOtlpHttpJsonMetricExporter({ endpoint: 'https://collector.example/v1/metrics', serviceName: 'packed-consumer', fetch: transport }).sink([point], { signal: new AbortController().signal });
+// @ts-expect-error Trace IDs must remain strings at the public boundary.
+const badSpan: OtlpTraceSpan = { ...span, traceId: 1 };
+void badSpan;

@@ -1,6 +1,6 @@
 # OTLP/HTTP JSON log exporter
 
-Status: experimental optional adapter. This specification covers logs only; it does not qualify OpenTelemetry traces or metrics.
+Status: experimental optional adapter. This specification covers logs; traces and metrics are qualified separately in [OTLP/HTTP JSON traces and metrics](otlp-http-json-traces-metrics.md).
 
 ## Boundary
 
@@ -22,7 +22,7 @@ The observer's `sinkDelivered` metric means its callback settled successfully, n
 
 ## Non-goals
 
-This is not durable audit, a disk-backed queue, exactly-once delivery, a trace/metric exporter, an OpenTelemetry SDK replacement, automatic collector discovery, TLS/PKI qualification or backend interoperability certification. An application requiring durable compliance evidence must persist that evidence through a separate mandatory audit path before effects are considered complete.
+This is not durable audit, a disk-backed queue, exactly-once delivery, an OpenTelemetry SDK replacement, automatic collector discovery, TLS/PKI qualification or backend interoperability certification. An application requiring durable compliance evidence must persist that evidence through a separate mandatory audit path before effects are considered complete.
 
 ## Verification
 

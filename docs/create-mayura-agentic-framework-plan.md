@@ -535,6 +535,8 @@ Correlate every model call, auxiliary detector, processor, tool, child, wait, an
 
 Support OpenTelemetry traces, metrics, and logs through versioned exporters and a stable native event contract. Map to appropriate GenAI conventions while isolating upstream convention changes from Mayura's public schema. [OpenTelemetry GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai)
 
+Implementation checkpoint (2026-09-24): the optional OTLP/HTTP JSON package exports admitted native logs, explicit completed metadata-only spans and fixed-catalog low-cardinality metric points through separate bounded signal endpoints. Automatic propagation/aggregation, GenAI convention mapping and backend interoperability remain qualification work.
+
 Default to metadata-only telemetry. Raw prompts, system instructions, message content, code, tool arguments/results, PII, and screenshots require separate authorized capture and retention; redaction occurs before export. Avoid unbounded labels such as raw prompt text or user-entered queries in metrics. Bound exporter buffers and log volume.
 
 No phone-home or Mayura product analytics is enabled by default. Local audit/inspection is distinct from external telemetry. Network calls require an explicitly configured provider, exporter or authorized tool; installation/import cannot silently enable hosted services or transmit project data.

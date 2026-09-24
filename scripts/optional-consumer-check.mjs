@@ -245,6 +245,7 @@ async function main() {
       if (name === 'otlp') {
         assert.equal(execution.explicitDestination, true); assert.equal(execution.noConstructionNetwork, true);
         assert.equal(execution.metadataOnly, true); assert.equal(execution.partialAccounting, true);
+        assert.equal(execution.traces, true); assert.equal(execution.metrics, true);
       }
       if (name === 'budgets') {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);
@@ -330,7 +331,7 @@ async function main() {
   result.checks.push('packed-docker-outer-adapter', 'docker-cli-not-bundled', 'docker-immutable-image-configuration');
   result.checks.push('packed-local-artifact-adapter', 'artifact-scope-separation', 'artifact-safe-attachment',
     'artifact-integrity-audit', 'artifact-retention-dry-run', 'artifact-staged-discard', 'artifact-backup-restore');
-  result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting');
+  result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting', 'otlp-traces', 'otlp-metrics');
   result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
   result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
