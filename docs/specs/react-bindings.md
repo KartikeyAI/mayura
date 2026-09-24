@@ -1,6 +1,6 @@
 # React bindings
 
-Status: implemented experimental hook layer, locally qualified on 2026-09-24 with React 19.3.0. Rendered components, response forms, workflow graphs and live-browser accessibility remain separate work.
+Status: implemented experimental hook layer, locally qualified on 2026-09-24 with React 19.3.0. A separate initial semantic component subpath exists; typed response forms and live-browser accessibility remain separate work.
 
 `@mayura/client-react` is an optional adapter over `@mayura/client/headless`. React is its only peer dependency; the Mayura client is its only runtime dependency. Core, runtime, server, storage and provider packages are not part of this browser closure.
 

@@ -12,7 +12,7 @@ export interface MayuraRunActions {
 
 export class MayuraReactError extends Error {
   override readonly name = 'MayuraReactError';
-  constructor(readonly code: 'INVALID_REACT_STORE') { super(`Mayura React binding failed (${code}).`); Object.freeze(this); }
+  constructor(readonly code: 'INVALID_REACT_STORE' | 'INVALID_COMPONENT_PROPS') { super(`Mayura React binding failed (${code}).`); Object.freeze(this); }
 }
 
 function store(value: HeadlessRunStore): HeadlessRunStore {

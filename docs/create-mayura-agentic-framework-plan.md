@@ -537,6 +537,8 @@ Implementation checkpoint (2026-09-24): the headless client and optional React a
 
 Implementation checkpoint (2026-09-24): `@mayura/client/workflows` and the optional React adapter now project deeply immutable content-free durable DAG views for formats 2–5. Exact manifest/snapshot node agreement, format-specific kinds/statuses, finite acyclic topology, child links and progress are validated without importing workflow executors or storage drivers into the browser. The application still owns authenticated manifest/snapshot transport. Rendered components, child expansion, mutations and visual/accessibility qualification remain M8 work.
 
+Implementation checkpoint (2026-09-24): `@mayura/client-react/components` adds unstyled semantic run-summary, durable-workflow and human-request views. Rendering is inert; response intent originates only from an explicit button, hostile prompts remain text and React DOM is not shipped. SSR/DOM and isolated five-package type/runtime profiles pass. Typed schema forms, command feedback, localization and live accessibility/visual regression remain M8 work.
+
 Browser state distinguishes running, waiting, blocked, partial, failed, cancelled, and succeeded. Preserve event identity across reconnect to avoid duplicate messages or approvals. Authorization changes and logout clear scoped caches. No privileged action is authorized solely because a button is enabled.
 
 Render only supported public event types. Sanitize HTML/Markdown, validate links/artifact types, and avoid automatic remote loads that disclose user data. Do not expose system prompts, raw provider streams, private reasoning, secret references usable as credentials, or unfiltered tool payloads in inspector components.

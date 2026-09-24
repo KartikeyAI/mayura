@@ -5,7 +5,10 @@
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "src", "README.md"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./components": { "types": "./dist/components.d.ts", "import": "./dist/components.js" }
+  },
   "dependencies": { "@mayura/client": "workspace:*" },
   "peerDependencies": { "react": ">=18.3.0 <20" }
 }

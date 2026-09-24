@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
-import { builtinModules } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -180,6 +180,17 @@ async function main() {
   assert.equal(reactManifest.name, 'react'); assert.equal(reactManifest.version, '19.3.0'); assert.deepEqual(reactManifest.dependencies ?? {}, {});
   packages.set('react', { archive: pathToFileURL(reactDestination).href, manifest: reactManifest });
   reports.push({ name: 'react', version: reactManifest.version, tarballBytes: reactBytes.length, files: reactFiles.size });
+  const reactTypesDirectory = await realpath(join(workspace, 'node_modules', '@types', 'react'));
+  const csstypeDirectory = await realpath(dirname(createRequire(join(reactTypesDirectory, 'package.json')).resolve('csstype/package.json')));
+  for (const [name, directory] of [['@types/react', reactTypesDirectory], ['csstype', csstypeDirectory]]) {
+    const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(original.license, 'MIT'); for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(original.scripts?.[script], undefined, `${name} has an unreviewed installation script.`);
+    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/g, '-')}.tgz`); await run([pnpm, 'pack', '--out', destination], directory);
+    const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+    assert.equal(manifest.name, name); assert.equal(manifest.version, original.version); assert.equal(manifest.license, 'MIT');
+    if (name === '@types/react') assert.deepEqual(Object.keys(manifest.dependencies ?? {}), ['csstype']); else assert.deepEqual(manifest.dependencies ?? {}, {});
+    packages.set(name, { archive: pathToFileURL(destination).href, manifest }); reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
+  }
   const closure = roots => {
     const result = new Set(); const visit = name => {
       if (result.has(name)) return; result.add(name); const pkg = packages.get(name); assert(pkg, `Unqualified dependency: ${name}`);
@@ -192,10 +203,12 @@ async function main() {
   assert.deepEqual([...closure(['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'])].sort(),
     ['@mayura/core', '@mayura/guardrails', '@mayura/observability', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
   assert.deepEqual([...closure(['@mayura/client-react'])].sort(), ['@mayura/client', '@mayura/client-react', 'react']);
+  assert.deepEqual([...closure(['@mayura/client-react', '@types/react'])].sort(), ['@mayura/client', '@mayura/client-react', '@types/react', 'csstype', 'react']);
   const profiles = [];
   for (const [name, roots, fixture] of [
     ['browser', ['@mayura/client'], 'optional-browser.test.ts'],
     ['react', ['@mayura/client-react'], 'optional-react.test.ts'],
+    ['react-components', ['@mayura/client-react', '@types/react'], 'optional-react-components.test.ts'],
     ['cli', ['@mayura/cli'], 'optional-cli.test.ts'],
     ['helpers', ['@mayura/helpers'], 'optional-helpers.test.ts'],
     ['node', ['@mayura/server-node', '@mayura/client', '@mayura/observability', '@mayura/sdk', '@mayura/testing', '@mayura/artifacts'], 'optional-node.test.ts'],
@@ -252,6 +265,9 @@ async function main() {
       if (name === 'react') {
         assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
         assert.equal(execution.activityHook, true); assert.equal(execution.workflowGraphHook, true);
+      }
+      if (name === 'react-components') {
+        assert.equal(execution.accessibleComponents, true); assert.equal(execution.explicitEvents, true); assert.equal(execution.noRendererDependency, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -370,6 +386,7 @@ async function main() {
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
   result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'browser-headless-activity-projection', 'browser-durable-workflow-graph-projection', 'headless-no-implicit-network');
   result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network', 'react-activity-hook', 'react-workflow-graph-hook');
+  result.checks.push('packed-react-components', 'react-components-explicit-events', 'react-components-no-renderer-dependency');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 
