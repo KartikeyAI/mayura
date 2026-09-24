@@ -2,7 +2,7 @@ import { ClientError, type ClientJson, type MayuraClient } from './index.js';
 
 export type WorkflowViewFormat = 2 | 3 | 4 | 5;
 export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
-export type WorkflowViewRunStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type WorkflowViewRunStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type WorkflowViewStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowViewNode { readonly id: string; readonly kind: WorkflowViewNodeKind; readonly dependsOn: readonly string[] }
 export interface WorkflowViewStep { readonly id: string; readonly kind: WorkflowViewNodeKind; readonly status: WorkflowViewStepStatus; readonly childRunId?: string }
@@ -49,7 +49,7 @@ export interface WorkflowCommandController {
 const identifier = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const version = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/;
 const digest = /^[a-f0-9]{64}$/;
-const runStatuses = new Set<WorkflowViewRunStatus>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const runStatuses = new Set<WorkflowViewRunStatus>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const stepStatuses = new Set<WorkflowViewStepStatus>(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
 const humanStatuses = new Set<WorkflowViewStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped']);
 const timerStatuses = new Set<WorkflowViewStepStatus>(['pending', 'waiting', 'succeeded', 'skipped']);
@@ -260,7 +260,7 @@ export function createWorkflowCommandController(options: WorkflowCommandControll
     },
     resume: settings => {
       if (typeof client.resumeWorkflow !== 'function') return Promise.reject(new ClientError('INVALID_WORKFLOW_CONTROLLER'));
-      if (!['running', 'waiting'].includes(workflow.status)) return Promise.reject(new ClientError('INVALID_WORKFLOW_COMMAND'));
+      if (!['running', 'waiting', 'paused'].includes(workflow.status)) return Promise.reject(new ClientError('INVALID_WORKFLOW_COMMAND'));
       return execute('resume', null, settings, signal => client.resumeWorkflow!(workflow.runId, workflow.revision,
         { commandId: settings.commandId, signal }));
     },

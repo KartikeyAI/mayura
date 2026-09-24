@@ -3,7 +3,7 @@ import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowBinding, WorkflowManifest, WorkflowPolicyManifest, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
 
 export type WorkflowFormat2StepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped';
-export type WorkflowFormat2Status = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type WorkflowFormat2Status = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export interface WorkflowFormat2Approval { digest: string; expiresAt: number; humanId: string | null }
 export interface WorkflowFormat2Step {
   kind: 'tool' | 'join'; status: WorkflowFormat2StepStatus; callId: string; output: JsonValue;
@@ -18,7 +18,7 @@ export interface WorkflowFormat2State {
 const nodeId = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const toolId = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
 const forbidden = new Set(['constructor', 'prototype', '__proto__']);
-const statuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const statuses = new Set(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const stepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped']);
 const encoder = new TextEncoder();
 const stateKeys = ['format', 'definition', 'policy', 'input', 'status', 'steps', 'maxCostMicros', 'spentMicros', 'reservedMicros', 'output'];

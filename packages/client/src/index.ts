@@ -152,7 +152,7 @@ function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
   if (!Object.isFrozen(raw) || Object.keys(raw).length !== expected.length || expected.some(key => !Object.hasOwn(raw, key))) return fail();
   const format = raw['format']; const nodes = raw['nodes']; const steps = raw['steps'];
   const admittedKinds: Readonly<Record<number, readonly string[]>> = { 2: ['tool', 'join'], 3: ['tool', 'join', 'wait'], 4: ['tool', 'join', 'child'], 5: ['tool', 'join', 'human', 'timer'] };
-  const runStatuses = ['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
+  const runStatuses = ['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
   const stepStatuses = ['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out'];
   if (typeof format !== 'number' || ![2, 3, 4, 5].includes(format) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
     || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion']) || raw['runId'] !== expectedId
@@ -188,7 +188,7 @@ function workflowIndexEntry(value: unknown): WorkflowIndexEntry {
     || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId']) || typeof raw['definitionVersion'] !== 'string'
     || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion']) || typeof raw['runId'] !== 'string'
     || !/^[a-f0-9]{64}$/.test(raw['runId']) || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1
-    || typeof raw['status'] !== 'string' || !['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(raw['status'])) return fail();
+    || typeof raw['status'] !== 'string' || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(raw['status'])) return fail();
   return raw as unknown as WorkflowIndexEntry;
 }
 async function race<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T> {

@@ -112,7 +112,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
 
   async function executeNode(id: string, node: WorkflowNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
-    if (!step || state.policy !== policy || state.status === 'cancelled' || !['pending', 'approved'].includes(step.status)) return;
+    if (!step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status) || !['pending', 'approved'].includes(step.status)) return;
     const dependencies = (node.dependsOn ?? []).map(key => state.steps[key]!);
     if (dependencies.some(item => terminalSteps.has(item.status) && item.status !== 'succeeded')) {
       await mutate(id, current => { const next = current.steps[node.id]!; if (!['pending','approved'].includes(next.status)) return false; next.status = 'skipped'; return true; }, 'step.skipped', { nodeId: node.id }); return;
@@ -167,7 +167,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes,
         beforeDispatch: async processed => {
           const current = stateFrom(await load(id));
-          if (current.status === 'cancelled' || current.policy !== policy || current.steps[node.id]?.status !== 'dispatching' || candidate(node, processed, id, node.approval ? current.steps[node.id]!.approval!.expiresAt : null) !== candidateHash) {
+          if (current.status !== 'running' || current.policy !== policy || current.steps[node.id]?.status !== 'dispatching' || candidate(node, processed, id, node.approval ? current.steps[node.id]!.approval!.expiresAt : null) !== candidateHash) {
             throw new MayuraError('CONFLICT', 'Workflow dispatch candidate is no longer authorized.');
           }
           if (node.approval && (current.steps[node.id]?.approval?.expiresAt ?? 0) <= Date.now()) throw new MayuraError('PERMISSION_DENIED', 'Approval expired before dispatch.');
@@ -224,7 +224,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
           const step = state.steps[node.id]!;
           if (step.kind !== node.kind || (node.kind === 'tool' && step.receipt && step.receipt.toolId !== node.tool.id) || (step.status === 'succeeded' && (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded'))) throw new MayuraError('CONFLICT', 'Stored step evidence does not match the pinned graph.');
         }
-        if (state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return snapshot(before);
+        if (state.status === 'paused' || state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return snapshot(before);
         await Promise.all(definition.nodes.map(node => executeNode(id, node)));
         let after = await load(id); const next = stateFrom(after); const steps = Object.values(next.steps);
         if (next.status === 'cancelled') return snapshot(after);
@@ -261,8 +261,28 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       return snapshot(await mutate(id, state => {
         const step = state.steps[nodeId];
         if (state.status === 'cancelled' || state.policy !== policy || !step || step.status !== 'waiting' || !step.approval || step.approval.digest !== approvalDigest || step.approval.expiresAt <= Date.now()) throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
-        step.approval.humanId = human.id; step.status = 'approved'; state.status = 'running'; return true;
+        step.approval.humanId = human.id; step.status = 'approved'; if (state.status !== 'paused') state.status = 'running'; return true;
       }, 'approval.resolved', { nodeId, humanId: human.id }));
+    },
+    /** Persist a quiescent operator pause. In-flight effects must settle or reconcile first. */
+    async pause(id: string): Promise<WorkflowSnapshot> {
+      return snapshot(await mutate(id, state => {
+        if (state.status === 'paused') return false;
+        if (['succeeded','failed','blocked','outcome_unknown','cancelled'].includes(state.status)) {
+          throw new MayuraError('CONFLICT', 'A terminal workflow cannot be paused.');
+        }
+        if (Object.values(state.steps).some(step => step.status === 'dispatching')) {
+          throw new MayuraError('CONFLICT', 'A workflow with an in-flight effect cannot enter the quiescent paused state.');
+        }
+        state.status = 'paused'; return true;
+      }, 'run.paused'));
+    },
+    /** Resume scheduling only; unresolved waits remain waiting and grant no authority. */
+    async resume(id: string): Promise<WorkflowSnapshot> {
+      return snapshot(await mutate(id, state => {
+        if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused workflow can be resumed.');
+        state.status = Object.values(state.steps).some(step => step.status === 'waiting') ? 'waiting' : 'running'; return true;
+      }, 'run.resumed'));
     },
     async cancel(id: string): Promise<WorkflowSnapshot> {
       const record = await mutate(id, state => { if (['succeeded','failed','blocked','outcome_unknown','cancelled'].includes(state.status)) return false; state.status = 'cancelled'; return true; }, 'run.cancelled');

@@ -37,6 +37,8 @@ describe('durable workflow graph projection', () => {
       expect(projection.nodes[0]).toMatchObject({ kind, status, depth: 0, ready: status === 'pending' });
       expect(JSON.stringify(projection)).not.toContain('output');
     }
+    expect(createWorkflowGraphProjection(view([{ id: 'node', kind: 'tool', dependsOn: [] }],
+      [{ id: 'node', kind: 'tool', status: 'pending' }], { format: 2, status: 'paused' })).status).toBe('paused');
   });
 
   it('rejects cycles, dangling edges and manifest/snapshot disagreement', () => {

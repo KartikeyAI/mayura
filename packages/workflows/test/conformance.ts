@@ -145,6 +145,41 @@ export function workflowConformance(name: string, factory: () => Promise<Workflo
       expect(completed.steps['write']?.approval?.humanId).toBe('human-a');
     });
 
+    it('persists a quiescent operator pause across restart before resuming execution', async () => {
+      let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }));
+      const first = runtime(); const run = await first.submit(definition, { input: { value: 2 }, idempotencyKey: 'operator-pause' });
+      expect((await first.pause(run.id)).status).toBe('paused');
+      expect((await first.pause(run.id)).status).toBe('paused');
+      first.close(); await store.close(); store = fixture.reopen(); await store.initialize();
+      const second = runtime(); expect((await second.inspect(run.id)).status).toBe('paused');
+      expect((await second.runUntilSettled(definition, run.id)).status).toBe('paused'); expect(effects).toBe(0);
+      expect((await second.resume(run.id)).status).toBe('running');
+      expect((await second.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
+      expect((await second.events(run.id)).map(event => event.type)).toEqual(expect.arrayContaining(['run.paused', 'run.resumed']));
+    });
+
+    it('resumes an unresolved approval back to waiting without bypassing it', async () => {
+      let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }), true);
+      const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'paused-approval' });
+      const waiting = await engine.runUntilSettled(definition, run.id); const approvalDigest = waiting.steps['write']!.approval!.digest;
+      expect((await engine.pause(run.id)).status).toBe('paused');
+      expect((await engine.resume(run.id)).status).toBe('waiting');
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('waiting'); expect(effects).toBe(0);
+      await engine.pause(run.id); expect((await engine.approve({ id: run.id, nodeId: 'write', digest: approvalDigest,
+        credential: 'verified-human' })).status).toBe('paused');
+      expect((await engine.resume(run.id)).status).toBe('running');
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
+    });
+
+    it('rejects a quiescent pause while an external effect is in flight', async () => {
+      const started = deferred<void>(); const release = deferred<{ value: number }>();
+      const definition = single(tool({ execute: async () => { started.resolve(); return release.promise; } }));
+      const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'pause-in-flight' });
+      const execution = engine.runUntilSettled(definition, run.id); await started.promise;
+      await expect(engine.pause(run.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+      release.resolve({ value: 2 }); expect((await execution).status).toBe('succeeded');
+    });
+
     it('rejects unverified identities, wrong-project humans and mismatched approval digests', async () => {
       let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }), true);
       const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'denied-approval' });

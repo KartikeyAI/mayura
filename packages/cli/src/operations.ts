@@ -37,7 +37,7 @@ export interface OperationalRun {
 }
 export type OperationalWorkflowFormat = 2 | 3 | 4 | 5;
 export type OperationalWorkflowNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
-export type OperationalWorkflowStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type OperationalWorkflowStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type OperationalWorkflowStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface OperationalWorkflowNode { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly dependsOn: readonly string[] }
 export interface OperationalWorkflowStep { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly status: OperationalWorkflowStepStatus; readonly childRunId?: string }
@@ -176,7 +176,7 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
   if (![2, 3, 4, 5].includes(format) || typeof definitionId !== 'string' || !workflowNodeIdentifier.test(definitionId)
     || typeof definitionVersion !== 'string' || !workflowVersion.test(definitionVersion) || item['runId'] !== expectedId
     || !Number.isSafeInteger(item['revision']) || (item['revision'] as number) < 1
-    || !['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))
+    || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))
     || !Array.isArray(item['nodes']) || item['nodes'].length < 1 || item['nodes'].length > 128
     || !Array.isArray(item['steps']) || item['steps'].length !== item['nodes'].length) return fail();
   const allowedKinds: Readonly<Record<OperationalWorkflowFormat, ReadonlySet<OperationalWorkflowNodeKind>>> = {
@@ -221,7 +221,7 @@ function workflowIndexEntry(value: unknown): OperationalWorkflowIndexEntry {
   if (![2, 3, 4, 5].includes(item['format'] as number) || typeof item['definitionId'] !== 'string' || !workflowNodeIdentifier.test(item['definitionId'])
     || typeof item['definitionVersion'] !== 'string' || !workflowVersion.test(item['definitionVersion']) || typeof item['runId'] !== 'string'
     || !workflowRunIdentifier.test(item['runId']) || !Number.isSafeInteger(item['revision']) || (item['revision'] as number) < 1
-    || !['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))) return fail();
+    || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))) return fail();
   return Object.freeze({ format: item['format'] as OperationalWorkflowFormat, definitionId: item['definitionId'], definitionVersion: item['definitionVersion'],
     runId: item['runId'], revision: item['revision'] as number, status: item['status'] as OperationalWorkflowStatus });
 }

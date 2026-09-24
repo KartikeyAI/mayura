@@ -26,7 +26,7 @@ export interface HumanRequestTransport {
 }
 export interface WorkflowViewRecord {
   readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
-  readonly revision: number; readonly status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+  readonly revision: number; readonly status: 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
   readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer'; readonly dependsOn: readonly string[] }[];
   readonly steps: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
     readonly status: 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
@@ -106,7 +106,7 @@ const humanIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const encoder = new TextEncoder();
 const workflowKinds = Object.freeze({ 2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']),
   4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']) });
-const workflowStatuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const workflowStatuses = new Set(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const workflowStepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
 function object(value: unknown, maxBytes = 1_048_576): JsonObject {
   const copy = jsonValue(value, { maxBytes });
