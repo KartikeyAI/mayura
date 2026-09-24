@@ -309,14 +309,14 @@ async function main() {
       }], build: { write: false, minify: false, sourcemap: false, lib: { entry: join(application, 'consumer.ts'), formats: ['iife'], name: 'OptionalBrowserConsumer' } } });
       const chunks = (Array.isArray(built) ? built.flatMap(value => value.output) : built.output).filter(chunk => chunk.type === 'chunk');
       assert.equal(chunks.length, 1); assert.equal(chunks[0].imports.length, 0); assert.equal(chunks[0].dynamicImports.length, 0);
-      assert(included.size >= 2 && [...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/')), 'Bundler did not include the installed client.');
+      assert(included.size >= 3 && [...included].some(path => path.replaceAll('\\', '/').includes('/node_modules/@mayura/client/dist/headless.js')), 'Bundler did not include the installed headless client.');
       const code = chunks[0].code; assert(!code.includes('__vite-browser-external'), 'Browser bundle contains a Node compatibility shim.');
       const context = { TextEncoder, TextDecoder, URL, AbortController, setTimeout, clearTimeout };
       runInNewContext(code, context, { timeout: 1_000 });
       const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -349,6 +349,7 @@ async function main() {
   result.checks.push('cli-human-list-inspect-respond', 'cli-human-response-file-boundary');
   result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   result.checks.push('packed-remote-memory', 'remote-memory-canonical-rehydration', 'remote-memory-no-resurrection', 'remote-memory-opaque-scope');
+  result.checks.push('browser-headless-run-store', 'browser-headless-human-view', 'headless-no-implicit-network');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

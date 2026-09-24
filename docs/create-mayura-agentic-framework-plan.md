@@ -527,6 +527,8 @@ Public deployments require TLS, authentication integration, appropriate authoriz
 
 Provide typed run handles, result parsing, cancellation, event reducers, reconnect/backoff, wait helpers, upload/artifact interfaces, and approval/input submission. Optional React bindings provide hooks and accessible headless components for run status, work graphs, tool activity, human approval, usage, and structured output. UI bindings are convenience layers over server contracts, not a second policy engine.
 
+Implementation checkpoint (2026-09-24): `@mayura/client/headless` provides a dependency-free inert external run store with explicit snapshot reads/SSE observation/cancellation, bounded immutable event state, gap-aware activity, sanitized errors and disposal that never cancels the remote run. Text-only human-request view metadata marks expired/resolved requests non-actionable. The isolated browser bundle exercises both subpaths without Node globals. React bindings, workflow graph projection, response-form helpers, localization and visual/accessibility qualification remain M8 work.
+
 Browser state distinguishes running, waiting, blocked, partial, failed, cancelled, and succeeded. Preserve event identity across reconnect to avoid duplicate messages or approvals. Authorization changes and logout clear scoped caches. No privileged action is authorized solely because a button is enabled.
 
 Render only supported public event types. Sanitize HTML/Markdown, validate links/artifact types, and avoid automatic remote loads that disclose user data. Do not expose system prompts, raw provider streams, private reasoning, secret references usable as credentials, or unfiltered tool payloads in inspector components.

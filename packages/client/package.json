@@ -1,5 +1,8 @@
 {
   "name": "@mayura/client", "version": "0.1.0-dev.0", "private": true,
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } }
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./headless": { "types": "./dist/headless.d.ts", "import": "./dist/headless.js" }
+  }
 }
