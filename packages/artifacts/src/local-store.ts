@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, opendir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, opendir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { MayuraError, assertPositiveInteger } from '@mayura/core';
 import type {
   ArtifactAuditOptions,
   ArtifactAuditResult,
+  ArtifactBackupOptions,
   ArtifactClassification,
   ArtifactDisclosure,
   ArtifactDisclosurePolicy,
@@ -12,6 +13,8 @@ import type {
   ArtifactReconciliationCursor,
   ArtifactReconciliationPlan,
   ArtifactReconciliationResult,
+  ArtifactRestoreOptions,
+  ArtifactRestoreResult,
   ArtifactScope,
   LocalArtifactStore,
   LocalArtifactStoreOptions,
@@ -29,6 +32,9 @@ const CLASSIFICATIONS = new Set<ArtifactClassification>(['public', 'internal', '
 const MAX_BUFFERED_ARTIFACT_BYTES = 64 * 1_024 * 1_024;
 const MAX_STAGED_ARTIFACTS = 4_096;
 const MAX_COMMITTED_ARTIFACTS_PER_SCOPE = 65_536;
+const MAX_BACKUP_ARTIFACTS = 256;
+const MAX_BACKUP_CONTENT_BYTES = 64 * 1_024 * 1_024;
+const MAX_BACKUP_ARCHIVE_BYTES = 96 * 1_024 * 1_024;
 const OBJECT_NAME = /^[0-9a-f]{64}$/u;
 const OBJECT_PREFIX = /^[0-9a-f]{2}$/u;
 
@@ -56,8 +62,25 @@ interface InternalReconciliationPlan {
   readonly candidates: readonly StoredObject[];
 }
 
+interface BackupEntry {
+  readonly reference: ArtifactReference;
+  readonly content: Uint8Array;
+}
+
 function sha256(value: Uint8Array | string): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function canonicalBase64(value: Uint8Array): string {
+  return Buffer.from(value).toString('base64');
+}
+
+function decodeBase64(value: unknown, field: string, maximum: number): Uint8Array {
+  if (typeof value !== 'string' || value.length > Math.ceil(maximum / 3) * 4 + 4 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) invalid(`${field} is not canonical base64.`);
+  const decoded = new Uint8Array(Buffer.from(value, 'base64'));
+  if (decoded.byteLength > maximum || canonicalBase64(decoded) !== value) invalid(`${field} is not canonical base64.`);
+  return decoded;
 }
 
 function stableScope(scope: ArtifactScope): { readonly tenantId: string; readonly projectId?: string } {
@@ -604,6 +627,138 @@ export function createLocalArtifactStore(options: LocalArtifactStoreOptions): Lo
           }
         }
         return Object.freeze({ deleted, changed, missing });
+      }));
+    },
+
+    async backup(rawOptions: ArtifactBackupOptions): Promise<Uint8Array> {
+      return safeStorage(() => withCommitLock(async () => {
+        const fields = plainData(rawOptions, 'backup options', new Set([
+          'scope', 'references', 'authoritativeSetComplete', 'maxTotalBytes',
+        ]));
+        if (fields.get('authoritativeSetComplete') !== true) invalid('authoritativeSetComplete must be true.');
+        const rawReferences = plainArray(fields.get('references'), 'backup references', MAX_BACKUP_ARTIFACTS);
+        const maxTotalBytes = fields.get('maxTotalBytes');
+        if (typeof maxTotalBytes !== 'number') invalid('maxTotalBytes must be a number.');
+        assertPositiveInteger(maxTotalBytes, 'maxTotalBytes');
+        if (maxTotalBytes > MAX_BACKUP_CONTENT_BYTES) invalid('maxTotalBytes exceeds the backup limit.');
+        const expectedScope = scopeDigest(fields.get('scope') as ArtifactScope);
+        const references: ArtifactReference[] = []; const referenceDigests = new Set<string>(); let contentBytes = 0;
+        for (const rawReference of rawReferences) {
+          const reference = validateReference(rawReference as ArtifactReference);
+          if (reference.scopeDigest !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Backup reference scope does not match.');
+          if (reference.expiresAt !== undefined && reference.expiresAt <= clock()) throw new MayuraError('NOT_FOUND', 'Backup contains an unavailable artifact.');
+          if (referenceDigests.has(reference.referenceDigest)) invalid('backup references must not contain duplicates.');
+          referenceDigests.add(reference.referenceDigest); contentBytes += reference.bytes;
+          if (!Number.isSafeInteger(contentBytes) || contentBytes > maxTotalBytes) throw new MayuraError('LIMIT_EXCEEDED', 'Backup exceeds maxTotalBytes.');
+          references.push(reference);
+        }
+        const inventory = await listScopeObjects(expectedScope);
+        if (inventory.anomalies > 0) integrity('Artifact scope contains structural anomalies and cannot be backed up.');
+        if (inventory.objects.length !== references.length || inventory.objects.some((entry) => !referenceDigests.has(entry.referenceDigest))) {
+          throw new MayuraError('CONFLICT', 'Backup references are not the complete authoritative scope set.');
+        }
+        references.sort((left, right) => left.referenceDigest < right.referenceDigest ? -1 : left.referenceDigest > right.referenceDigest ? 1 : 0);
+        const entries = [];
+        for (const reference of references) {
+          const verified = await readVerified(reference, fields.get('scope') as ArtifactScope);
+          entries.push({ reference: verified.reference, content: canonicalBase64(verified.bytes) });
+        }
+        const payload = JSON.stringify({
+          format: 'mayura-artifact-backup-v1', scopeDigest: expectedScope, artifacts: entries,
+        });
+        const payloadBytes = new TextEncoder().encode(payload);
+        const archive = new TextEncoder().encode(JSON.stringify({
+          format: 'mayura-artifact-backup-envelope-v1', digest: sha256(payloadBytes), payload,
+        }));
+        if (archive.byteLength > MAX_BACKUP_ARCHIVE_BYTES) throw new MayuraError('LIMIT_EXCEEDED', 'Encoded backup exceeds the archive limit.');
+        return archive;
+      }));
+    },
+
+    async restore(archive: Uint8Array, rawScope: ArtifactScope, rawOptions: ArtifactRestoreOptions): Promise<ArtifactRestoreResult> {
+      return safeStorage(() => withCommitLock(async () => {
+        const fields = plainData(rawOptions, 'restore options', new Set(['maxArchiveBytes', 'maxTotalBytes', 'maxArtifacts']));
+        const maxArchiveBytes = fields.get('maxArchiveBytes'); const maxTotalBytes = fields.get('maxTotalBytes');
+        const maxArtifacts = fields.get('maxArtifacts');
+        if (typeof maxArchiveBytes !== 'number' || typeof maxTotalBytes !== 'number' || typeof maxArtifacts !== 'number') {
+          invalid('restore limits must be numbers.');
+        }
+        assertPositiveInteger(maxArchiveBytes, 'maxArchiveBytes'); assertPositiveInteger(maxTotalBytes, 'maxTotalBytes');
+        assertPositiveInteger(maxArtifacts, 'maxArtifacts');
+        if (maxArchiveBytes > MAX_BACKUP_ARCHIVE_BYTES || maxTotalBytes > MAX_BACKUP_CONTENT_BYTES || maxArtifacts > MAX_BACKUP_ARTIFACTS) {
+          invalid('restore limits exceed the supported bounds.');
+        }
+        if (!(archive instanceof Uint8Array) || (typeof SharedArrayBuffer !== 'undefined' && archive.buffer instanceof SharedArrayBuffer)) {
+          invalid('archive must be an unshared Uint8Array.');
+        }
+        if (archive.byteLength > maxArchiveBytes) throw new MayuraError('LIMIT_EXCEEDED', 'Backup exceeds maxArchiveBytes.');
+        let envelopeValue: unknown;
+        try { envelopeValue = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(archive))); }
+        catch { integrity('Backup envelope is not valid UTF-8 JSON.'); }
+        const envelope = plainData(envelopeValue, 'backup envelope', new Set(['format', 'digest', 'payload']));
+        const digest = envelope.get('digest');
+        if (envelope.get('format') !== 'mayura-artifact-backup-envelope-v1' || typeof digest !== 'string' || !DIGEST.test(digest)) {
+          integrity('Backup envelope identity is invalid.');
+        }
+        const payloadText = envelope.get('payload');
+        if (typeof payloadText !== 'string') integrity('Backup payload must be encoded JSON text.');
+        const payloadBytes = new TextEncoder().encode(payloadText);
+        if (payloadBytes.byteLength > maxArchiveBytes || sha256(payloadBytes) !== digest) integrity('Backup payload digest does not match.');
+        let payloadValue: unknown;
+        try { payloadValue = JSON.parse(payloadText); }
+        catch { integrity('Backup payload is not valid JSON.'); }
+        const payload = plainData(payloadValue, 'backup payload', new Set(['format', 'scopeDigest', 'artifacts']));
+        const expectedScope = scopeDigest(rawScope); const payloadScope = payload.get('scopeDigest');
+        if (payload.get('format') !== 'mayura-artifact-backup-v1' || typeof payloadScope !== 'string' || !DIGEST.test(payloadScope)) {
+          integrity('Backup payload identity is invalid.');
+        }
+        if (payloadScope !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Backup scope does not match the restore scope.');
+        const rawEntries = plainArray(payload.get('artifacts'), 'backup artifacts', MAX_BACKUP_ARTIFACTS);
+        if (rawEntries.length > maxArtifacts) throw new MayuraError('LIMIT_EXCEEDED', 'Backup exceeds maxArtifacts.');
+        const entries: BackupEntry[] = []; const references = new Map<string, ArtifactReference>(); let contentBytes = 0; let previous = '';
+        for (const rawEntry of rawEntries) {
+          const entry = plainData(rawEntry, 'backup artifact', new Set(['reference', 'content']));
+          const reference = validateReference(entry.get('reference') as ArtifactReference);
+          if (reference.scopeDigest !== expectedScope) throw new MayuraError('PERMISSION_DENIED', 'Backup artifact scope does not match.');
+          if (reference.referenceDigest <= previous || references.has(reference.referenceDigest)) integrity('Backup artifacts are not uniquely sorted.');
+          if (reference.expiresAt !== undefined && reference.expiresAt <= clock()) throw new MayuraError('NOT_FOUND', 'Backup contains an unavailable artifact.');
+          const content = decodeBase64(entry.get('content'), 'backup artifact content', options.maxArtifactBytes);
+          if (content.byteLength !== reference.bytes || sha256(content) !== reference.digest) integrity('Backup artifact content failed integrity verification.');
+          contentBytes += content.byteLength;
+          if (!Number.isSafeInteger(contentBytes) || contentBytes > maxTotalBytes) throw new MayuraError('LIMIT_EXCEEDED', 'Backup content exceeds maxTotalBytes.');
+          previous = reference.referenceDigest; references.set(reference.referenceDigest, reference); entries.push({ reference, content });
+        }
+        const inventory = await listScopeObjects(expectedScope);
+        if (inventory.anomalies > 0) integrity('Restore scope contains structural anomalies.');
+        if (inventory.objects.some((entry) => !references.has(entry.referenceDigest))) {
+          throw new MayuraError('CONFLICT', 'Restore scope contains objects outside the authoritative backup.');
+        }
+        if (entries.length > maxCommittedArtifactsPerScope) throw new MayuraError('LIMIT_EXCEEDED', 'Backup exceeds the configured scope capacity.');
+        let existing = 0;
+        for (const object of inventory.objects) {
+          await readVerified(references.get(object.referenceDigest)!, rawScope); existing += 1;
+        }
+        let restored = 0;
+        for (const entry of entries) {
+          if (inventory.objects.some((object) => object.referenceDigest === entry.reference.referenceDigest)) continue;
+          const destination = (await storagePath(expectedScope, entry.reference.referenceDigest, true))!;
+          const temporary = join(stagingDirectory, `${randomUUID()}.stage`);
+          try {
+            await writeFile(temporary, entry.content, { flag: 'wx', mode: 0o600 });
+            try { await link(temporary, destination); restored += 1; }
+            catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+              const bytes = new Uint8Array(await readFile(destination));
+              if (bytes.byteLength !== entry.reference.bytes || sha256(bytes) !== entry.reference.digest) {
+                integrity('Concurrent restore object conflicts with the backup.');
+              }
+              existing += 1;
+            }
+          } finally {
+            await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
+          }
+        }
+        return Object.freeze({ artifacts: entries.length, restored, existing, contentBytes });
       }));
     },
 

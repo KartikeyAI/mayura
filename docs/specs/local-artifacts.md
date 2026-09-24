@@ -24,7 +24,13 @@ Committed-object cleanup is an explicit two-phase operation. `planReconciliation
 
 The retained set must be complete for the scope, not one database page. Applications should generate and review all finite plans before applying any of them when they need a whole-scope deletion preview. A process restart invalidates unapplied plans; the application must plan again from current authoritative state. This intentionally separates discovery from deletion and prevents a stale plan from silently removing a changed object.
 
-The initial adapter is same-host storage, not a shared network filesystem, object store, encrypted vault, malware scanner or backup system. Symlink/reparse-point hardening, multi-process promotion races, crash injection, disk-full behavior, backup/restore and supported-host qualification remain required before V10, V17 or V18 can close.
+`backup` creates a deterministic portable integrity envelope for one complete verified scope. The caller supplies the complete authoritative reference set; unlisted objects, structural anomalies, missing/expired content, metadata conflicts and byte-limit exhaustion fail before an archive is returned. Entries are sorted by reference identity and contain exact reference metadata plus base64 content. The envelope binds the canonical payload with SHA-256. This is corruption detection, not encryption, authenticity, key management or protection from an administrator able to replace both archive and digest.
+
+`restore` accepts only bounded unshared bytes, validates the complete UTF-8 JSON envelope, digest, scope, sorted reference set, content hashes, expiry, object count and cumulative bytes before creating any object. The destination may be empty or contain an exact subset of the archive; any unrelated object or corrupt existing object fails closed. Missing objects are installed through a same-filesystem staging file and atomic hard-link publication, so retry after interruption is idempotent and never overwrites an existing identity. A storage failure after some links succeed can leave an exact partial restore; it does not claim transaction-wide rollback. Retry the same archive after repairing storage, then run `audit` before reopening application access.
+
+This finite profile supports at most 256 artifacts and 64 MiB of decoded content per archive, with a 96 MiB encoded ceiling. The caller can impose smaller limits. The application must protect archive confidentiality, store archives separately, retain the matching application database/reference snapshot, test restore regularly and define retention/erasure policy. Restoring artifact bytes alone does not restore owning application records.
+
+The initial adapter is same-host storage, not a shared network filesystem, object store, encrypted vault, malware scanner or scheduled backup service. Symlink/reparse-point hardening, multi-process promotion races, crash/disk-full injection, encrypted remote retention and supported-host qualification remain required before V10, V17 or V18 can close.
 
 ## Required evidence for this slice
 
@@ -34,4 +40,5 @@ The initial adapter is same-host storage, not a shared network filesystem, objec
 - bounded staging cleanup cannot traverse outside the owned staging directory;
 - bounded audit distinguishes available, missing, expired and tampered objects without releasing bytes;
 - two-phase committed reconciliation is scope-bound, one-use, link-averse, change-detecting and retains every authoritative digest;
-- an isolated packed consumer uses only public exports and performs stage, commit, disclosure, audit and dry-run reconciliation paths.
+- deterministic backup requires a complete clean scope; restore rejects tampering/cross-scope/unrelated objects, enforces caller limits and resumes an exact partial destination idempotently;
+- an isolated packed consumer uses only public exports and performs stage, commit, disclosure, audit, dry-run reconciliation and backup/restore paths.

@@ -123,6 +123,26 @@ export interface ArtifactReconciliationResult {
   readonly missing: number;
 }
 
+export interface ArtifactBackupOptions {
+  readonly scope: ArtifactScope;
+  readonly references: readonly ArtifactReference[];
+  readonly authoritativeSetComplete: true;
+  readonly maxTotalBytes: number;
+}
+
+export interface ArtifactRestoreOptions {
+  readonly maxArchiveBytes: number;
+  readonly maxTotalBytes: number;
+  readonly maxArtifacts: number;
+}
+
+export interface ArtifactRestoreResult {
+  readonly artifacts: number;
+  readonly restored: number;
+  readonly existing: number;
+  readonly contentBytes: number;
+}
+
 export interface LocalArtifactStore {
   stage(input: StageArtifactInput): Promise<StagedArtifact>;
   commit(staged: StagedArtifact): Promise<ArtifactReference>;
@@ -134,4 +154,6 @@ export interface LocalArtifactStore {
   audit(references: readonly ArtifactReference[], scope: ArtifactScope, options: ArtifactAuditOptions): Promise<ArtifactAuditResult>;
   planReconciliation(options: PlanArtifactReconciliationOptions): Promise<ArtifactReconciliationPlan>;
   applyReconciliation(plan: ArtifactReconciliationPlan): Promise<ArtifactReconciliationResult>;
+  backup(options: ArtifactBackupOptions): Promise<Uint8Array>;
+  restore(archive: Uint8Array, scope: ArtifactScope, options: ArtifactRestoreOptions): Promise<ArtifactRestoreResult>;
 }

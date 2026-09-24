@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createLocalArtifactStore } from '@mayura/artifacts';
 
 const directory = await mkdtemp(join(tmpdir(), 'mayura-packed-artifact-'));
+const restoreDirectory = await mkdtemp(join(tmpdir(), 'mayura-packed-artifact-restore-'));
 try {
   const store = createLocalArtifactStore({ rootDirectory: directory, maxArtifactBytes: 1_024 });
   const scope = { tenantId: 'packed-tenant', projectId: 'packed-project' };
@@ -24,8 +25,12 @@ try {
     && disclosure.headers['X-Content-Type-Options'] === 'nosniff';
   const artifactAudit = audit.observations.length === 1 && audit.observations[0]?.status === 'ok';
   const retentionPlan = plan.candidates.length === 0 && reconciliation.deleted === 0;
-  console.log(JSON.stringify({ status: scoped && integrityVerified && safeAttachment && artifactAudit && retentionPlan && stagedDiscard ? 'passed' : 'failed', scoped,
-    integrityVerified, safeAttachment, artifactAudit, retentionPlan, stagedDiscard, noArthDependency: true }));
+  const archive = await store.backup({ scope, references: [reference], authoritativeSetComplete: true, maxTotalBytes: 100 });
+  const restoredStore = createLocalArtifactStore({ rootDirectory: restoreDirectory, maxArtifactBytes: 1_024 });
+  const restore = await restoredStore.restore(archive, scope, { maxArchiveBytes: 4_096, maxTotalBytes: 100, maxArtifacts: 1 });
+  const backupRestore = restore.restored === 1 && new TextDecoder().decode(await restoredStore.read(reference, scope)) === 'packed report';
+  console.log(JSON.stringify({ status: scoped && integrityVerified && safeAttachment && artifactAudit && retentionPlan && stagedDiscard && backupRestore ? 'passed' : 'failed', scoped,
+    integrityVerified, safeAttachment, artifactAudit, retentionPlan, stagedDiscard, backupRestore, noArthDependency: true }));
 } finally {
-  await rm(directory, { recursive: true, force: true });
+  await Promise.all([directory, restoreDirectory].map((value) => rm(value, { recursive: true, force: true })));
 }

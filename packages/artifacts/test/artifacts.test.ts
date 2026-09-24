@@ -257,4 +257,81 @@ describe('local artifact store', () => {
     await expect(store.discard(rejected)).resolves.toBe(false);
     await expect(store.discard({ ...rejected })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
+
+  it('creates deterministic whole-scope backups and restores them idempotently', async () => {
+    const source = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 1_024 });
+    const first = await source.commit(await source.stage({ scope, content: new TextEncoder().encode('first'),
+      mediaType: 'text/plain', classification: 'internal', filename: 'first.txt' }));
+    const second = await source.commit(await source.stage({ scope, content: new Uint8Array([2, 3, 4]),
+      mediaType: 'application/octet-stream', classification: 'restricted' }));
+    const archive = await source.backup({ scope, references: [second, first], authoritativeSetComplete: true, maxTotalBytes: 100 });
+    const repeated = await source.backup({ scope, references: [first, second], authoritativeSetComplete: true, maxTotalBytes: 100 });
+    expect(repeated).toEqual(archive);
+    const restored = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 1_024 });
+    const limits = { maxArchiveBytes: 10_000, maxTotalBytes: 100, maxArtifacts: 2 };
+    await expect(restored.restore(archive, scope, limits)).resolves.toEqual({ artifacts: 2, restored: 2, existing: 0, contentBytes: 8 });
+    await expect(restored.restore(archive, scope, limits)).resolves.toEqual({ artifacts: 2, restored: 0, existing: 2, contentBytes: 8 });
+    expect(new TextDecoder().decode(await restored.read(first, scope))).toBe('first');
+    expect(await restored.read(second, scope)).toEqual(new Uint8Array([2, 3, 4]));
+  });
+
+  it('requires a complete clean authoritative scope before backup', async () => {
+    const directory = await root(); const store = createLocalArtifactStore({ rootDirectory: directory, maxArtifactBytes: 100 });
+    const first = await store.commit(await store.stage({ scope, content: new Uint8Array([1]), mediaType: 'text/plain', classification: 'internal' }));
+    const second = await store.commit(await store.stage({ scope, content: new Uint8Array([2]), mediaType: 'text/plain', classification: 'internal' }));
+    await expect(store.backup({ scope, references: [first], authoritativeSetComplete: true, maxTotalBytes: 10 }))
+      .rejects.toMatchObject({ code: 'CONFLICT' });
+    await mkdir(join(directory, 'objects', first.scopeDigest.slice(7)), { recursive: true });
+    await writeFile(join(directory, 'objects', first.scopeDigest.slice(7), 'unexpected'), 'leave');
+    await expect(store.backup({ scope, references: [first, second], authoritativeSetComplete: true, maxTotalBytes: 10 }))
+      .rejects.toMatchObject({ code: 'INTEGRITY_VIOLATION' });
+  });
+
+  it('rejects corrupt or cross-scope archives before restoring any object', async () => {
+    const source = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    const reference = await source.commit(await source.stage({ scope, content: new Uint8Array([1, 2]),
+      mediaType: 'application/octet-stream', classification: 'confidential' }));
+    const archive = await source.backup({ scope, references: [reference], authoritativeSetComplete: true, maxTotalBytes: 10 });
+    const destination = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    const limits = { maxArchiveBytes: 10_000, maxTotalBytes: 10, maxArtifacts: 1 };
+    await expect(destination.restore(archive, { tenantId: 'other' }, limits)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    const corrupt = new Uint8Array(archive); corrupt[corrupt.length - 1] = 0x78;
+    await expect(destination.restore(corrupt, scope, limits)).rejects.toMatchObject({ code: 'INTEGRITY_VIOLATION' });
+    await expect(destination.read(reference, scope)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(destination.restore(archive, scope, limits)).resolves.toMatchObject({ restored: 1, existing: 0 });
+  });
+
+  it('resumes an exact partial restore and refuses unrelated destination objects', async () => {
+    const source = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    const firstInput = { scope, content: new Uint8Array([1]), mediaType: 'text/plain', classification: 'internal' as const, filename: 'one.txt' };
+    const first = await source.commit(await source.stage(firstInput));
+    const second = await source.commit(await source.stage({ ...firstInput, content: new Uint8Array([2]), filename: 'two.txt' }));
+    const archive = await source.backup({ scope, references: [first, second], authoritativeSetComplete: true, maxTotalBytes: 10 });
+    const limits = { maxArchiveBytes: 10_000, maxTotalBytes: 10, maxArtifacts: 2 };
+    const partial = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    expect(await partial.commit(await partial.stage(firstInput))).toEqual(first);
+    await expect(partial.restore(archive, scope, limits)).resolves.toEqual({ artifacts: 2, restored: 1, existing: 1, contentBytes: 2 });
+    const conflicting = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    await conflicting.commit(await conflicting.stage({ ...firstInput, content: new Uint8Array([9]), filename: 'other.txt' }));
+    await expect(conflicting.restore(archive, scope, limits)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(conflicting.read(first, scope)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('enforces caller restore bounds before object creation', async () => {
+    const source = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    const references = [];
+    for (const value of [1, 2]) references.push(await source.commit(await source.stage({ scope, content: new Uint8Array([value, value]),
+      mediaType: 'application/octet-stream', classification: 'internal' })));
+    const archive = await source.backup({ scope, references, authoritativeSetComplete: true, maxTotalBytes: 4 });
+    const destination = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
+    await expect(destination.restore(archive, scope, { maxArchiveBytes: archive.byteLength - 1, maxTotalBytes: 4, maxArtifacts: 2 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+    await expect(destination.restore(archive, scope, { maxArchiveBytes: archive.byteLength, maxTotalBytes: 3, maxArtifacts: 2 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+    await expect(destination.restore(archive, scope, { maxArchiveBytes: archive.byteLength, maxTotalBytes: 4, maxArtifacts: 1 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+    const plan = await destination.planReconciliation({ scope, retainedReferences: [], authoritativeSetComplete: true,
+      olderThan: Date.now(), maxExamined: 1, maxDeletes: 1 });
+    expect(plan.examined).toBe(0);
+  });
 });
