@@ -81,4 +81,15 @@ describe('accessible React components', () => {
       { request: request({ deadlineAtMs: 999 }), definition: formDefinition(), nowMs: 1_000, onSubmit })); });
     expect(element.querySelector('fieldset')?.disabled).toBe(true); expect(element.querySelector('button')).toBeNull();
   });
+
+  it('renders bound command feedback and rejects state from another request', () => {
+    const succeeded = Object.freeze({ revision: 2, status: 'succeeded' as const, requestId: 'review', requestDigest: 'b'.repeat(64),
+      responseStatus: 'answered' as const, errorCode: null });
+    const html = renderToString(createElement(MayuraHumanResponseForm,
+      { request: request(), definition: formDefinition(), nowMs: 1_000, commandState: succeeded, onSubmit: () => {} }));
+    expect(html).toContain('Response submitted'); expect(html).toContain('<fieldset disabled=""'); expect(html).not.toContain('type="submit"');
+    expect(() => renderToString(createElement(MayuraHumanResponseForm,
+      { request: request(), definition: formDefinition(), nowMs: 1_000, commandState: Object.freeze({ ...succeeded, requestId: 'other' }), onSubmit: () => {} })))
+      .toThrow(expect.objectContaining({ code: 'INVALID_COMPONENT_PROPS' }));
+  });
 });

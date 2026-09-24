@@ -1,6 +1,8 @@
-import { useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowGraph, type MayuraRunActions } from '@mayura/client-react';
+import { useMayuraHumanRequest, useMayuraHumanResponseCommand, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowGraph,
+  type MayuraRunActions } from '@mayura/client-react';
 import type { HeadlessRunState, HeadlessRunStore } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
+import type { HumanResponseController } from '@mayura/client/forms';
 
 /** Compile-only public hook signatures contain Mayura contracts without requiring React declarations. */
 export function consumeReactBindings(store: HeadlessRunStore, request: RemoteHumanRequest, nowMs: number): HeadlessRunState {
@@ -9,4 +11,8 @@ export function consumeReactBindings(store: HeadlessRunStore, request: RemoteHum
     runId: 'a'.repeat(64), revision: 1, status: 'running' as const, nodes: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, dependsOn: Object.freeze([]) })]),
     steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'pending' as const })]) }));
   if (human.canRespond || activity.complete || graph.nodes.length > 0) void actions.refresh; return state;
+}
+
+export function consumeHumanResponseCommand(controller: HumanResponseController): string {
+  return useMayuraHumanResponseCommand(controller).status;
 }

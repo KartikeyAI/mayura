@@ -13,6 +13,6 @@ Mounting or server-rendering does not inspect, observe, retry, cancel, respond, 
 
 The component subpath intentionally exposes React types, unlike the hook-only root entry. Its isolated type profile installs exactly the adapter, base client, React, `@types/react` and `csstype`. React DOM remains a maintainer test dependency and is not shipped.
 
-The response form is uncontrolled: response content remains in browser controls until submit and is not mirrored into framework state. It never sends the response. Definitions and draft validation come from the dependency-free [`@mayura/client/forms`](human-response-forms.md) boundary.
+The response form is uncontrolled: response content remains in browser controls until submit and is not mirrored into framework state. It never sends the response. Definitions, draft validation and optional single-flight command state come from the dependency-free [`@mayura/client/forms`](human-response-forms.md) boundary. Bound command state supplies safe status text and locks submitting, succeeded, conflict or disposed requests.
 
 These components are a secure semantic baseline, not a branded design system. Loading/command feedback, localization, right-to-left layout, nested child expansion, keyboard/screen-reader matrix testing and visual regression remain required before a general UI qualification claim.

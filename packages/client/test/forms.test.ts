@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RemoteHumanRequest } from '../src/index.js';
-import { defineHumanResponseForm, validateHumanResponse } from '../src/forms.js';
+import { ClientError, type RemoteHumanRequest } from '../src/index.js';
+import { createHumanResponseController, defineHumanResponseForm, validateHumanResponse } from '../src/forms.js';
 
 const schemaDigest = 'a'.repeat(64); const requestDigest = 'b'.repeat(64);
 const request = (overrides: Partial<RemoteHumanRequest> = {}): RemoteHumanRequest => Object.freeze({
@@ -15,6 +15,11 @@ const definition = () => defineHumanResponseForm({ schemaId: 'review-v1', schema
   { kind: 'boolean', name: 'approved', label: 'Approved', required: true },
   { kind: 'select', name: 'region', label: 'Region', required: true, options: [{ value: 'eu', label: 'Europe' }, { value: 'us', label: 'United States' }] },
 ] });
+const shortDefinition = () => defineHumanResponseForm({ schemaId: 'review-v1', schemaDigest,
+  fields: [{ kind: 'text', name: 'answer', label: 'Answer', required: true }] });
+const shortSubmission = () => validateHumanResponse(request(), shortDefinition(), Object.freeze({ answer: 'Safe' }));
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
 describe('human response forms', () => {
   it('captures an exact deeply frozen definition without retaining caller arrays', () => {
@@ -66,5 +71,45 @@ describe('human response forms', () => {
     expect(() => validateHumanResponse(request(), form, Object.freeze({ answer: '🦚🦚🦚' }))).toThrow(expect.objectContaining({ code: 'INVALID_FORM_VALUE' }));
     const numeric = defineHumanResponseForm({ schemaId: 'review-v1', schemaDigest, fields: [{ kind: 'number', name: 'answer', label: 'Answer' }] });
     expect(() => validateHumanResponse(request(), numeric, Object.freeze({ answer: 'Infinity' }))).toThrow(expect.objectContaining({ code: 'INVALID_FORM_VALUE' }));
+  });
+
+  it('keeps response commands inert until explicit submit and publishes immutable success state once', async () => {
+    const calls: unknown[][] = []; const answered = request({ status: 'answered' });
+    const controller = createHumanResponseController({ request: request(), client: { respondHumanRequest: async (...args) => { calls.push(args); return answered; } } });
+    const revisions: number[] = []; controller.subscribe(() => revisions.push(controller.getSnapshot().revision));
+    expect(controller.getSnapshot()).toMatchObject({ revision: 0, status: 'idle', requestId: 'review', requestDigest, errorCode: null }); expect(calls).toHaveLength(0);
+    await expect(controller.submit(shortSubmission(), { commandId: 'response-1' })).resolves.toBe(answered);
+    expect(calls).toHaveLength(1); expect(calls[0]?.slice(0, 3)).toEqual(['review', requestDigest, { answer: 'Safe' }]);
+    expect(controller.getSnapshot()).toMatchObject({ status: 'succeeded', responseStatus: 'answered', errorCode: null });
+    expect(Object.isFrozen(controller.getSnapshot())).toBe(true); expect(revisions).toEqual([1, 2]); controller.dispose();
+  });
+
+  it('enforces single flight and never retries an ambiguous failure', async () => {
+    const pending = deferred<RemoteHumanRequest>(); let calls = 0;
+    const controller = createHumanResponseController({ request: request(), client: { respondHumanRequest: () => { calls += 1; return pending.promise; } } });
+    const first = controller.submit(shortSubmission(), { commandId: 'response-1' });
+    await expect(controller.submit(shortSubmission(), { commandId: 'response-1' })).rejects.toMatchObject({ code: 'FORM_BUSY' });
+    pending.reject(new Error('PRIVATE TRANSPORT DETAIL')); await expect(first).rejects.toMatchObject({ code: 'FORM_SUBMISSION_FAILED' });
+    expect(calls).toBe(1); expect(controller.getSnapshot()).toMatchObject({ status: 'failed', errorCode: 'FORM_SUBMISSION_FAILED' });
+  });
+
+  it('classifies digest conflicts without exposing transport details and requires explicit reset', async () => {
+    let calls = 0; const controller = createHumanResponseController({ request: request(), client: { respondHumanRequest: async () => {
+      calls += 1; throw new ClientError('HTTP_ERROR', 409); } } });
+    await expect(controller.submit(shortSubmission(), { commandId: 'response-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    expect(controller.getSnapshot()).toMatchObject({ status: 'conflict', errorCode: 'FORM_SUBMISSION_CONFLICT' }); expect(calls).toBe(1);
+    expect(controller.reset()).toMatchObject({ status: 'idle', errorCode: null }); expect(calls).toBe(1);
+  });
+
+  it('rejects forged or rebound submissions and aborts owned transport on disposal', async () => {
+    let observed: AbortSignal | undefined; const pending = deferred<RemoteHumanRequest>();
+    const controller = createHumanResponseController({ request: request(), client: { respondHumanRequest: async (_id, _digest, _value, options) => {
+      observed = options.signal; return await pending.promise; } } });
+    await expect(controller.submit(Object.freeze({ id: 'review', digest: requestDigest, value: Object.freeze({ answer: 'Safe' }) }),
+      { commandId: 'response-1' })).rejects.toMatchObject({ code: 'INVALID_FORM_SUBMISSION' });
+    const running = controller.submit(shortSubmission(), { commandId: 'response-1' }); controller.dispose();
+    expect(observed?.aborted).toBe(true); expect(controller.getSnapshot().status).toBe('disposed');
+    pending.reject(new ClientError('ABORTED')); await expect(running).rejects.toMatchObject({ code: 'ABORTED' });
+    await expect(controller.submit(shortSubmission(), { commandId: 'response-2' })).rejects.toMatchObject({ code: 'FORM_DISPOSED' });
   });
 });

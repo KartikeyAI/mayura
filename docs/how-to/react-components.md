@@ -24,7 +24,8 @@ export function OperationsView({ store, workflow, request, nowMs }: Props) {
       request={request}
       definition={responseForm}
       nowMs={nowMs}
-      onSubmit={({ id, digest, value }) => submitResponse(id, digest, value)}
+      commandState={responseCommand}
+      onSubmit={submission => { void responseController.submit(submission, { commandId: currentCommandId }).catch(() => {}); }}
     />
   </>;
 }

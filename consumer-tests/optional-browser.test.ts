@@ -1,6 +1,6 @@
 import { createClient, type ClientSchema, type RemoteOutcome } from '@mayura/client';
 import { createHeadlessRunStore, createHumanRequestView, createRunActivityProjection } from '@mayura/client/headless';
-import { defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
+import { createHumanResponseController, defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
 import { createWorkflowGraphProjection } from '@mayura/client/workflows';
 
 const output: ClientSchema<{ answer: number }> = {
@@ -21,6 +21,9 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   ] });
   const submission = validateHumanResponse(request, form, Object.freeze({ answer: '3' }));
   if (submission.id !== 'review' || submission.digest !== 'b'.repeat(64) || submission.value['answer'] !== 3) throw new Error('Human response form failed.');
+  const controller = createHumanResponseController({ request, client: { respondHumanRequest: async () => Object.freeze({ ...request, status: 'answered' as const }) } });
+  await controller.submit(submission, { commandId: 'response-1' });
+  if (controller.getSnapshot().status !== 'succeeded') throw new Error('Human response command state failed.'); controller.dispose();
   const store = createHeadlessRunStore({ run: client.run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') });
   if (store.getSnapshot().connection !== 'idle' || createRunActivityProjection(store.getSnapshot()).items.length !== 0) throw new Error('Headless run store performed implicit work.'); store.dispose();
   const graph = createWorkflowGraphProjection(Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1,

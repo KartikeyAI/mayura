@@ -5,7 +5,9 @@ import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHeadlessRunStore, type HeadlessRunState, type HeadlessRunStore } from '../../client/src/headless.js';
 import type { RemoteHumanRequest, RemoteRun, RemoteSnapshot } from '../../client/src/index.js';
-import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActions, useMayuraRunActivity, useMayuraWorkflowGraph, type MayuraRunActions } from '../src/index.js';
+import { createHumanResponseController, defineHumanResponseForm, validateHumanResponse } from '@mayura/client/forms';
+import { MayuraReactError, useMayuraHumanRequest, useMayuraHumanResponseCommand, useMayuraRun, useMayuraRunActions, useMayuraRunActivity,
+  useMayuraWorkflowGraph, type MayuraRunActions } from '../src/index.js';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -75,5 +77,22 @@ describe('@mayura/client-react', () => {
       steps: Object.freeze([Object.freeze({ id: 'step', kind: 'tool' as const, status: 'pending' as const })]) });
     function View(): ReactNode { const graph = useMayuraWorkflowGraph(input); return createElement('span', null, `${graph.nodes[0]?.ready}`); }
     expect(renderToString(createElement(View))).toContain('true');
+  });
+
+  it('subscribes to explicit human-response command feedback without submitting on mount', async () => {
+    const request: RemoteHumanRequest = Object.freeze({ id: 'review', agentId: 'agent', kind: 'information', schemaId: 'answer-v1',
+      schemaDigest: 'a'.repeat(64), prompt: 'Answer', digest: 'b'.repeat(64), status: 'waiting' }); let calls = 0;
+    const controller = createHumanResponseController({ request, client: { respondHumanRequest: async () => { calls += 1; return Object.freeze({ ...request, status: 'answered' }); } } });
+    const definition = defineHumanResponseForm({ schemaId: 'answer-v1', schemaDigest: 'a'.repeat(64), fields: [{ kind: 'text', name: 'answer', label: 'Answer' }] });
+    const submission = validateHumanResponse(request, definition, Object.freeze({ answer: 'Safe' }));
+    function View(): ReactNode { return createElement('span', null, useMayuraHumanResponseCommand(controller).status); }
+    await act(async () => { root.render(createElement(View)); }); expect(element.textContent).toBe('idle'); expect(calls).toBe(0);
+    await act(async () => { await controller.submit(submission, { commandId: 'response-1' }); });
+    expect(element.textContent).toBe('succeeded'); expect(calls).toBe(1); await act(async () => { controller.dispose(); });
+  });
+
+  it('rejects a forged response controller before subscribing', () => {
+    function View(): ReactNode { useMayuraHumanResponseCommand(Object.freeze({}) as never); return null; }
+    expect(() => renderToString(createElement(View))).toThrowError(expect.objectContaining<Partial<MayuraReactError>>({ code: 'INVALID_RESPONSE_CONTROLLER' }));
   });
 });

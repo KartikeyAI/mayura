@@ -265,10 +265,12 @@ async function main() {
       if (name === 'react') {
         assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
         assert.equal(execution.activityHook, true); assert.equal(execution.workflowGraphHook, true);
+        assert.equal(execution.responseCommandHook, true);
       }
       if (name === 'react-components') {
         assert.equal(execution.accessibleComponents, true); assert.equal(execution.explicitEvents, true); assert.equal(execution.noRendererDependency, true);
         assert.equal(execution.typedResponseForm, true);
+        assert.equal(execution.commandFeedback, true);
       }
       if (name === 'graphs') {
         assert.equal(execution.finiteCoordinator, true);
@@ -352,7 +354,7 @@ async function main() {
       const fetcher = async (_url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response('{"agents":[]}', { headers: { 'Content-Type': 'application/json' } }); };
       assert.equal(await context.OptionalBrowserConsumer.verifyBrowserClient(fetcher), 0);
       await writeFile(join(application, 'browser-bundle.js'), code);
-      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, digestBoundResponseForms: true });
+      profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, browserBundleBytes: Buffer.byteLength(code), includedModuleCount: included.size, noNodeGlobalsSmoke: true, headlessBindings: true, activityProjection: true, workflowGraphProjection: true, digestBoundResponseForms: true, humanResponseCommandState: true });
     }
   }
   const result = { status: 'passed', node: process.version, platform: process.platform, architecture: process.arch, output, packages: reports, profiles,
@@ -390,6 +392,7 @@ async function main() {
   result.checks.push('packed-react-hooks', 'react-single-peer', 'react-types-not-exported', 'react-no-implicit-network', 'react-activity-hook', 'react-workflow-graph-hook');
   result.checks.push('packed-react-components', 'react-components-explicit-events', 'react-components-no-renderer-dependency');
   result.checks.push('browser-digest-bound-response-form', 'react-components-typed-response-form');
+  result.checks.push('browser-human-response-command-state', 'react-response-command-hook', 'react-components-command-feedback');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

@@ -1,6 +1,6 @@
 # React bindings
 
-Status: implemented experimental hook layer, locally qualified on 2026-09-24 with React 19.3.0. A separate initial semantic component subpath exists; typed response forms and live-browser accessibility remain separate work.
+Status: implemented experimental hook layer, locally qualified on 2026-09-24 with React 19.3.0. A separate semantic component subpath and typed response-form/command-state boundary exist; live-browser accessibility remains separate work.
 
 `@mayura/client-react` is an optional adapter over `@mayura/client/headless`. React is its only peer dependency; the Mayura client is its only runtime dependency. Core, runtime, server, storage and provider packages are not part of this browser closure.
 
@@ -9,6 +9,7 @@ Status: implemented experimental hook layer, locally qualified on 2026-09-24 wit
 - `useMayuraRun(store)` subscribes through `useSyncExternalStore` and returns the immutable `HeadlessRunState`. Its server snapshot is the same inert local snapshot.
 - `useMayuraRunActions(store)` returns stable `refresh`, `observe` and `cancel` references for explicit application event/effect policy.
 - `useMayuraHumanRequest(request, nowMs)` derives text-only `HumanRequestView` metadata from immutable inputs.
+- `useMayuraHumanResponseCommand(controller)` subscribes to caller-owned, explicit single-flight submission state without starting or retrying a command.
 - `useMayuraRunActivity(state)` memoizes the headless content-free timeline without adding a subscription.
 - `useMayuraWorkflowGraph(input)` validates and memoizes one content-free durable workflow DAG without effects.
 

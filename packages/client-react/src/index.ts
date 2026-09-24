@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { createHumanRequestView, createRunActivityProjection, type HeadlessRunState, type HeadlessRunStore, type HumanRequestView,
   type RunActivityProjection } from '@mayura/client/headless';
 import type { RemoteHumanRequest } from '@mayura/client';
+import type { HumanResponseCommandState, HumanResponseController } from '@mayura/client/forms';
 import { createWorkflowGraphProjection, type WorkflowGraphProjection, type WorkflowViewInput } from '@mayura/client/workflows';
 
 export interface MayuraRunActions {
@@ -12,7 +13,15 @@ export interface MayuraRunActions {
 
 export class MayuraReactError extends Error {
   override readonly name = 'MayuraReactError';
-  constructor(readonly code: 'INVALID_REACT_STORE' | 'INVALID_COMPONENT_PROPS') { super(`Mayura React binding failed (${code}).`); Object.freeze(this); }
+  constructor(readonly code: 'INVALID_REACT_STORE' | 'INVALID_RESPONSE_CONTROLLER' | 'INVALID_COMPONENT_PROPS') { super(`Mayura React binding failed (${code}).`); Object.freeze(this); }
+}
+
+/** Subscribe to caller-owned human command state without submitting, retrying or starting any effect. */
+export function useMayuraHumanResponseCommand(controller: HumanResponseController): HumanResponseCommandState {
+  if (!controller || typeof controller.getSnapshot !== 'function' || typeof controller.subscribe !== 'function'
+    || typeof controller.submit !== 'function' || typeof controller.reset !== 'function' || typeof controller.dispose !== 'function')
+    throw new MayuraReactError('INVALID_RESPONSE_CONTROLLER');
+  return useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 }
 
 function store(value: HeadlessRunStore): HeadlessRunStore {
