@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "release": "0.1.0-dev.0",
+  "stableEntryPoints": [],
+  "experimentalClassification": "all-exported-workspace-entrypoints",
+  "internalPackages": ["@mayura/consumer-tests"],
+  "trustedHostEntryPoints": ["@mayura/core/host", "@mayura/storage-sql/host", "@mayura/tools/host"]
+}

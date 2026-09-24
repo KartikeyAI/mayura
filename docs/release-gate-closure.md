@@ -4,7 +4,7 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 
 ## Current result
 
-**18 of 22 gates closed. Mayura remains an experimental development preview.**
+**19 of 22 gates closed. Mayura remains an experimental development preview.**
 
 | Gate | State | Evidence or exact remaining blocker |
 | --- | --- | --- |
@@ -28,12 +28,12 @@ Updated: 2026-09-24. This ledger is the auditable closure record for the mandato
 | V18 — Standalone consumer conformance | **Closed** | The isolated packed Node consumer is one fresh Arth-free application using only public archives. Its `externalConsumerMatrix` starts two required children concurrently, inspects live lineage, joins child completion before parent success, denies an ungranted host effect with zero callback execution, and commits/audits an artifact; the same app also validates observation and authenticated HTTP/SSE. `test:consumer:optional` passes with exact dependency isolation and no workspace fallback. Contract: [DX validation](dx-validation.md). |
 | V19 — Install and dependency boundaries | Owner decision + qualification | Packed profiles prove current Windows x64/Node/pnpm boundaries and browser-safe imports. The owner must approve the supported OS/architecture/package-manager matrix before it can be executed and closed. |
 | V20 — First-agent and progressive DX | External qualification gap | The packed credential-free typed walkthrough passes with measured install 2.53s, type-check 0.61s, execution 1.02s and import 0.73s against declared 60s/30s/10s/2s ceilings; it asserts the safe default-deny diagnostic. Provider tests pass actionable safe auth/access and rate-limit errors. `examples/openai-agent.mjs` and its walkthrough provide the no-fallback opt-in real-provider recipe. `packages/workflows/test/release-gate-v20.test.ts` passes one exact agent definition through an explicit SQLite scheduled phase and authenticated server. Closure still requires one controlled paid-network execution of `pnpm model:live-check`; no credential or spend authority is available locally. |
-| V21 — Public API and upgrade compatibility | Implementation gap | Consumer/runtime types and adapter conformance exist. Stable versus experimental surfaces, support policy and an actual prior-version upgrade/migration fixture are missing. |
+| V21 — Public API and upgrade compatibility | **Closed** | Packed consumer type/runtime checks and adapter conformance remain mandatory. `compatibility/api-stability.json` plus `packages/consumer-tests/test/public-api-classification.test.ts` classify every supported export as experimental, keep the stable set explicitly empty for the development preview, and distinguish internal/trusted-host surfaces. `packages/storage-sqlite/test/release-gate-v21.test.ts` creates the exact prior v0 layout, performs the explicit transactional v0-to-v1 migration, proves record/event preservation through the current adapter and rejects replay. Contract: [public API stability and upgrade policy](api-stability.md). |
 | V22 — Open-source release trust | Owner decision + implementation | Build, contribution, security and no-default-phone-home evidence exist. Closure requires an owner-approved OSI license, notices/provenance review, release ownership/support policy and release-artifact checks. |
 
 ## Closure order
 
-1. Finish developer-experience and compatibility gates V20 and V21.
+1. Record the controlled live-provider execution required by V20.
 2. Execute the owner-approved distribution matrix for V19 and release governance for V22.
 
 ## Owner decisions that block release, not local development
