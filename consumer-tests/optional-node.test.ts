@@ -56,6 +56,7 @@ const workflowPage = await client.workflows({ limit: 1 });
 const workflowFormat: 2 | 3 | 4 | 5 = workflow.format;
 await client.cancelWorkflow(workflow.runId, workflow.revision, { commandId: 'cancel' });
 await client.approveWorkflow(workflow.runId, { revision: workflow.revision, nodeId: 'step', approvalDigest: 'b'.repeat(64) }, { commandId: 'approve' });
+await client.signalWorkflow(workflow.runId, { revision: workflow.revision, signalId: 'ready/1', signalName: 'ready', value: true }, { commandId: 'signal' });
 void workflowFormat; void workflowPage;
 const humanPage = await client.humanRequests({ limit: 1 });
 if (humanPage.items[0]) await client.respondHumanRequest(humanPage.items[0].id, humanPage.items[0].digest, { accepted: true }, { commandId: 'answer' });

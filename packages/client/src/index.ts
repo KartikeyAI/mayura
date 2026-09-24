@@ -42,6 +42,9 @@ export interface WorkflowCommandOptions { readonly commandId: string; readonly s
 export interface WorkflowApprovalCommand {
   readonly revision: number; readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string;
 }
+export interface WorkflowSignalCommand {
+  readonly revision: number; readonly signalId: string; readonly signalName: string; readonly value: ClientJson;
+}
 export interface WorkflowIndexEntry {
   readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: WorkflowViewRunStatus;
@@ -65,6 +68,7 @@ export interface MayuraClient {
   workflows(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<WorkflowIndexPage>;
   cancelWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
+  signalWorkflow(id: string, command: WorkflowSignalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
@@ -420,6 +424,19 @@ export function createClient(options: ClientOptions): MayuraClient {
       const raw = await command(`/v1/workflow-runs/${id}/approvals`, 'POST', settings.signal,
         json({ commandId: settings.commandId, revision: approval.revision, nodeId: approval.nodeId,
           approvalDigest: approval.approvalDigest, childRunId: approval.childRunId ?? null }, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async signalWorkflow(id: string, workflowSignal: WorkflowSignalCommand, settings: WorkflowCommandOptions) {
+      if (!/^[a-f0-9]{64}$/.test(id) || !workflowSignal || typeof workflowSignal.revision !== 'number'
+        || !Number.isSafeInteger(workflowSignal.revision) || workflowSignal.revision < 1
+        || typeof workflowSignal.signalId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(workflowSignal.signalId)
+        || typeof workflowSignal.signalName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(workflowSignal.signalName)
+        || !settings || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId))
+        throw new ClientError('INVALID_REQUEST');
+      let value: ClientJson; try { value = json(workflowSignal.value, 4_096); } catch { throw new ClientError('INVALID_REQUEST'); }
+      const raw = await command(`/v1/workflow-runs/${id}/signals`, 'POST', settings.signal,
+        json({ commandId: settings.commandId, revision: workflowSignal.revision, signalId: workflowSignal.signalId,
+          signalName: workflowSignal.signalName, value }, maxBytes));
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
     },
     async respondHumanRequest(id: string, requestDigest: string, value: unknown, settings: { readonly commandId: string; readonly signal?: AbortSignal }) {

@@ -29,6 +29,7 @@ The basic SDK requires no Docker, native database, server or hosted account. [Se
 - Local processors and [metered auxiliary guardrails](docs/specs/auxiliary-guardrails.md), including explicit moderation and protected-segment language processing.
 - [Required lifecycle hooks](docs/how-to/lifecycle-hooks.md) with immutable proposals, mediated read/pure-tool actions, shared limits and output withholding.
 - An authenticated Fetch API, browser-safe client and optional [loopback-only Hono/Node host](docs/how-to/local-server.md). This is not production or durable multi-host serving.
+- Authenticated, revision-bound [workflow signal delivery](docs/specs/workflow-signal-transport.md) across server, browser client and Node CLI, with application-owned durable journaling.
 - Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks, plus a separate experimental [OTLP/HTTP JSON log exporter](docs/specs/otlp-http-json-logs.md); neither is mandatory durable audit.
 - Optional [local artifact storage](docs/specs/local-artifacts.md) with scoped content addressing, staged promotion, integrity-checked reads, bounded attachment disclosure and staging cleanup.
 

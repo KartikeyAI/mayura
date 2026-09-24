@@ -36,3 +36,5 @@ const state = controls.getSnapshot();
 Create a new controller after accepting the returned view. `reset()` only clears feedback; it does not refresh or advance the revision.
 
 On HTTP 409, refresh explicitly and ask the user to reconsider the new state. After an ambiguous transport failure, reconcile using the same command ID before deciding whether another logical command is appropriate. Never generate a new ID and automatically repeat a mutation.
+
+Durable external signals use the separate least-authority adapter and route described in [workflow signals](workflow-signals.md); they are not added to the cancellation/approval controller implicitly.

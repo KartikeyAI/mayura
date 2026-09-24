@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, templates, validateProject, waitForRun } from '../src/index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, signalWorkflow, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -151,7 +151,7 @@ describe('@mayura/cli authenticated operations', () => {
     expect(calls).toBe(1); expect(error).toMatchObject({ code: 'TOOL_FAILED' }); expect(String(error)).not.toContain('PRIVATE');
   });
 
-  it('inspects, cancels and exactly approves durable workflows without retry', async () => {
+  it('inspects, cancels, approves and signals durable workflows without retry', async () => {
     const workflowId = 'a'.repeat(64); const childId = 'b'.repeat(64); const digest = 'd'.repeat(64); const calls: Array<{ path: string; body?: unknown }> = [];
     const workflow = (revision: number, status = 'waiting') => ({ format: 4, definitionId: 'deploy', definitionVersion: '1', runId: workflowId, revision, status,
       nodes: [{ id: 'child', kind: 'child', dependsOn: [] }], steps: [{ id: 'child', kind: 'child', status: status === 'cancelled' ? 'skipped' : 'waiting', childRunId: childId }] });
@@ -159,7 +159,7 @@ describe('@mayura/cli authenticated operations', () => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined; calls.push({ path, ...(body === undefined ? {} : { body }) });
       if (path === '/v1/workflow-runs') return new Response(JSON.stringify({ items: [{ format: 4, definitionId: 'deploy', definitionVersion: '1',
         runId: workflowId, revision: 1, status: 'waiting' }], next: null }), { headers: { 'content-type': 'application/json' } });
-      return new Response(JSON.stringify({ workflow: workflow(path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : 1,
+      return new Response(JSON.stringify({ workflow: workflow(path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : path.endsWith('/signals') ? 4 : 1,
         path.endsWith('/cancel') ? 'cancelled' : 'waiting') }), { headers: { 'content-type': 'application/json' } }); };
     const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
     expect((await inspectWorkflows(settings, { limit: 5 })).items[0]?.runId).toBe(workflowId);
@@ -167,9 +167,13 @@ describe('@mayura/cli authenticated operations', () => {
     expect((await cancelWorkflow(settings, { id: workflowId, revision: 1, commandId: 'cancel-1' })).status).toBe('cancelled');
     expect((await approveWorkflow(settings, { id: workflowId, revision: 2, commandId: 'approve-1', nodeId: 'child', approvalDigest: digest,
       childRunId: childId })).revision).toBe(3);
+    expect((await signalWorkflow(settings, { id: workflowId, revision: 3, commandId: 'signal-command-1', signalId: 'ready/1',
+      signalName: 'ready', value: { accepted: true } })).revision).toBe(4);
     expect(calls).toEqual([{ path: '/v1/workflow-runs' }, { path: `/v1/workflow-runs/${workflowId}` }, { path: `/v1/workflow-runs/${workflowId}/cancel`,
       body: { commandId: 'cancel-1', revision: 1 } }, { path: `/v1/workflow-runs/${workflowId}/approvals`,
-      body: { commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: digest, childRunId: childId } }]);
+      body: { commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: digest, childRunId: childId } },
+    { path: `/v1/workflow-runs/${workflowId}/signals`, body: { commandId: 'signal-command-1', revision: 3,
+      signalId: 'ready/1', signalName: 'ready', value: { accepted: true } } }]);
   });
 
   it('classifies a workflow revision conflict and performs one command request', async () => {
@@ -250,6 +254,26 @@ describe('@mayura/cli authenticated operations', () => {
       const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
       expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|approve-1|dddddddd/);
       expect(received).toEqual({ commandId: 'approve-1', revision: 1, nodeId: 'review', approvalDigest: digest, childRunId: null });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
+  });
+
+  it('sends one executable workflow signal from a bounded JSON file without printing its value', async () => {
+    const workflowId = 'a'.repeat(64); const target = await directory(); const file = join(target, 'signal.json');
+    await writeFile(file, '{"secret":"SIGNAL_PRIVATE"}'); let received: unknown;
+    const host = createServer(async (request, response) => { expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE');
+      expect(request.url).toBe(`/v1/workflow-runs/${workflowId}/signals`); let body = ''; for await (const chunk of request) body += String(chunk); received = JSON.parse(body);
+      response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ workflow: { format: 3, definitionId: 'deploy',
+        definitionVersion: '1', runId: workflowId, revision: 2, status: 'running', nodes: [{ id: 'ready', kind: 'wait', dependsOn: [] }],
+        steps: [{ id: 'ready', kind: 'wait', status: 'succeeded' }] } })); });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    try { const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'workflow-signal', '--url', `http://127.0.0.1:${address.port}`,
+        '--id', workflowId, '--revision', '1', '--command-id', 'signal-command-1', '--signal-id', 'ready/1', '--signal-name', 'ready', '--value-file', file,
+        '--token-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; }); const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|SIGNAL_PRIVATE|signal-command-1/);
+      expect(received).toEqual({ commandId: 'signal-command-1', revision: 1, signalId: 'ready/1', signalName: 'ready', value: { secret: 'SIGNAL_PRIVATE' } });
     } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 });

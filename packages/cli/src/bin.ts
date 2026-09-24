@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -36,11 +36,19 @@ async function stdinToken(): Promise<string> {
   return value;
 }
 
-async function responseFile(path: string): Promise<JsonValue> {
+async function jsonFile(path: string, label: string, maximum: number): Promise<JsonValue> {
   const absolute = resolve(path); const details = await lstat(absolute);
-  if (!details.isFile() || details.isSymbolicLink() || details.size < 1 || details.size > 1_048_576) throw new Error('Human response file must be a bounded regular JSON file.');
-  try { return jsonValue(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(absolute))), { maxBytes: 1_048_576 }); }
-  catch { throw new Error('Human response file must contain valid UTF-8 JSON.'); }
+  if (!details.isFile() || details.isSymbolicLink() || details.size < 1 || details.size > maximum) throw new Error(`${label} file must be a bounded regular JSON file.`);
+  try { return jsonValue(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(absolute))), { maxBytes: maximum }); }
+  catch { throw new Error(`${label} file must contain bounded valid UTF-8 JSON.`); }
+}
+
+async function responseFile(path: string): Promise<JsonValue> { return jsonFile(path, 'Human response', 1_048_576); }
+
+async function signalFile(path: string): Promise<JsonValue> {
+  const value = await jsonFile(path, 'Workflow signal', 4_096);
+  try { return jsonValue(value, { maxBytes: 4_096, maxDepth: 16, maxNodes: 1_024 }); }
+  catch { throw new Error('Workflow signal file must contain at most 4096 bytes of bounded JSON.'); }
 }
 
 async function main(arguments_: readonly string[]): Promise<unknown> {
@@ -102,9 +110,11 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
-  if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve') {
+  if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve' || command === 'workflow-signal') {
     const valued = command === 'workflow-list' ? ['--url', '--after', '--limit'] : command === 'workflow-get' ? ['--url', '--id'] : command === 'workflow-cancel'
-      ? ['--url', '--id', '--revision', '--command-id'] : ['--url', '--id', '--revision', '--command-id', '--node', '--digest', '--child-id'];
+      ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-approve'
+        ? ['--url', '--id', '--revision', '--command-id', '--node', '--digest', '--child-id']
+        : ['--url', '--id', '--revision', '--command-id', '--signal-id', '--signal-name', '--value-file'];
     assertArguments(arguments_, valued, ['--token-stdin']); const baseUrl = option(arguments_, '--url'); const id = option(arguments_, '--id');
     if (!baseUrl || !arguments_.includes('--token-stdin') || (command !== 'workflow-list' && !id)) throw new Error(`${command} requires --url${command === 'workflow-list' ? '' : ', --id'} and --token-stdin.`);
     const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
@@ -114,12 +124,18 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const revision = option(arguments_, '--revision'); const commandId = option(arguments_, '--command-id');
     if (!revision || !commandId) throw new Error(`${command} requires --revision and --command-id.`);
     if (command === 'workflow-cancel') return { status: 'succeeded', workflow: await cancelWorkflow(settings, { id: id!, revision: Number(revision), commandId }) };
+    if (command === 'workflow-signal') {
+      const signalId = option(arguments_, '--signal-id'); const signalName = option(arguments_, '--signal-name'); const file = option(arguments_, '--value-file');
+      if (!signalId || !signalName || !file) throw new Error('workflow-signal requires --signal-id, --signal-name and --value-file.');
+      return { status: 'succeeded', workflow: await signalWorkflow(settings, { id: id!, revision: Number(revision), commandId, signalId, signalName,
+        value: await signalFile(file) }) };
+    }
     const nodeId = option(arguments_, '--node'); const approvalDigest = option(arguments_, '--digest'); const childRunId = option(arguments_, '--child-id');
     if (!nodeId || !approvalDigest) throw new Error('workflow-approve requires --node and --digest.');
     return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve');
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

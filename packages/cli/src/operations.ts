@@ -344,6 +344,20 @@ export async function approveWorkflow(options: OperationalClientOptions, input: 
   exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
 }
 
+/** Deliver one revision-bound durable signal without automatic retry. */
+export async function signalWorkflow(options: OperationalClientOptions, input: {
+  readonly id: string; readonly revision: number; readonly commandId: string; readonly signalId: string;
+  readonly signalName: string; readonly value: JsonValue;
+}): Promise<OperationalWorkflow> {
+  if (!workflowRunIdentifier.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision < 1 || !identifier.test(input.commandId)
+    || !identifier.test(input.signalId) || !identifier.test(input.signalName))
+    throw new MayuraError('INVALID_CONFIG', 'Workflow signal identity is invalid.');
+  const value = jsonValue(input.value, { maxBytes: 4_096, maxDepth: 16, maxNodes: 1_024 });
+  const raw = await transport(options, `/v1/workflow-runs/${input.id}/signals`, [200], 'POST', { commandId: input.commandId,
+    revision: input.revision, signalId: input.signalId, signalName: input.signalName, value });
+  exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
+}
+
 /** Bounded explicit polling of read-only run state; commands are never issued or retried. */
 export async function waitForRun(options: OperationalClientOptions, id: string,
   settings: { readonly pollIntervalMs?: number; readonly maxWaitMs?: number } = {}): Promise<OperationalRun> {

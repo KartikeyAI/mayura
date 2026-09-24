@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MayuraError, type JsonObject, type ModelAdapter, type ModelResponse, type Schema } from '@mayura/core';
 import { defineAgent } from '@mayura/runtime';
 import { defineTool } from '@mayura/tools';
-import { createAgentServer, type AgentServer, type AgentServerOptions, type ServerIdentity } from '../src/index.js';
+import { createAgentServer, type AgentServer, type AgentServerOptions, type ServerIdentity, type WorkflowSignalTransport } from '../src/index.js';
 
 const publicOrigin = 'https://agents.example.test';
 const browserOrigin = 'https://app.example.test';
@@ -539,6 +539,48 @@ describe('authenticated durable workflow controls', () => {
       body: JSON.stringify({ commandId: 'cancel-1', revision: 2 }) })), 503, 'WORKFLOW_TRANSPORT_INVALID');
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/approvals`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: '../bad', approvalDigest: 'd'.repeat(64), childRunId: null }) })), 400, 'INVALID_REQUEST');
+  });
+});
+
+describe('authenticated durable workflow signals', () => {
+  it('passes one exact revision-bound signal with verified authority and an immutable bounded value', async () => {
+    const deliver = vi.fn(async (_input: Parameters<WorkflowSignalTransport['deliver']>[0]) => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3 } }));
+    const value = server({ workflowSignals: { deliver } });
+    const response = await value.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'signal-command-1', revision: 2, signalId: 'deployment.ready/1', signalName: 'deployment.ready', value: { ready: true } }) }));
+    expect(response.status).toBe(200); expect((await json(response))['workflow']).toMatchObject({ revision: 3 });
+    expect(deliver).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', scope: { principalId: 'alice', projectId: 'project' },
+      agentIds: ['echo'], runId: workflowId, revision: 2, commandId: 'signal-command-1', signalId: 'deployment.ready/1',
+      signalName: 'deployment.ready', value: { ready: true } }));
+    expect(Object.isFrozen(deliver.mock.calls[0]![0].value)).toBe(true);
+  });
+
+  it('denies before parsing, rejects malformed or oversized values and performs no retry on conflicts', async () => {
+    const deniedDeliver = vi.fn(async () => ({ status: 'conflict' as const }));
+    const denied = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowSignals: { deliver: deniedDeliver } });
+    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    expect(deniedDeliver).not.toHaveBeenCalled();
+    const deliver = vi.fn(async () => ({ status: 'conflict' as const })); const value = server({ workflowSignals: { deliver } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'signal-1', revision: 2, signalId: '../bad', signalName: 'ready', value: true }) })), 400, 'INVALID_REQUEST');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'signal-1', revision: 2, signalId: 'ready-1', signalName: 'ready', value: 'x'.repeat(4097) }) })), 400, 'INVALID_REQUEST');
+    expect(deliver).not.toHaveBeenCalled();
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'signal-1', revision: 2, signalId: 'ready-1', signalName: 'ready', value: true }) })), 409, 'WORKFLOW_CONFLICT');
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed on absent, unavailable, not-found and hostile adapters', async () => {
+    const command = { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'signal-1', revision: 2, signalId: 'ready-1', signalName: 'ready', value: true }) } satisfies RequestInit;
+    await error(await server().fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'NOT_FOUND');
+    await error(await server({ workflowSignals: { deliver: async () => { throw new Error('PRIVATE'); } } })
+      .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 503, 'WORKFLOW_UNAVAILABLE');
+    await error(await server({ workflowSignals: { deliver: async () => ({ status: 'not_found' }) } })
+      .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'NOT_FOUND');
+    await error(await server({ workflowSignals: { deliver: async () => ({ status: 'applied', workflow: { ...workflow(), privateValue: 'PRIVATE' } } as never) } })
+      .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 503, 'WORKFLOW_TRANSPORT_INVALID');
   });
 });
 

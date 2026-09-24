@@ -35,6 +35,8 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
     throw new Error('Workflow cancellation state failed.'); workflowController.dispose();
   if ((await client.approveWorkflow('a'.repeat(64), { revision: 2, nodeId: 'step', approvalDigest: 'c'.repeat(64) },
     { commandId: 'approve-1' })).revision !== 3) throw new Error('Workflow approval failed.');
+  if ((await client.signalWorkflow('a'.repeat(64), { revision: 3, signalId: 'ready/1', signalName: 'ready', value: { accepted: true } },
+    { commandId: 'signal-1' })).revision !== 4) throw new Error('Workflow signal failed.');
   return agents.length;
 }
 

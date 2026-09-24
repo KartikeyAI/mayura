@@ -36,6 +36,7 @@ function fixture(options: {
   workflowViews?: AgentServerOptions['workflowViews'];
   workflowIndex?: AgentServerOptions['workflowIndex'];
   workflowControls?: AgentServerOptions['workflowControls'];
+  workflowSignals?: AgentServerOptions['workflowSignals'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -53,6 +54,7 @@ function fixture(options: {
     ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
     ...(options.workflowIndex ? { workflowIndex: options.workflowIndex } : {}),
     ...(options.workflowControls ? { workflowControls: options.workflowControls } : {}),
+    ...(options.workflowSignals ? { workflowSignals: options.workflowSignals } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -232,6 +234,22 @@ describe('browser durable workflow view client', () => {
     expect(transport).toHaveBeenCalledOnce();
     await expect(client.approveWorkflow(runId, { revision: 0, nodeId: '../bad', approvalDigest: 'bad' }, { commandId: '' }))
       .rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it('delivers one exact revision-bound durable signal and rejects invalid or oversized input locally', async () => {
+    const deliver = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3 } }));
+    const { client, transport } = fixture({ workflowSignals: { deliver } });
+    expect(await client.signalWorkflow(runId, { revision: 2, signalId: 'deployment.ready/1', signalName: 'deployment.ready', value: { ready: true } },
+      { commandId: 'signal-command-1' })).toMatchObject({ revision: 3 });
+    expect(deliver).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', revision: 2, commandId: 'signal-command-1',
+      signalId: 'deployment.ready/1', signalName: 'deployment.ready', value: { ready: true } }));
+    expect(JSON.parse(transport.mock.calls[0]![1]?.body as string)).toEqual({ commandId: 'signal-command-1', revision: 2,
+      signalId: 'deployment.ready/1', signalName: 'deployment.ready', value: { ready: true } });
+    await expect(client.signalWorkflow(runId, { revision: 2, signalId: '../bad', signalName: 'ready', value: true }, { commandId: 'signal-2' }))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.signalWorkflow(runId, { revision: 2, signalId: 'ready', signalName: 'ready', value: 'x'.repeat(4097) }, { commandId: 'signal-2' }))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(transport).toHaveBeenCalledOnce();
   });
 });
 

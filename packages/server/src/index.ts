@@ -55,6 +55,11 @@ export interface WorkflowControlTransport {
   readonly approve: (input: WorkflowControlBase & { readonly nodeId: string; readonly approvalDigest: string;
     readonly childRunId: string | null }) => Promise<WorkflowControlResult>;
 }
+/** Durable signal delivery remains an explicit adapter boundary so each workflow format owns persistence and idempotency. */
+export interface WorkflowSignalTransport {
+  readonly deliver: (input: WorkflowControlBase & { readonly signalId: string; readonly signalName: string;
+    readonly value: JsonValue }) => Promise<WorkflowControlResult>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -72,6 +77,7 @@ export interface AgentServerOptions {
   readonly workflowViews?: WorkflowViewTransport;
   readonly workflowIndex?: WorkflowIndexTransport;
   readonly workflowControls?: WorkflowControlTransport;
+  readonly workflowSignals?: WorkflowSignalTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -247,6 +253,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (Reflect.ownKeys(fields).length !== 2 || ['cancel', 'approve'].some(key => !fields[key] || !('value' in fields[key]!) || typeof fields[key]!.value !== 'function'))
       throw new Error('Workflow control transport requires exact cancel and approve callbacks.');
     return Object.freeze({ cancel: fields['cancel']!.value, approve: fields['approve']!.value }) as WorkflowControlTransport;
+  })();
+  const workflowSignals: WorkflowSignalTransport | undefined = (() => {
+    if (options.workflowSignals === undefined) return undefined;
+    if (options.workflowSignals === null || typeof options.workflowSignals !== 'object') throw new Error('Workflow signal transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowSignals);
+    if (Reflect.ownKeys(fields).length !== 1 || !fields['deliver'] || !('value' in fields['deliver']) || typeof fields['deliver'].value !== 'function')
+      throw new Error('Workflow signal transport requires one exact deliver callback.');
+    return Object.freeze({ deliver: fields['deliver'].value as WorkflowSignalTransport['deliver'] });
   })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
@@ -464,6 +478,31 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (raw['status'] === 'not_found' && Object.keys(raw).length === 1) throw new HttpFailure(404, 'NOT_FOUND');
       workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const record = workflowRecord(raw['workflow'], workflowControlMatch[1]!);
+      if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      return response({ workflow: record });
+    }
+    const workflowSignalMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/signals$/.exec(url.pathname);
+    if (workflowSignalMatch && request.method === 'POST') {
+      requireCapability(identity, 'workflows:control'); if (!workflowSignals) throw new HttpFailure(404, 'NOT_FOUND');
+      const data = await body(request, signal); exact(data, ['commandId', 'revision', 'signalId', 'signalName', 'value']);
+      if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
+        || !Number.isSafeInteger(data['revision']) || data['revision'] < 1 || typeof data['signalId'] !== 'string' || !identifier.test(data['signalId'])
+        || typeof data['signalName'] !== 'string' || !identifier.test(data['signalName'])) throw new HttpFailure(400, 'INVALID_REQUEST');
+      let value: JsonValue; try { value = freezeJson(jsonValue(data['value'], { maxBytes: 4_096, maxDepth: 16, maxNodes: 1_024 })); }
+      catch { throw new HttpFailure(400, 'INVALID_REQUEST'); }
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
+      const operation = Promise.resolve().then(() => workflowSignals.deliver(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
+        actorId: identity.scope.principalId, runId: workflowSignalMatch[1]!, revision: data['revision'] as number,
+        commandId: data['commandId'] as string, signalId: data['signalId'] as string, signalName: data['signalName'] as string,
+        value, signal }))).finally(() => { workflowOperations--; });
+      let result: WorkflowControlResult;
+      try { result = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      assertActive(signal); requireCapability(identity, 'workflows:control');
+      let raw: JsonObject; try { raw = object(result, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+      if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw new HttpFailure(409, 'WORKFLOW_CONFLICT');
+      if (raw['status'] === 'not_found' && Object.keys(raw).length === 1) throw new HttpFailure(404, 'NOT_FOUND');
+      workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      const record = workflowRecord(raw['workflow'], workflowSignalMatch[1]!);
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       return response({ workflow: record });
     }
