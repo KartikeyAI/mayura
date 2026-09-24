@@ -13,7 +13,7 @@ import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic'];
 const expectedDependencies = {
   core: [], cli: ['@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
@@ -27,6 +27,8 @@ const expectedDependencies = {
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', 'quickjs-emscripten-core'],
   'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode'],
   artifacts: ['@mayura/core'],
+  'provider-openai': ['@mayura/core'],
+  'provider-anthropic': ['@mayura/core'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -193,6 +195,7 @@ async function main() {
     ['code-mode-quickjs', ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core', '@mayura/tools'], 'optional-code-mode-quickjs.test.ts'],
     ['code-mode-docker', ['@mayura/adapter-code-docker'], 'optional-code-mode-docker.test.ts'],
     ['artifacts', ['@mayura/artifacts'], 'optional-artifacts.test.ts'],
+    ['providers', ['@mayura/provider-openai', '@mayura/provider-anthropic'], 'optional-providers.test.ts'],
   ]) {
     const application = join(output, name); await mkdir(application); const npmConfig = join(application, 'empty.npmrc'); await writeFile(npmConfig, '');
     const allowed = closure(roots); const dependencies = Object.fromEntries(roots.map(name => [name, packages.get(name).archive]));
@@ -268,6 +271,10 @@ async function main() {
         assert.equal(execution.backupRestore, true);
         assert.equal(execution.noArthDependency, true);
       }
+      if (name === 'providers') {
+        assert.equal(execution.fixedHostedDestination, true); assert.equal(execution.loopbackLocalDestination, true);
+        assert.equal(execution.explicitCredentials, true); assert.equal(execution.structuredOutput, true);
+      }
       assert.equal(execution.status, 'passed'); profiles.push({ name, installedPackageCount: installed.size, installMs, typeFileCount, execution });
     } else {
       const { build } = await import('vite'); const included = new Set();
@@ -307,6 +314,7 @@ async function main() {
   result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting');
   result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
   result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
+  result.checks.push('packed-model-providers', 'anthropic-fixed-destination', 'openai-compatible-loopback-only', 'provider-explicit-credentials');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

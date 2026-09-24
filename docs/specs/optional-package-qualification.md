@@ -32,6 +32,8 @@ The gate packs current built packages and installs their actual archives into fr
 
 12. **Local artifacts:** `@mayura/artifacts` and core are installed without a server, database, workflow or Arth package. A public-only fixture stages, commits, scope-separates and discloses a real local artifact, checking its content/reference hashes and forced safe attachment headers. This is local adapter and package-boundary evidence, not production filesystem, object-store, malware-scanning or retention qualification.
 
+13. **Model providers:** `@mayura/provider-openai`, `@mayura/provider-anthropic` and core are installed without the SDK, runtime, database, server or credential helper. Strict public types require explicit destination/credential choices. Runtime fixtures execute structured final output against injected transports, prove Anthropic's fixed hosted destination and the compatible adapter's exact loopback destination, and verify no ambient local credential. This is distribution and wire-contract evidence, not a live account, local inference runtime, pricing or model-quality qualification.
+
 ## Assertions
 
 Package runtime imports resolve under the isolated application's real `node_modules`, not workspace symlinks or source paths. Consumer fixtures import public package exports only. Private source/deep exports stay inaccessible. Packed manifests contain no workspace protocol, Mayura installation lifecycle scripts or undeclared profile dependencies. Framework archives contain only reviewed manifests, readmes, licenses, compiled declarations/JavaScript, maps and their mapped TypeScript sources; map targets must remain inside the archive.

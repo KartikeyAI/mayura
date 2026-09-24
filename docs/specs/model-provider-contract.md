@@ -1,6 +1,6 @@
 # Optional model adapters and opaque continuation
 
-Status: first provider implementation contract. Requirements F01, F04, F17; partial V01, V09, V12, V19.
+Status: multi-provider implementation contract. Requirements F01, F04, F17; partial V01, V09, V12, V19.
 
 Model adapters are explicit optional packages. The basic SDK has no provider dependency, ambient API key lookup or hidden model selection. Applications provide credentials, model ID, output JSON Schema, current accounting rates and a conservative per-call bound. No default model/pricing is inferred. Adapter code and custom transports are trusted code.
 
@@ -18,8 +18,20 @@ Do not follow redirects with credentials, retry automatically, invoke built-in p
 
 Token usage is converted using explicit application-supplied integer micro-USD rates per million tokens, rounding upward. This is configured accounting, not a provider invoice: cached discounts are conservatively ignored and prices can change. The runtime reserves the configured per-call bound; invalid/unknown usage stays reserved. A reported overrun is recorded and stops new admission, but cannot reverse a provider charge. No universal hard billing guarantee is advertised.
 
+## Anthropic Messages adapter
+
+`@mayura/provider-anthropic` uses only the fixed `https://api.anthropic.com/v1/messages` destination and fixed API version header, with an explicit application credential and model. It maps Mayura history to Messages content blocks, uses reversible aliases for client tools, enables strict input schemas, and requests a JSON-Schema final output. Provider-hosted tools, remote MCP, containers, prompt caching, extended thinking, redirects, retries and streaming are not enabled. [Messages API](https://platform.claude.com/docs/en/api/messages/create), [HTTP API](https://platform.claude.com/docs/en/api/http/messages), [strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use)
+
+The adapter accepts only `tool_use` as a tool-call terminal reason and `end_turn` as a final terminal reason. Other reasons, mixed tool/text blocks, unknown aliases, duplicate call IDs and malformed structured output fail closed. Confirmed cost includes ordinary input, cache-creation input, cache-read input and output token counts using explicit integer rates. This is conservative configured accounting rather than invoice reconciliation.
+
+## Local compatible adapter
+
+`openAICompatibleChat()` provides an explicitly configured local path without treating “OpenAI compatible” as permission to send credentials or content to arbitrary hosts. It accepts only exact plain-HTTP loopback URLs at `/v1/chat/completions`, rejects user information, query strings, fragments and every non-loopback destination, and never reads ambient credentials. Applications may supply a bounded header credential when their local server requires one. The adapter sends the complete Mayura history on every call and intentionally rejects opaque continuation.
+
+Compatible servers vary. Mayura requires the selected server/model to support Chat Completions tools, strict JSON-Schema response formatting and usage fields; unsupported or partial dialects fail closed. No local server process, model download, GPU runtime or model quality is bundled or qualified.
+
 ## Qualification
 
 Known usage is accounted independently of content validity. `ModelInvocationError(costMicros)` carries a confirmed cost with a fixed safe message when a provider refuses or returns unusable content. Valid usage on a malformed model envelope still settles; unconfirmed HTTP/transport failures retain reservations. Late completion may settle known usage without reopening a terminal result or exposing raw content.
 
-Inject a deterministic HTTP transport to verify outgoing fields, alias/correlation round trips, continuation, usage, oversized bodies, malformed JSON, refusal, timeout, HTTP errors and no redirected credentials. These tests make no paid calls. Real-account/model acceptance, provider outage evaluation and live pricing qualification remain release gates and require explicitly configured credentials.
+Inject a deterministic HTTP transport to verify outgoing fields, alias/correlation round trips, continuation rules, usage, oversized bodies, malformed JSON, refusal, timeout, HTTP errors and no redirected credentials. The packed isolated provider profile additionally proves both provider packages install with only core and execute against injected transports without ancestor workspace fallback. These tests make no paid calls. Real-account/model acceptance, local runtime interoperability, provider outage evaluation and live pricing qualification remain release gates and require explicitly configured credentials.

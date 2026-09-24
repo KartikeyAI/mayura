@@ -41,6 +41,9 @@ importers:
       '@mayura/memory':
         specifier: workspace:*
         version: link:packages/memory
+      '@mayura/provider-anthropic':
+        specifier: workspace:*
+        version: link:packages/provider-anthropic
       '@mayura/provider-openai':
         specifier: workspace:*
         version: link:packages/provider-openai
@@ -247,6 +250,12 @@ importers:
         version: link:../storage
 
   packages/observability:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/provider-anthropic:
     dependencies:
       '@mayura/core':
         specifier: workspace:*

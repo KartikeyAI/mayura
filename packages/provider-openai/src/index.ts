@@ -12,6 +12,19 @@ export interface OpenAIResponsesOptions {
   /** Trusted test/proxy transport; never selected from model output. Default destination is fixed. */
   readonly fetch?: typeof globalThis.fetch;
 }
+export interface OpenAICompatibleChatOptions {
+  /** Exact loopback Chat Completions URL, for example http://127.0.0.1:11434/v1/chat/completions. */
+  readonly endpoint: string;
+  readonly apiKey?: string;
+  readonly model: string;
+  readonly outputJsonSchema: JsonObject;
+  readonly maxCostMicros: number;
+  readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number };
+  readonly maxRequestBytes?: number;
+  readonly maxResponseBytes?: number;
+  readonly timeoutMs?: number;
+  readonly fetch?: typeof globalThis.fetch;
+}
 class ProviderFailure extends MayuraError {
   constructor(message = 'The model provider returned an unavailable, refused or invalid response.') { super('MODEL_FAILED', message); }
 }
@@ -187,6 +200,89 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         return { type: 'final', output: jsonValue(JSON.parse(text.join('')), { maxBytes: maxResponseBytes }), usage: accounting };
       } catch (error) {
         // HTTP status/body, credentials, model output and arbitrary transport exceptions are private.
+        if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
+        if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
+        if (error instanceof ProviderFailure) throw error;
+        return failed();
+      } finally { clearTimeout(timer); }
+    },
+  });
+}
+
+function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<string, string>): JsonValue[] {
+  return messages.map(message => {
+    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+    if (message.role === 'tool') return { role: 'tool', tool_call_id: message.callId, content: JSON.stringify(message.result) };
+    return { role: 'assistant', content: null, tool_calls: message.calls.map(call => {
+      const name = aliases.get(call.toolId); if (!name) return failed();
+      return { id: call.id, type: 'function', function: { name, arguments: JSON.stringify(call.input) } };
+    }) };
+  });
+}
+
+/** Loopback-only Chat Completions adapter for explicitly selected compatible local model servers. */
+export function openAICompatibleChat(options: OpenAICompatibleChatOptions): ModelAdapter {
+  let endpoint: URL;
+  try { endpoint = new URL(options.endpoint); }
+  catch { throw new MayuraError('INVALID_CONFIG', 'A valid loopback Chat Completions endpoint is required.'); }
+  if (endpoint.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)
+    || endpoint.username || endpoint.password || endpoint.pathname !== '/v1/chat/completions' || endpoint.search || endpoint.hash) {
+    throw new MayuraError('INVALID_CONFIG', 'Compatible local models require an exact loopback HTTP endpoint.');
+  }
+  if (options.apiKey !== undefined && (typeof options.apiKey !== 'string' || !options.apiKey || /[\r\n]/u.test(options.apiKey) || options.apiKey.length > 4_096)) {
+    throw new MayuraError('INVALID_CONFIG', 'Compatible provider credentials must be bounded header values.');
+  }
+  if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A bounded local model ID is required.');
+  const url = endpoint.href; const apiKey = options.apiKey; const model = options.model; const outputSchema = strictSchema(options.outputJsonSchema);
+  const inputPrice = options.pricing.inputMicrosPerMillionTokens; const outputPrice = options.pricing.outputMicrosPerMillionTokens;
+  for (const amount of [options.maxCostMicros, inputPrice, outputPrice]) if (!Number.isSafeInteger(amount) || amount < 0) throw new MayuraError('INVALID_CONFIG', 'Configured costs must be non-negative safe integers.');
+  const maxRequestBytes = options.maxRequestBytes ?? 1_048_576; const maxResponseBytes = options.maxResponseBytes ?? 1_048_576;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  assertPositiveInteger(maxRequestBytes, 'maxRequestBytes'); assertPositiveInteger(maxResponseBytes, 'maxResponseBytes'); assertPositiveInteger(timeoutMs, 'timeoutMs');
+  if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'Provider timeout exceeds the supported timer range.');
+  const transport = options.fetch ?? globalThis.fetch;
+  if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
+  return Object.freeze({ id: 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    async generate(request: ModelRequest): Promise<ModelResponse> {
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); let knownCost: number | undefined;
+      try {
+        const signal = AbortSignal.any([request.signal, controller.signal]);
+        if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
+        if (request.continuation !== undefined) return failed();
+        assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
+        const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
+        const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
+        if (aliases.size !== request.tools.length || aliases.size > 128) return failed();
+        const tools = request.tools.map(tool => {
+          if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires an explicit portable JSON Schema.');
+          return { type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: strictSchema(tool.inputJsonSchema) } };
+        });
+        const body = JSON.stringify(jsonValue({ model, stream: false, messages: [{ role: 'system', content: request.instructions }, ...compatibleMessages(request.messages, aliases)],
+          tools, parallel_tool_calls: true, max_tokens: request.maxOutputTokens,
+          response_format: { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
+        }, { maxBytes: maxRequestBytes }));
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }; if (apiKey !== undefined) headers['Authorization'] = `Bearer ${apiKey}`;
+        const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }), signal);
+        const payload = await responseBody(response, maxResponseBytes, signal); const usage = object(payload['usage']);
+        const inputTokens = integer(usage['prompt_tokens']); const outputTokens = integer(usage['completion_tokens']);
+        const cost = (BigInt(inputTokens) * BigInt(inputPrice) + BigInt(outputTokens) * BigInt(outputPrice) + 999_999n) / 1_000_000n;
+        if (cost > BigInt(Number.MAX_SAFE_INTEGER)) return failed(); knownCost = Number(cost);
+        if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
+        const choice = object(payload['choices'][0]); const message = object(choice['message']);
+        if (message['role'] !== 'assistant') return failed();
+        if (choice['finish_reason'] === 'tool_calls') {
+          if (!Array.isArray(message['tool_calls']) || message['tool_calls'].length < 1 || message['tool_calls'].length > 128) return failed();
+          const seen = new Set<string>(); const calls = message['tool_calls'].map(raw => {
+            const call = object(raw); const fn = object(call['function']); const callId = call['id']; const alias = fn['name'];
+            if (call['type'] !== 'function' || typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId)
+              || seen.has(callId) || typeof alias !== 'string' || !ids.has(alias) || typeof fn['arguments'] !== 'string') return failed();
+            seen.add(callId); return { id: callId, toolId: ids.get(alias)!, input: jsonValue(JSON.parse(fn['arguments'])) };
+          });
+          return { type: 'tool_calls', calls, usage: { costMicros: knownCost } };
+        }
+        if (choice['finish_reason'] !== 'stop' || typeof message['content'] !== 'string') return failed();
+        return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost } };
+      } catch (error) {
         if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
         if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
         if (error instanceof ProviderFailure) throw error;

@@ -45,6 +45,7 @@
     "@mayura/adapter-code-docker": "workspace:*",
     "@mayura/adapter-mcp": "workspace:*",
     "@mayura/provider-openai": "workspace:*",
+    "@mayura/provider-anthropic": "workspace:*",
     "@types/node": "24.13.6",
     "@types/better-sqlite3": "9.6.0",
     "@types/pg": "8.23.1",
