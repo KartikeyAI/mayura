@@ -1,4 +1,4 @@
-import { ClientError, type MayuraClient } from './index.js';
+import { ClientError, type ClientJson, type MayuraClient } from './index.js';
 
 export type WorkflowViewFormat = 2 | 3 | 4 | 5;
 export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
@@ -23,21 +23,24 @@ export interface WorkflowGraphProjection {
   readonly progress: { readonly total: number; readonly terminal: number; readonly succeeded: number; readonly active: number; readonly waiting: number; readonly failed: number };
 }
 export type WorkflowCommandStatus = 'idle' | 'submitting' | 'succeeded' | 'conflict' | 'failed' | 'disposed';
-export type WorkflowCommandAction = 'cancel' | 'approve';
+export type WorkflowCommandAction = 'cancel' | 'approve' | 'signal';
 export interface WorkflowCommandState {
   readonly stateRevision: number; readonly status: WorkflowCommandStatus; readonly runId: string;
   readonly workflowRevision: number; readonly workflowStatus: WorkflowViewRunStatus; readonly action: WorkflowCommandAction | null;
   readonly nodeId: string | null; readonly errorCode: string | null;
 }
 export interface WorkflowApprovalIntent { readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string }
+export interface WorkflowSignalIntent { readonly signalId: string; readonly signalName: string; readonly value: ClientJson }
 export interface WorkflowCommandControllerOptions {
-  readonly client: Pick<MayuraClient, 'cancelWorkflow' | 'approveWorkflow'>; readonly workflow: WorkflowViewInput; readonly maxSubscribers?: number;
+  readonly client: Pick<MayuraClient, 'cancelWorkflow' | 'approveWorkflow'> & Partial<Pick<MayuraClient, 'signalWorkflow'>>;
+  readonly workflow: WorkflowViewInput; readonly maxSubscribers?: number;
 }
 export interface WorkflowCommandController {
   getSnapshot(): WorkflowCommandState;
   subscribe(listener: () => void): () => void;
   cancel(options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   approve(command: WorkflowApprovalIntent, options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  signal(command: WorkflowSignalIntent, options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   reset(): WorkflowCommandState;
   dispose(): void;
 }
@@ -129,6 +132,8 @@ function frozenArrayAllowEmpty(value: unknown, maximum: number): readonly unknow
 }
 
 const commandId = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+const signalIdentifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+const encoder = new TextEncoder();
 function workflowCommandState(state: WorkflowCommandState): WorkflowCommandState { return Object.freeze({ ...state }); }
 function safeWorkflowCommandError(error: unknown): ClientError {
   const allowed = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT', 'INVALID_REQUEST']);
@@ -146,6 +151,42 @@ function approvalIntent(value: unknown, projection: WorkflowGraphProjection): Wo
     || (childRunId !== undefined && (typeof childRunId !== 'string' || !digest.test(childRunId)))
     || !node || node.status !== 'waiting' || node.childRunId !== (childRunId ?? null)) throw new ClientError('INVALID_WORKFLOW_COMMAND');
   return Object.freeze({ nodeId, approvalDigest, ...(childRunId === undefined ? {} : { childRunId }) });
+}
+function workflowSignalIntent(value: unknown): WorkflowSignalIntent {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value)))
+    throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  const fields = Object.getOwnPropertyDescriptors(value); const keys = Reflect.ownKeys(fields);
+  if (keys.length !== 3 || keys.some(key => typeof key !== 'string' || !['signalId', 'signalName', 'value'].includes(key) || !('value' in fields[key]!)))
+    throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  const signalId = fields['signalId']?.value; const signalName = fields['signalName']?.value;
+  if (typeof signalId !== 'string' || !signalIdentifier.test(signalId) || typeof signalName !== 'string' || !signalIdentifier.test(signalName))
+    throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  let nodes = 0; const seen = new Set<object>();
+  const copy = (item: unknown, depth: number): ClientJson => {
+    if (++nodes > 1_024 || depth > 16) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+    if (item === null || typeof item === 'boolean' || typeof item === 'string') return item;
+    if (typeof item === 'number' && Number.isFinite(item) && (!Number.isInteger(item) || Number.isSafeInteger(item))) return item;
+    if (typeof item !== 'object' || seen.has(item) || (!Array.isArray(item) && ![null, Object.prototype].includes(Object.getPrototypeOf(item))))
+      throw new ClientError('INVALID_WORKFLOW_COMMAND');
+    seen.add(item); const descriptors = Object.getOwnPropertyDescriptors(item); let result: ClientJson;
+    if (Array.isArray(item)) {
+      if (Reflect.ownKeys(descriptors).length !== item.length + 1 || !descriptors['length']) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+      const entries: ClientJson[] = [];
+      for (let index = 0; index < item.length; index++) { const descriptor = descriptors[String(index)];
+        if (!descriptor || !('value' in descriptor)) throw new ClientError('INVALID_WORKFLOW_COMMAND'); entries.push(copy(descriptor.value, depth + 1)); }
+      result = Object.freeze(entries);
+    } else {
+      const entries: Record<string, ClientJson> = {};
+      for (const key of Reflect.ownKeys(descriptors)) { const descriptor = descriptors[key as keyof typeof descriptors];
+        if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key) || !descriptor || !('value' in descriptor) || !descriptor.enumerable)
+          throw new ClientError('INVALID_WORKFLOW_COMMAND'); entries[key] = copy(descriptor.value, depth + 1); }
+      result = Object.freeze(entries);
+    }
+    seen.delete(item); return result;
+  };
+  const captured = copy(fields['value']!.value, 0);
+  if (encoder.encode(JSON.stringify(captured)).byteLength > 4_096) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+  return Object.freeze({ signalId, signalName, value: captured });
 }
 
 /** Caller-owned, inert single-flight command state for one exact durable workflow revision. */
@@ -208,6 +249,13 @@ export function createWorkflowCommandController(options: WorkflowCommandControll
       const captured = approvalIntent(command, projection);
       return await execute('approve', captured.nodeId, settings, signal => client.approveWorkflow(workflow.runId, { revision: workflow.revision, ...captured },
         { commandId: settings.commandId, signal }));
+    },
+    signal: async (command, settings) => {
+      if (typeof client.signalWorkflow !== 'function') throw new ClientError('INVALID_WORKFLOW_CONTROLLER');
+      if (['succeeded', 'failed', 'cancelled', 'outcome_unknown'].includes(workflow.status)) throw new ClientError('INVALID_WORKFLOW_COMMAND');
+      const captured = workflowSignalIntent(command);
+      return await execute('signal', null, settings, signal => client.signalWorkflow!(workflow.runId,
+        { revision: workflow.revision, ...captured }, { commandId: settings.commandId, signal }));
     },
     reset: () => {
       if (disposed) throw new ClientError('WORKFLOW_CONTROLLER_DISPOSED'); if (active) throw new ClientError('WORKFLOW_CONTROLLER_BUSY');

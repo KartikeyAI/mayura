@@ -104,7 +104,7 @@ describe('@mayura/client-react', () => {
     const result = Object.freeze({ ...input, revision: 2, status: 'cancelled' as const, steps: Object.freeze([
       Object.freeze({ id: 'step', kind: 'tool' as const, status: 'skipped' as const })]) });
     const controller = createWorkflowCommandController({ workflow: input, client: { cancelWorkflow: async () => { calls += 1; return result; },
-      approveWorkflow: async () => { calls += 1; return result; } } });
+      approveWorkflow: async () => { calls += 1; return result; }, signalWorkflow: async () => { calls += 1; return result; } } });
     function View(): ReactNode { return createElement('span', null, useMayuraWorkflowCommand(controller).status); }
     await act(async () => { root.render(createElement(View)); }); expect(element.textContent).toBe('idle'); expect(calls).toBe(0);
     await act(async () => { await controller.cancel({ commandId: 'cancel-1' }); });

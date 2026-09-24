@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ClientError } from '../src/index.js';
+import { ClientError, type MayuraClient } from '../src/index.js';
 import { createWorkflowCommandController, createWorkflowGraphProjection, type WorkflowViewInput, type WorkflowViewNode, type WorkflowViewStep } from '../src/workflows.js';
 
 const runId = 'a'.repeat(64); const childRunId = 'b'.repeat(64);
@@ -87,6 +87,33 @@ describe('durable workflow command controller', () => {
     const next = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });
     await expect(next.approve({ nodeId: 'child', approvalDigest: 'd'.repeat(64) }, { commandId: 'approve-2' }))
       .rejects.toMatchObject({ code: 'INVALID_WORKFLOW_COMMAND' }); expect(approveWorkflow).toHaveBeenCalledOnce();
+  });
+
+  it('captures one bounded signal without retaining its value in command state', async () => {
+    const result = view([{ id: 'child', kind: 'child', dependsOn: [] }], [{ id: 'child', kind: 'child', status: 'waiting', childRunId }], { revision: 8 });
+    const cancelWorkflow = vi.fn(async () => result); const approveWorkflow = vi.fn(async () => result);
+    const signalWorkflow = vi.fn<MayuraClient['signalWorkflow']>(async () => result); const controller = createWorkflowCommandController({ workflow: waiting(),
+      client: { cancelWorkflow, approveWorkflow, signalWorkflow } }); const supplied = { accepted: true };
+    await expect(controller.signal({ signalId: 'ready/1', signalName: 'ready', value: supplied }, { commandId: 'signal-command-1' })).resolves.toBe(result);
+    expect(signalWorkflow).toHaveBeenCalledWith(runId, { revision: 7, signalId: 'ready/1', signalName: 'ready', value: { accepted: true } },
+      expect.objectContaining({ commandId: 'signal-command-1' }));
+    const captured = signalWorkflow.mock.calls[0]![1].value; expect(captured).not.toBe(supplied); expect(Object.isFrozen(captured)).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({ status: 'succeeded', action: 'signal', nodeId: null, workflowRevision: 8 });
+    expect(JSON.stringify(controller.getSnapshot())).not.toContain('accepted');
+  });
+
+  it('rejects unavailable, malformed and oversized signal commands before transport', async () => {
+    const cancelWorkflow = vi.fn(async () => waiting()); const approveWorkflow = vi.fn(async () => waiting());
+    const missing = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });
+    await expect(missing.signal({ signalId: 'ready', signalName: 'ready', value: true }, { commandId: 'signal-1' }))
+      .rejects.toMatchObject({ code: 'INVALID_WORKFLOW_CONTROLLER' });
+    const signalWorkflow = vi.fn<MayuraClient['signalWorkflow']>(async () => waiting()); const controller = createWorkflowCommandController({ workflow: waiting(),
+      client: { cancelWorkflow, approveWorkflow, signalWorkflow } });
+    await expect(controller.signal({ signalId: '../bad', signalName: 'ready', value: true }, { commandId: 'signal-1' }))
+      .rejects.toMatchObject({ code: 'INVALID_WORKFLOW_COMMAND' });
+    await expect(controller.signal({ signalId: 'ready', signalName: 'ready', value: 'x'.repeat(4_097) }, { commandId: 'signal-1' }))
+      .rejects.toMatchObject({ code: 'INVALID_WORKFLOW_COMMAND' });
+    expect(signalWorkflow).not.toHaveBeenCalled(); expect(controller.getSnapshot().status).toBe('idle');
   });
 
   it('enforces single flight and never retries or reveals an unknown failure', async () => {

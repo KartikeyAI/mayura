@@ -33,6 +33,14 @@ await controls.approve({ nodeId, approvalDigest, childRunId }, { commandId, sign
 const state = controls.getSnapshot();
 ```
 
+The same controller can submit one bounded signal when its client implements signal delivery:
+
+```ts
+await controls.signal({ signalId, signalName, value }, { commandId, signal });
+```
+
+Signal values are immutable command inputs and are never copied into command state.
+
 Create a new controller after accepting the returned view. `reset()` only clears feedback; it does not refresh or advance the revision.
 
 On HTTP 409, refresh explicitly and ask the user to reconsider the new state. After an ambiguous transport failure, reconcile using the same command ID before deciding whether another logical command is appropriate. Never generate a new ID and automatically repeat a mutation.
