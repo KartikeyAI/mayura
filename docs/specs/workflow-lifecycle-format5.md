@@ -1,6 +1,6 @@
 # Workflow lifecycle format 5
 
-Status: authoring and manifest contract implemented; durable storage and execution are not yet implemented.
+Status: authoring, strict state codec and conservative durable runtime implemented over the public aggregate-store contract.
 
 Format 5 is a new, explicit persistence boundary for workflows that suspend on a human response or an absolute timer. It does not reinterpret formats 2, 3, or 4, and no existing persisted workflow is migrated implicitly.
 
@@ -24,6 +24,12 @@ Definitions are branded executable objects local to the installed package instan
 
 The response Standard Schema is intentionally executable-only. A future durable runtime must resolve a registered definition whose schema ID and digest exactly match persisted authority before accepting a response.
 
-## Required next slice
+## Runtime contract
 
-The storage capability must add a strict format-5 state machine with durable human-request and timer records, fenced/idempotent resume commands, restart recovery, and atomic downstream scheduling. Until that capability and runtime exist, format 5 is an authoring and serialization contract only.
+The runtime persists human request digests, typed response evidence, absolute timer deadlines and fire evidence in the workflow aggregate. Exact repeated responses are idempotent; different responses conflict. Deadlines and timers resume after reopening SQLite, PostgreSQL or a conforming custom adapter. `nextWakeAtMs` lets the host schedule finite continuation without retaining callbacks or timer handles.
+
+Tool dispatch uses the conservative effect protocol: authority and budget are persisted before invocation, receipts are monotonic, and abandoned dispatches require explicit reconciliation. Human identity is supplied only through a bounded trusted verifier and is checked against the configured project.
+
+`humanRequest` reconstructs display metadata from the pinned definition and persisted bindings, then verifies the request digest before disclosure. Validator and identity callbacks have finite timeouts and retained-callback admission: a callback that ignores timeout continues to consume capacity until it actually settles.
+
+The runtime intentionally does not scan all aggregates or start a background worker. Fleet discovery, automated wake dispatch, direct server/CLI lifecycle bindings, loops and compensation remain separate follow-on capabilities.

@@ -10,6 +10,13 @@ export {
   type WorkflowLifecycleOutput,
   type WorkflowLifecycleTimerNode,
 } from './lifecycle-definition.js';
+export {
+  createWorkflowLifecycleRuntime,
+  type WorkflowLifecycleRuntime,
+  type WorkflowLifecycleRuntimeOptions,
+  type WorkflowLifecycleHumanRequest,
+  type WorkflowLifecycleSnapshot,
+} from './lifecycle-runtime.js';
 export type {
   WorkflowLifecycleHumanKind,
   WorkflowLifecycleHumanNodeManifest,

@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { JsonObject } from '@mayura/core';
 import { StorageError } from '../src/contracts.js';
 import { workflowManifest } from '../src/workflow-format2.js';
 import { workflowGraphManifest } from '../src/workflow-format3.js';
-import { workflowLifecycleManifest, type WorkflowLifecycleManifest } from '../src/workflow-format5.js';
+import { assertWorkflowLifecycleStateMatchesManifest, initialWorkflowLifecycleState, workflowLifecycleManifest,
+  workflowLifecycleOutputs, workflowLifecycleState, type WorkflowLifecycleManifest } from '../src/workflow-format5.js';
 
 const hash = 'a'.repeat(64);
+const policyHash = 'b'.repeat(64);
+const runId = 'c'.repeat(64);
+const decodeState = (state: unknown) => workflowLifecycleState({ id: runId, state: state as JsonObject });
 const manifest = (): WorkflowLifecycleManifest => ({
   format: 5,
   id: 'review-flow',
@@ -85,5 +90,57 @@ describe('format-5 workflow lifecycle metadata', () => {
     const value = Object.defineProperty({}, 'format', { enumerable: true, get: getter });
     expect(() => workflowLifecycleManifest(value)).toThrow(StorageError);
     expect(getter).not.toHaveBeenCalled();
+  });
+
+  it('creates and decodes a detached dormant lifecycle state', () => {
+    const state = initialWorkflowLifecycleState(manifest(), { digest: hash, deadlineAtMs: 100 }, hash, policyHash, 0);
+    expect(state).toMatchObject({ format: 5, status: 'running', steps: {
+      prepared: { kind: 'join', status: 'pending' }, review: { kind: 'human', status: 'pending' },
+      deadline: { kind: 'timer', status: 'pending' },
+    } });
+    const decoded = decodeState(state);
+    expect(decoded).toEqual(state); expect(decoded).not.toBe(state);
+    expect(workflowLifecycleOutputs(decoded)).toEqual({});
+    assertWorkflowLifecycleStateMatchesManifest(decoded, manifest());
+  });
+
+  it('accepts exact human and timer evidence and projects only successful output', () => {
+    const state = initialWorkflowLifecycleState(manifest(), { digest: hash, deadlineAtMs: 100 }, hash, policyHash, 0);
+    Object.assign(state.steps['prepared']!, { status: 'succeeded', output: [] });
+    Object.assign(state.steps['review']!, { status: 'succeeded', requestDigest: hash,
+      responseDigest: 'd'.repeat(64), actorId: 'reviewer', output: { accepted: true } });
+    Object.assign(state.steps['deadline']!, { status: 'succeeded', fireAtMs: 100, firedAtMs: 101,
+      output: { fireAtMs: 100, firedAtMs: 101 } });
+    state.status = 'succeeded'; state.output = { accepted: true };
+    const decoded = decodeState(state);
+    assertWorkflowLifecycleStateMatchesManifest(decoded, manifest());
+    expect(workflowLifecycleOutputs(decoded)).toEqual({ prepared: [], review: { accepted: true },
+      deadline: { fireAtMs: 100, firedAtMs: 101 } });
+  });
+
+  it('accepts restart-safe waiting evidence but rejects invented or inconsistent evidence', () => {
+    const state = initialWorkflowLifecycleState(manifest(), { digest: hash, deadlineAtMs: 100 }, hash, policyHash, 0);
+    Object.assign(state.steps['prepared']!, { status: 'succeeded', output: [] });
+    Object.assign(state.steps['review']!, { status: 'waiting', requestDigest: hash, deadlineAtMs: 100 });
+    state.status = 'waiting';
+    expect(decodeState(state)).toEqual(state);
+    for (const patch of [
+      { responseDigest: 'd'.repeat(64) }, { actorId: 'reviewer' }, { output: false }, { requestDigest: 'invalid' },
+    ]) {
+      const changed = structuredClone(state); Object.assign(changed.steps['review']!, patch);
+      expect(() => decodeState(changed)).toThrowError(expect.objectContaining({ code: 'CONFLICT' }));
+    }
+    const wrongTimer = structuredClone(state); Object.assign(wrongTimer.steps['review']!, {
+      status: 'succeeded', responseDigest: 'd'.repeat(64), actorId: 'reviewer', output: true,
+    }); Object.assign(wrongTimer.steps['deadline']!, { status: 'succeeded', fireAtMs: 100, firedAtMs: 101,
+      output: { fireAtMs: 99, firedAtMs: 101 } }); wrongTimer.status = 'running';
+    expect(() => decodeState(wrongTimer)).toThrow(StorageError);
+  });
+
+  it('rejects premature lifecycle success against declared dependencies', () => {
+    const state = initialWorkflowLifecycleState(manifest(), { digest: hash, deadlineAtMs: 100 }, hash, policyHash, 0);
+    Object.assign(state.steps['review']!, { status: 'succeeded', requestDigest: hash,
+      responseDigest: 'd'.repeat(64), actorId: 'reviewer', output: true });
+    expect(() => assertWorkflowLifecycleStateMatchesManifest(state, manifest())).toThrow(StorageError);
   });
 });

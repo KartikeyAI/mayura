@@ -6,7 +6,7 @@ import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { StorageError } from '@mayura/storage-contracts';
 
 const root = await realpath(process.cwd());
@@ -24,6 +24,7 @@ assert.equal(new StorageError('CONFLICT', 'Safe fixture.').code, 'CONFLICT');
 const number = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
 const input = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'string' ? { value: value.length } : { issues: [] } } };
 const output = { '~standard': { version: 1, vendor: 'consumer', validate: value => Array.isArray(value) && value.every(item => typeof item === 'number') ? { value: { values: value } } : { issues: [] } } };
+const lifecycleOutput = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value: { answer: value } } : { issues: [] } } };
 let effects = 0;
 const left = defineTool({ id: 'consumer.left', version: '1', description: 'Double a number.', input: number, output: number, effects: 'none', capabilities: [], execute: value => { effects++; return value * 2; } });
 const right = defineTool({ id: 'consumer.right', version: '1', description: 'Increment a number.', input: number, output: number, effects: 'none', capabilities: [], execute: value => { effects++; return value + 1; } });
@@ -32,12 +33,40 @@ const definition = defineWorkflow({ id: 'consumer.graph', version: '1', input, o
   { id: 'right', kind: 'tool', tool: right, input: { kind: 'input', path: [] } },
   { id: 'joined', kind: 'join', dependsOn: ['left', 'right'] },
 ], result: { kind: 'step', stepId: 'joined', path: [] } });
-const lifecycle = defineWorkflowLifecycle({ id: 'consumer.lifecycle', version: '1', input, output, nodes: [
+const lifecycle = defineWorkflowLifecycle({ id: 'consumer.lifecycle', version: '1', input, output: lifecycleOutput, nodes: [
   { kind: 'human', id: 'review', request: { kind: 'information', schemaId: 'consumer/response',
     schemaDigest: 'a'.repeat(64), prompt: 'Review.', response: number } },
 ], result: { kind: 'step', stepId: 'review', path: [] } });
 assert.equal(lifecycle.format, 5); assert.equal(lifecycleManifest(lifecycle).graph[0].kind, 'human');
 assert(!JSON.stringify(lifecycleManifest(lifecycle)).includes('validate'));
+const records = new Map();
+const lifecycleStore = {
+  async initialize() {},
+  async create(command) {
+    const key = `${command.scope}/${command.id}`; const found = records.get(key);
+    if (found) return { record: structuredClone(found), created: false };
+    const record = { scope: command.scope, id: command.id, idempotencyKey: command.idempotencyKey,
+      definitionHash: command.definitionHash, version: 1, state: structuredClone(command.state) };
+    records.set(key, record); return { record: structuredClone(record), created: true };
+  },
+  async read(scope, id) { const found = records.get(`${scope}/${id}`); return found ? structuredClone(found) : undefined; },
+  async update(command) {
+    const key = `${command.scope}/${command.id}`; const found = records.get(key);
+    assert(found && found.version === command.expectedVersion); const next = { ...found, version: found.version + 1, state: structuredClone(command.state) };
+    records.set(key, next); return structuredClone(next);
+  },
+  async events() { return []; }, async close() {},
+};
+const lifecycleRuntime = createWorkflowLifecycleRuntime({ store: lifecycleStore, scope: { principalId: 'consumer', projectId: 'project' },
+  permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0,
+  verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: false }) });
+const lifecycleRun = await lifecycleRuntime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
+const lifecycleWaiting = await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id);
+const lifecycleRequest = lifecycleWaiting.steps.review.requestDigest;
+await lifecycleRuntime.respond(lifecycle, { id: lifecycleRun.id, nodeId: 'review', requestDigest: lifecycleRequest,
+  commandId: 'answer', credential: 'opaque', value: 3 });
+assert.equal((await lifecycleRuntime.runUntilSettled(lifecycle, lifecycleRun.id)).status, 'succeeded');
+lifecycleRuntime.close();
 const childPermissions = { allow: ['model:mayura.workflow', 'tool:consumer.left', 'tool:consumer.right'] };
 const runtime = createRuntime({ profile: 'ephemeral', permissions: childPermissions });
 try {
@@ -71,4 +100,4 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
 console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
-  verifierRouter: true, lifecycleManifest: true, sqlDriversInstalled: false }));
+  verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, sqlDriversInstalled: false }));

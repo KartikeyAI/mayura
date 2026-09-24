@@ -4,7 +4,7 @@ import { createRuntime } from '@mayura/runtime';
 import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, defineExternalEffectVerifier, defineWorkflow,
   type ExternalEffectReconciliationRequest, type WorkflowOutput } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
-import { defineWorkflowLifecycle, type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle, type WorkflowLifecycleDefinition } from '@mayura/workflows/lifecycle';
 import { StorageError, type AggregateStore, type ScheduledWorkflowAggregateStore } from '@mayura/storage-contracts';
 
 const number: Schema<number> = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'number' ? { value } : { issues: [] } } };
@@ -66,6 +66,14 @@ function checkScheduledAdapter(store: ScheduledWorkflowAggregateStore): void {
   createScheduledWorkflowRuntime({ store: contract, workerId: 'consumer', scope: { principalId: 'consumer', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0 });
 }
 void checkScheduledAdapter;
+function checkLifecycleAdapter(store: AggregateStore): void {
+  const runtime = createWorkflowLifecycleRuntime({ store, scope: { principalId: 'consumer', projectId: 'project' },
+    permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0,
+    verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: false }) });
+  const profile: 'lifecycle-v1' = runtime.profile; void profile;
+  void runtime.submit(lifecycle, { input: 'abc', idempotencyKey: 'lifecycle' });
+}
+void checkLifecycleAdapter;
 const verifier = defineExternalEffectVerifier({ authorityId: 'consumer.provider', toolId: 'consumer.double', toolVersion: '1',
   verify: async request => ({ attestationId: request.jobId, execution: 'succeeded', knownCostMicros: request.maximumCostMicros }) });
 const verification = composeExternalEffectVerifiers([verifier]);
