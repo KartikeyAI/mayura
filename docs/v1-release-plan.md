@@ -24,7 +24,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| B1 Definition-version migration policy and tooling for in-flight runs (today mismatched state is refused, never upgraded) | ⬜ |
+| B1 Definition-version policy and tooling for in-flight runs: side-by-side retention, a cross-format version inventory and a deploy gate ([guide](how-to/workflow-versions.md)). In-place state migration is deliberately not offered; plan §4.3 allows retention as the alternative | ✅ |
 | Timers, recovery, reconciliation, pause, drain | ✅ |
 
 ## C. Hooks, guardrails, streaming
@@ -59,7 +59,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 | F2 Standalone threat model covering every trust boundary ([threat model](threat-model.md)) | ✅ |
 | F3 SBOM generation and license review (`pnpm sbom`, in CI and the release workflow) | ✅ |
 | F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job (prepared; runs once hosted). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |
-| F5 Flaky timing-sensitive tests stabilized | ⬜ |
+| F5 Flaky timing-sensitive tests stabilized. The one recurring flake, the packed-install import budget under full-suite load, now takes the best of up to three fresh-process measurements against the unchanged 2 s budget | ✅ |
 | F6 Upgrade-compatibility test: a run started on one version resumes on the next | ⬜ |
 | F7 Host the repository, enable CI, branch protection and private vulnerability reporting | 👤 |
 | F8 Verify `@mayura` npm scope ownership and run a provenance rehearsal | 👤 |

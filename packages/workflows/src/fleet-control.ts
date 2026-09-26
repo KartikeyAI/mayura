@@ -264,11 +264,12 @@ export function createWorkflowFleetControl(options: WorkflowFleetControlOptions)
 }
 
 /** Format-5 lifecycle fleet runs, discovered through the fleet index. */
-export function lifecycleFleetTarget(runtime: WorkflowLifecycleFleetRuntime, name = 'lifecycle'): WorkflowFleetTarget {
+export function lifecycleFleetTarget(runtime: WorkflowLifecycleFleetRuntime, name = 'lifecycle', options: { readonly includePaused?: boolean } = {}): WorkflowFleetTarget {
   return Object.freeze({ name,
     discover: async (cursor: JsonValue | null, limit: number) => {
       const page = await runtime.scan({ cursor: cursor as never, limit });
-      return { runIds: page.candidates.filter(candidate => candidate.status !== 'paused').map(candidate => candidate.runId),
+      // Pause sweeps skip already-paused runs; version inventories must count them.
+      return { runIds: page.candidates.filter(candidate => options.includePaused === true || candidate.status !== 'paused').map(candidate => candidate.runId),
         nextCursor: page.nextCursor as unknown as JsonValue | null };
     },
     inspect: (runId: string) => runtime.inspect(runId), pause: (runId: string) => runtime.pause(runId), resume: (runId: string) => runtime.resume(runId) });

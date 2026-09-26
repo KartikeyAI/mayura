@@ -13,3 +13,4 @@ export { createWorkflowLeadership, type WorkflowLeadership, type WorkflowLeaders
 export { coordinatorUnit, createWorkflowWorker, type WorkflowWorker, type WorkflowWorkerOptions, type WorkflowWorkerStatus,
   type WorkflowWorkerUnit } from './worker.js';
 export { createWorkflowHookRelay, workflowHookStages, type WorkflowHookRelay, type WorkflowHookRelayOptions, type WorkflowHookDelivery, type WorkflowHookEvent, type WorkflowHookStage, type WorkflowHooks, type WorkflowEventSource } from './hook-relay.js';
+export { inventoryWorkflowVersions, assertWorkflowVersionsRetained, compositeVersionTarget, type WorkflowVersionInventory, type WorkflowVersionInventoryOptions, type WorkflowVersionEntry, type WorkflowVersionTarget } from './versions.js';
