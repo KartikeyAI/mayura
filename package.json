@@ -21,6 +21,7 @@
     "example": "node examples/first-agent.mjs",
     "model:live-check": "node examples/openai-agent.mjs",
     "release:artifacts": "node scripts/release-artifact-check.mjs",
+    "upgrade:compat": "node scripts/upgrade-compat.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
     "server:image": "node scripts/server-image.mjs",
     "restore:drill:postgres": "node scripts/postgres-restore-drill.mjs",

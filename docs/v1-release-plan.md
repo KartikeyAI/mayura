@@ -60,7 +60,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 | F3 SBOM generation and license review (`pnpm sbom`, in CI and the release workflow) | ✅ |
 | F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job (prepared; runs once hosted). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |
 | F5 Flaky timing-sensitive tests stabilized. The one recurring flake, the packed-install import budget under full-suite load, now takes the best of up to three fresh-process measurements against the unchanged 2 s budget | ✅ |
-| F6 Upgrade-compatibility test: a run started on one version resumes on the next | ⬜ |
+| F6 Upgrade-compatibility test: a run started on one version resumes on the next (`pnpm upgrade:compat`, a release-workflow step against the previous tag; verified locally from 0126fc1 to the current tree) | ✅ |
 | F7 Host the repository, enable CI, branch protection and private vulnerability reporting | 👤 |
 | F8 Verify `@mayura` npm scope ownership and run a provenance rehearsal | 👤 |
 | F9 Live model/provider qualification (OpenAI, Anthropic, local runtime) with funded credentials | 👤 |

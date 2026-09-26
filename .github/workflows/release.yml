@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          fetch-depth: 0 # previous release tags for the upgrade-compatibility check
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24.14.1
@@ -46,6 +47,8 @@ jobs:
       - run: pnpm test:consumer:optional
       - run: pnpm test:consumer:storage
       - run: pnpm test:templates
+      - run: pnpm build
+      - run: pnpm upgrade:compat
       - run: pnpm release:artifacts
       - run: node scripts/sbom.mjs
       - run: node scripts/publish-staged.mjs --tag ${{ contains(github.ref_name, '-') && 'next' || 'latest' }} --publish
