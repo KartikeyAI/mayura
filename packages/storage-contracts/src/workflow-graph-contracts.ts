@@ -34,5 +34,9 @@ type GraphControlStore = {
 /** New optional capability: never widens or silently changes custom scheduled-v1 adapters. */
 export interface WorkflowGraphStore extends GraphControlStore {
   submit(command: WorkflowGraphEnrollment & { readonly input: JsonValue; readonly idempotencyKey: string }): Promise<{ readonly snapshot: WorkflowGraphStoreSnapshot; readonly created: boolean }>;
+  /** Optional quiescent operator pause; refused while any job is leased or started. Custom adapters may omit it. */
+  pause?(command: Parameters<ScheduledWorkflowStore['cancel']>[0]): Promise<WorkflowGraphStoreSnapshot>;
+  /** Optional scheduling-only resume; unresolved waits and approvals remain unresolved. */
+  resume?(command: Parameters<ScheduledWorkflowStore['cancel']>[0]): Promise<WorkflowGraphStoreSnapshot>;
 }
 export interface WorkflowGraphAggregateStore extends ExecutionWaitAggregateStore { readonly workflowGraphs: WorkflowGraphStore }

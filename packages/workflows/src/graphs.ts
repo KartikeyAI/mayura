@@ -30,6 +30,10 @@ export interface WorkflowGraphRuntime {
   reconcile(definition: AnyWorkflowGraph, command: ReconcileExternalEffectCommand): Promise<WorkflowGraphSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowGraphSnapshot>;
   cancel(id: string): Promise<WorkflowGraphSnapshot>;
+  /** Persist a quiescent operator pause; claimed or in-flight effects must settle or be recovered first. */
+  pause(id: string): Promise<WorkflowGraphSnapshot>;
+  /** Resume scheduling only; unresolved waits and approvals remain unresolved. */
+  resume(id: string): Promise<WorkflowGraphSnapshot>;
   recoverExpired(id: string): Promise<WorkflowGraphSnapshot>;
   /** Stop this finite driver without cancelling durable waits or closing caller-owned storage. */
   close(): Promise<void>;

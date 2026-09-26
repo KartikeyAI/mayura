@@ -305,11 +305,13 @@ export class ScheduledWorkflowDatabase {
   private node(run: LockedRun,id: string): ToolNode {
     const node = run.owner.manifest.graph.find(node => node.id === id); if (!node || node.kind !== 'tool') conflict(); return node;
   }
-  private ready(run: LockedRun,node: Node): void {
-    if (terminalRuns.has(run.state.status) || node.dependsOn.some(id => run.state.steps[id]?.status !== 'succeeded')) conflict();
+  /** A paused run schedules nothing; only recording an already-requested approval is admitted. */
+  private ready(run: LockedRun,node: Node,allowPaused = false): void {
+    if (terminalRuns.has(run.state.status) || (run.state.status === 'paused' && !allowPaused)
+      || node.dependsOn.some(id => run.state.steps[id]?.status !== 'succeeded')) conflict();
   }
-  private unprepared(run: LockedRun,node: ToolNode): Step {
-    this.ready(run,node); const step = run.state.steps[node.id]!;
+  private unprepared(run: LockedRun,node: ToolNode,allowPaused = false): Step {
+    this.ready(run,node,allowPaused); const step = run.state.steps[node.id]!;
     if (run.jobs.some(job => job.nodeId === node.id) || !['pending','waiting','approved'].includes(step.status) || step.receipt || step.costReserved || step.candidateHash) conflict();
     return step;
   }
@@ -393,7 +395,7 @@ export class ScheduledWorkflowDatabase {
     if (run.events.length > 0) await this.save(tx,run);
   }
   private advance(run: LockedRun): void {
-    if (terminalRuns.has(run.state.status)) return;
+    if (terminalRuns.has(run.state.status) || run.state.status === 'paused') return;
     for (let pass = 0; pass < run.owner.manifest.graph.length; pass++) {
       let changed = false;
       for (const node of run.owner.manifest.graph) {
@@ -597,7 +599,7 @@ export class ScheduledWorkflowDatabase {
         if (expired && method !== 'failNode' && (method !== 'requestApproval' || run.jobs.some(job => job.nodeId === node.id))) {
           await this.observeReviewExpiry(tx,run,node.id); return REVIEW_EXPIRED;
         }
-        const step = this.unprepared(run,node);
+        const step = this.unprepared(run,node,method === 'approve');
         if (method === 'requestApproval') {
           if (!node.approval || !this.authorized(run,node)) conflict();
           if (step.approval && step.approval.expiresAt > run.clock.value && step.approval.digest === this.candidate(run,node,input['input']!,step.approval.expiresAt)) return this.snapshot(run);
@@ -607,7 +609,7 @@ export class ScheduledWorkflowDatabase {
           step.approval = {digest:candidate,expiresAt,humanId:null}; step.status = 'waiting'; run.state.status = 'waiting';
         } else if (method === 'approve') {
           if (!node.approval || step.status !== 'waiting' || !step.approval || step.approval.digest !== input['digest'] || step.approval.expiresAt <= run.clock.value) conflict();
-          step.approval.humanId = input['humanId'] as string; step.status = 'approved'; run.state.status = 'running';
+          step.approval.humanId = input['humanId'] as string; step.status = 'approved'; if (run.state.status !== 'paused') run.state.status = 'running';
         } else if (method === 'failNode') { step.status = input['outcome'] as 'failed'|'blocked'; }
         else {
           if (!this.authorized(run,node)) conflict();
@@ -681,15 +683,27 @@ export class ScheduledWorkflowDatabase {
           for (const item of recovered) { this.replaceJob(run,item); this.mirrorJob(run,item); }
         }
         this.advance(run);
+      } else if (method === 'pause') {
+        if (run.state.status !== 'paused') {
+          if (terminalRuns.has(run.state.status)) conflict();
+          // Quiescence: a claimed or started job must settle, be released or be recovered first.
+          if (run.jobs.some(job => job.state === 'leased' || job.state === 'started')) conflict();
+          run.state.status = 'paused';
+        }
+      } else if (method === 'resume') {
+        if (run.state.status !== 'paused') conflict();
+        run.state.status = 'running'; this.advance(run);
       } else if (method === 'advance') this.advance(run);
       else if (method === 'finalize') {
-        if (terminalRuns.has(run.state.status) || Object.values(run.state.steps).some(step => step.status !== 'succeeded') || run.state.reservedMicros !== 0) conflict();
+        if (terminalRuns.has(run.state.status) || run.state.status === 'paused' || Object.values(run.state.steps).some(step => step.status !== 'succeeded') || run.state.reservedMicros !== 0) conflict();
         if (input['validation'] === 'passed' && this.admitsOutput(run,input['output']!)) { run.state.output = input['output']!; run.state.status = 'succeeded'; }
         else { run.state.output = null; run.state.status = 'failed'; }
       } else conflict();
       // A no-op is not a committed transition, so it consumes neither a version nor a command journal entry.
       if (run.events.length === 0 && JSON.stringify(run.state) === originalState) return this.snapshot(run);
-      await this.save(tx,run,method,input,{type:method === 'cancel' ? 'run.cancelled' : method === 'finalize' ? 'run.completed' : 'workflow.advanced',data:{status:run.state.status}});
+      const transition = method === 'cancel' ? 'run.cancelled' : method === 'finalize' ? 'run.completed'
+        : method === 'pause' ? 'run.paused' : method === 'resume' ? 'run.resumed' : 'workflow.advanced';
+      await this.save(tx,run,method,input,{type:transition,data:{status:run.state.status}});
       return this.snapshot(run);
     });
     if (result === STALE) throw new StorageError('STALE_CLAIM','Scheduled ownership expired or no longer permits the transition.');
@@ -706,7 +720,7 @@ export class ScheduledWorkflowDatabase {
         const result = await this.backend.transaction(async tx => {
           // This is an explicit run request, not a global queue scan: skipping its busy aggregate
           // can make every cooperating worker return while eligible work is still ready.
-          const run = await this.load(tx,scope,id,policy,false,profile); if (!run || terminalRuns.has(run.state.status)) return undefined;
+          const run = await this.load(tx,scope,id,policy,false,profile); if (!run || terminalRuns.has(run.state.status) || run.state.status === 'paused') return undefined;
           const job = run.jobs.find(job => job.jobId === jobId); if (!job || job.state !== 'ready') return undefined;
           if (await this.blockExpiredReview(tx,run,job)) { await this.save(tx,run); return undefined; }
           const claims = await this.local(tx,run,jobId).execute('claim',{scope,workerId:input['workerId'],limit:1,leaseMs:input['leaseMs']}) as {job:JobRecord;claim:Claim}[];

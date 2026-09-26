@@ -3,10 +3,10 @@ import { workflowManifest, workflowPolicy, workflowResources, workflowGraphManif
 import { claim, evidenceSource, fields, hash, immutable, integer, invalid, object, receipt, settlement } from './scheduler-validation.js';
 import { identifier } from './validation.js';
 
-export type ScheduledMethod = keyof ScheduledWorkflowStore;
-const writes = new Set<ScheduledMethod>(['attach','requestApproval','approve','prepare','start','complete','abandon','failNode','advance','finalize','cancel','recover']);
+export type ScheduledMethod = keyof ScheduledWorkflowStore | 'pause' | 'resume';
+const writes = new Set<ScheduledMethod>(['attach','requestApproval','approve','prepare','start','complete','abandon','failNode','advance','finalize','cancel','recover','pause','resume']);
 export function scheduledCommand(method: ScheduledMethod, value: unknown, profile: 1 | 2 = 1): JsonObject {
-  if (profile === 2 && method === 'attach') invalid();
+  if ((profile === 2 && method === 'attach') || (profile === 1 && (method === 'pause' || method === 'resume'))) invalid();
   const raw = object(value);
   if (method === 'initialize') { fields(raw, []); return raw; }
   const common = method === 'submit' ? [] : ['scope','id','policyHash'];
@@ -42,7 +42,7 @@ export function scheduledCommand(method: ScheduledMethod, value: unknown, profil
       try { raw['output'] = jsonValue(raw['output'], { maxBytes: 65_536 }); } catch { invalid(); } break;
     case 'abandon': fields(raw, [...common,'claim','outcome']); claim(raw['claim']); if (!['failed','blocked'].includes(raw['outcome'] as string)) invalid(); break;
     case 'failNode': fields(raw, [...common,'nodeId','outcome']); node(); if (!['failed','blocked'].includes(raw['outcome'] as string)) invalid(); break;
-    case 'advance': case 'cancel': case 'recover': fields(raw, common); break;
+    case 'advance': case 'cancel': case 'recover': case 'pause': case 'resume': fields(raw, common); break;
     case 'finalize': fields(raw, [...common,'validation', ...(raw['validation'] === 'passed' ? ['output'] : [])]);
       if (!['passed','failed'].includes(raw['validation'] as string)) invalid();
       if (raw['validation'] === 'passed') { try { raw['output'] = jsonValue(raw['output'], { maxBytes: 65_536 }); } catch { invalid(); } } break;
@@ -65,7 +65,7 @@ export function scheduledFacade(request: (method: ScheduledMethod, input: JsonOb
 }
 
 /** Separate opt-in capability; legacy facades never admit graph manifests or an attach migration. */
-export function workflowGraphFacade(request: (method: keyof WorkflowGraphStore, input: JsonObject) => Promise<unknown>): WorkflowGraphStore {
+export function workflowGraphFacade(request: (method: keyof WorkflowGraphStore, input: JsonObject) => Promise<unknown>): Required<WorkflowGraphStore> {
   const call = async <T>(method: keyof WorkflowGraphStore, input: unknown): Promise<T> => {
     const result = await request(method, scheduledCommand(method, input, 2)); return result === undefined ? undefined as T : immutable(result) as T;
   };
@@ -75,5 +75,6 @@ export function workflowGraphFacade(request: (method: keyof WorkflowGraphStore, 
     claim: value => call('claim', value), renew: value => call('renew', value), start: value => call('start', value), recordReceipt: value => call('recordReceipt', value),
     complete: value => call('complete', value), abandon: value => call('abandon', value), failNode: value => call('failNode', value),
     advance: value => call('advance', value), finalize: value => call('finalize', value), cancel: value => call('cancel', value), recover: value => call('recover', value),
-  } satisfies WorkflowGraphStore);
+    pause: value => call('pause', value), resume: value => call('resume', value),
+  } satisfies Required<WorkflowGraphStore>);
 }

@@ -7,7 +7,7 @@ import type { WorkflowGraphFormat3State, WorkflowGraphManifest } from './workflo
 
 const forbidden = new Set(['constructor', 'prototype', '__proto__']);
 const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
-const statuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const statuses = new Set(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const stepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped']);
 const waitStatuses = new Set(['pending', 'waiting', 'succeeded', 'failed', 'skipped']);
 // Only this decoder's successfully validated, detached and recursively frozen results qualify.

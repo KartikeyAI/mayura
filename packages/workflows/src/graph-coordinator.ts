@@ -36,7 +36,7 @@ export interface WorkflowGraphCoordinator {
 const errorCodes = new Set<ErrorCode>(['INVALID_CONFIG', 'INVALID_INPUT', 'INVALID_OUTPUT', 'INVALID_JSON', 'PERMISSION_DENIED',
   'BUDGET_EXCEEDED', 'LIMIT_EXCEEDED', 'CANCELLED', 'TIMEOUT', 'TOOL_FAILED', 'MODEL_FAILED', 'GUARD_BLOCKED', 'GUARD_UNAVAILABLE',
   'OUTCOME_UNKNOWN', 'UNSUPPORTED_PROFILE', 'NOT_FOUND', 'CONFLICT', 'STORAGE_UNAVAILABLE']);
-const statuses = new Set<WorkflowGraphSnapshot['status']>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const statuses = new Set<WorkflowGraphSnapshot['status']>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const graphMethods = ['initialize', 'submit', 'inspect', 'requestApproval', 'approve', 'prepare', 'claim', 'renew', 'start',
   'recordReceipt', 'complete', 'abandon', 'failNode', 'advance', 'finalize', 'cancel', 'recover'] as const;
 const invalidConfig = (): MayuraError => new MayuraError('INVALID_CONFIG', 'Graph coordination requires a bounded genuine catalog, exact resource plans and explicit worker policy.');

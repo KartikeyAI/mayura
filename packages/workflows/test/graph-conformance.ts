@@ -152,6 +152,71 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       if (outcome === 'outcome_unknown') expect((await store.workflows.inspect(await access(source.run.id))).record.state['reservedMicros']).toBe(1);
     });
 
+    it('persists a quiescent graph pause across restart without dispatching or resolving waits', async () => {
+      const source = await target(); let effects = 0;
+      const definition = defineWorkflowGraph({ id: 'graph.pause', version: '1', input: z.unknown(), output: z.unknown(), nodes: [
+        { kind: 'tool', id: 'effect', tool: action(() => { effects++; return 'done'; }), input: literal(null) },
+        { kind: 'wait', id: 'wait', dependsOn: ['effect'], targets: refLiteral([source.reference]) },
+      ], result: step('effect') });
+      let engine = runtime(); const run = await engine.submit(definition, { input: null, idempotencyKey: 'pause-restart' });
+      const paused = await engine.pause(run.id); expect(paused.status).toBe('paused');
+      expect((await engine.pause(run.id)).version).toBe(paused.version);
+      await engine.close(); await store.close(); store = await reopen(); engine = runtime();
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({ status: 'paused', steps: { effect: { status: 'pending' } } });
+      expect(effects).toBe(0); expect((await detail(run.id)).jobs).toEqual([]);
+      expect((await engine.resume(run.id)).status).toBe('running');
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({ status: 'waiting', steps: { effect: { status: 'succeeded' }, wait: { status: 'waiting' } } });
+      expect(effects).toBe(1);
+      await engine.pause(run.id); await finish(source.reference, 'succeeded');
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({ status: 'paused', steps: { wait: { status: 'waiting' } } });
+      expect((await engine.resume(run.id)).steps['wait']!.status).toBe('succeeded');
+      expect(await engine.runUntilSettled(definition, run.id)).toMatchObject({ status: 'succeeded', output: 'done' }); expect(effects).toBe(1);
+      expect((await engine.events(run.id)).map(event => event.type)).toEqual(expect.arrayContaining(['run.paused', 'run.resumed']));
+      await expect(engine.pause(run.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(engine.resume(run.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('records graph approval while paused and restores an unresolved review to waiting', async () => {
+      let effects = 0;
+      const definition = defineWorkflowGraph({ id: 'graph.pause-approval', version: '1', input: z.unknown(), output: z.unknown(),
+        nodes: [{ kind: 'tool', id: 'effect', tool: action(() => { effects++; return null; }), input: literal(null), approval: true }], result: step('effect') });
+      const engine = runtime(); const run = await engine.submit(definition, { input: null, idempotencyKey: 'pause-approval' });
+      const waiting = await engine.runUntilSettled(definition, run.id); const review = waiting.steps['effect']!.approval!.digest;
+      await engine.pause(run.id); expect((await engine.resume(run.id)).status).toBe('waiting');
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('waiting');
+      await engine.pause(run.id);
+      expect(await engine.approve({ id: run.id, nodeId: 'effect', digest: review, credential: 'verified-graph-human' })).toMatchObject({ status: 'paused', steps: { effect: { status: 'approved' } } });
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('paused'); expect(effects).toBe(0);
+      expect((await engine.cancel(run.id)).status).toBe('cancelled'); expect(effects).toBe(0);
+      await expect(engine.resume(run.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('refuses a graph pause while an effect is claimed or started and fences scheduling while paused', async () => {
+      let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
+      let release!: () => void; const released = new Promise<void>(resolve => { release = resolve; });
+      const definition = defineWorkflowGraph({ id: 'graph.pause-in-flight', version: '1', input: z.unknown(), output: z.unknown(),
+        nodes: [{ kind: 'tool', id: 'effect', tool: action(async () => { started(); await released; return 'done'; }), input: literal(null) }], result: step('effect') });
+      const engine = runtime(); const run = await engine.submit(definition, { input: null, idempotencyKey: 'pause-in-flight' });
+      const execution = engine.runUntilSettled(definition, run.id); await bounded(entered);
+      await expect(engine.pause(run.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+      release(); expect((await execution).status).toBe('succeeded');
+
+      const claimed = await engine.submit(definition, { input: null, idempotencyKey: 'pause-claimed' }); const key = await access(claimed.id);
+      await store.workflowGraphs.prepare({ ...await graphCommand(claimed.id), nodeId: 'effect', input: null });
+      const [lease] = await store.workflowGraphs.claim({ ...key, workerId: 'pause-claimant', limit: 1, leaseMs: 60_000 });
+      expect(lease).toBeDefined(); await expect(engine.pause(claimed.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(store.workflowGraphs.pause!(await graphCommand(claimed.id))).rejects.toMatchObject({ code: 'CONFLICT' });
+
+      const fenced = await engine.submit(definition, { input: null, idempotencyKey: 'pause-fenced' }); const fencedKey = await access(fenced.id);
+      await store.workflowGraphs.prepare({ ...await graphCommand(fenced.id), nodeId: 'effect', input: null });
+      expect((await store.workflowGraphs.pause!(await graphCommand(fenced.id))).record.state['status']).toBe('paused');
+      expect(await store.workflowGraphs.claim({ ...fencedKey, workerId: 'pause-fenced', limit: 1, leaseMs: 60_000 })).toEqual([]);
+      const advanced = await store.workflowGraphs.advance(await graphCommand(fenced.id)); expect(advanced.record.state['status']).toBe('paused');
+      await expect(store.workflowGraphs.finalize({ ...await graphCommand(fenced.id), validation: 'failed' })).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect((await store.workflowGraphs.resume!(await graphCommand(fenced.id))).record.state['status']).toBe('running');
+      expect(await engine.runUntilSettled(definition, fenced.id)).toMatchObject({ status: 'succeeded', output: 'done' });
+    });
+
     it('resolves input targets after schema transformation and preserves declared target order', async () => {
       const first = await target(); const second = await target();
       const definition = defineWorkflowGraph({ id: 'graph.transformed', version: '1',

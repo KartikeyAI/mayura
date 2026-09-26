@@ -70,6 +70,8 @@ export interface ScheduledWorkflowRuntime {
   close(): Promise<void>;
 }
 const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+/** A paused run is nonterminal but schedules nothing until an explicit resume. */
+const halted = (status: string): boolean => terminal.has(status) || status === 'paused';
 const methods = ['initialize', 'submit', 'attach', 'inspect', 'requestApproval', 'approve', 'prepare', 'claim', 'renew', 'start',
   'recordReceipt', 'complete', 'abandon', 'failNode', 'advance', 'finalize', 'cancel', 'recover'] as const;
 
@@ -94,6 +96,8 @@ interface ScheduledDriverRuntime {
   reconcile(definition: DriverDefinition, command: ReconcileExternalEffectCommand): Promise<ScheduledPublicSnapshot>;
   approve(command: Parameters<ScheduledWorkflowRuntime['approve']>[0]): Promise<ScheduledPublicSnapshot>;
   cancel(id: string): Promise<ScheduledPublicSnapshot>;
+  readonly pause?: (id: string) => Promise<ScheduledPublicSnapshot>;
+  readonly resume?: (id: string) => Promise<ScheduledPublicSnapshot>;
   recoverExpired(id: string): Promise<ScheduledPublicSnapshot>;
   close(): Promise<void>;
 }
@@ -107,12 +111,19 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
   let api: DriverStoreControls;
   let read: ScheduledWorkflowAggregateStore['read'];
   let events: ScheduledWorkflowAggregateStore['events'];
+  // Optional graph-only controls: custom adapters without them keep working until pause is requested.
+  let controls: Pick<WorkflowGraphStore, 'pause' | 'resume'> = {};
   try {
     const source = profile === 'scheduled-v1' ? store?.workflows : (store as WorkflowGraphAggregateStore)?.workflowGraphs;
     const required = methods.filter(method => profile === 'scheduled-v1' || method !== 'attach');
     if (!source || required.some(method => typeof (source as ScheduledWorkflowStore)[method] !== 'function')) throw new Error();
     api = Object.freeze(Object.fromEntries(required.map(method => [method, (source as ScheduledWorkflowStore)[method].bind(source)]))) as unknown as DriverStoreControls;
     read = store.read.bind(store); events = store.events.bind(store);
+    if (profile === 'scheduled-v2') {
+      const graphs = source as WorkflowGraphStore;
+      controls = Object.freeze({ ...(typeof graphs.pause === 'function' ? { pause: graphs.pause.bind(graphs) } : {}),
+        ...(typeof graphs.resume === 'function' ? { resume: graphs.resume.bind(graphs) } : {}) });
+    }
   } catch { throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide atomic scheduled workflow storage.'); }
   let policy: ReturnType<typeof workflowPolicy>;
   try {
@@ -254,7 +265,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     digest('mayura:workflow-receipt:v2', { jobId, fence, receipt, settlement });
   const pendingNode = (current: ScheduledStoredSnapshot, nodeId: string): boolean => {
     const state = stateFrom(current.record);
-    return !terminal.has(state.status) && !current.jobs.some(job => job.nodeId === nodeId)
+    return !halted(state.status) && !current.jobs.some(job => job.nodeId === nodeId)
       && ['pending', 'waiting', 'approved'].includes(state.steps[nodeId]?.status ?? '');
   };
   const updatePendingNode = (id: string, nodeId: string, operation: (command: ScheduledWrite) => Promise<ScheduledStoredSnapshot>): Promise<ScheduledStoredSnapshot> =>
@@ -371,11 +382,11 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     for (let wave = 0; wave < definition.nodes.length * 2 + 8; wave++) {
       open();
       let current = await load(id); matches(definition, current);
-      if (terminal.has(stateFrom(current.record).status)) return snapshot(current.record);
+      if (halted(stateFrom(current.record).status)) return snapshot(current.record);
       const before = current.record.version;
       current = await write(id, command => api.recover(command));
       current = await write(id, command => api.advance(command));
-      if (terminal.has(stateFrom(current.record).status)) return snapshot(current.record);
+      if (halted(stateFrom(current.record).status)) return snapshot(current.record);
       let preparingState = stateFrom(current.record);
       for (const node of definition.nodes) {
         if (node.kind !== 'tool') continue;
@@ -387,7 +398,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
           || current.jobs.some(job => job.nodeId === node.id)) continue;
         current = await load(id);
         const state = stateFrom(current.record); preparingState = state; const step = state.steps[node.id];
-        if (terminal.has(state.status)) return snapshot(current.record);
+        if (halted(state.status)) return snapshot(current.record);
         if (!step || !['pending', 'waiting', 'approved'].includes(step.status) || current.jobs.some(job => job.nodeId === node.id)
           || (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded')) continue;
         const required = [`tool:${node.tool.id}`, ...node.tool.capabilities, ...(node.tool.effects === 'none' ? [] : [`effect:${node.tool.effects}`])];
@@ -426,7 +437,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       }
       current = await write(id, command => api.advance(command));
       const state = stateFrom(current.record);
-      if (terminal.has(state.status)) return snapshot(current.record);
+      if (halted(state.status)) return snapshot(current.record);
       if (Object.values(state.steps).every(step => step.status === 'succeeded')) {
         let final: { validation: 'passed'; output: JsonValue } | { validation: 'failed' };
         try {
@@ -573,6 +584,33 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       for (const job of result.jobs) active.get(job.jobId)?.abort();
       return snapshot(result.record);
     },
+    ...(profile === 'scheduled-v2' ? {
+      async pause(id: string) {
+        open(); const pause = controls.pause;
+        if (typeof pause !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable graph pause.');
+        // Inadmissible states return the observed snapshot unchanged; throwing inside a storage write would hide the conflict.
+        const result = await write(id, (command, current) => {
+          const status = stateFrom(current.record).status;
+          const quiescent = !current.jobs.some(job => job.state === 'leased' || job.state === 'started');
+          return status !== 'paused' && !terminal.has(status) && quiescent ? pause(command) : Promise.resolve(current);
+        });
+        const status = stateFrom(result.record).status;
+        if (terminal.has(status)) throw new MayuraError('CONFLICT', 'A terminal workflow graph cannot be paused.');
+        if (status !== 'paused') throw new MayuraError('CONFLICT', 'A workflow graph with a claimed or in-flight effect cannot enter the quiescent paused state.');
+        return snapshot(result.record);
+      },
+      async resume(id: string) {
+        open(); const resume = controls.resume;
+        if (typeof resume !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable graph pause.');
+        let applied = false;
+        const result = await write(id, (command, current) => {
+          applied = stateFrom(current.record).status === 'paused';
+          return applied ? resume(command) : Promise.resolve(current);
+        });
+        if (!applied) throw new MayuraError('CONFLICT', 'Only a paused workflow graph can be resumed.');
+        return snapshot(result.record);
+      },
+    } : {}),
     async recoverExpired(id) { open(); return snapshot((await write(id, command => api.recover(command))).record); },
     close() {
       if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
