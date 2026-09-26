@@ -57,4 +57,14 @@ describe('durable composite parent fleet on SQLite', () => {
     expect(await host.runtime.sagas.inspect(submitted.id)).toMatchObject({ status: 'succeeded' }); await host.close();
     expect(host.status().running).toBe(false); expect(await store.read('missing', 'missing')).toBeUndefined();
   });
+
+  it('drives no composite parent while the durable fleet hold is set', async () => {
+    fixture = await sqliteFixture(); store = fixture.store; await store.initialize(); let held = true;
+    const host = createWorkflowCompositeHost({ store, ...options, sagaDefinitions: [saga], loopDefinitions: [loop], hold: { isHeld: async () => held } });
+    const submitted = await host.runtime.submitSaga(saga, { input: { value: 1 }, idempotencyKey: 'held' });
+    expect(await host.runOnce()).toEqual({ pages: 0, examined: 0, shardReads: 0, outcomes: [], completedSweep: false, held: true });
+    expect((await host.runtime.sagas.inspect(submitted.id)).status).not.toBe('succeeded');
+    held = false; expect((await host.runOnce()).held).toBe(false); await host.close();
+    expect(() => createWorkflowCompositeHost({ store: store!, ...options, sagaDefinitions: [saga], hold: {} as never })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
 });

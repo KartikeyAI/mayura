@@ -55,6 +55,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Authenticated workflow index](specs/workflow-index-transport.md) and [listing guide](how-to/workflow-index.md) — bounded content-free authorized summaries with explicit opaque pagination.
 - [Authenticated workflow signals](specs/workflow-signal-transport.md) and [delivery guide](how-to/workflow-signals.md) — revision-bound bounded signal delivery through a separate least-authority adapter.
 - [Authenticated workflow continuation](specs/workflow-resume-transport.md) and [resume guide](how-to/workflow-resume.md) — revision-bound continuation that cannot force an unresolved gate.
+- [Fleet-wide pause](specs/fleet-pause.md) — durable per-scope hold honored by hosts and coordinators, plus a ledger-backed sweep that pauses discoverable runs and resumes only the ones it paused.
 - [Bounded worker draining](specs/worker-draining.md) — graceful `drain` for every workflow runtime, coordinator and host: no new wave or claim, admitted effects settle within a deadline, interrupted work is reported.
 - [Durable operator pause](specs/workflow-operator-pause.md) and [pause guide](how-to/workflow-pause.md) — quiescent pause/resume for durable formats 2–5 with restart persistence, claim fencing, tree-wide root fencing, fleet deferral, an authenticated revision-bound pause command and no wait bypass.
 - [React reference components](specs/react-components.md) and [component guide](how-to/react-components.md) — optional unstyled semantic run, workflow and human-request views.

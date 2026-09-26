@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode } from '@mayura/core';
+import type { WorkflowFleetHoldReader } from './fleet-control.js';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { createWorkflowCompositeFleetRuntime, type WorkflowCompositeCursor, type WorkflowCompositeFleetOptions,
   type WorkflowCompositeFleetRuntime, type WorkflowCompositeOutcome } from './composite-fleet.js';
@@ -9,9 +10,11 @@ export interface WorkflowCompositeHostOptions extends WorkflowCompositeFleetOpti
   readonly sagaDefinitions?: readonly AnyWorkflowSaga[]; readonly loopDefinitions?: readonly AnyWorkflowLoop[];
   readonly intervalMs?: number; readonly maxBackoffMs?: number; readonly maxPagesPerCycle?: number;
   readonly pageLimit?: number; readonly maxShardReads?: number;
+  /** Durable fleet hold consulted before every cycle; while held the host drives no run. */
+  readonly hold?: WorkflowFleetHoldReader;
 }
 export interface WorkflowCompositeHostCycle { readonly pages: number; readonly examined: number; readonly shardReads: number;
-  readonly outcomes: readonly WorkflowCompositeOutcome[]; readonly completedSweep: boolean }
+  readonly outcomes: readonly WorkflowCompositeOutcome[]; readonly completedSweep: boolean; readonly held: boolean }
 export interface WorkflowCompositeHostStatus { readonly running: boolean; readonly cycles: number;
   readonly consecutiveFailures: number; readonly lastError: ErrorCode | null; readonly lastCycle: WorkflowCompositeHostCycle | null }
 export interface WorkflowCompositeHost { readonly runtime: WorkflowCompositeFleetRuntime; start(): void;
@@ -36,15 +39,17 @@ export function createWorkflowCompositeHost(options: WorkflowCompositeHostOption
     ['maxPagesPerCycle', pageMaximum, 256], ['pageLimit', limit, 128], ['maxShardReads', reads, 256]] as const) {
     if (!Number.isSafeInteger(value) || value < 1 || value > maximum) throw new MayuraError('INVALID_CONFIG', `${name} is outside its finite host bound.`); }
   if (backoffMaximum < interval) throw new MayuraError('INVALID_CONFIG', 'maxBackoffMs must be at least intervalMs.');
+  const hold = options.hold; if (hold !== undefined && typeof hold?.isHeld !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fleet hold reader requires isHeld().');
   const runtime = createWorkflowCompositeFleetRuntime(options); let cursor: WorkflowCompositeCursor | null = null; let closed = false;
   let cycles = 0; let failures = 0; let lastError: ErrorCode | null = null; let lastCycle: WorkflowCompositeHostCycle | null = null;
   let controller: AbortController | undefined; let loop: Promise<void> | undefined; let active: Promise<WorkflowCompositeHostCycle> | undefined;
   const runOnce = (): Promise<WorkflowCompositeHostCycle> => { if (closed) return Promise.reject(new MayuraError('CANCELLED', 'Composite host is closed.')); if (active) return active;
     const operation = (async () => { let pages = 0; let examined = 0; let shardReads = 0; const outcomes: WorkflowCompositeOutcome[] = [];
-      do { const report = await runtime.runPage({ sagas, loops }, { cursor, limit, maxShardReads: reads }); pages += 1;
+      const held = hold ? await hold.isHeld() === true : false;
+      if (!held) do { const report = await runtime.runPage({ sagas, loops }, { cursor, limit, maxShardReads: reads }); pages += 1;
         examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes); cursor = report.page.nextCursor; }
-      while (cursor && pages < pageMaximum); const completedSweep = cursor === null;
-      const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep })) as unknown as WorkflowCompositeHostCycle;
+      while (cursor && pages < pageMaximum); const completedSweep = !held && cursor === null;
+      const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep, held })) as unknown as WorkflowCompositeHostCycle;
       cycles += 1; failures = 0; lastError = null; lastCycle = result; return result; })();
     active = operation; void operation.finally(() => { if (active === operation) active = undefined; }).catch(() => {}); return operation; };
   const start = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Composite host is closed.'); if (loop) return;

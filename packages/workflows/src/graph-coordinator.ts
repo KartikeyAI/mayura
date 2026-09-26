@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode, type JsonObject } from '@mayura/core';
+import type { WorkflowFleetHoldReader } from './fleet-control.js';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, workflowGraphDiscoveryCommand, workflowGraphResources, workflowPolicy,
   type ExecutionRef, type WorkflowGraphDiscoveryAggregateStore, type WorkflowGraphDiscoveryCursor,
@@ -18,6 +19,8 @@ export interface WorkflowGraphCoordinatorOptions extends Omit<WorkflowGraphRunti
   'store' | 'resources' | 'verifyHuman' | 'maxConcurrentRuns'> {
   readonly store: WorkflowGraphDiscoveryAggregateStore;
   readonly definitions: readonly WorkflowGraphCatalogEntry[];
+  /** Durable fleet hold consulted before each page; while held nothing is discovered or driven. */
+  readonly hold?: WorkflowFleetHoldReader;
 }
 export type WorkflowGraphCandidateOutcome =
   | { readonly kind: 'observed'; readonly reference: ExecutionRef; readonly version: number; readonly status: WorkflowGraphSnapshot['status'] }
@@ -128,7 +131,7 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
   let workerId: string; let leaseMs: number; let maxConcurrentJobs: number; let storageTimeoutMs: number; let maxPendingStorageOperations: number;
   try {
     descriptors = fields(options, ['store', 'definitions', 'scope', 'permissions', 'policyVersion', 'maxCostMicros', 'maxOutputBytes',
-      'approvalTtlMs', 'workerId', 'leaseMs', 'maxConcurrentJobs', 'storageTimeoutMs', 'maxPendingStorageOperations'],
+      'approvalTtlMs', 'workerId', 'leaseMs', 'maxConcurrentJobs', 'storageTimeoutMs', 'maxPendingStorageOperations', 'hold'],
     ['store', 'definitions', 'scope', 'permissions', 'policyVersion', 'maxCostMicros', 'workerId']);
     definitions = catalog(descriptors['definitions']!.value);
     const raw = jsonValue({ scope: descriptors['scope']!.value, permissions: descriptors['permissions']!.value,
@@ -148,6 +151,8 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
   const shared = { store, scope: policy.scope, permissions: { allow: policy.permissions }, policyVersion: policy.policyVersion,
     maxCostMicros: policy.maxCostMicros, maxOutputBytes: policy.maxOutputBytes, approvalTtlMs: policy.approvalTtlMs,
     storageTimeoutMs, maxPendingStorageOperations };
+  const hold = descriptors['hold']?.value as WorkflowFleetHoldReader | undefined;
+  if (hold !== undefined && (hold === null || typeof hold !== 'object' || typeof hold.isHeld !== 'function')) throw invalidConfig();
   const discovery = createWorkflowGraphDiscovery(shared);
   const driver = createScheduledDriver({ ...shared, workerId, leaseMs, maxConcurrentJobs, maxConcurrentRuns: 1 }, 'scheduled-v2', definitions);
   const registered = new Map(definitions.map(entry => [entry.definition.digest, entry.definition]));
@@ -170,6 +175,13 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
             limit: values['limit'] ? values['limit'].value : 16 }) as unknown as WorkflowGraphDiscoveryScan;
         } catch { throw closed ? cancelled() : invalidInput(); }
         if (closed) throw cancelled();
+        if (hold) {
+          // Fail closed: an unconfirmed hold state drives nothing.
+          let held: boolean;
+          try { held = await hold.isHeld() === true; } catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'Graph coordination could not confirm the fleet hold.'); }
+          // A held page is interrupted before discovery: nothing ran, and the same cursor is retried after release.
+          if (held) return frozenReport({ status: 'interrupted', examined: 0, retryCursor: admitted.cursor, code: 'CANCELLED', outcomes: [] });
+        }
         let page: WorkflowGraphDiscoveryPage;
         try { page = await discovery.scan({ cursor: admitted.cursor, limit: admitted.limit }); }
         catch (error) { throw closed ? cancelled() : new MayuraError(safeCode(error), 'Graph coordination could not discover a valid page.'); }

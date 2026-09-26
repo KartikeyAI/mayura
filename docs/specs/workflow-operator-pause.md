@@ -42,4 +42,4 @@ Lifting a pause uses the existing continuation command: a continuation adapter t
 
 ## Remaining work
 
-The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. All four durable formats now have a storage-level pause and an authenticated pause command. Still missing are fleet-wide pause, worker draining or public-ingress qualification; live UI qualification of the pause controls; those must be completed before the general operator-pause roadmap item can close.
+The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. All four durable formats now have a storage-level pause and an authenticated pause command; [fleet-wide pause](fleet-pause.md) and [worker draining](worker-draining.md) build on it. Still missing are an authenticated fleet-control transport, worker draining or public-ingress qualification; live UI qualification of the pause controls; those must be completed before the general operator-pause roadmap item can close.

@@ -72,6 +72,17 @@ describe('finite registered graph coordinator', () => {
     await client.close(); expect(source.close).not.toHaveBeenCalled();
   });
 
+  it('returns a held page without discovery while the durable fleet hold is set, and fails closed', async () => {
+    const source = fixture(); let held = true; const hold = { isHeld: vi.fn(async () => held) };
+    const client = source.create({ hold });
+    expect(await client.runPage({ cursor: cursor() })).toEqual({ status: 'interrupted', examined: 0, retryCursor: cursor(), code: 'CANCELLED', outcomes: [] });
+    expect(source.scan).not.toHaveBeenCalled(); expect(source.inspect).not.toHaveBeenCalled();
+    held = false; expect((await client.runPage()).status).toBe('completed'); expect(source.scan).toHaveBeenCalledOnce();
+    const broken = source.create({ hold: { isHeld: async () => { throw new Error('PRIVATE hold failure'); } } });
+    await expect(broken.runPage()).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' }); expect(source.scan).toHaveBeenCalledOnce();
+    expect(() => source.create({ hold: {} as never })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
+
   it('skips unknown definitions without attempting them or silently changing cursor progress', async () => {
     const source = fixture(); const client = source.create({ definitions: [source.definitions[0]!] });
     source.scan.mockResolvedValueOnce({ ...source.page, nextCursor: cursor('6'.repeat(64)) });

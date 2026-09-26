@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode } from '@mayura/core';
+import type { WorkflowFleetHoldReader } from './fleet-control.js';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { assertWorkflowLifecycle, type AnyWorkflowLifecycle } from './lifecycle-definition.js';
 import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecycleFleetCursor,
@@ -12,10 +13,14 @@ export interface WorkflowLifecycleHostOptions extends WorkflowLifecycleFleetRunt
   readonly pageLimit?: number;
   readonly maxShardReads?: number;
   readonly maxBackoffMs?: number;
+  /** Durable fleet hold consulted before every cycle; while held the host drives no run. */
+  readonly hold?: WorkflowFleetHoldReader;
 }
 export interface WorkflowLifecycleHostCycle {
   readonly pages: number; readonly examined: number; readonly shardReads: number;
   readonly outcomes: readonly WorkflowLifecycleFleetOutcome[]; readonly completedSweep: boolean;
+  /** True when the durable fleet hold was set, so the cycle drove nothing. */
+  readonly held: boolean;
 }
 export interface WorkflowLifecycleHostStatus {
   readonly running: boolean; readonly cycles: number; readonly consecutiveFailures: number;
@@ -58,6 +63,7 @@ export function createWorkflowLifecycleHost(options: WorkflowLifecycleHostOption
     if (!Number.isSafeInteger(value) || value < 1 || value > maximum) throw new MayuraError('INVALID_CONFIG', `${name} is outside its finite host bound.`);
   }
   if (maxBackoffMs < intervalMs) throw new MayuraError('INVALID_CONFIG', 'maxBackoffMs must be at least intervalMs.');
+  const hold = options.hold; if (hold !== undefined && typeof hold?.isHeld !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fleet hold reader requires isHeld().');
   const runtime = createWorkflowLifecycleFleetRuntime(options); let cursor: WorkflowLifecycleFleetCursor | null = null;
   let cycles = 0; let consecutiveFailures = 0; let lastError: ErrorCode | null = null;
   let lastCycle: WorkflowLifecycleHostCycle | null = null; let controller: AbortController | undefined;
@@ -67,13 +73,15 @@ export function createWorkflowLifecycleHost(options: WorkflowLifecycleHostOption
     if (inFlight) return inFlight;
     const operation = (async () => {
       let pages = 0; let examined = 0; let shardReads = 0; const outcomes: WorkflowLifecycleFleetOutcome[] = [];
-      do {
+      // Fail closed: a hold that cannot be confirmed fails the cycle instead of driving runs.
+      const held = hold ? await hold.isHeld() === true : false;
+      if (!held) do {
         const report = await runtime.runPage(definitions, { cursor, limit: pageLimit, maxShardReads });
         pages += 1; examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes);
         cursor = report.page.nextCursor;
       } while (cursor && pages < maxPages);
-      const completedSweep = cursor === null; if (completedSweep) cursor = null;
-      const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep })) as unknown as WorkflowLifecycleHostCycle;
+      const completedSweep = !held && cursor === null; if (completedSweep) cursor = null;
+      const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep, held })) as unknown as WorkflowLifecycleHostCycle;
       cycles += 1; consecutiveFailures = 0; lastError = null; lastCycle = result; return result;
     })();
     inFlight = operation; void operation.finally(() => { if (inFlight === operation) inFlight = undefined; }).catch(() => {}); return operation;

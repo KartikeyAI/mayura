@@ -6,3 +6,6 @@ export { createScheduledWorkflowRuntime, type ScheduledWorkflowRuntime, type Sch
 export { composeExternalEffectVerifiers, defineExternalEffectVerifier, type ExternalEffectProviderAttestation,
   type ExternalEffectVerificationRouter, type ExternalEffectVerifier, type ExternalEffectVerifierOptions } from './reconciliation.js';
 export { agentAsDurableWorkflow, type DurableAgentWorkflowOptions } from './agents.js';
+export { createWorkflowFleetControl, graphFleetTarget, lifecycleFleetTarget, treeFleetTarget, type WorkflowFleetControl,
+  type WorkflowFleetControlOptions, type WorkflowFleetHoldReader, type WorkflowFleetHoldState, type WorkflowFleetSweepCursor,
+  type WorkflowFleetSweepOutcome, type WorkflowFleetSweepReport, type WorkflowFleetTarget } from './fleet-control.js';
