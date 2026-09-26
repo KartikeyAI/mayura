@@ -83,6 +83,10 @@ export interface WorkflowFleetTransport {
   readonly sweep: (input: WorkflowFleetBase & { readonly phase: 'pause' | 'resume'; readonly cursor: JsonObject | null; readonly limit: number })
     => Promise<{ readonly status: 'applied'; readonly sweep: WorkflowFleetSweepRecord } | { readonly status: 'conflict' }>;
 }
+export interface SubmissionJournal {
+  readonly claim: (input: { readonly owner: string; readonly key: string; readonly digest: string; readonly signal: AbortSignal })
+    => Promise<{ readonly status: 'claimed' } | { readonly status: 'existing'; readonly digest: string }>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -104,6 +108,11 @@ export interface AgentServerOptions {
   readonly workflowResumes?: WorkflowResumeTransport;
   readonly workflowPauses?: WorkflowPauseTransport;
   readonly workflowFleet?: WorkflowFleetTransport;
+  /**
+   * Durable claim of every run submission key. Without it, idempotency lasts only as long as the process: a retry
+   * after a restart could start a duplicate run. With it, such a retry is refused with SUBMISSION_OUTCOME_UNKNOWN.
+   */
+  readonly submissionJournal?: SubmissionJournal;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -356,6 +365,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   }))).sort((left, right) => left.agentId.localeCompare(right.agentId) || left.id.localeCompare(right.id) || left.version.localeCompare(right.version)));
   const runtimes = new Map<string, Runtime>();
   const runs = new Map<string, Entry>();
+  // Same-process concurrent submissions share one journal claim and one run.
+  const pendingSubmissions = new Map<string, Promise<Entry | 'duplicate'>>();
+  const submissionJournal = (() => {
+    if (options.submissionJournal === undefined) return undefined;
+    if (options.submissionJournal === null || typeof options.submissionJournal !== 'object' || typeof options.submissionJournal.claim !== 'function')
+      throw new Error('Submission journal requires a claim function.');
+    return Object.freeze({ claim: options.submissionJournal.claim.bind(options.submissionJournal) });
+  })();
   const submissions = new Map<string, Entry>();
   const streams = new Set<() => void>();
   let closed = false;
@@ -715,24 +732,46 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       assertActive(signal); requireCapability(identity, 'runs:submit');
       if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
       const submissionKey = JSON.stringify([owner, key]);
-      const previous = submissions.get(submissionKey);
+      const previous = submissions.get(submissionKey) ?? await pendingSubmissions.get(submissionKey);
+      if (previous === 'duplicate') throw new HttpFailure(409, 'SUBMISSION_OUTCOME_UNKNOWN');
       if (previous) {
         if (previous.digest !== digest) throw new HttpFailure(409, 'IDEMPOTENCY_CONFLICT');
         return response({ id: previous.handle.id, profile: 'ephemeral' }, 200);
       }
       if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
       const runtimeKey = JSON.stringify([owner, agentId]);
-      let runtime = runtimes.get(runtimeKey);
-      if (!runtime) {
-        if (runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
-        runtime = createRuntime({ profile: 'ephemeral', scope: identity.scope, permissions: config.permissions, ...(config.limits ? { limits: config.limits } : {}) });
-        runtimes.set(runtimeKey, runtime);
-      }
-      const handle = runtime.submit(config.agent, { input: data['input'] });
-      const entry: Entry = { owner, agentId, digest, handle, runtime };
-      runs.set(handle.id, entry); submissions.set(submissionKey, entry);
-      void handle.result().then(outcome => { entry.outcome = outcome; });
-      return response({ id: handle.id, profile: 'ephemeral' }, 202);
+      if (!runtimes.has(runtimeKey) && runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
+      const start = async (): Promise<Entry | 'duplicate'> => {
+        if (submissionJournal) {
+          let claim: unknown;
+          try { claim = await bounded(Promise.resolve().then(() => submissionJournal.claim(Object.freeze({ owner, key, digest, signal }))), signal); }
+          catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'SUBMISSION_JOURNAL_UNAVAILABLE'); }
+          const result = claim as { status?: unknown; digest?: unknown } | null;
+          if (result?.status === 'existing' && typeof result.digest === 'string') {
+            // A claim made by an earlier process: its ephemeral run is gone, so neither replay nor a new run is truthful.
+            if (result.digest !== digest) throw new HttpFailure(409, 'IDEMPOTENCY_CONFLICT');
+            return 'duplicate';
+          }
+          if (result?.status !== 'claimed') throw new HttpFailure(503, 'SUBMISSION_JOURNAL_UNAVAILABLE');
+          assertActive(signal); if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
+        }
+        let runtime = runtimes.get(runtimeKey);
+        if (!runtime) {
+          if (runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
+          runtime = createRuntime({ profile: 'ephemeral', scope: identity.scope, permissions: config.permissions, ...(config.limits ? { limits: config.limits } : {}) });
+          runtimes.set(runtimeKey, runtime);
+        }
+        const handle = runtime.submit(config.agent, { input: data['input'] });
+        const entry: Entry = { owner, agentId, digest, handle, runtime };
+        runs.set(handle.id, entry); submissions.set(submissionKey, entry);
+        void handle.result().then(outcome => { entry.outcome = outcome; });
+        return entry;
+      };
+      const pending = start(); pendingSubmissions.set(submissionKey, pending);
+      let started: Entry | 'duplicate';
+      try { started = await pending; } finally { pendingSubmissions.delete(submissionKey); }
+      if (started === 'duplicate') throw new HttpFailure(409, 'SUBMISSION_OUTCOME_UNKNOWN');
+      return response({ id: started.handle.id, profile: 'ephemeral' }, 202);
     }
     const match = /^\/v1\/runs\/([a-f0-9-]{36})(?:\/(cancel|events))?$/.exec(url.pathname);
     if (!match) throw new HttpFailure(404, 'NOT_FOUND');

@@ -325,6 +325,34 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
+  it('refuses a retried submission after a restart instead of starting a duplicate run', async () => {
+    const claims = new Map<string, string>();
+    const claim = vi.fn(async (input: { owner: string; key: string; digest: string }) => {
+      const id = JSON.stringify([input.owner, input.key]); const existing = claims.get(id);
+      if (existing !== undefined) return { status: 'existing' as const, digest: existing }; claims.set(id, input.digest); return { status: 'claimed' as const };
+    });
+    const generate = vi.fn(async (): Promise<ModelResponse> => ({ type: 'final', output: 1, usage: { costMicros: 0 } }));
+    const first = server({ agents: [{ agent: fixture(generate), permissions: { allow: ['model:fixture'] } }], submissionJournal: { claim } });
+    const replies = await Promise.all([first.fetch(submission('same')), first.fetch(submission('same'))]);
+    expect(replies.map(reply => reply.status).sort()).toEqual([200, 202]); expect(claim).toHaveBeenCalledOnce();
+    await terminal(first, (await json(replies[0]!))['id'] as string); await first.close();
+    // A new process with the same durable journal: the earlier run's outcome is unknowable here, so nothing starts.
+    const second = server({ agents: [{ agent: fixture(generate), permissions: { allow: ['model:fixture'] } }], submissionJournal: { claim } });
+    await error(await second.fetch(submission('same')), 409, 'SUBMISSION_OUTCOME_UNKNOWN');
+    await error(await second.fetch(submission('different')), 409, 'IDEMPOTENCY_CONFLICT');
+    expect(generate).toHaveBeenCalledOnce(); expect((await second.fetch(submission('fresh', 'request.2'))).status).toBe(202);
+  });
+
+  it('starts no run when the submission journal cannot confirm a claim', async () => {
+    const generate = vi.fn(async (): Promise<ModelResponse> => ({ type: 'final', output: 1, usage: { costMicros: 0 } }));
+    for (const claim of [async () => { throw new Error('PRIVATE storage outage'); }, async () => ({ status: 'maybe' }) as never]) {
+      const value = server({ agents: [{ agent: fixture(generate), permissions: { allow: ['model:fixture'] } }], submissionJournal: { claim } });
+      const reply = await value.fetch(submission('journal-down')); await error(reply, 503, 'SUBMISSION_JOURNAL_UNAVAILABLE');
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(() => server({ submissionJournal: {} as never })).toThrow();
+  });
+
   it('scopes idempotency to both verified principal and project', async () => {
     let supplied = identity(); const value = server({ authenticate: async () => supplied });
     const first = await admitted(value, 1);
