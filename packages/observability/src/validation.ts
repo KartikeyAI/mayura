@@ -34,6 +34,9 @@ function managedModel(metadata: JsonObject, completed: boolean): boolean {
   return true;
 }
 
+/** Every agent-run lifecycle stage (control and observer); context, memory and retry hooks emit no run events. */
+const HOOK_STAGES = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease',
+  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
 /** Hooks add correlation-only events, not model/tool counters or arbitrary callback output. */
 function hook(metadata: JsonObject, completed: boolean): void {
   keys(metadata, ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt', ...(completed ? ['status'] : [])]);
@@ -41,7 +44,7 @@ function hook(metadata: JsonObject, completed: boolean): void {
     if (typeof metadata[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(metadata[key] as string)) throw new Error();
   }
   const stage = metadata['stage']; const invocation = metadata['invocationId'];
-  if (typeof stage !== 'string' || !['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease'].includes(stage)
+  if (typeof stage !== 'string' || !HOOK_STAGES.includes(stage)
     || typeof invocation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(invocation)
     || metadata['attempt'] !== 1 || (stage === 'beforeExecution' && metadata['step'] !== 0)) throw new Error();
   integer(metadata['step']);
@@ -87,6 +90,17 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
         }
         break;
       }
+      case 'step.started':
+        keys(metadata, ['step']); integer(metadata['step']); break;
+      case 'step.completed':
+        keys(metadata, ['step', 'result']); integer(metadata['step']);
+        if (!['tool_calls', 'final', 'stopped'].includes(metadata['result'] as string)) throw new Error(); break;
+      case 'delegate.started':
+        keys(metadata, ['childRunId', 'childAgentId']);
+        if (stableId(metadata['childRunId']) === runId) throw new Error(); stableId(metadata['childAgentId']); break;
+      case 'delegate.completed':
+        keys(metadata, ['childRunId', 'status']);
+        if (stableId(metadata['childRunId']) === runId) throw new Error(); status(metadata['status']); break;
       case 'hook.started': hook(metadata, false); break;
       case 'hook.completed': hook(metadata, true); break;
       case 'run.completed':

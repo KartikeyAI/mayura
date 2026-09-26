@@ -31,7 +31,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| C1 Implement the full §8.2 hook catalog: observer hooks for every lifecycle point plus fail-closed context-build, memory-write and retry hooks ([reconciliation](specs/hook-catalog-reconciliation.md)) | 🔨 |
+| C1 Implement the full §8.2 hook catalog: observer hooks for every lifecycle point plus fail-closed context-build, memory-write and retry hooks ([spec](specs/lifecycle-hook-catalog.md)) | ✅ |
 
 ## D. Memory and context
 

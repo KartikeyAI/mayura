@@ -56,7 +56,7 @@ function anyValue(value: string | number | boolean): JsonObject {
 function attribute(key: string, value: string | number | boolean): JsonObject { return { key, value: anyValue(value) }; }
 function severity(event: RunEvent): readonly [number, string] {
   if (event.type === 'events.gap') return [13, 'WARN'];
-  if (event.type !== 'run.completed' && event.type !== 'tool.completed' && event.type !== 'hook.completed') return [9, 'INFO'];
+  if (event.type !== 'run.completed' && event.type !== 'tool.completed' && event.type !== 'hook.completed' && event.type !== 'delegate.completed') return [9, 'INFO'];
   const status = event.metadata['status'];
   if (status === 'failed' || status === 'outcome_unknown') return [17, 'ERROR'];
   if (status === 'blocked' || status === 'cancelled') return [13, 'WARN'];

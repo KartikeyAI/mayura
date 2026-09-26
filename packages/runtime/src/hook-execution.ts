@@ -150,3 +150,39 @@ export async function evaluateHook(options: HookEvaluation): Promise<Failure | u
     deadline.close();
   }
 }
+
+export type ObserverCompletion = 'continued' | 'failed' | 'cancelled';
+interface ObserverEvaluation {
+  readonly descriptor: Readonly<HookDescriptor>;
+  readonly event: HookEvent;
+  readonly context: Omit<HookContext, 'signal'>;
+  readonly signal: AbortSignal;
+  readonly operations: OperationPermits;
+  /** Recheck/increment all ancestor hook counters synchronously after acquiring the actual permit. */
+  readonly onStarted: () => void;
+  readonly onCompleted: (status: ObserverCompletion) => void;
+}
+
+/** Observers take no actions; any thrown error, timeout or non-undefined result is a failure. Never throws. */
+export async function evaluateObserver(options: ObserverEvaluation): Promise<ObserverCompletion> {
+  const deadline = new HookDeadline(options.signal, options.descriptor.timeoutMs);
+  const signal = deadline.controller.signal;
+  let started = false;
+  let status: ObserverCompletion = 'failed';
+  try {
+    deadline.check();
+    const context: HookContext = Object.freeze({ ...options.context, signal });
+    const raw = await deadline.wait(() => options.operations.run(signal, async () => {
+      deadline.check(); options.onStarted(); started = true;
+      try { return await options.descriptor.handler(options.event, context); }
+      catch { throw new MayuraError('GUARD_UNAVAILABLE', errors.GUARD_UNAVAILABLE); }
+    }));
+    status = raw === undefined ? 'continued' : 'failed';
+  } catch (error) {
+    status = safeFailure(error).code === 'CANCELLED' ? 'cancelled' : 'failed';
+  } finally {
+    if (started) options.onCompleted(status);
+    deadline.close();
+  }
+  return status;
+}

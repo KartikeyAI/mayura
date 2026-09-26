@@ -58,7 +58,7 @@ describe('observer hook metadata export boundary', () => {
   it.each([
     { hookId: '' }, { hookId: 'x'.repeat(129) }, { hookId: 'policy:unexpected' },
     { hookVersion: 'private version text' }, { hookVersion: 'x'.repeat(129) },
-    { stage: 'afterExecution' }, { invocationId: 'not-a-uuid' }, { invocationId: invocationId.toUpperCase() },
+    { stage: 'afterEverything' }, { invocationId: 'not-a-uuid' }, { invocationId: invocationId.toUpperCase() },
     { invocationId: 'bbbbbbbb-bbbb-5bbb-8bbb-bbbbbbbbbbbb' }, { invocationId: 'bbbbbbbb-bbbb-4bbb-1bbb-bbbbbbbbbbbb' },
     { step: -1 }, { step: 0.5 }, { step: Number.MAX_SAFE_INTEGER + 1 }, { step: null }, { step: 1 },
     { attempt: 0 }, { attempt: 2 }, { attempt: true }, { attempt: '1' },
@@ -98,5 +98,33 @@ describe('observer hook metadata export boundary', () => {
       await vi.waitFor(() => expect(observer.inspect().metrics.sinkDelivered).toBe(1));
       expect(JSON.stringify(sink.mock.calls)).not.toContain('SECRET_HOOK_CONTENT');
     } finally { await observer.close(); }
+  });
+});
+
+describe('lifecycle catalog events', () => {
+  const child = 'child-run';
+  it('accepts step, delegate and every agent hook stage', async () => {
+    const observer = createObserver();
+    try {
+      const catalog = ['beforeStep', 'beforeDelegate', 'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation',
+        'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
+      const events = [event(1, 'run.started', { profile: 'ephemeral' }), event(2, 'step.started', { step: 0 }),
+        event(3, 'delegate.started', { childRunId: child, childAgentId: 'helper' }), event(4, 'delegate.completed', { childRunId: child, status: 'succeeded' }),
+        ...catalog.map((stage, index) => event(5 + index, 'hook.completed', { ...base, stage, status: 'continued' })),
+        event(5 + catalog.length, 'step.completed', { step: 0, result: 'final' })];
+      const summary = await observer.observe(handle(events)).done();
+      expect(summary).not.toMatchObject({ reason: 'invalid_event' });
+      expect(observer.inspect('run')?.recent).toHaveLength(events.length);
+    } finally { await observer.close(); }
+  });
+
+  it.each([
+    ['step.started', { step: -1 }], ['step.started', { step: 0, extra: 1 }], ['step.completed', { step: 0, result: 'maybe' }],
+    ['delegate.started', { childRunId: 'run', childAgentId: 'self' }], ['delegate.started', { childRunId: child }],
+    ['delegate.completed', { childRunId: child, status: 'running' }], ['delegate.completed', { childRunId: child, status: 'failed', output: 'SECRET' }],
+  ] as const)('rejects malformed %s metadata', async (type, metadata) => {
+    const observer = createObserver();
+    try { expect(await observer.observe(handle([event(1, type, metadata)])).done()).toMatchObject({ reason: 'invalid_event' }); }
+    finally { await observer.close(); }
   });
 });

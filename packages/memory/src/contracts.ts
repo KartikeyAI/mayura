@@ -1,4 +1,4 @@
-import type { JsonObject, Permissions, Scope } from '@mayura/core';
+import type { JsonObject, LifecycleControl, LifecycleObserver, Permissions, Scope } from '@mayura/core';
 import type { AggregateStore } from '@mayura/storage-contracts';
 
 export type MemorySensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
@@ -55,6 +55,40 @@ export interface MemoryStoreOptions {
   readonly scope: Scope;
   readonly permissions: Permissions;
   readonly allowedSensitivities?: readonly MemorySensitivity[];
+  /** Fail-closed lifecycle hooks around every write. */
+  readonly hooks?: MemoryHooks;
+}
+export type MemoryWriteOperation = 'add' | 'correct' | 'forget' | 'publish' | 'remove';
+/** Validated write intent. `candidate` is present for writes that carry content (add, correct, publish). */
+export interface BeforeMemoryWriteEvent {
+  readonly operation: MemoryWriteOperation;
+  readonly scope: Scope;
+  readonly id: string;
+  readonly expectedVersion?: number;
+  readonly candidate?: {
+    readonly content: string;
+    readonly category: MemoryCategory;
+    readonly sensitivity: MemorySensitivity;
+    readonly provenance: MemoryProvenance;
+    readonly validity: MemoryValidity;
+    readonly metadata: JsonObject;
+  };
+}
+/** Metadata-only confirmation of a committed write. */
+export interface AfterMemoryWriteEvent {
+  readonly operation: MemoryWriteOperation;
+  readonly scope: Scope;
+  readonly id: string;
+  readonly version?: number;
+  readonly status: 'active' | 'deleted';
+}
+export interface MemoryHooks {
+  /** Runs after permission and validation checks and before any storage access; a block writes nothing. */
+  readonly beforeMemoryWrite?: LifecycleControl<BeforeMemoryWriteEvent, 'beforeMemoryWrite'>;
+  /** Runs after the write commits; a failure rejects the call with a message stating the write committed. */
+  readonly afterMemoryWrite?: LifecycleObserver<AfterMemoryWriteEvent, 'afterMemoryWrite'>;
+  /** Per-callback deadline in milliseconds (default 5000, maximum 30000). */
+  readonly timeoutMs?: number;
 }
 export interface MemoryListOptions { readonly limit?: number; readonly cursor?: string; readonly includeDeleted?: boolean }
 export interface MemoryPage { readonly records: readonly MemoryEntry[]; readonly revision: number; readonly nextCursor?: string }

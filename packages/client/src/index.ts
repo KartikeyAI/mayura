@@ -20,7 +20,8 @@ export interface RemoteSnapshot {
 export interface ClientEvent {
   readonly runId: string; readonly sequence: number; readonly timestamp: string;
   readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
-    | 'hook.started' | 'hook.completed' | 'run.completed' | 'events.gap';
+    | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
+    | 'run.completed' | 'events.gap';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RemoteRun {
@@ -103,9 +104,11 @@ export function escapeHtmlText(value: string, maxBytes = 1_048_576): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 const statuses: readonly string[] = ['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
-const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed', 'run.completed', 'events.gap'];
+const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap'];
 const hookFields = ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt'] as const;
-const hookStages: readonly string[] = ['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease'];
+const hookStages: readonly string[] = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease',
+  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
 const hookStatuses: readonly string[] = ['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'];
 /** Hook observations have an exact content-free schema; the browser never admits hook arguments or messages. */
 function hookMetadata(metadata: Record<string, unknown>, completed: boolean): void {

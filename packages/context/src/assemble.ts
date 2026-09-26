@@ -1,5 +1,6 @@
 import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type JsonValue, type Scope } from '@mayura/core';
-import type { AssembleContextOptions, ContextAssembly, ContextCandidate, ContextExclusion, ContextItem, ContextKind, ContextProvenance, ContextSource, ContextTrust, ContextValidity, ExclusionReason, Sensitivity, SourceKind, SourceState, TokenEstimator, UpstreamEvidence } from './contracts.js';
+import { evaluateLifecycleControl, snapshotHookOptions } from '@mayura/core/host';
+import type { AssembleContextOptions, ContextAssembly, ContextHooks, ContextCandidate, ContextExclusion, ContextItem, ContextKind, ContextProvenance, ContextSource, ContextTrust, ContextValidity, ExclusionReason, Sensitivity, SourceKind, SourceState, TokenEstimator, UpstreamEvidence } from './contracts.js';
 
 const encoder = new TextEncoder();
 const inputBytes = 4_194_304;
@@ -105,6 +106,11 @@ export async function assembleContext(options: AssembleContextOptions): Promise<
   const estimatorId = text(estimatorInput.id, 'estimator.id', 128);
   if (typeof estimatorInput.estimate !== 'function') return invalid('A callable local token estimator is required.');
   const estimate = estimatorInput.estimate.bind(estimatorInput);
+  const hooks = contextHooks(options.hooks); const signal = options.signal;
+  if (signal !== undefined && !(signal instanceof AbortSignal)) return invalid('signal must be an AbortSignal.');
+  if (hooks.before) await evaluateLifecycleControl({ stage: 'beforeContextBuild', handler: hooks.before, timeoutMs: hooks.timeoutMs, ...(signal ? { signal } : {}),
+    event: { scope: { ...scope }, policyVersion, asOf, candidateCount: rawCandidates.length, sourceCount: rawSources.length,
+      budget: { maxBytes, maxEstimatedTokens, reservedBytes, reservedTokens } } });
   const sources = new Map<string, SourceState>();
   for (const raw of rawSources) {
     const value = object(raw); const sourceScope = scopeOf(value['scope']);
@@ -168,7 +174,20 @@ export async function assembleContext(options: AssembleContextOptions): Promise<
   excluded.sort((one, two) => one.position - two.position);
   const budget = { maxBytes, maxEstimatedTokens, reservedBytes, reservedTokens };
   const fingerprint = await hash('mayura:context-assembly:v1', canonical(jsonValue({ serialized: measured.serialized, budget, estimatorId, allowedSensitivities: [...allowed].sort() }, { maxBytes: 16_777_216 })));
-  return Object.freeze({ scope, policyVersion, asOf, selected: Object.freeze(selected), excluded: Object.freeze(excluded), serialized: measured.serialized, fingerprint,
+  const assembly: ContextAssembly = Object.freeze({ scope, policyVersion, asOf, selected: Object.freeze(selected), excluded: Object.freeze(excluded), serialized: measured.serialized, fingerprint,
     usage: Object.freeze({ bytes: measured.bytes, estimatedTokens: measured.estimatedTokens, reservedBytes, reservedTokens, maxBytes, maxEstimatedTokens, estimatorId }),
   });
+  if (hooks.after) await evaluateLifecycleControl({ stage: 'afterContextBuild', handler: hooks.after, timeoutMs: hooks.timeoutMs, ...(signal ? { signal } : {}),
+    event: { scope: { ...scope }, policyVersion, asOf, fingerprint,
+      selected: selected.map(item => ({ id: item.id, sourceId: item.source.id, revision: item.source.revision, contentDigest: item.contentDigest })),
+      excluded: excluded.map(entry => ({ ...entry })), usage: { ...assembly.usage } } });
+  return assembly;
+}
+
+/** Read hook options once, as own data properties, before the first await. */
+function contextHooks(value: ContextHooks | undefined): { readonly before?: NonNullable<ContextHooks['beforeContextBuild']>; readonly after?: NonNullable<ContextHooks['afterContextBuild']>; readonly timeoutMs: number } {
+  const { handlers, timeoutMs } = snapshotHookOptions(value, ['beforeContextBuild', 'afterContextBuild'] as const,
+    'Context hooks require callable beforeContextBuild/afterContextBuild handlers and a bounded timeout.');
+  return { ...(handlers.beforeContextBuild ? { before: handlers.beforeContextBuild as NonNullable<ContextHooks['beforeContextBuild']> } : {}),
+    ...(handlers.afterContextBuild ? { after: handlers.afterContextBuild as NonNullable<ContextHooks['afterContextBuild']> } : {}), timeoutMs };
 }

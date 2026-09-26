@@ -1,4 +1,5 @@
-import { MayuraError, assertPositiveInteger } from '@mayura/core';
+import { MayuraError, assertPositiveInteger, type LifecycleControl } from '@mayura/core';
+import { evaluateLifecycleControl, lifecycleHookTimeout } from '@mayura/core/host';
 
 const MAX_TIMEOUT_MS = 86_400_000;
 
@@ -79,6 +80,20 @@ export interface RetryOptions {
   /** More than one attempt is rejected unless the caller makes this effect guarantee. */
   readonly safety: 'single-attempt' | 'idempotent' | 'read-only';
   readonly retryable?: (error: unknown, attempt: number) => boolean | Promise<boolean>;
+  /**
+   * Fail-closed lifecycle hook after a retryable failure and before the backoff delay. `continue` permits the next
+   * attempt; `block` stops and rethrows the original error; a failed or timed-out hook stops with GUARD_UNAVAILABLE.
+   */
+  readonly onRetry?: LifecycleControl<RetryEvent, 'onRetry'>;
+  /** Deadline for `onRetry` in milliseconds (default 5000, maximum 30000). */
+  readonly onRetryTimeoutMs?: number;
+}
+/** Metadata-only retry view. The error is reduced to a stable code. */
+export interface RetryEvent {
+  readonly attempt: number;
+  readonly nextAttempt: number;
+  readonly delayMs: number;
+  readonly error: { readonly code: string };
 }
 
 /** Bounded retry that requires an explicit no-duplicate-effect guarantee. */
@@ -94,6 +109,9 @@ export async function retry<T>(operation: (attempt: number, signal: AbortSignal)
     || maximum > 300_000 || !Number.isFinite(factor) || factor < 1 || factor > 10) {
     throw new MayuraError('INVALID_CONFIG', 'Retry delays and backoff must satisfy bounded limits.');
   }
+  const onRetry = options.onRetry;
+  if (onRetry !== undefined && typeof onRetry !== 'function') throw new MayuraError('INVALID_CONFIG', 'onRetry must be a function.');
+  const hookTimeout = lifecycleHookTimeout(options.onRetryTimeoutMs);
   for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
     if (options.signal.aborted) throw cancelled();
     try { return await operation(attempt, options.signal); }
@@ -102,6 +120,18 @@ export async function retry<T>(operation: (attempt: number, signal: AbortSignal)
       const allowed = attempt < options.maxAttempts && (options.retryable === undefined || await options.retryable(error, attempt));
       if (!allowed) throw error;
       const wait = Math.min(maximum, Math.floor(initial * factor ** (attempt - 1)));
+      if (onRetry) {
+        let code = 'UNKNOWN';
+        try { if (error instanceof MayuraError) { const field = Object.getOwnPropertyDescriptor(error, 'code'); if (field && 'value' in field && typeof field.value === 'string') code = field.value; } }
+        catch { /* Exception proxies cannot shape the hook view. */ }
+        try { await evaluateLifecycleControl({ stage: 'onRetry', handler: onRetry, timeoutMs: hookTimeout, signal: options.signal,
+          event: { attempt, nextAttempt: attempt + 1, delayMs: wait, error: { code } } }); }
+        catch (hookError) {
+          if (options.signal.aborted) throw cancelled();
+          if (hookError instanceof MayuraError && hookError.code === 'GUARD_BLOCKED') throw error;
+          throw new MayuraError('GUARD_UNAVAILABLE', 'The retry hook could not complete; no further attempt was made.');
+        }
+      }
       await delay(wait, options.signal);
     }
   }

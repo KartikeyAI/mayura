@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
-import type { MemoryEntry, MemoryRecord, MemoryStore, MemoryTombstone } from '@mayura/memory';
+import { evaluateLifecycleControl, evaluateLifecycleObserver, snapshotHookOptions } from '@mayura/core/host';
+import type { MemoryEntry, MemoryHooks, MemoryRecord, MemoryStore, MemoryTombstone } from '@mayura/memory';
 
 const metadataFormat = 'mayura.remote-memory.v1';
 const hostedMem0 = 'https://api.mem0.ai';
@@ -140,13 +141,29 @@ async function remote<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 /** Canonical-state firewall around an untrusted remote semantic index. */
-export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemoryStore; adapter: RemoteMemoryAdapter; scope: Scope }>): RemoteMemoryBridge {
+export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemoryStore; adapter: RemoteMemoryAdapter; scope: Scope; hooks?: MemoryHooks }>): RemoteMemoryBridge {
   if (!options?.canonical || typeof options.canonical.get !== 'function' || !options.adapter
     || !['publish', 'remove', 'search'].every(method => typeof (options.adapter as unknown as Record<string, unknown>)[method] === 'function')) {
     throw new MayuraError('INVALID_CONFIG', 'Remote memory requires a canonical store and adapter.');
   }
   const scope = Object.freeze({ principalId: bounded(options.scope?.principalId, 'Principal ID', 128), projectId: bounded(options.scope?.projectId, 'Project ID', 128) });
   const namespace = scopeNamespace(scope); const adapter = options.adapter; const provider = identifier(adapter.id); const canonical = options.canonical;
+  const { handlers, timeoutMs } = snapshotHookOptions(options.hooks, ['beforeMemoryWrite', 'afterMemoryWrite'] as const,
+    'Memory hooks require callable beforeMemoryWrite/afterMemoryWrite handlers and a bounded timeout.');
+  const beforeWrite = handlers.beforeMemoryWrite as MemoryHooks['beforeMemoryWrite']; const afterWrite = handlers.afterMemoryWrite as MemoryHooks['afterMemoryWrite'];
+  const before = async (entry: MemoryEntry, operation: 'publish' | 'remove', writeSignal: AbortSignal): Promise<void> => {
+    if (!beforeWrite) return;
+    await evaluateLifecycleControl({ stage: 'beforeMemoryWrite', handler: beforeWrite, timeoutMs, signal: writeSignal,
+      event: structuredClone({ operation, scope, id: entry.id, expectedVersion: entry.version,
+        ...(entry.status === 'active' ? { candidate: { content: entry.content, category: entry.category, sensitivity: entry.sensitivity,
+          provenance: entry.provenance, validity: entry.validity, metadata: entry.metadata } } : {}) }) });
+  };
+  const after = async (entry: MemoryEntry, operation: 'publish' | 'remove'): Promise<void> => {
+    if (!afterWrite) return;
+    try { await evaluateLifecycleObserver({ stage: 'afterMemoryWrite', handler: afterWrite, timeoutMs,
+      event: structuredClone({ operation, scope, id: entry.id, version: entry.version, status: entry.status }) }); }
+    catch { throw new MayuraError('GUARD_UNAVAILABLE', 'The remote memory write was sent, but a required after-write hook failed.'); }
+  };
   const current = async (entry: MemoryEntry): Promise<void> => {
     if (!equalScope(entry.scope, scope)) throw new MayuraError('PERMISSION_DENIED', 'Remote memory entry belongs to another scope.');
     const stored = await canonical.get(entry.id, { includeDeleted: true });
@@ -156,11 +173,14 @@ export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemorySt
     namespace, provider,
     publish: async (record, publishOptions = {}) => {
       if (record.status !== 'active') throw new MayuraError('INVALID_INPUT', 'Only active canonical records can be published.');
-      await current(record); return remote(() => adapter.publish(record, namespace, publishOptions.previous, signal(publishOptions.signal)));
+      await current(record); const writeSignal = signal(publishOptions.signal); await before(record, 'publish', writeSignal);
+      const receipt = await remote(() => adapter.publish(record, namespace, publishOptions.previous, writeSignal));
+      await after(record, 'publish'); return receipt;
     },
     remove: async (tombstone, reference, removeOptions = {}) => {
       if (tombstone.status !== 'deleted') throw new MayuraError('INVALID_INPUT', 'Remote deletion requires a canonical tombstone.');
-      await current(tombstone); await remote(() => adapter.remove(tombstone, namespace, reference, signal(removeOptions.signal)));
+      await current(tombstone); const writeSignal = signal(removeOptions.signal); await before(tombstone, 'remove', writeSignal);
+      await remote(() => adapter.remove(tombstone, namespace, reference, writeSignal)); await after(tombstone, 'remove');
     },
     search: async (query, searchOptions = {}) => {
       bounded(query, 'Memory search query', 512); const limit = searchOptions.limit ?? 10;

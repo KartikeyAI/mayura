@@ -29,7 +29,11 @@ Only bounded plain-JSON `RunEvent` envelopes with exact envelope keys, canonical
 | Managed `model.completed` | same guardrail identity/boundary metadata, `response: final`, `decision: allow/block`; no categories or `step` |
 | `tool.started` | bounded `callId`, `toolId` |
 | `tool.completed` | `callId`, `toolId`, terminal outcome `status`; optional paired `execution`/`disclosure` receipt fields |
-| `hook.started` | bounded `hookId`/`hookVersion`, exact control stage, canonical UUIDv4 `invocationId`, nonnegative `step` and literal `attempt: 1` |
+| `step.started` | nonnegative `step` |
+| `step.completed` | nonnegative `step`, `result: tool_calls/final/stopped` |
+| `delegate.started` | bounded `childRunId` (never the observed run), `childAgentId` |
+| `delegate.completed` | bounded `childRunId`, terminal outcome `status` |
+| `hook.started` | bounded `hookId`/`hookVersion`, one of the 16 agent [lifecycle stages](lifecycle-hook-catalog.md), canonical UUIDv4 `invocationId`, nonnegative `step` and literal `attempt: 1` |
 | `hook.completed` | same hook metadata plus `status: continued/blocked/failed/cancelled/outcome_unknown`; no content or action arguments |
 | `run.completed` | terminal outcome `status`, exact `spentMicros`, nonnegative `reservedMicros` and `calls` |
 | `events.gap` | positive inclusive `from`/`to`, where `to` equals event sequence |

@@ -75,4 +75,36 @@ Run the complete credential-free example after building:
 node examples/lifecycle-hooks.mjs
 ```
 
-See the [acceptance contract](../specs/lifecycle-hooks.md), [shared budgets](shared-budgets.md), and [managed moderation](managed-guardrails.md). Optional observers, additional stages, transforms, durable hook delivery, write/host actions, hook-triggered models/children and recovery callbacks remain separate work. Trusted callbacks can capture outside references; declared effects are not hard isolation.
+See the [acceptance contract](../specs/lifecycle-hooks.md), [shared budgets](shared-budgets.md), and [managed moderation](managed-guardrails.md). The full catalog — observer stages (`afterStep`, `afterModelCall`, `afterToolCall`, `afterDelegate`, `onViolation`, `afterExecution`, `onError`, `onCancel`, `onBlocked`, `onFinally`), the `beforeStep`/`beforeDelegate` control stages, context/memory/retry hooks and durable workflow delivery — is described below and in the [catalog spec](../specs/lifecycle-hook-catalog.md). Transforms, write/host actions and hook-triggered models/children remain out of scope.
+
+## Observer hooks
+
+```ts
+const audit = defineHook({ id: 'audit', version: '1', stage: 'afterToolCall', mandatory: true,
+  handler: async event => { await auditLog.append({ tool: event.toolId, status: event.status }); } });
+const finish = defineHook({ id: 'metrics', version: '1', stage: 'onFinally',
+  handler: event => { metrics.count(`run.${event.status}`); } });
+const agent = defineAgent({ ...agentOptions, hooks: [audit, finish] });
+```
+
+Observers get a frozen, content-free view and return nothing. An optional observer (the default) that throws or times out is recorded as `hook.completed` with `status: 'failed'` and the run continues. A `mandatory: true` observer fails closed: the run ends `blocked` with `GUARD_UNAVAILABLE`, and a successful output is withheld. `onViolation`, `onError`, `onCancel`, `onBlocked` and `onFinally` can never change an outcome.
+
+## Context, memory and retry hooks
+
+```ts
+await assembleContext({ ...options, hooks: { beforeContextBuild: () => ({ decision: 'continue' }), afterContextBuild: view => policy(view) } });
+const memory = createMemoryStore({ ...options, hooks: { beforeMemoryWrite: event => screen(event.candidate), afterMemoryWrite: event => audit(event) } });
+await retry(operation, { ...retryOptions, onRetry: event => event.error.code === 'TIMEOUT' ? { decision: 'continue' } : { decision: 'block' } });
+```
+
+These hooks are fail-closed. A blocked memory write stores nothing. A failed `afterMemoryWrite` rejects with a message stating that the write committed.
+
+## Durable workflow hooks
+
+```ts
+const relay = createWorkflowHookRelay({ source: lifecycleRuntime, store, scope, relayId: 'notifications',
+  hooks: { onApprovalRequested: event => notify(event.runId, event.nodeId, event.eventId), onFinally: event => close(event.runId) } });
+await relay.deliver(runId); // call from a worker loop; resumes from a durable cursor
+```
+
+Delivery is at-least-once. Deduplicate on `event.eventId`. Trusted callbacks can capture outside references; declared effects are not hard isolation.

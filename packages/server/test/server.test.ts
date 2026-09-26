@@ -802,18 +802,19 @@ describe('bounded metadata SSE observations and shutdown', () => {
     const response = await events(value, id); expect(response.headers.get('content-type')).toBe('text/event-stream');
     const text = await response.text(); expect(text).toContain('event: run.completed');
     expect(text).not.toMatch(/INPUT_SECRET|PRIVATE_INSTRUCTIONS|TOKEN_PRIVATE/);
-    expect([...text.matchAll(/^id: (\d+)$/gm)].map(match => Number(match[1]))).toEqual([1, 2, 3, 4]);
-    const resumed = await (await events(value, id, {}, '?after=3')).text();
-    expect(resumed).toContain('id: 4'); expect(resumed).not.toContain('id: 3');
-    expect(await (await events(value, id, {}, '?after=4')).text()).toBe('');
+    expect([...text.matchAll(/^id: (\d+)$/gm)].map(match => Number(match[1]))).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(text).toContain('event: step.started'); expect(text).toContain('event: step.completed');
+    const resumed = await (await events(value, id, {}, '?after=5')).text();
+    expect(resumed).toContain('id: 6'); expect(resumed).not.toContain('id: 5');
+    expect(await (await events(value, id, {}, '?after=6')).text()).toBe('');
   });
 
   it('emits explicit replay gaps with metadata that can recover through an authorized snapshot', async () => {
     const value = server({ agents: [{ agent: fixture(), permissions: { allow: ['model:fixture'] }, limits: { maxEventRetention: 2 } }] });
     const id = await admitted(value); await terminal(value, id);
     const text = await (await events(value, id)).text();
-    expect(text).toContain('event: events.gap'); expect(text).toContain('"from":1,"to":2');
-    expect([...text.matchAll(/^id: (\d+)$/gm)].map(match => Number(match[1]))).toEqual([2, 3, 4]);
+    expect(text).toContain('event: events.gap'); expect(text).toContain('"from":1,"to":4');
+    expect([...text.matchAll(/^id: (\d+)$/gm)].map(match => Number(match[1]))).toEqual([4, 5, 6]);
     expect((await snapshot(value, id))['status']).toBe('succeeded');
   });
 

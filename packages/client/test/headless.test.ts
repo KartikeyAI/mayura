@@ -125,3 +125,25 @@ describe('headless run activity projection', () => {
       activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null })).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
   });
 });
+
+describe('lifecycle catalog activity', () => {
+  it('projects step and delegation items alongside observer hook events', async () => {
+    const child = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const remote = run({ inspect: async () => snapshot('failed'), events: async function* () {
+      yield event(1, 'run.started'); yield event(2, 'step.started', { step: 0 });
+      yield event(3, 'delegate.started', { childRunId: child, childAgentId: 'researcher' });
+      yield event(4, 'delegate.completed', { childRunId: child, status: 'failed' });
+      yield event(5, 'hook.started', { hookId: 'audit', hookVersion: '1', stage: 'afterStep', invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', step: 0, attempt: 1 });
+      yield event(6, 'hook.completed', { hookId: 'audit', hookVersion: '1', stage: 'afterStep', invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', step: 0, attempt: 1, status: 'continued' });
+      yield event(7, 'step.completed', { step: 0, result: 'stopped' });
+      yield event(8, 'run.completed', { status: 'failed' });
+    } });
+    const projection = createRunActivityProjection(await createHeadlessRunStore({ run: remote }).observe());
+    expect(projection).toMatchObject({ complete: true, items: [
+      { id: 'run', kind: 'run', status: 'failed' },
+      { id: 'step:0', kind: 'step', label: 'Step 1', status: 'completed', startedSequence: 2, completedSequence: 7 },
+      { id: `delegate:${child}`, kind: 'delegate', label: 'researcher', status: 'failed', startedSequence: 3, completedSequence: 4 },
+      { id: 'hook:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', kind: 'hook', label: 'audit', status: 'completed' },
+    ] });
+  });
+});

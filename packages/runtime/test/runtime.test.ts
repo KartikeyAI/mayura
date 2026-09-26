@@ -38,10 +38,11 @@ describe('ephemeral agent runtime', () => {
     expect(run.result()).toBe(run.result());
     expect(await run.result()).toEqual({ status: 'succeeded', output: 4 });
     const events = await collect(run.observe());
-    expect(events.map((event) => event.type)).toEqual(['run.started', 'model.started', 'model.completed', 'run.completed']);
-    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(events.map((event) => event.type)).toEqual(['run.started', 'step.started', 'model.started', 'model.completed', 'step.completed', 'run.completed']);
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(events[4]).toMatchObject({ metadata: { step: 0, result: 'final' } });
     expect(JSON.stringify(events)).not.toContain('instructions');
-    expect(await collect(run.observe({ after: 3 }))).toHaveLength(1);
+    expect(await collect(run.observe({ after: 5 }))).toHaveLength(1);
   });
 
   it('invokes registered tools through the broker and returns guarded results to the next model call', async () => {
@@ -217,8 +218,8 @@ describe('ephemeral agent runtime', () => {
     const run = runtime({ profile: 'ephemeral', permissions: { allow: ['model:fixture'] }, limits: { maxEventRetention: 2 } }).submit(agent(), { input: 2 });
     await run.result();
     const events = await collect(run.observe());
-    expect(events[0]).toMatchObject({ type: 'events.gap', sequence: 2, metadata: { from: 1, to: 2 } });
-    expect(events.map((event) => event.sequence)).toEqual([2, 3, 4]);
+    expect(events[0]).toMatchObject({ type: 'events.gap', sequence: 4, metadata: { from: 1, to: 4 } });
+    expect(events.map((event) => event.sequence)).toEqual([4, 5, 6]);
     const cancelled = new AbortController(); cancelled.abort();
     expect(await collect(run.observe({ signal: cancelled.signal }))).toEqual([]);
     expect(await run.result()).toMatchObject({ status: 'succeeded' });

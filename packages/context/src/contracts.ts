@@ -1,4 +1,4 @@
-import type { JsonValue, Scope } from '@mayura/core';
+import type { JsonValue, LifecycleControl, Scope } from '@mayura/core';
 
 export type ContextKind = 'evidence' | 'instruction' | 'hard_constraint' | 'pending_approval' | 'unresolved_blocker' | 'outstanding_task';
 export type ContextTrust = 'untrusted' | 'reviewed' | 'trusted';
@@ -55,6 +55,35 @@ export interface AssembleContextOptions {
   readonly estimator?: TokenEstimator;
   /** Canonical UTC ISO timestamp; omitted means snapshot the current time once. */
   readonly asOf?: string;
+  /** Fail-closed lifecycle hooks around assembly; either can block. */
+  readonly hooks?: ContextHooks;
+  /** Cancels a pending hook callback; assembly itself performs no I/O. */
+  readonly signal?: AbortSignal;
+}
+/** Metadata-only view before selection. Candidate content is not included. */
+export interface BeforeContextBuildEvent {
+  readonly scope: Scope;
+  readonly policyVersion: string;
+  readonly asOf: string;
+  readonly candidateCount: number;
+  readonly sourceCount: number;
+  readonly budget: Required<ContextBudget>;
+}
+/** Metadata-only view of the finished assembly; selected content is identified by digest, not included. */
+export interface AfterContextBuildEvent {
+  readonly scope: Scope;
+  readonly policyVersion: string;
+  readonly asOf: string;
+  readonly fingerprint: string;
+  readonly selected: readonly { readonly id: string; readonly sourceId: string; readonly revision: string; readonly contentDigest: string }[];
+  readonly excluded: readonly ContextExclusion[];
+  readonly usage: ContextUsage;
+}
+export interface ContextHooks {
+  readonly beforeContextBuild?: LifecycleControl<BeforeContextBuildEvent, 'beforeContextBuild'>;
+  readonly afterContextBuild?: LifecycleControl<AfterContextBuildEvent, 'afterContextBuild'>;
+  /** Per-callback deadline in milliseconds (default 5000, maximum 30000). */
+  readonly timeoutMs?: number;
 }
 export type ReadonlyJson = string | number | boolean | null | readonly ReadonlyJson[] | { readonly [key: string]: ReadonlyJson };
 export interface ContextItem extends Omit<ContextCandidate, 'content' | 'pinned' | 'priority'> {

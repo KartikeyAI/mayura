@@ -1,6 +1,7 @@
 import { MayuraError, jsonValue, type JsonObject, type Scope } from '@mayura/core';
+import { evaluateLifecycleControl, evaluateLifecycleObserver, snapshotHookOptions } from '@mayura/core/host';
 import { StorageError, type StoredRecord } from '@mayura/storage-contracts';
-import type { MemoryEntry, MemoryListOptions, MemoryRecord, MemoryStore, MemoryStoreOptions, MemoryTombstone } from './contracts.js';
+import type { AfterMemoryWriteEvent, BeforeMemoryWriteEvent, MemoryEntry, MemoryHooks, MemoryListOptions, MemoryRecord, MemoryStore, MemoryStoreOptions, MemoryTombstone, MemoryWriteOperation } from './contracts.js';
 import { MAX_AGGREGATE_BYTES, MAX_RECORDS, SENSITIVITIES, activeRecord, allowedKeys, exactKeys, immutable, integer, memoryId, object, parseEntry, sensitivity, sha256, text } from './validation.js';
 
 export * from './contracts.js';
@@ -31,6 +32,31 @@ function pageLimit(value: unknown): number {
   if (limit > 50) throw new MayuraError('INVALID_INPUT', 'Memory pages are limited to 50 records.');
   return limit;
 }
+interface WriteHooks {
+  before(event: BeforeMemoryWriteEvent): Promise<void>;
+  after(event: AfterMemoryWriteEvent): Promise<void>;
+}
+/** Snapshot hook options once as own data properties. */
+function memoryWriteHooks(value: MemoryHooks | undefined): WriteHooks {
+  const { handlers, timeoutMs } = snapshotHookOptions(value, ['beforeMemoryWrite', 'afterMemoryWrite'] as const,
+    'Memory hooks require callable beforeMemoryWrite/afterMemoryWrite handlers and a bounded timeout.');
+  const before = handlers.beforeMemoryWrite as MemoryHooks['beforeMemoryWrite']; const after = handlers.afterMemoryWrite as MemoryHooks['afterMemoryWrite'];
+  return Object.freeze({
+    before: async (event: BeforeMemoryWriteEvent) => { if (before) await evaluateLifecycleControl({ stage: 'beforeMemoryWrite', handler: before, event: structuredClone(event), timeoutMs }); },
+    after: async (event: AfterMemoryWriteEvent) => {
+      if (!after) return;
+      try { await evaluateLifecycleObserver({ stage: 'afterMemoryWrite', handler: after, event: structuredClone(event), timeoutMs }); }
+      catch { throw new MayuraError('GUARD_UNAVAILABLE', 'The memory write committed, but a required after-write hook failed.'); }
+    },
+  });
+}
+function candidateView(record: MemoryRecord): NonNullable<BeforeMemoryWriteEvent['candidate']> {
+  return { content: record.content, category: record.category, sensitivity: record.sensitivity, provenance: record.provenance, validity: record.validity, metadata: record.metadata };
+}
+function committed(operation: MemoryWriteOperation, entry: MemoryEntry): AfterMemoryWriteEvent {
+  return { operation, scope: entry.scope, id: entry.id, version: entry.version, status: entry.status };
+}
+
 function nextVersion(version: number): number {
   if (version === Number.MAX_SAFE_INTEGER) throw new MayuraError('CONFLICT', 'Memory version exhausted.');
   return version + 1;
@@ -51,6 +77,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
   if (!Array.isArray(profile) || profile.length > SENSITIVITIES.length || new Set(profile).size !== profile.length) throw new MayuraError('INVALID_CONFIG', 'Memory sensitivity profile is invalid.');
   const sensitivities = new Set(profile.map(value => sensitivity(value)));
   const { store } = options;
+  const hooks = memoryWriteHooks(options.hooks);
   const scopeKey = sha256(`mayura:memory-scope:v1\n${JSON.stringify([scope.principalId, scope.projectId])}`);
   const profileHash = sha256(`mayura:memory-profile:v1\n${JSON.stringify([...sensitivities].sort())}`);
   const permission = (grant: string): void => { if (!grants.has(grant)) throw new MayuraError('PERMISSION_DENIED', 'The memory operation requires a capability that was not granted.'); };
@@ -125,33 +152,39 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
       permission('memory:write');
       const source = object(input); allowedKeys(source, inputFields); const now = new Date().toISOString();
       const candidate = activeRecord(source, scope, 1, now, now); authorizeRecord(candidate);
-      return mutate(true, 'memory.added', state => {
+      await hooks.before({ operation: 'add', scope, id: candidate.id, candidate: candidateView(candidate) });
+      const added = await mutate(true, 'memory.added', state => {
         if (state.records[candidate.id]) throw new MayuraError('CONFLICT', 'Memory ID already exists or is retained by a tombstone.');
         if (Object.keys(state.records).length >= MAX_RECORDS) throw new MayuraError('LIMIT_EXCEEDED', 'Experimental memory scopes support at most 128 lifetime record IDs.');
         state.records[candidate.id] = candidate; return candidate;
       });
+      await hooks.after(committed('add', added)); return added;
     },
     correct: async input => {
       permission('memory:write'); const source = object(input); allowedKeys(source, [...inputFields, 'expectedVersion']);
       const id = memoryId(source['id']); const expectedVersion = integer(source['expectedVersion'], 'Expected memory version');
       // Validate the replacement before reading/mutating persistent state.
       const provisional = activeRecord(source, scope, 1, new Date().toISOString(), new Date().toISOString()); authorizeRecord(provisional);
-      return mutate(false, 'memory.corrected', state => {
+      await hooks.before({ operation: 'correct', scope, id, expectedVersion, candidate: candidateView(provisional) });
+      const corrected = await mutate(false, 'memory.corrected', state => {
         const current = currentActive(state, id, expectedVersion);
         const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt))).toISOString();
         const next = activeRecord(source, scope, nextVersion(current.version), current.createdAt, updatedAt);
         state.records[id] = next; return next;
       });
+      await hooks.after(committed('correct', corrected)); return corrected;
     },
     forget: async input => {
       permission('memory:delete'); const command = object(input, 1_024, 2); exactKeys(command, ['id', 'expectedVersion']);
       const id = memoryId(command['id']); const expectedVersion = integer(command['expectedVersion'], 'Expected memory version');
-      return mutate(false, 'memory.forgotten', state => {
+      await hooks.before({ operation: 'forget', scope, id, expectedVersion });
+      const forgotten = await mutate(false, 'memory.forgotten', state => {
         const current = currentActive(state, id, expectedVersion);
         const deletedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt))).toISOString();
         const tombstone: MemoryTombstone = { id, version: nextVersion(current.version), status: 'deleted', scope: { ...scope }, sensitivity: current.sensitivity, createdAt: current.createdAt, updatedAt: deletedAt, deletedAt };
         state.records[id] = tombstone; return tombstone;
       });
+      await hooks.after(committed('forget', forgotten)); return forgotten;
     },
     get: async (id, query = {}) => {
       permission('memory:read'); memoryId(id); const request = object(query, 256, 2); allowedKeys(request, ['includeDeleted']);

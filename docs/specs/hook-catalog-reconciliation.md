@@ -1,6 +1,6 @@
 # Lifecycle hook catalog reconciliation
 
-Status: **reconciliation complete; owner decision (2026-09-27): option 2, the full catalog, for v1** (C1 in the [v1 plan](../v1-release-plan.md)).
+Status: **superseded by the [lifecycle hook catalog](lifecycle-hook-catalog.md)**, which implements option 2 (owner decision 2026-09-27). The table below records the state before C1.
 
 [Plan §8.2](../create-mayura-agentic-framework-plan.md) lists 25 lifecycle points. It says the names are proposed spellings but the lifecycle semantics are required. This table records how each point is served today.
 

@@ -12,3 +12,4 @@ export { createWorkflowFleetControl, graphFleetTarget, lifecycleFleetTarget, tre
 export { createWorkflowLeadership, type WorkflowLeadership, type WorkflowLeadershipOptions, type WorkflowLeadershipState } from './leadership.js';
 export { coordinatorUnit, createWorkflowWorker, type WorkflowWorker, type WorkflowWorkerOptions, type WorkflowWorkerStatus,
   type WorkflowWorkerUnit } from './worker.js';
+export { createWorkflowHookRelay, workflowHookStages, type WorkflowHookRelay, type WorkflowHookRelayOptions, type WorkflowHookDelivery, type WorkflowHookEvent, type WorkflowHookStage, type WorkflowHooks, type WorkflowEventSource } from './hook-relay.js';

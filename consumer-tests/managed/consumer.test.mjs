@@ -112,7 +112,8 @@ try {
   assert.equal(summary.status, 'succeeded'); assert.equal(summary.coverage, 'complete');
   assert.equal(summary.counters.modelStarted, 4); assert.equal(summary.counters.modelCompleted, 4);
   assert.equal(summary.counters.toolStarted, 1); assert.equal(summary.counters.toolCompleted, 1);
-  assert.equal(summary.counters.rejected, 0); assert.equal(summary.counters.events, 18);
+  assert.equal(summary.counters.rejected, 0); assert.equal(summary.counters.events, 20);
+  assert.deepEqual(summary.recent.filter(event => event.type.startsWith('step.')).map(event => event.type), ['step.started', 'step.completed']);
   assert.equal(summary.cost.spentMicros, 5); assert.equal(summary.cost.reservedMicros, 0); assert.equal(summary.cost.calls, 5);
   assert.equal(summary.recent.filter(event => event.type === 'model.started' && event.metadata.purpose === 'guardrail').length, 3);
   assert.equal(summary.recent.filter(event => event.type === 'model.completed' && event.metadata.purpose === 'guardrail').length, 3);

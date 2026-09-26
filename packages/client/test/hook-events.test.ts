@@ -40,7 +40,7 @@ describe('browser hook event compatibility', () => {
   it.each([
     { hookId: '' }, { hookId: 'x'.repeat(129) }, { hookId: 'policy:unexpected' },
     { hookVersion: 'private version text' }, { hookVersion: 'x'.repeat(129) },
-    { stage: 'afterExecution' }, { invocationId: 'not-a-uuid' }, { invocationId: invocationId.toUpperCase() },
+    { stage: 'afterEverything' }, { invocationId: 'not-a-uuid' }, { invocationId: invocationId.toUpperCase() },
     { invocationId: 'bbbbbbbb-bbbb-5bbb-8bbb-bbbbbbbbbbbb' }, { invocationId: 'bbbbbbbb-bbbb-4bbb-1bbb-bbbbbbbbbbbb' },
     { step: -1 }, { step: 0.5 }, { step: Number.MAX_SAFE_INTEGER + 1 }, { step: null }, { step: 1 },
     { attempt: 0 }, { attempt: 2 }, { attempt: true }, { attempt: '1' },
@@ -67,5 +67,14 @@ describe('browser hook event compatibility', () => {
     expect(await receive([value])).toEqual([value]);
     await expect(receive([event(1, 'hook.completed', { ...metadata, content: 'SECRET_HOOK_CONTENT' })]))
       .rejects.toMatchObject({ code: 'INVALID_STREAM' });
+  });
+});
+
+describe('lifecycle catalog stream events', () => {
+  it('admits step, delegate and observer-stage hook events', async () => {
+    const received = await receive([event(1, 'step.started', { step: 0 }), event(2, 'delegate.started', { childRunId: 'child', childAgentId: 'helper' }),
+      event(3, 'hook.started', { ...base, stage: 'afterDelegate' }), event(4, 'delegate.completed', { childRunId: 'child', status: 'succeeded' }),
+      event(5, 'step.completed', { step: 0, result: 'final' })]);
+    expect(received.map(item => item.type)).toEqual(['step.started', 'delegate.started', 'hook.started', 'delegate.completed', 'step.completed']);
   });
 });

@@ -12,8 +12,8 @@ import { modelCost, modelFailureCost, modelResponse } from './response.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
 import { OperationPermits } from './permits.js';
 import { evaluateManagedGuard } from './managed-guards.js';
-import { readHookDefinition, type HookEvent } from './hooks.js';
-import { evaluateHook } from './hook-execution.js';
+import { readHookDefinition, type ControlHookStage, type HookEvent, type HookEvents, type TerminalHookStage } from './hooks.js';
+import { evaluateHook, evaluateObserver } from './hook-execution.js';
 
 /** All bounds are finite; model/token/cost declarations do not turn trusted callbacks into a sandbox. */
 export interface RuntimeLimits {
@@ -109,8 +109,15 @@ export interface RunInspection {
   readonly runs: readonly { readonly id: string; readonly parentId?: string; readonly agentId: string; readonly status: 'running' | Outcome<unknown>['status'] }[];
   readonly evidence: readonly ExecutionEvidence[];
 }
+type Failure = Exclude<Outcome<never>, { readonly status: 'succeeded' }>;
+interface ObserveOptions { readonly signal?: AbortSignal; readonly terminal?: boolean }
 interface RunState {
   readonly id: string;
+  readonly events: EventBuffer;
+  /** This run's awaited control hooks; also used by children for beforeDelegate. */
+  control(event: HookEvent, step: number | null, signal?: AbortSignal): Promise<Failure | undefined>;
+  /** This run's observers; a mandatory failure is returned, never thrown. Also used by children for afterDelegate. */
+  observe(event: HookEvent, step: number | null, options?: ObserveOptions): Promise<Failure | undefined>;
   readonly agent: AgentDefinition;
   readonly parent: RunState | undefined;
   readonly root: RunState;
@@ -204,6 +211,13 @@ function consumeCall(state: RunState, entry: CallTicket, kind: 'model' | 'tool')
   entry.counted = true; return reservation;
 }
 
+const violationBoundary: Record<ControlHookStage, HookEvents['onViolation']['boundary']> = {
+  beforeExecution: 'execution', beforeStep: 'execution', beforeModelCall: 'model', beforeToolCall: 'tool', beforeDelegate: 'delegate', beforeOutputRelease: 'output',
+};
+function terminalView(stage: TerminalHookStage, outcome: Outcome<unknown>): HookEvent<TerminalHookStage> {
+  return Object.freeze({ stage, status: outcome.status, ...(outcome.status === 'succeeded' ? {} : { error: Object.freeze({ code: outcome.error.code }) }) });
+}
+
 /** Process-local structured concurrency. No restart recovery or hard callback isolation is promised. */
 export function createRuntime(options: RuntimeOptions): Runtime {
   if (options.profile !== 'ephemeral') throw new MayuraError('UNSUPPORTED_PROFILE', 'Only the explicit ephemeral profile is supported by this runtime.');
@@ -280,7 +294,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       cancel: () => { if (!terminal && !controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'Run cancellation was requested.')); },
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
-    const state = { id, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
+    const state = { id, events, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
       handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
       heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
@@ -294,7 +308,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     controller.signal.addEventListener('abort', () => {
       state.accepting = false; budget.close(); for (const bundle of state.bundles) bundle.close();
     }, { once: true });
-    if (parent) { parent.children.push(state); for (const item of ancestors(parent)) item.descendants++; }
+    if (parent) {
+      parent.children.push(state); for (const item of ancestors(parent)) item.descendants++;
+      parent.events.emit('delegate.started', { childRunId: id, childAgentId: agent.id });
+    }
     else activeRoots++;
     states.set(handle, state);
     active.set(id, handle);
@@ -319,6 +336,15 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       return reserveCalls(state, [{ kind, maxCostMicros }, ...definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))]);
     };
     const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<void> => {
+      try { await guardChecks(checks, value, boundary, callId, held, signal); }
+      catch (error) {
+        if (error instanceof MayuraError && error.code === 'GUARD_BLOCKED') {
+          await observe(Object.freeze({ stage: 'onViolation', source: 'guard', boundary, code: 'GUARD_BLOCKED', callId }), null, { signal });
+        }
+        throw error;
+      }
+    };
+    const guardChecks = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<void> => {
       checkCancelled(signal);
       const definitions = managed(checks);
       const local = checks.filter(check => !readManagedGuardDefinition(check)) as readonly Guard[];
@@ -367,7 +393,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     const preflight = async (tool: AnyTool, rawInput: JsonValue, signal: AbortSignal = controller.signal): Promise<void> => {
       checkCancelled(signal);
       const required = [`tool:${tool.id}`, ...tool.capabilities, ...(tool.effects === 'none' ? [] : [`effect:${tool.effects}`])];
-      if (required.some((grant) => !grants.has(grant))) throw new MayuraError('PERMISSION_DENIED', 'The requested tool is not authorized.');
+      if (required.some((grant) => !grants.has(grant))) {
+        await observe(Object.freeze({ stage: 'onViolation', source: 'permission', boundary: 'tool', code: 'PERMISSION_DENIED' }), null, { signal });
+        throw new MayuraError('PERMISSION_DENIED', 'The requested tool is not authorized.');
+      }
       await cancellable(() => runOperations.run(signal, async () => {
         checkCancelled(signal);
         return await validate(tool.input, rawInput, 'input', { maxBytes: limits.maxInputBytes });
@@ -375,7 +404,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       checkCancelled(signal);
     };
 
-    const hooks = async (event: HookEvent, step: number | null, signal: AbortSignal = controller.signal): Promise<Exclude<Outcome<never>, { status: 'succeeded' }> | undefined> => {
+    const control = async (event: HookEvent, step: number | null, signal: AbortSignal = controller.signal): Promise<Failure | undefined> => {
       for (const handle of agent.hooks) {
         if (handle.stage !== event.stage) continue;
         checkCancelled(signal);
@@ -405,10 +434,47 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             callIds.add(callId); return callId;
           },
         });
-        if (failure) return failure;
+        if (failure) {
+          if (failure.status === 'blocked' && failure.error.code === 'GUARD_BLOCKED') {
+            const callId = event.stage === 'beforeToolCall' ? event.proposal.callId : event.stage === 'beforeOutputRelease' ? event.callId : undefined;
+            await observe(Object.freeze({ stage: 'onViolation', source: 'hook', boundary: violationBoundary[event.stage as ControlHookStage],
+              code: 'GUARD_BLOCKED', ...(callId === undefined ? {} : { callId }) }), step, { signal });
+          }
+          return failure;
+        }
       }
       checkCancelled(signal); return undefined;
     };
+
+    const observe = async (event: HookEvent, step: number | null, options: ObserveOptions = {}): Promise<Failure | undefined> => {
+      let failure: Failure | undefined;
+      for (const handle of agent.hooks) {
+        if (handle.stage !== event.stage) continue;
+        const descriptor = readHookDefinition(handle)!;
+        // Terminal observers run after this run's signal and budget closed; they get a deadline-only signal.
+        const signal = options.terminal ? new AbortController().signal : options.signal ?? controller.signal;
+        const invocationId = crypto.randomUUID();
+        const metadata = { hookId: handle.id, hookVersion: handle.version, stage: handle.stage, invocationId, step: step ?? 0, attempt: 1 };
+        const status = await evaluateObserver({ descriptor, event, signal, operations: runOperations,
+          context: Object.freeze({ runId: id, rootId: state.root.id, ...(parent ? { parentId: parent.id } : {}),
+            agentId: agent.id, scope, invocationId, hookId: handle.id, hookVersion: handle.version, step, attempt: 1 }),
+          onStarted: () => {
+            const path = ancestors(state);
+            if (path.some(account => account.hookCalls >= account.limits.maxHookCalls)) {
+              throw new MayuraError('LIMIT_EXCEEDED', 'An ancestor lifecycle-hook call limit was reached.');
+            }
+            for (const account of path) account.hookCalls++;
+            events.emit('hook.started', metadata);
+          },
+          onCompleted: completion => events.emit('hook.completed', { ...metadata, status: completion }),
+        });
+        if (status === 'failed' && descriptor.mandatory && !failure) {
+          failure = Object.freeze({ status: 'blocked', error: Object.freeze({ code: 'GUARD_UNAVAILABLE', message: 'A mandatory lifecycle observer could not complete.' }) });
+        }
+      }
+      return failure;
+    };
+    state.control = control; state.observe = observe;
 
     /** Ordinary proposals and hook actions share the same broker, exact account and output barriers. */
     const invokeRunTool = async (tool: AnyTool, rawInput: JsonValue, callId: string, step: number,
@@ -420,7 +486,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const toolBundle = operationBundle('tool', tool.costMicros);
       try {
         if (withHooks) {
-          const failure = await hooks(Object.freeze({ stage: 'beforeToolCall', phase: 'proposal',
+          const failure = await control(Object.freeze({ stage: 'beforeToolCall', phase: 'proposal',
             proposal: Object.freeze({ callId, toolId: tool.id, input }) }), step, signal);
           if (failure) return failure;
         }
@@ -446,20 +512,32 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           outcome = { ...outcome, status: 'failed', error: publicError(signal.reason) };
         }
         if (outcome.status !== 'succeeded') {
-          events.emit('tool.completed', { callId, toolId: tool.id, status: outcome.status,
-            ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}) });
+          const completion = { callId, toolId: tool.id, status: outcome.status,
+            ...(outcome.receipt ? { execution: outcome.receipt.execution, disclosure: outcome.receipt.disclosure } : {}) };
+          events.emit('tool.completed', completion);
+          // The tool already failed; an observer failure cannot make the outcome worse or better.
+          if (withHooks) await observe(Object.freeze({ stage: 'afterToolCall', step, ...completion }), step, { signal });
           return outcome;
         }
         const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
         let failure: Exclude<Outcome<never>, { status: 'succeeded' }> | undefined;
+        let observed = false;
         try {
           await guard(agent.guards.output, toolOutput, 'output', callId, toolBundle.entries.slice(1), signal);
-          if (withHooks) failure = await hooks(Object.freeze({ stage: 'beforeOutputRelease', source: 'tool', callId,
+          if (withHooks) failure = await control(Object.freeze({ stage: 'beforeOutputRelease', source: 'tool', callId,
             toolId: tool.id, candidate: toolOutput }), step, signal);
+          // Observe the real released outcome before it enters model history; a mandatory failure withholds it.
+          if (withHooks && !failure) {
+            observed = true;
+            failure = await observe(Object.freeze({ stage: 'afterToolCall', step, callId, toolId: tool.id, status: 'succeeded',
+              execution: 'succeeded', disclosure: 'released' }), step, { signal });
+          }
           if (!failure) checkCancelled(signal);
         } catch (error) { failure = outcomeFor(error) as Exclude<Outcome<never>, { status: 'succeeded' }>; }
         if (failure) {
           events.emit('tool.completed', { callId, toolId: tool.id, status: failure.status, execution: 'succeeded', disclosure: 'withheld' });
+          if (withHooks && !observed) await observe(Object.freeze({ stage: 'afterToolCall', step, callId, toolId: tool.id, status: failure.status,
+            execution: 'succeeded', disclosure: 'withheld' }), step, { signal });
           const receipt = outcome.receipt ? Object.freeze({ ...outcome.receipt, disclosure: 'withheld' as const }) : undefined;
           if (receipt) record(state, receipt);
           // An uncertain hook action owns the primary failure receipt. The original known
@@ -475,18 +553,28 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     const execute = async (): Promise<Outcome<InferOutput<O>>> => {
       events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}) });
       checkCancelled();
+      if (parent) {
+        // The parent's own hooks decide delegation, in the parent's context and under its hook ceiling.
+        const delegateFailure = await parent.control(Object.freeze({ stage: 'beforeDelegate', childRunId: id, childAgentId: agent.id, input }), null, controller.signal);
+        if (delegateFailure) return delegateFailure;
+      }
       const validated = inputAdmitted ? input : await cancellable(() => runOperations.run(controller.signal, async () => {
         checkCancelled(); return await validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes });
       }), controller.signal);
       const approvedInput = freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes }));
       await guard(agent.guards.input, approvedInput, 'input', 'input');
-      const inputFailure = await hooks(Object.freeze({ stage: 'beforeExecution', input: approvedInput }), null);
+      const inputFailure = await control(Object.freeze({ stage: 'beforeExecution', input: approvedInput }), null);
       if (inputFailure) return inputFailure;
       const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
       let continuation: JsonValue | undefined;
-      for (let step = 0; step < limits.maxSteps; step++) {
-        checkCancelled();
-        if (!grants.has(`model:${agent.model.id}`)) throw new MayuraError('PERMISSION_DENIED', 'The model adapter is not authorized.');
+      type StepResult = { readonly done: false } | { readonly done: true; readonly outcome: Outcome<InferOutput<O>> };
+      const runStep = async (step: number): Promise<StepResult> => {
+        const stepFailure = await control(Object.freeze({ stage: 'beforeStep', step }), step);
+        if (stepFailure) return { done: true, outcome: stepFailure };
+        if (!grants.has(`model:${agent.model.id}`)) {
+          await observe(Object.freeze({ stage: 'onViolation', source: 'permission', boundary: 'model', code: 'PERMISSION_DENIED' }), step);
+          throw new MayuraError('PERMISSION_DENIED', 'The model adapter is not authorized.');
+        }
         checkCalls(state, 'model', 1);
         // Freeze a bounded copy: a provider cannot mutate history or the tool registry between checks.
         const snapshot = freezeJson(jsonValue(messages, { maxBytes: limits.maxContextBytes })) as unknown as readonly ModelMessage[];
@@ -498,9 +586,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         try {
           // A content-only projection: private instructions and provider continuation never
           // enter hook context. These immutable fields are the same ones sent to the adapter.
-          const modelFailure = await hooks(Object.freeze({ stage: 'beforeModelCall', purpose: 'primary', modelId: agent.model.id,
+          const modelFailure = await control(Object.freeze({ stage: 'beforeModelCall', purpose: 'primary', modelId: agent.model.id,
             request: Object.freeze({ messages: requestData.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens }) }), step);
-          if (modelFailure) return modelFailure;
+          if (modelFailure) return { done: true, outcome: modelFailure };
           const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
             checkCancelled();
             const reservation = consumeCall(state, primaryBundle.entries[0]!, 'model');
@@ -521,6 +609,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
           continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
           events.emit('model.completed', { step, response: response.type });
+          const modelObserved = await observe(Object.freeze({ stage: 'afterModelCall', step, modelId: agent.model.id, response: response.type,
+            toolCalls: response.type === 'final' ? 0 : response.calls.length }), step);
+          if (modelObserved) return { done: true, outcome: modelObserved };
           if (response.type === 'final') {
             const output = await cancellable(() => runOperations.run(controller.signal, async () => {
               checkCancelled(); return await validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes });
@@ -528,11 +619,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
             const callId = `model.${state.modelCalls}`;
             await guard(agent.guards.output, approvedOutput, 'output', callId, primaryBundle.entries.slice(1));
-            const outputFailure = await hooks(Object.freeze({ stage: 'beforeOutputRelease', source: 'agent',
+            const outputFailure = await control(Object.freeze({ stage: 'beforeOutputRelease', source: 'agent',
               callId, candidate: approvedOutput }), step);
-            if (outputFailure) return outputFailure;
+            if (outputFailure) return { done: true, outcome: outputFailure };
             checkCancelled();
-            return Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> });
+            return { done: true, outcome: Object.freeze({ status: 'succeeded' as const, output: approvedOutput as InferOutput<O> }) };
           }
           // A validated tool proposal has no final candidate; these holds cannot fund a later invocation.
           primaryBundle.close();
@@ -556,10 +647,27 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           messages.push({ role: 'assistant', calls: response.calls });
           for (const call of response.calls) {
             const outcome = await invokeRunTool(tools.get(call.toolId)!, call.input, call.id, step);
-            if (outcome.status !== 'succeeded') return outcome;
+            if (outcome.status !== 'succeeded') return { done: true, outcome };
             messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output });
           }
+          return { done: false };
         } finally { primaryBundle.close(); }
+      };
+      const finishStep = async (step: number, result: 'tool_calls' | 'final' | 'stopped'): Promise<Failure | undefined> => {
+        const failure = await observe(Object.freeze({ stage: 'afterStep', step, result }), step);
+        events.emit('step.completed', { step, result });
+        return failure;
+      };
+      for (let step = 0; step < limits.maxSteps; step++) {
+        checkCancelled();
+        events.emit('step.started', { step });
+        let result: StepResult;
+        try { result = await runStep(step); }
+        catch (error) { await finishStep(step, 'stopped'); throw error; }
+        const observed = await finishStep(step, !result.done ? 'tool_calls' : result.outcome.status === 'succeeded' ? 'final' : 'stopped');
+        // A mandatory afterStep failure stops a continuing step and withholds a final output; it never masks an earlier failure.
+        if (observed && (!result.done || result.outcome.status === 'succeeded')) return observed;
+        if (result.done) return result.outcome;
       }
       throw new MayuraError('LIMIT_EXCEEDED', 'The agent step limit was reached.');
     };
@@ -579,6 +687,18 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const failed = children.find((child) => child.status !== 'succeeded');
         if (unknown) outcome = unknown;
         else if (failed && (outcome.status === 'succeeded' || outcome.error.code === 'TOOL_FAILED')) outcome = failed;
+        if (agent.hooks.length > 0) {
+          const stage: TerminalHookStage = outcome.status === 'succeeded' ? 'afterExecution' : outcome.status === 'cancelled' ? 'onCancel'
+            : outcome.status === 'blocked' ? 'onBlocked' : 'onError';
+          const terminalFailure = await observe(terminalView(stage, outcome), null, { terminal: true });
+          // Only a mandatory afterExecution can change the outcome: it withholds a successful output.
+          if (terminalFailure && outcome.status === 'succeeded') outcome = terminalFailure;
+          await observe(terminalView('onFinally', outcome), null, { terminal: true });
+        }
+        if (parent && parent.agent.hooks.length > 0) {
+          const delegated = await parent.observe(Object.freeze({ stage: 'afterDelegate', childRunId: id, childAgentId: agent.id, status: outcome.status }), null, { terminal: true });
+          if (delegated && outcome.status === 'succeeded') outcome = delegated;
+        }
         if (state.children.length > 0 || agent.hooks.length > 0) outcome = { ...outcome, evidence: evidenceFor(state) };
         terminal = true;
         state.status = outcome.status;
@@ -589,6 +709,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         externalSignal?.removeEventListener('abort', relayExternal);
         events.emit('run.completed', { status: outcome.status, ...budget.snapshot() });
         events.finish();
+        parent?.events.emit('delegate.completed', { childRunId: id, status: outcome.status });
         active.delete(id);
         if (!parent) activeRoots--;
         settle(Object.freeze(outcome));

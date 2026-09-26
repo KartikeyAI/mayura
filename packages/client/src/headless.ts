@@ -21,7 +21,7 @@ export interface HumanRequestView {
   readonly prompt: string; readonly canRespond: boolean; readonly urgency: 'normal' | 'due_soon' | 'expired' | 'resolved';
   readonly statusText: string; readonly actionText: string | null; readonly deadlineAtMs: number | null;
 }
-export type RunActivityKind = 'run' | 'model' | 'tool' | 'hook';
+export type RunActivityKind = 'run' | 'step' | 'model' | 'tool' | 'hook' | 'delegate';
 export type RunActivityStatus = 'active' | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown' | 'unknown';
 export interface RunActivityItem {
   readonly id: string; readonly kind: RunActivityKind; readonly label: string; readonly status: RunActivityStatus;
@@ -33,7 +33,8 @@ export interface RunActivityProjection {
 }
 
 const runStatuses = new Set(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed', 'run.completed', 'events.gap']);
+const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap']);
 const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const remoteErrorCodes = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT',
   'INVALID_OUTPUT', 'INVALID_REQUEST', 'INVALID_CURSOR', 'INVALID_IDEMPOTENCY_KEY', 'INVALID_STREAM', 'OBSERVATION_FAILED', 'STREAM_LIMIT', 'TRUNCATED_STREAM',
@@ -194,7 +195,11 @@ export function createRunActivityProjection(state: HeadlessRunState): RunActivit
     if (item.type.startsWith('tool.')) { const id = activityIdentity(metadata['callId']); const label = activityIdentity(metadata['toolId']);
       return { key: `tool:${id ?? item.sequence}`, kind: 'tool', label: label ?? 'Tool call' }; }
     if (item.type.startsWith('hook.')) { const id = activityIdentity(metadata['invocationId']); const label = activityIdentity(metadata['hookId']);
-      return { key: `hook:${id ?? item.sequence}`, kind: 'hook', label: label ?? 'Control hook' }; }
+      return { key: `hook:${id ?? item.sequence}`, kind: 'hook', label: label ?? 'Lifecycle hook' }; }
+    if (item.type.startsWith('step.')) { const step = Number.isSafeInteger(metadata['step']) && (metadata['step'] as number) >= 0 ? metadata['step'] as number : null;
+      return { key: `step:${step ?? item.sequence}`, kind: 'step', label: step === null ? 'Step' : `Step ${step + 1}` }; }
+    if (item.type.startsWith('delegate.')) { const id = activityIdentity(metadata['childRunId']); const label = activityIdentity(metadata['childAgentId']);
+      return { key: `delegate:${id ?? item.sequence}`, kind: 'delegate', label: label ?? 'Delegated run' }; }
     if (item.type.startsWith('model.')) {
       const purpose = metadata['purpose'] === 'guardrail' ? 'guardrail' : 'primary';
       const discriminator = purpose === 'guardrail'
