@@ -483,11 +483,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (url.origin !== publicOrigin || url.username || url.password || url.hash) throw new HttpFailure(400, 'INVALID_DESTINATION');
     const requestOrigin = request.headers.get('origin');
     if (requestOrigin !== null && !origins.has(requestOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
+    // A preflight is validated as the request it announces: the same query rules apply, so query credentials still fail,
+    // but a legitimate paginated GET can be preflighted.
+    const effectiveMethod = request.method === 'OPTIONS' ? request.headers.get('access-control-request-method') ?? '' : request.method;
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
-    const catalogQuery = request.method === 'GET' && url.pathname === '/v1/tools';
-    const humanListQuery = request.method === 'GET' && url.pathname === '/v1/human-requests';
-    const workflowListQuery = request.method === 'GET' && url.pathname === '/v1/workflow-runs';
-    if ([...url.searchParams.keys()].some(key => request.method !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery || workflowListQuery ? !['after', 'limit'].includes(key) : true))
+    const catalogQuery = effectiveMethod === 'GET' && url.pathname === '/v1/tools';
+    const humanListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/human-requests';
+    const workflowListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/workflow-runs';
+    if ([...url.searchParams.keys()].some(key => effectiveMethod !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery || workflowListQuery ? !['after', 'limit'].includes(key) : true))
       || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
       if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, 'ORIGIN_DENIED');

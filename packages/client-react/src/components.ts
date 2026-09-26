@@ -1,9 +1,9 @@
-import { createElement, useCallback, useState, type FormEvent, type ReactElement } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react';
 import { ClientError, type RemoteHumanRequest } from '@mayura/client';
 import { validateHumanResponse, type HumanResponseCommandState, type HumanResponseField, type HumanResponseFormDefinition,
   type HumanResponseSubmission } from '@mayura/client/forms';
 import type { HeadlessRunStore } from '@mayura/client/headless';
-import type { WorkflowViewInput } from '@mayura/client/workflows';
+import type { WorkflowCommandState, WorkflowViewInput } from '@mayura/client/workflows';
 import { MayuraReactError, useMayuraHumanRequest, useMayuraRun, useMayuraRunActivity, useMayuraWorkflowGraph } from './index.js';
 
 export interface MayuraRunSummaryProps { readonly store: HeadlessRunStore; readonly label?: string }
@@ -62,6 +62,77 @@ export function MayuraHumanRequestCard({ request, nowMs, label: suppliedLabel, o
   return createElement('article', { 'aria-label': accessibleLabel, 'data-mayura-component': 'human-request' },
     createElement('p', { 'data-mayura-prompt': true }, view.prompt),
     createElement('p', { role: 'status', 'aria-live': 'polite' }, view.statusText), action);
+}
+
+export interface MayuraWorkflowPauseControlProps {
+  readonly workflow: WorkflowViewInput; readonly commandState?: WorkflowCommandState; readonly label?: string;
+  /** Distinguishes otherwise identical buttons for assistive technology, e.g. "run 7d2ddd96" gives "Pause workflow for run 7d2ddd96". */
+  readonly subject?: string;
+  readonly onPause?: (target: { readonly runId: string; readonly revision: number }) => void;
+  readonly onResume?: (target: { readonly runId: string; readonly revision: number }) => void;
+}
+/** Explicit per-run pause/resume intent. Mounting performs no request; the application routes each event to its command controller. */
+export function MayuraWorkflowPauseControl({ workflow, commandState, label: suppliedLabel, subject, onPause, onResume }: MayuraWorkflowPauseControlProps): ReactElement {
+  const accessibleLabel = label(suppliedLabel, 'Workflow pause control'); const subjectText = subject === undefined ? undefined : label(subject, 'workflow');
+  if (commandState !== undefined && (!Object.isFrozen(commandState) || commandState.runId !== workflow.runId)) throw new MayuraReactError('INVALID_COMPONENT_PROPS');
+  // Feedback describes one revision; once the view has moved on (another operator, a fleet sweep) it is stale and hidden.
+  const current = commandState !== undefined && (commandState.status === 'submitting' || commandState.workflowRevision === workflow.revision);
+  const status = current ? commandState!.status : 'idle'; const busy = status === 'submitting' || status === 'disposed';
+  const pausable = ['running', 'waiting'].includes(workflow.status) && onPause !== undefined;
+  const resumable = workflow.status === 'paused' && onResume !== undefined;
+  const target = Object.freeze({ runId: workflow.runId, revision: workflow.revision });
+  const act = useCallback(() => {
+    // aria-disabled keeps focus on the control while a command is in flight; the handler itself enforces the lock.
+    if (busy) return;
+    if (pausable) onPause!(target); else if (resumable) onResume!(target);
+  }, [busy, pausable, resumable, onPause, onResume, target.runId, target.revision]);
+  const action = current ? commandState!.action : null;
+  const feedback = status === 'submitting' ? (action === 'pause' ? 'Pausing workflow' : action === 'resume' ? 'Resuming workflow' : 'Command in progress')
+    : status === 'succeeded' ? (action === 'pause' ? 'Pause applied' : action === 'resume' ? 'Resume requested' : 'Command applied')
+      : status === 'conflict' ? 'Workflow changed or has an effect in flight; refresh before retrying'
+        : status === 'failed' ? 'Command outcome unknown; refresh before retrying'
+          : status === 'disposed' ? 'Command controller closed' : null;
+  return createElement('section', { 'aria-label': accessibleLabel, 'data-mayura-component': 'workflow-pause-control', 'aria-busy': status === 'submitting' },
+    createElement('p', { role: 'status', 'aria-live': 'polite', 'data-workflow-status': workflow.status, 'data-command-status': status },
+      feedback === null ? `Workflow ${workflow.status}` : `Workflow ${workflow.status}. ${feedback}`),
+    pausable || resumable ? createElement('button', { key: 'action', type: 'button', onClick: act, 'aria-disabled': busy,
+      'data-action': pausable ? 'pause' : 'resume',
+      ...(subjectText === undefined ? {} : { 'aria-label': `${pausable ? 'Pause workflow' : 'Resume workflow'} for ${subjectText}` }) },
+    pausable ? 'Pause workflow' : 'Resume workflow') : null);
+}
+
+export interface MayuraFleetHoldControlProps {
+  readonly fleet: { readonly held: boolean; readonly generation: number; readonly changedAtMs: number | null };
+  readonly status?: 'idle' | 'submitting' | 'succeeded' | 'conflict' | 'failed'; readonly label?: string;
+  readonly onHold?: () => void; readonly onRelease?: () => void;
+}
+/** Fleet hold/release intent with a two-step confirmation before holding every run in the scope. */
+export function MayuraFleetHoldControl({ fleet, status = 'idle', label: suppliedLabel, onHold, onRelease }: MayuraFleetHoldControlProps): ReactElement {
+  const accessibleLabel = label(suppliedLabel, 'Fleet hold control'); const [confirming, setConfirming] = useState(false);
+  const primary = useRef<HTMLButtonElement | null>(null); const wasConfirming = useRef(false);
+  // Return focus to the primary action when the confirmation closes, so keyboard users are not dropped to the page body.
+  useEffect(() => { if (wasConfirming.current && !confirming) primary.current?.focus(); wasConfirming.current = confirming; }, [confirming]);
+  if (!fleet || typeof fleet.held !== 'boolean' || !Number.isSafeInteger(fleet.generation) || fleet.generation < 0
+    || !['idle', 'submitting', 'succeeded', 'conflict', 'failed'].includes(status)) throw new MayuraReactError('INVALID_COMPONENT_PROPS');
+  const busy = status === 'submitting';
+  const request = useCallback(() => { if (!busy) setConfirming(true); }, [busy]);
+  const cancel = useCallback(() => { setConfirming(false); }, []);
+  const confirm = useCallback(() => { if (busy) return; setConfirming(false); onHold?.(); }, [busy, onHold]);
+  const release = useCallback(() => { if (!busy) onRelease?.(); }, [busy, onRelease]);
+  const summary = fleet.held ? `Fleet held (generation ${fleet.generation}); hosts and coordinators drive no runs` : 'Fleet running';
+  const feedback = status === 'submitting' ? 'Updating fleet hold' : status === 'conflict' ? 'Fleet state changed; refresh before retrying'
+    : status === 'failed' ? 'Fleet command outcome unknown; refresh before retrying' : null;
+  const actions = fleet.held
+    ? (onRelease === undefined ? null : createElement('button', { key: 'primary', ref: primary, type: 'button', onClick: release, 'aria-disabled': busy }, 'Release fleet hold'))
+    : onHold === undefined ? null : confirming
+      ? createElement('div', { key: 'confirm', role: 'group', 'aria-label': 'Confirm fleet hold' },
+        createElement('p', { id: 'mayura-fleet-hold-warning' }, 'Holding stops every host and coordinator in this scope from driving runs.'),
+        createElement('button', { type: 'button', onClick: confirm, 'aria-disabled': busy, 'aria-describedby': 'mayura-fleet-hold-warning', autoFocus: true }, 'Confirm hold'),
+        createElement('button', { type: 'button', onClick: cancel }, 'Cancel'))
+      : createElement('button', { key: 'primary', ref: primary, type: 'button', onClick: request, 'aria-disabled': busy }, 'Hold fleet');
+  return createElement('section', { 'aria-label': accessibleLabel, 'data-mayura-component': 'fleet-hold-control', 'aria-busy': busy },
+    createElement('p', { role: 'status', 'aria-live': 'polite', 'data-fleet-held': fleet.held, 'data-command-status': status },
+      feedback === null ? summary : `${summary}. ${feedback}`), actions);
 }
 
 function fieldControl(field: HumanResponseField): ReactElement {

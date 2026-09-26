@@ -738,6 +738,19 @@ describe('origin and credential transport boundaries', () => {
     await error(await value.fetch(request('/v1/agents', { headers: { cookie: 'Authorization=Bearer SECRET', origin: browserOrigin } }, null)), 401, 'UNAUTHORIZED');
   });
 
+  it('accepts a browser preflight for paginated reads that carry query parameters', async () => {
+    const authenticate = vi.fn(async () => identity()); const value = server({ allowedOrigins: [browserOrigin], authenticate });
+    const headers = { origin: browserOrigin, 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' };
+    for (const path of ['/v1/workflow-runs?limit=50', '/v1/human-requests?after=a&limit=5', `/v1/runs/${'a'.repeat(8)}-aaaa-4aaa-8aaa-${'a'.repeat(12)}/events?after=3`]) {
+      const preflight = await value.fetch(request(path, { method: 'OPTIONS', headers }, null));
+      expect(preflight.status).toBe(204); expect(preflight.headers.get('access-control-allow-origin')).toBe(browserOrigin);
+    }
+    expect(authenticate).not.toHaveBeenCalled();
+    await error(await value.fetch(request('/v1/workflow-runs?limit=50', { method: 'OPTIONS', headers: { ...headers, origin: 'https://attacker.example.test' } }, null)), 403, 'ORIGIN_DENIED');
+    await error(await value.fetch(request('/v1/workflow-runs?unknown=1', { headers: { origin: browserOrigin } })), 400, 'INVALID_QUERY');
+    await error(await value.fetch(request('/v1/workflow-runs?access_token=PRIVATE', { method: 'OPTIONS', headers }, null)), 400, 'INVALID_QUERY');
+  });
+
   it('limits unauthenticated preflight to declared methods and headers', async () => {
     const authenticate = vi.fn(async () => identity()); const value = server({ allowedOrigins: [browserOrigin], authenticate });
     const headers = { origin: browserOrigin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'Authorization, Content-Type, Idempotency-Key' };

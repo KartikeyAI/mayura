@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHeadlessRunStore } from '../../client/src/headless.js';
 import type { RemoteHumanRequest, RemoteRun, RemoteSnapshot } from '../../client/src/index.js';
 import { defineHumanResponseForm } from '@mayura/client/forms';
+import { createWorkflowCommandController, type WorkflowViewInput } from '@mayura/client/workflows';
+import { MayuraFleetHoldControl, MayuraWorkflowPauseControl } from '../src/components.js';
 import { MayuraHumanRequestCard, MayuraHumanResponseForm, MayuraRunSummary, MayuraWorkflowGraph } from '../src/components.js';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -91,5 +93,99 @@ describe('accessible React components', () => {
     expect(() => renderToString(createElement(MayuraHumanResponseForm,
       { request: request(), definition: formDefinition(), nowMs: 1_000, commandState: Object.freeze({ ...succeeded, requestId: 'other' }), onSubmit: () => {} })))
       .toThrow(expect.objectContaining({ code: 'INVALID_COMPONENT_PROPS' }));
+  });
+
+  it('renders an inert pause control and emits only explicit run-bound intent', async () => {
+    const onPause = vi.fn(); const onResume = vi.fn();
+    const html = renderToString(createElement(MayuraWorkflowPauseControl, { workflow: graph, onPause, onResume }));
+    expect(html).toContain('Workflow running'); expect(html).toContain('Pause workflow'); expect(onPause).not.toHaveBeenCalled();
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: graph, onPause, onResume })); });
+    const button = element.querySelector<HTMLButtonElement>('button')!;
+    expect(button.getAttribute('data-action')).toBe('pause'); expect(button.getAttribute('aria-disabled')).toBe('false');
+    await act(async () => { button.click(); });
+    expect(onPause).toHaveBeenCalledWith({ runId: graph.runId, revision: 1 }); expect(onResume).not.toHaveBeenCalled();
+    const paused = Object.freeze({ ...graph, revision: 2, status: 'paused' as const });
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: paused, onPause, onResume })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow paused');
+    await act(async () => { element.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(onResume).toHaveBeenCalledWith({ runId: graph.runId, revision: 2 });
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: Object.freeze({ ...graph, status: 'succeeded' as const }), onPause, onResume })); });
+    expect(element.querySelector('button')).toBeNull();
+  });
+
+  it('keeps focus on a locked pause button while its command is in flight and reports unknown outcomes', async () => {
+    let finish!: (value: WorkflowViewInput) => void; const pending = new Promise<WorkflowViewInput>(resolve => { finish = resolve; });
+    const unused = async (): Promise<WorkflowViewInput> => { throw new Error('unused'); };
+    const controller = createWorkflowCommandController({ workflow: graph, client: { cancelWorkflow: unused, approveWorkflow: unused, pauseWorkflow: () => pending } });
+    const onPause = vi.fn(() => { void controller.pause({ commandId: 'pause-1' }).catch(() => undefined); });
+    const render = () => act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: graph, commandState: controller.getSnapshot(), onPause })); });
+    await render(); const button = element.querySelector<HTMLButtonElement>('button')!; button.focus();
+    await act(async () => { button.click(); }); await render();
+    const locked = element.querySelector<HTMLButtonElement>('button')!;
+    expect(locked).toBe(button); expect(dom.window.document.activeElement).toBe(button);
+    expect(locked.getAttribute('aria-disabled')).toBe('true'); expect(element.querySelector('section')!.getAttribute('aria-busy')).toBe('true');
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow running. Pausing workflow');
+    await act(async () => { locked.click(); }); expect(onPause).toHaveBeenCalledOnce();
+    const paused = Object.freeze({ ...graph, revision: 2, status: 'paused' as const }); finish(paused); await act(async () => { await pending; });
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: paused, commandState: controller.getSnapshot(), onPause })); });
+    expect(element.querySelector('[role="status"]')!.getAttribute('data-command-status')).toBe('succeeded');
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow paused. Pause applied');
+    // An unknown outcome leaves the displayed revision unchanged, so its feedback stays visible.
+    const failed = Object.freeze({ ...controller.getSnapshot(), status: 'failed' as const, workflowRevision: 1 });
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: graph, commandState: failed, onPause })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow running. Command outcome unknown; refresh before retrying');
+    expect(() => renderToString(createElement(MayuraWorkflowPauseControl, { workflow: Object.freeze({ ...graph, runId: 'f'.repeat(64) }), commandState: controller.getSnapshot() })))
+      .toThrow(expect.objectContaining({ code: 'INVALID_COMPONENT_PROPS' }));
+  });
+
+  it('requires an explicit confirmation before holding the fleet and releases in one step', async () => {
+    const onHold = vi.fn(); const onRelease = vi.fn(); const running = Object.freeze({ held: false, generation: 0, changedAtMs: null });
+    await act(async () => { root.render(createElement(MayuraFleetHoldControl, { fleet: running, onHold, onRelease })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Fleet running');
+    await act(async () => { element.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(onHold).not.toHaveBeenCalled(); const group = element.querySelector('[role="group"]')!;
+    expect(group.getAttribute('aria-label')).toBe('Confirm fleet hold');
+    const [confirm, cancel] = [...group.querySelectorAll('button')]; expect(dom.window.document.activeElement).toBe(confirm);
+    expect(confirm!.getAttribute('aria-describedby')).toBe('mayura-fleet-hold-warning');
+    await act(async () => { cancel!.click(); }); expect(element.querySelector('[role="group"]')).toBeNull(); expect(onHold).not.toHaveBeenCalled();
+    await act(async () => { element.querySelector<HTMLButtonElement>('button')!.click(); });
+    await act(async () => { element.querySelector<HTMLButtonElement>('[role="group"] button')!.click(); }); expect(onHold).toHaveBeenCalledOnce();
+    const held = Object.freeze({ held: true, generation: 1, changedAtMs: 5 });
+    await act(async () => { root.render(createElement(MayuraFleetHoldControl, { fleet: held, status: 'submitting', onHold, onRelease })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Fleet held (generation 1); hosts and coordinators drive no runs. Updating fleet hold');
+    const releaseButton = element.querySelector<HTMLButtonElement>('button')!; expect(releaseButton.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { releaseButton.click(); }); expect(onRelease).not.toHaveBeenCalled();
+    await act(async () => { root.render(createElement(MayuraFleetHoldControl, { fleet: held, onHold, onRelease })); });
+    await act(async () => { element.querySelector<HTMLButtonElement>('button')!.click(); }); expect(onRelease).toHaveBeenCalledOnce();
+    expect(() => renderToString(createElement(MayuraFleetHoldControl, { fleet: { held: true, generation: -1, changedAtMs: null } })))
+      .toThrow(expect.objectContaining({ code: 'INVALID_COMPONENT_PROPS' }));
+  });
+
+  it('hides stale command feedback once the view revision moves on and names buttons per run', async () => {
+    const unused = async (): Promise<WorkflowViewInput> => { throw new Error('unused'); };
+    const resumedView = Object.freeze({ ...graph, revision: 3, status: 'waiting' as const });
+    const controller = createWorkflowCommandController({ workflow: Object.freeze({ ...graph, revision: 2, status: 'paused' as const }),
+      client: { cancelWorkflow: unused, approveWorkflow: unused, resumeWorkflow: async () => resumedView } });
+    await controller.resume({ commandId: 'resume-1' }); const state = controller.getSnapshot(); expect(state.workflowRevision).toBe(3);
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: resumedView, commandState: state, subject: 'run aaaaaaaa', onPause: vi.fn() })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow waiting. Resume requested');
+    expect(element.querySelector('button')!.getAttribute('aria-label')).toBe('Pause workflow for run aaaaaaaa');
+    // A fleet sweep has since paused the run at a newer revision: the old resume feedback must not be shown.
+    const swept = Object.freeze({ ...graph, revision: 4, status: 'paused' as const });
+    await act(async () => { root.render(createElement(MayuraWorkflowPauseControl, { workflow: swept, commandState: state, subject: 'run aaaaaaaa', onResume: vi.fn() })); });
+    expect(element.querySelector('[role="status"]')!.textContent).toBe('Workflow paused');
+    expect(element.querySelector('button')!.getAttribute('aria-label')).toBe('Resume workflow for run aaaaaaaa');
+  });
+
+  it('returns focus to the primary fleet action after confirming, cancelling or changing hold state', async () => {
+    const running = Object.freeze({ held: false, generation: 0, changedAtMs: null }); const held = Object.freeze({ held: true, generation: 1, changedAtMs: 5 });
+    const render = (fleet: typeof running | typeof held) => act(async () => { root.render(createElement(MayuraFleetHoldControl, { fleet, onHold: vi.fn(), onRelease: vi.fn() })); });
+    await render(running); const primary = element.querySelector<HTMLButtonElement>('button')!;
+    await act(async () => { primary.click(); }); await act(async () => { element.querySelectorAll<HTMLButtonElement>('[role="group"] button')[1]!.click(); });
+    expect(dom.window.document.activeElement?.textContent).toBe('Hold fleet');
+    await act(async () => { element.querySelector<HTMLButtonElement>('button')!.click(); }); await act(async () => { element.querySelector<HTMLButtonElement>('[role="group"] button')!.click(); });
+    const afterConfirm = dom.window.document.activeElement as HTMLButtonElement; expect(afterConfirm.textContent).toBe('Hold fleet');
+    await render(held); expect(dom.window.document.activeElement).toBe(afterConfirm); expect(afterConfirm.textContent).toBe('Release fleet hold');
+    await render(running); expect(dom.window.document.activeElement).toBe(afterConfirm); expect(afterConfirm.textContent).toBe('Hold fleet');
   });
 });

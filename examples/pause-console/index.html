@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mayura pause console</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+      body { margin: 0 auto; max-width: 56rem; padding: 1.5rem 1rem; }
+      section, article { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: .5rem; padding: .75rem 1rem; margin-block: .75rem; }
+      button { font: inherit; padding: .35rem .9rem; border-radius: .35rem; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
+      button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+      button[aria-disabled="true"] { opacity: .55; cursor: progress; }
+      [role="status"] { font-weight: 600; }
+      [data-status="succeeded"] { color: #15803d; } [data-status="waiting"] { color: #b45309; } [data-status="dispatching"] { color: #1d4ed8; }
+      code { font-size: .85em; }
+    </style>
+  </head>
+  <body>
+    <main id="root"><p>Loading console…</p></main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
