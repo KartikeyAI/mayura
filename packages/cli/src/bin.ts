@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
+import { loadApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from './application.js';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
   inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
@@ -110,6 +111,23 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
+  if (command === 'serve' || command === 'worker') {
+    assertArguments(arguments_, command === 'serve' ? ['--app'] : ['--app', '--probe-host', '--probe-port', '--drain-timeout-ms']);
+    const path = option(arguments_, '--app'); if (!path) throw new Error(`${command} requires --app <module.mjs>.`);
+    const probePort = option(arguments_, '--probe-port'); const drain = option(arguments_, '--drain-timeout-ms');
+    const application = await loadApplication(path);
+    // First signal: graceful close or drain. A second signal during shutdown forces exit.
+    const controller = new AbortController(); let signals = 0;
+    const stop = (): void => { signals += 1; if (signals > 1) process.exit(1); controller.abort(); };
+    process.on('SIGINT', stop); process.on('SIGTERM', stop);
+    const log = (event: MayuraLifecycleEvent): void => { console.log(JSON.stringify(event)); };
+    try {
+      if (command === 'serve') return await serveApplication({ application, signal: controller.signal, log });
+      return await runWorkerApplication({ application, signal: controller.signal, log,
+        ...(probePort === undefined ? {} : { probe: { hostname: option(arguments_, '--probe-host') ?? '127.0.0.1', port: Number(probePort) } }),
+        ...(drain === undefined ? {} : { drainTimeoutMs: Number(drain) }) });
+    } finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); }
+  }
   if (command === 'fleet-get' || command === 'fleet-hold' || command === 'fleet-release' || command === 'fleet-sweep') {
     assertArguments(arguments_, command === 'fleet-sweep' ? ['--url', '--phase', '--limit', '--max-pages', '--cursor-file'] : ['--url'], ['--token-stdin']);
     const baseUrl = option(arguments_, '--url');
@@ -159,7 +177,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause | fleet-get | fleet-hold | fleet-release | fleet-sweep');
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause | fleet-get | fleet-hold | fleet-release | fleet-sweep | serve | worker');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }
