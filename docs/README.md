@@ -55,7 +55,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Authenticated workflow index](specs/workflow-index-transport.md) and [listing guide](how-to/workflow-index.md) — bounded content-free authorized summaries with explicit opaque pagination.
 - [Authenticated workflow signals](specs/workflow-signal-transport.md) and [delivery guide](how-to/workflow-signals.md) — revision-bound bounded signal delivery through a separate least-authority adapter.
 - [Authenticated workflow continuation](specs/workflow-resume-transport.md) and [resume guide](how-to/workflow-resume.md) — revision-bound continuation that cannot force an unresolved gate.
-- [Durable operator pause foundation](specs/workflow-operator-pause.md) — quiescent pause/resume for durable formats 2–5 with restart persistence, claim fencing, tree-wide root fencing, fleet deferral and no wait bypass.
+- [Durable operator pause](specs/workflow-operator-pause.md) and [pause guide](how-to/workflow-pause.md) — quiescent pause/resume for durable formats 2–5 with restart persistence, claim fencing, tree-wide root fencing, fleet deferral, an authenticated revision-bound pause command and no wait bypass.
 - [React reference components](specs/react-components.md) and [component guide](how-to/react-components.md) — optional unstyled semantic run, workflow and human-request views.
 - [Human response forms](specs/human-response-forms.md) and [form guide](how-to/human-response-forms.md) — finite schema-driven, request/digest-bound browser validation and an explicit React form.
 - [Local-server how-to](how-to/local-server.md), [Node host contract](specs/node-local-host.md) and [host-adapter decision](adr/0004-http-protocol-before-host-adapter.md) — optional loopback-only Hono hosting.

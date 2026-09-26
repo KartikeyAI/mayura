@@ -368,6 +368,16 @@ export async function resumeWorkflow(options: OperationalClientOptions, input: {
   exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
 }
 
+/** Request one revision-bound quiescent operator pause without interrupting an in-flight effect or retrying automatically. */
+export async function pauseWorkflow(options: OperationalClientOptions, input: {
+  readonly id: string; readonly revision: number; readonly commandId: string;
+}): Promise<OperationalWorkflow> {
+  if (!workflowRunIdentifier.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision < 1 || !identifier.test(input.commandId))
+    throw new MayuraError('INVALID_CONFIG', 'Workflow pause identity is invalid.');
+  const raw = await transport(options, `/v1/workflow-runs/${input.id}/pause`, [200], 'POST', { commandId: input.commandId, revision: input.revision });
+  exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
+}
+
 /** Bounded explicit polling of read-only run state; commands are never issued or retried. */
 export async function waitForRun(options: OperationalClientOptions, id: string,
   settings: { readonly pollIntervalMs?: number; readonly maxWaitMs?: number } = {}): Promise<OperationalRun> {

@@ -131,6 +131,25 @@ describe('durable workflow command controller', () => {
     expect(missing.getSnapshot().status).toBe('idle');
   });
 
+  it('requests a pause only from an active view and resumes a paused view through continuation', async () => {
+    const paused = view([{ id: 'child', kind: 'child', dependsOn: [] }], [{ id: 'child', kind: 'child', status: 'waiting', childRunId }],
+      { status: 'paused', revision: 8 }); const cancelWorkflow = vi.fn(async () => paused); const approveWorkflow = vi.fn(async () => paused);
+    const pauseWorkflow = vi.fn<MayuraClient['pauseWorkflow']>(async () => paused);
+    const controller = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow, pauseWorkflow } });
+    await expect(controller.pause({ commandId: 'pause-1' })).resolves.toBe(paused);
+    expect(pauseWorkflow).toHaveBeenCalledWith(runId, 7, expect.objectContaining({ commandId: 'pause-1' }));
+    expect(controller.getSnapshot()).toMatchObject({ status: 'succeeded', action: 'pause', workflowRevision: 8, workflowStatus: 'paused' });
+    const resumeWorkflow = vi.fn<MayuraClient['resumeWorkflow']>(async () => view([{ id: 'child', kind: 'child', dependsOn: [] }],
+      [{ id: 'child', kind: 'child', status: 'waiting', childRunId }], { status: 'waiting', revision: 9 }));
+    const again = createWorkflowCommandController({ workflow: paused, client: { cancelWorkflow, approveWorkflow, pauseWorkflow, resumeWorkflow } });
+    await expect(again.pause({ commandId: 'pause-2' })).rejects.toMatchObject({ code: 'INVALID_WORKFLOW_COMMAND' });
+    expect(pauseWorkflow).toHaveBeenCalledOnce(); expect(again.getSnapshot().status).toBe('idle');
+    await expect(again.resume({ commandId: 'resume-paused' })).resolves.toMatchObject({ status: 'waiting' });
+    expect(resumeWorkflow).toHaveBeenCalledWith(runId, 8, expect.objectContaining({ commandId: 'resume-paused' }));
+    const missing = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });
+    await expect(missing.pause({ commandId: 'pause-3' })).rejects.toMatchObject({ code: 'INVALID_WORKFLOW_CONTROLLER' });
+  });
+
   it('enforces single flight and never retries or reveals an unknown failure', async () => {
     const pending = deferred<WorkflowViewInput>(); const cancelWorkflow = vi.fn(() => pending.promise); const approveWorkflow = vi.fn(() => pending.promise);
     const controller = createWorkflowCommandController({ workflow: waiting(), client: { cancelWorkflow, approveWorkflow } });

@@ -23,7 +23,7 @@ export interface WorkflowGraphProjection {
   readonly progress: { readonly total: number; readonly terminal: number; readonly succeeded: number; readonly active: number; readonly waiting: number; readonly failed: number };
 }
 export type WorkflowCommandStatus = 'idle' | 'submitting' | 'succeeded' | 'conflict' | 'failed' | 'disposed';
-export type WorkflowCommandAction = 'cancel' | 'approve' | 'signal' | 'resume';
+export type WorkflowCommandAction = 'cancel' | 'approve' | 'signal' | 'resume' | 'pause';
 export interface WorkflowCommandState {
   readonly stateRevision: number; readonly status: WorkflowCommandStatus; readonly runId: string;
   readonly workflowRevision: number; readonly workflowStatus: WorkflowViewRunStatus; readonly action: WorkflowCommandAction | null;
@@ -32,7 +32,7 @@ export interface WorkflowCommandState {
 export interface WorkflowApprovalIntent { readonly nodeId: string; readonly approvalDigest: string; readonly childRunId?: string }
 export interface WorkflowSignalIntent { readonly signalId: string; readonly signalName: string; readonly value: ClientJson }
 export interface WorkflowCommandControllerOptions {
-  readonly client: Pick<MayuraClient, 'cancelWorkflow' | 'approveWorkflow'> & Partial<Pick<MayuraClient, 'signalWorkflow' | 'resumeWorkflow'>>;
+  readonly client: Pick<MayuraClient, 'cancelWorkflow' | 'approveWorkflow'> & Partial<Pick<MayuraClient, 'signalWorkflow' | 'resumeWorkflow' | 'pauseWorkflow'>>;
   readonly workflow: WorkflowViewInput; readonly maxSubscribers?: number;
 }
 export interface WorkflowCommandController {
@@ -42,6 +42,8 @@ export interface WorkflowCommandController {
   approve(command: WorkflowApprovalIntent, options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   signal(command: WorkflowSignalIntent, options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   resume(options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
+  /** Request a quiescent operator pause; the server may conflict while an effect is claimed or in flight. */
+  pause(options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
   reset(): WorkflowCommandState;
   dispose(): void;
 }
@@ -262,6 +264,12 @@ export function createWorkflowCommandController(options: WorkflowCommandControll
       if (typeof client.resumeWorkflow !== 'function') return Promise.reject(new ClientError('INVALID_WORKFLOW_CONTROLLER'));
       if (!['running', 'waiting', 'paused'].includes(workflow.status)) return Promise.reject(new ClientError('INVALID_WORKFLOW_COMMAND'));
       return execute('resume', null, settings, signal => client.resumeWorkflow!(workflow.runId, workflow.revision,
+        { commandId: settings.commandId, signal }));
+    },
+    pause: settings => {
+      if (typeof client.pauseWorkflow !== 'function') return Promise.reject(new ClientError('INVALID_WORKFLOW_CONTROLLER'));
+      if (!['running', 'waiting'].includes(workflow.status)) return Promise.reject(new ClientError('INVALID_WORKFLOW_COMMAND'));
+      return execute('pause', null, settings, signal => client.pauseWorkflow!(workflow.runId, workflow.revision,
         { commandId: settings.commandId, signal }));
     },
     reset: () => {

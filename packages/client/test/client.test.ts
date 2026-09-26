@@ -38,6 +38,7 @@ function fixture(options: {
   workflowControls?: AgentServerOptions['workflowControls'];
   workflowSignals?: AgentServerOptions['workflowSignals'];
   workflowResumes?: AgentServerOptions['workflowResumes'];
+  workflowPauses?: AgentServerOptions['workflowPauses'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -57,6 +58,7 @@ function fixture(options: {
     ...(options.workflowControls ? { workflowControls: options.workflowControls } : {}),
     ...(options.workflowSignals ? { workflowSignals: options.workflowSignals } : {}),
     ...(options.workflowResumes ? { workflowResumes: options.workflowResumes } : {}),
+    ...(options.workflowPauses ? { workflowPauses: options.workflowPauses } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -263,6 +265,19 @@ describe('browser durable workflow view client', () => {
     const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
     await expect(conflict.client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
     expect(conflict.transport).toHaveBeenCalledOnce();
+  });
+
+  it('requests one operator pause and never retries a conflict', async () => {
+    const pause = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3, status: 'paused' as const } }));
+    const { client, transport } = fixture({ workflowPauses: { pause } });
+    expect(await client.pauseWorkflow(runId, 2, { commandId: 'pause-1' })).toMatchObject({ revision: 3, status: 'paused' });
+    expect(pause).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', runId, revision: 2, commandId: 'pause-1' }));
+    expect(JSON.parse(transport.mock.calls[0]![1]?.body as string)).toEqual({ commandId: 'pause-1', revision: 2 });
+    expect(String(transport.mock.calls[0]![0])).toMatch(new RegExp(`/v1/workflow-runs/${runId}/pause$`));
+    const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
+    await expect(conflict.client.pauseWorkflow(runId, 2, { commandId: 'pause-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    expect(conflict.transport).toHaveBeenCalledOnce();
+    await expect(client.pauseWorkflow(runId, 0, { commandId: 'pause-1' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
 });
 

@@ -34,6 +34,12 @@ Child aggregates keep their own status; the pause lives only on the root. Resume
 
 The tree runtime halts on a paused root before its terminal-cleanup path, reports a pause committed mid-drive as a `paused` snapshot rather than a storage conflict, and exposes `pause(runId)`/`resume(runId)`. Custom tree adapters that omit the optional commands keep working; pause then fails with `UNSUPPORTED_PROFILE`. Tree discovery continues to return only `running` and `waiting` roots.
 
+## Authenticated pause command
+
+`POST /v1/workflow-runs/:runId/pause` accepts exactly `{ commandId, revision }`, requires `workflows:control` and invokes one separately configured `AgentServerOptions.workflowPauses.pause` callback with verified scope, authorized agent IDs and actor identity. It shares the continuation route's validation, bounded operation admission and acknowledgement checks: `applied` views are revalidated as content-free, run-bound and not older than the command revision; `conflict` maps to HTTP 409; `not_found` maps to 404; exceptions become `WORKFLOW_UNAVAILABLE`. The adapter journals `commandId` exactly as for the other workflow commands. Mayura sends one request and never retries an ambiguous acknowledgement.
+
+Lifting a pause uses the existing continuation command: a continuation adapter that observes a paused run calls the format runtime's `resume(runId)` and then continues normally, still without authority to satisfy a gate. The browser client exposes `pauseWorkflow`; the command controller adds a `pause` action available only from a `running` or `waiting` view, and its `resume` action is available from a `paused` view. The CLI adds `workflow-pause`. See the [pause guide](../how-to/workflow-pause.md).
+
 ## Remaining work
 
-The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. All four durable formats now have a storage-level pause. This slice does not yet provide an authenticated pause command, fleet-wide pause, worker draining or public-ingress qualification; those must be completed before the general operator-pause roadmap item can close.
+The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. All four durable formats now have a storage-level pause and an authenticated pause command. Still missing are fleet-wide pause, worker draining or public-ingress qualification; live UI qualification of the pause controls; those must be completed before the general operator-pause roadmap item can close.

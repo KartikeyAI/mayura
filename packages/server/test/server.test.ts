@@ -618,6 +618,43 @@ describe('authenticated durable workflow resume', () => {
   });
 });
 
+describe('authenticated durable workflow pause', () => {
+  it('passes one exact revision-bound pause request to its separate adapter', async () => {
+    const pause = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3, status: 'paused' as const } }));
+    const resume = vi.fn(async () => ({ status: 'conflict' as const }));
+    const value = server({ workflowPauses: { pause }, workflowResumes: { resume } });
+    const response = await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) }));
+    expect(response.status).toBe(200); expect((await json(response))['workflow']).toMatchObject({ revision: 3, status: 'paused' });
+    expect(pause).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', scope: { principalId: 'alice', projectId: 'project' },
+      agentIds: ['echo'], runId: workflowId, revision: 2, commandId: 'pause-1' }));
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('is unavailable without its adapter even when continuation is configured', async () => {
+    const resume = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3 } }));
+    const value = server({ workflowResumes: { resume } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) })), 404, 'NOT_FOUND'); expect(resume).not.toHaveBeenCalled();
+    expect(() => server({ workflowPauses: { pause: async () => ({ status: 'conflict' as const }), extra: () => undefined } as never })).toThrow();
+  });
+
+  it('denies before body parsing, maps conflict once and rejects stale acknowledgements', async () => {
+    const deniedPause = vi.fn(async () => ({ status: 'conflict' as const }));
+    const denied = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowPauses: { pause: deniedPause } });
+    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    expect(deniedPause).not.toHaveBeenCalled();
+    const pause = vi.fn(async () => ({ status: 'conflict' as const })); const value = server({ workflowPauses: { pause } });
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) })), 409, 'WORKFLOW_CONFLICT'); expect(pause).toHaveBeenCalledOnce();
+    const stale = server({ workflowPauses: { pause: async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 1 } }) } });
+    await error(await stale.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) })), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2, force: true }) })), 400, 'INVALID_REQUEST'); expect(pause).toHaveBeenCalledOnce();
+  });
+});
+
 describe('origin and credential transport boundaries', () => {
   it('requires an exact public destination origin', async () => {
     const authenticate = vi.fn(async () => identity()); const value = server({ authenticate });

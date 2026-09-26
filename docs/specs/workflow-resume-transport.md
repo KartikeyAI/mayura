@@ -16,4 +16,4 @@ Mayura performs one callback/request and never retries an ambiguous acknowledgem
 
 ## Limits
 
-The framework transport cannot prove that an arbitrary application callback uses the pinned definition or correctly reconciles effects. Applications should route the request to the format-specific registered coordinator/host and preserve its normal authorization, lease, receipt and recovery rules. This boundary does not implement operator pause, terminal continuation runs, bulk fleet control or an always-on durable host.
+The framework transport cannot prove that an arbitrary application callback uses the pinned definition or correctly reconciles effects. Applications should route the request to the format-specific registered coordinator/host and preserve its normal authorization, lease, receipt and recovery rules. For a run in the operator `paused` state, the adapter calls the format runtime's scheduling-only `resume(runId)` before continuing; entering the pause uses the separate [pause command](workflow-operator-pause.md#authenticated-pause-command). This boundary does not implement terminal continuation runs, bulk fleet control or an always-on durable host.

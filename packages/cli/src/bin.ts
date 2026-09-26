@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, planProject, readProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, pauseWorkflow, planProject, readProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -110,9 +110,9 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
-  if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve' || command === 'workflow-signal' || command === 'workflow-resume') {
+  if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve' || command === 'workflow-signal' || command === 'workflow-resume' || command === 'workflow-pause') {
     const valued = command === 'workflow-list' ? ['--url', '--after', '--limit'] : command === 'workflow-get' ? ['--url', '--id'] : command === 'workflow-cancel'
-      ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-resume'
+      ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-resume' || command === 'workflow-pause'
         ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-approve'
         ? ['--url', '--id', '--revision', '--command-id', '--node', '--digest', '--child-id']
         : ['--url', '--id', '--revision', '--command-id', '--signal-id', '--signal-name', '--value-file'];
@@ -126,6 +126,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     if (!revision || !commandId) throw new Error(`${command} requires --revision and --command-id.`);
     if (command === 'workflow-cancel') return { status: 'succeeded', workflow: await cancelWorkflow(settings, { id: id!, revision: Number(revision), commandId }) };
     if (command === 'workflow-resume') return { status: 'succeeded', workflow: await resumeWorkflow(settings, { id: id!, revision: Number(revision), commandId }) };
+    if (command === 'workflow-pause') return { status: 'succeeded', workflow: await pauseWorkflow(settings, { id: id!, revision: Number(revision), commandId }) };
     if (command === 'workflow-signal') {
       const signalId = option(arguments_, '--signal-id'); const signalName = option(arguments_, '--signal-name'); const file = option(arguments_, '--value-file');
       if (!signalId || !signalName || !file) throw new Error('workflow-signal requires --signal-id, --signal-name and --value-file.');
@@ -137,7 +138,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume');
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

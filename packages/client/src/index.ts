@@ -70,6 +70,7 @@ export interface MayuraClient {
   approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   signalWorkflow(id: string, command: WorkflowSignalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   resumeWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
+  pauseWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
@@ -444,6 +445,13 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!/^[a-f0-9]{64}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1 || !settings
         || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
       const raw = await command(`/v1/workflow-runs/${id}/resume`, 'POST', settings.signal,
+        json({ commandId: settings.commandId, revision }, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async pauseWorkflow(id: string, revision: number, settings: WorkflowCommandOptions) {
+      if (!/^[a-f0-9]{64}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1 || !settings
+        || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/pause`, 'POST', settings.signal,
         json({ commandId: settings.commandId, revision }, maxBytes));
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
     },

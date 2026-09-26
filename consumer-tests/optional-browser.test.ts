@@ -43,6 +43,10 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if ((await resumeController.resume({ commandId: 'resume-1' })).revision !== 5 || resumeController.getSnapshot().action !== 'resume')
     throw new Error('Workflow continuation state failed.');
   resumeController.dispose();
+  const pauseController = createWorkflowCommandController({ workflow, client });
+  if ((await pauseController.pause({ commandId: 'pause-1' })).revision !== 6 || pauseController.getSnapshot().action !== 'pause')
+    throw new Error('Workflow pause state failed.');
+  pauseController.dispose();
   return agents.length;
 }
 

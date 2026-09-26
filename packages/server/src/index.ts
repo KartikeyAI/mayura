@@ -64,6 +64,10 @@ export interface WorkflowSignalTransport {
 export interface WorkflowResumeTransport {
   readonly resume: (input: WorkflowControlBase) => Promise<WorkflowControlResult>;
 }
+/** Requests a quiescent durable operator pause; it never interrupts an in-flight effect or cancels a run. */
+export interface WorkflowPauseTransport {
+  readonly pause: (input: WorkflowControlBase) => Promise<WorkflowControlResult>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -83,6 +87,7 @@ export interface AgentServerOptions {
   readonly workflowControls?: WorkflowControlTransport;
   readonly workflowSignals?: WorkflowSignalTransport;
   readonly workflowResumes?: WorkflowResumeTransport;
+  readonly workflowPauses?: WorkflowPauseTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -274,6 +279,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (Reflect.ownKeys(fields).length !== 1 || !fields['resume'] || !('value' in fields['resume']) || typeof fields['resume'].value !== 'function')
       throw new Error('Workflow resume transport requires one exact resume callback.');
     return Object.freeze({ resume: fields['resume'].value as WorkflowResumeTransport['resume'] });
+  })();
+  const workflowPauses: WorkflowPauseTransport | undefined = (() => {
+    if (options.workflowPauses === undefined) return undefined;
+    if (options.workflowPauses === null || typeof options.workflowPauses !== 'object') throw new Error('Workflow pause transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowPauses);
+    if (Reflect.ownKeys(fields).length !== 1 || !fields['pause'] || !('value' in fields['pause']) || typeof fields['pause'].value !== 'function')
+      throw new Error('Workflow pause transport requires one exact pause callback.');
+    return Object.freeze({ pause: fields['pause'].value as WorkflowPauseTransport['pause'] });
   })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
@@ -519,14 +532,17 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       return response({ workflow: record });
     }
-    const workflowResumeMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/resume$/.exec(url.pathname);
+    // Continuation and operator pause share one exact revision-bound body; each has its own least-authority adapter.
+    const workflowResumeMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/(resume|pause)$/.exec(url.pathname);
     if (workflowResumeMatch && request.method === 'POST') {
-      requireCapability(identity, 'workflows:control'); if (!workflowResumes) throw new HttpFailure(404, 'NOT_FOUND');
+      requireCapability(identity, 'workflows:control');
+      const callback = workflowResumeMatch[2] === 'pause' ? workflowPauses?.pause : workflowResumes?.resume;
+      if (!callback) throw new HttpFailure(404, 'NOT_FOUND');
       const data = await body(request, signal); exact(data, ['commandId', 'revision']);
       if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
         || !Number.isSafeInteger(data['revision']) || data['revision'] < 1) throw new HttpFailure(400, 'INVALID_REQUEST');
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
-      const operation = Promise.resolve().then(() => workflowResumes.resume(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
+      const operation = Promise.resolve().then(() => callback(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
         actorId: identity.scope.principalId, runId: workflowResumeMatch[1]!, revision: data['revision'] as number,
         commandId: data['commandId'] as string, signal }))).finally(() => { workflowOperations--; });
       let result: WorkflowControlResult;
