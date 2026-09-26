@@ -10,8 +10,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 |---|---|
 | A1 Production Node host: explicit non-loopback binding, HTTPS origin, in-process TLS or declared TLS-terminating proxy, liveness/readiness, graceful shutdown ([spec](specs/production-server.md)) | ✅ |
 | A2 Durable HTTP idempotency so a client retry after a server restart cannot start a duplicate run | ✅ |
-| A3 Durable leadership lease so several worker replicas drive a scope without duplicated host work | ⬜ |
-| A4 Worker supervisor: hosts/coordinators under leadership, readiness, signal-driven drain | ⬜ |
+| A3 Durable leadership lease so several worker replicas drive a scope without duplicated host work ([spec](specs/workers.md)) | ✅ |
+| A4 Worker supervisor: hosts/coordinators under leadership, readiness, drain | ✅ |
 | A5 CLI `serve` and `worker` commands over an explicit application module | ⬜ |
 | A6 Container image and compose profile (server, worker, PostgreSQL) with health checks | ⬜ |
 | A7 Versioned storage schema, `migrate` command, backup/restore runbook with a restore drill | ⬜ |

@@ -9,3 +9,6 @@ export { agentAsDurableWorkflow, type DurableAgentWorkflowOptions } from './agen
 export { createWorkflowFleetControl, graphFleetTarget, lifecycleFleetTarget, treeFleetTarget, type WorkflowFleetControl,
   type WorkflowFleetControlOptions, type WorkflowFleetHoldReader, type WorkflowFleetHoldState, type WorkflowFleetSweepCursor,
   type WorkflowFleetSweepOutcome, type WorkflowFleetSweepReport, type WorkflowFleetTarget } from './fleet-control.js';
+export { createWorkflowLeadership, type WorkflowLeadership, type WorkflowLeadershipOptions, type WorkflowLeadershipState } from './leadership.js';
+export { coordinatorUnit, createWorkflowWorker, type WorkflowWorker, type WorkflowWorkerOptions, type WorkflowWorkerStatus,
+  type WorkflowWorkerUnit } from './worker.js';

@@ -59,6 +59,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Fleet-wide pause](specs/fleet-pause.md) and [fleet control guide](how-to/fleet-control.md) — durable per-scope hold honored by hosts and coordinators, a ledger-backed sweep that pauses discoverable runs and resumes only the ones it paused, and an authenticated `workflows:fleet` transport for server, browser and CLI.
 - [Production server host](specs/production-server.md) — explicit public binding, HTTPS origin, in-process or proxy TLS, host check, probes, HSTS and durable submission idempotency.
 - [v1 release plan](v1-release-plan.md) — the working checklist for Mayura v1.
+- [Workers and leadership](specs/workers.md) — durable leadership lease and a worker supervisor for hosts and coordinators with fail-safe stop, readiness and drain handover.
 - [Bounded worker draining](specs/worker-draining.md) — graceful `drain` for every workflow runtime, coordinator and host: no new wave or claim, admitted effects settle within a deadline, interrupted work is reported.
 - [Durable operator pause](specs/workflow-operator-pause.md) and [pause guide](how-to/workflow-pause.md) — quiescent pause/resume for durable formats 2–5 with restart persistence, claim fencing, tree-wide root fencing, fleet deferral, an authenticated revision-bound pause command and no wait bypass.
 - [React reference components](specs/react-components.md) and [component guide](how-to/react-components.md) — optional unstyled semantic run, workflow and human-request views.
