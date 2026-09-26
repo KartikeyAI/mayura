@@ -2,16 +2,15 @@ import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-describe('V21 public API classification', () => {
-  it('classifies every supported workspace entry point and exposes no accidental stable surface', async () => {
+describe('public API classification', () => {
+  it('classifies every workspace entry point exactly once as stable or trusted-host, with a reviewed API report', async () => {
     const root = resolve(import.meta.dirname, '..', '..', '..');
     const policy = JSON.parse(await readFile(resolve(root, 'compatibility', 'api-stability.json'), 'utf8')) as {
-      format: number; release: string; stableEntryPoints: string[]; experimentalClassification: string; internalPackages: string[];
-      trustedHostEntryPoints: string[];
+      format: number; release: string; targetRelease: string; stableEntryPoints: string[]; trustedHostEntryPoints: string[];
+      experimentalEntryPoints: string[]; internalPackages: string[]; apiReport: string;
     };
-    expect(policy).toEqual({ format: 1, release: '0.1.0-dev.0', stableEntryPoints: [],
-      experimentalClassification: 'all-exported-workspace-entrypoints', internalPackages: ['@mayura/consumer-tests'],
-      trustedHostEntryPoints: ['@mayura/core/host', '@mayura/storage-sql/host', '@mayura/tools/host'] });
+    expect(policy).toMatchObject({ format: 2, targetRelease: '1.0.0', experimentalEntryPoints: [], internalPackages: ['@mayura/consumer-tests'],
+      trustedHostEntryPoints: ['@mayura/core/host', '@mayura/storage-sql/host', '@mayura/tools/host'], apiReport: 'compatibility/api-report.json' });
     const packages = resolve(root, 'packages');
     const classified: string[] = [];
     for (const directory of await readdir(packages)) {
@@ -24,8 +23,10 @@ describe('V21 public API classification', () => {
       expect(Object.keys(manifest.exports ?? {}).length).toBeGreaterThan(0);
       for (const path of Object.keys(manifest.exports ?? {})) classified.push(path === '.' ? manifest.name : `${manifest.name}${path.slice(1)}`);
     }
-    expect(classified).toEqual(expect.arrayContaining(policy.trustedHostEntryPoints));
-    expect(new Set(classified).size).toBe(classified.length);
-    expect(classified.length).toBeGreaterThan(20);
+    const tiers = [...policy.stableEntryPoints, ...policy.trustedHostEntryPoints, ...policy.experimentalEntryPoints];
+    expect(new Set(tiers).size).toBe(tiers.length);
+    expect([...classified].sort()).toEqual([...tiers].sort());
+    const report = JSON.parse(await readFile(resolve(root, policy.apiReport), 'utf8')) as { entryPoints: Record<string, Record<string, unknown>> };
+    expect(Object.keys(report.entryPoints).sort()).toEqual([...classified].sort());
   });
 });

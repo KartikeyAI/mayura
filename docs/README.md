@@ -46,6 +46,9 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Composite workflow fleet](specs/composite-workflow-fleet.md) and [hosting guide](how-to/host-composite-workflows.md) — restart-safe saga/loop parent discovery and hosted continuation.
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Workflow definition versions](how-to/workflow-versions.md) — pinned digests, side-by-side retention, the cross-format version inventory and the deploy gate.
+- [Local inspector](how-to/inspector.md) — opt-in, read-only, same-origin inspector UI over the authenticated read APIs.
+- [Stable API and support policy](api-stability.md) — stable entry points, the API report gate, SemVer, deprecation and support windows.
+- [Performance report](performance.md) — plan §21.3 targets measured on declared hardware (`pnpm perf`).
 - [Native context](specs/native-context.md) — current evidence and required continuity.
 - [HTTP transport/client](specs/http-agent-transport.md) — scoped authentication, idempotent commands and metadata SSE.
 - [Headless UI bindings](specs/headless-ui-bindings.md) and [framework integration guide](how-to/headless-ui.md) — browser-safe explicit run stores and human-request presentation metadata.

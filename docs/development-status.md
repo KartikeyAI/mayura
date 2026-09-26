@@ -170,6 +170,18 @@ The lifecycle-hook-catalog checkpoint (C1) implements all 25 plan §8.2 points (
 
 The native-memory checkpoint (D1–D5, [spec](specs/native-memory-v1.md)) adds a table-backed `memory` storage capability on SQLite and PostgreSQL. `createNativeMemory` provides BM25 lexical, exact/IVF semantic and hybrid retrieval, graph edges and traversal, supersession, streamed import/export including the compact-profile migration path, a content-free change feed, and write hooks. It also adds the local `hashingEmbedder` and a hosted `openAIEmbeddings` adapter (live qualification pending, F9), `createContextCache` with source/scope/change-feed invalidation and prefetch, and `runtime.speculate`. The 24 native-memory conformance cases pass on both databases, including IVF recall of at least 0.9 against exact search on 600 records; the 20,000-vector recall and 50,000-record load bounds belong to the F1 performance suite. Mutation checks confirm that the storage-level sensitivity filter, tombstone permanence, stale-vector removal and version-bound vector writes are each independently tested. The live-PostgreSQL complete run passed 3,037 of 3,044 tests with six environment-gated skips; the one failure was the packed-install import-latency budget under full-suite load, and the standalone consumer gate passes. Strict types, secret scan, and the base, optional and storage consumer gates pass.
 
+The v1 completion checkpoint (B1, E1, E2, E3, F1, F5, F6) adds:
+
+- the cross-format workflow version inventory and deploy gate;
+- the opt-in read-only inspector, qualified live in a Chromium pane (which caught a `pattern`/`v`-flag bug that JSDOM accepts; a regression test now covers it);
+- stable classification of all 50 entry points, with a 1,442-symbol API report gated in CI and a SemVer/deprecation/support policy;
+- Node.js 22 support;
+- the `perf` suite, where all four plan §21.3 targets are met on declared hardware ([report](performance.md)), after optimizing SQLite join order, IVF list reads and in-database BM25;
+- a best-of-three cold-import measurement for the one recurring flake;
+- the `upgrade:compat` check, which resumes a run created by commit 0126fc1 on the current tree.
+
+The live-PostgreSQL complete run passes **3,045 tests in 189 files**, with six environment-gated skips. Strict types, secret scan, API report, and the base, optional and storage consumer gates pass.
+
 Next milestone: authenticate and qualify the live scanner/signer pipeline, then broaden outer-sandbox host/kernel qualification and provider-specific reconciliation fault matrices. The local Docker profile cannot be relabeled as hostile-code production containment. Provider integrations and production operations remain major workstreams. A general enterprise release requires closing all applicable gates.
 
 The subsequent selected-adapter checkpoint passes 19 focused cases across format-4 host, facade, SQLite worker and PostgreSQL adapter paths. It includes bounded command ownership, exact-field rejection, immutable replies, public lease renewal, a complete child/root lifecycle and PostgreSQL close/reopen. These focused cases are included in the latest 2,432-test full-suite total.

@@ -49,6 +49,7 @@ jobs:
       - run: pnpm test:templates
       - run: pnpm build
       - run: pnpm upgrade:compat
+      - run: pnpm api:report
       - run: pnpm release:artifacts
       - run: node scripts/sbom.mjs
       - run: node scripts/publish-staged.mjs --tag ${{ contains(github.ref_name, '-') && 'next' || 'latest' }} --publish

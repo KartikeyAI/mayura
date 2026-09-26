@@ -47,15 +47,15 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| E1 Local inspector UI over the authenticated read APIs | ⬜ |
-| E2 Every package declared stable in `compatibility/api-stability.json` after a surface audit, with support window and deprecation policy | ⬜ |
+| E1 Local inspector UI over the authenticated read APIs: opt-in, read-only and same-origin ([guide](how-to/inspector.md)). Qualified live in a Chromium browser pane, which found and fixed a `pattern`/`v`-flag bug | ✅ |
+| E2 Every package declared stable in `compatibility/api-stability.json`: 47 stable plus 3 trusted-host entry points, a 1,442-symbol API report gated in CI, and a SemVer/deprecation/support policy ([policy](api-stability.md)). The version bump to 1.0.0 happens at the release cut; the owner confirms the proposed support windows (F12) | ✅ |
 | E3 Node.js 22 LTS and 24 support: engines range, compatibility fixes, CI matrix. Local evidence: Node.js 22.23.2 packed install and server/worker image smoke ([matrix](support-matrix.md)); the full unit suite on 22 runs in hosted CI (F7) | ✅ |
 
 ## F. Qualification and release operations (§21.3, §21.4)
 
 | Item | Status |
 |---|---|
-| F1 Performance suite for the §21.3 reference targets, with a declared-hardware report | ⬜ |
+| F1 Performance suite for the §21.3 reference targets, with a declared-hardware report ([report](performance.md), `pnpm perf`). All four targets met; PostgreSQL, concurrency and macOS/Arm runs belong to hosted CI | ✅ |
 | F2 Standalone threat model covering every trust boundary ([threat model](threat-model.md)) | ✅ |
 | F3 SBOM generation and license review (`pnpm sbom`, in CI and the release workflow) | ✅ |
 | F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job (prepared; runs once hosted). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |

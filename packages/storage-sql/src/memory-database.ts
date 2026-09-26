@@ -91,7 +91,10 @@ export class MemoryIndexDatabase {
         createdAt: row.created_at, updatedAt: row.updated_at };
     } catch { return corrupt(); }
   }
-  /** Authorized, current, active: the only rows ranking and traversal may ever see. */
+  /**
+   * Authorized, current, active: the only rows ranking and traversal may ever see. Joins against records use CROSS JOIN
+   * so SQLite drives from the selective term/vector/edge index instead of scanning every record (PostgreSQL still plans freely).
+   */
   private visible(alias: string, sensitivities: readonly string[]): string {
     return `${alias}.status = 'active' AND ${alias}.sensitivity IN (${marks(sensitivities.length)}) AND ${alias}.valid_from <= ? AND (${alias}.valid_until IS NULL OR ${alias}.valid_until > ?)`;
   }
@@ -154,11 +157,37 @@ export class MemoryIndexDatabase {
             FROM ${this.t('records')} r WHERE r.scope = ? AND ${this.visible('r', sensitivities)}`, [scope, ...sensitivities, asOf, asOf]))[0];
           const documents = storedInteger(corpus?.documents ?? 0); const total = corpus?.total === null || corpus?.total === undefined ? 0 : storedInteger(corpus.total);
           const rows = await tx.query<{ record_id: string; term: string; frequency: number | string; term_count: number | string }>(`SELECT t.record_id, t.term, t.frequency, r.term_count
-            FROM ${this.t('terms')} t JOIN ${this.t('records')} r ON r.scope = t.scope AND r.id = t.record_id
-            WHERE t.scope = ? AND t.term IN (${marks(terms.length)}) AND ${this.visible('r', sensitivities)} ORDER BY t.record_id, t.term LIMIT ?`,
+            FROM ${this.t('terms')} t CROSS JOIN ${this.t('records')} r
+            WHERE r.scope = t.scope AND r.id = t.record_id AND t.scope = ? AND t.term IN (${marks(terms.length)}) AND ${this.visible('r', sensitivities)} ORDER BY t.record_id, t.term LIMIT ?`,
             [scope, ...terms, ...sensitivities, asOf, asOf, command['limit']]);
           return { documents, averageLength: documents === 0 ? 0 : total / documents,
             postings: rows.map(row => ({ id: row.record_id, term: row.term, frequency: storedInteger(row.frequency), length: Math.max(1, storedInteger(row.term_count)) })) };
+        });
+      }
+      case 'rank': {
+        const terms = command['terms'] as string[]; const sensitivities = command['sensitivities'] as string[]; const asOf = command['asOf'] as string;
+        if (terms.length === 0 || sensitivities.length === 0) return { documents: 0, hits: [] };
+        return this.backend.transaction(async tx => {
+          const corpus = (await tx.query<{ documents: number | string; total: number | string | null }>(`SELECT COUNT(*) AS documents, SUM(r.term_count) AS total
+            FROM ${this.t('records')} r WHERE r.scope = ? AND ${this.visible('r', sensitivities)}`, [scope, ...sensitivities, asOf, asOf]))[0];
+          const documents = storedInteger(corpus?.documents ?? 0);
+          if (documents === 0) return { documents: 0, hits: [] };
+          const average = Math.max(1, (corpus?.total === null || corpus?.total === undefined ? 0 : storedInteger(corpus.total)) / documents);
+          const frequencies = await tx.query<{ term: string; df: number | string }>(`SELECT t.term, COUNT(*) AS df FROM ${this.t('terms')} t
+            CROSS JOIN ${this.t('records')} r WHERE r.scope = t.scope AND r.id = t.record_id AND t.scope = ? AND t.term IN (${marks(terms.length)})
+            AND ${this.visible('r', sensitivities)} GROUP BY t.term`, [scope, ...terms, ...sensitivities, asOf, asOf]);
+          const weights = frequencies.map(row => { const df = storedInteger(row.df); return [row.term, Math.log(1 + (documents - df + 0.5) / (df + 0.5))] as const; });
+          if (weights.length === 0) return { documents, hits: [] };
+          const real = 'DOUBLE PRECISION';
+          // Okapi BM25 (k1 = 1.2, b = 0.75), ranked and limited by the database so only the top hits leave it. Grouping on an
+          // expression keeps SQLite on the (scope, term) index instead of scanning the scope's postings in record order.
+          const rows = await tx.query<{ record_id: string; score: number | string }>(`SELECT t.record_id || '' AS record_id, SUM((CASE t.term ${weights.map(() => `WHEN ? THEN CAST(? AS ${real})`).join(' ')} ELSE 0 END)
+            * (CAST(t.frequency AS ${real}) * 2.2) / (CAST(t.frequency AS ${real}) + 1.2 * (0.25 + 0.75 * CAST(r.term_count AS ${real}) / CAST(? AS ${real})))) AS score
+            FROM ${this.t('terms')} t CROSS JOIN ${this.t('records')} r
+            WHERE r.scope = t.scope AND r.id = t.record_id AND t.scope = ? AND t.term IN (${marks(weights.length)}) AND ${this.visible('r', sensitivities)}
+            GROUP BY t.record_id || '' ORDER BY score DESC, record_id ASC LIMIT ?`,
+            [...weights.flat(), average, scope, ...weights.map(([term]) => term), ...sensitivities, asOf, asOf, command['limit']]);
+          return { documents, hits: rows.map(row => ({ id: row.record_id, score: Number(row.score) })) };
         });
       }
       case 'putEdge': return this.backend.transaction(async tx => {
@@ -197,8 +226,8 @@ export class MemoryIndexDatabase {
         const rows: EdgeRow[] = []; const seen = new Set<string>();
         for (const [near, far] of sides) {
           const found = await this.backend.transaction(tx => tx.query<EdgeRow>(`SELECT e.* FROM ${this.t('edges')} e
-            JOIN ${this.t('records')} a ON a.scope = e.scope AND a.id = e.${near} JOIN ${this.t('records')} b ON b.scope = e.scope AND b.id = e.${far}
-            WHERE e.scope = ? AND e.status = 'active' AND e.${near} IN (${marks(ids.length)})${relations ? ` AND e.relation IN (${marks(relations.length)})` : ''}
+            CROSS JOIN ${this.t('records')} a CROSS JOIN ${this.t('records')} b
+            WHERE a.scope = e.scope AND a.id = e.${near} AND b.scope = e.scope AND b.id = e.${far} AND e.scope = ? AND e.status = 'active' AND e.${near} IN (${marks(ids.length)})${relations ? ` AND e.relation IN (${marks(relations.length)})` : ''}
             AND (e.valid_from IS NULL OR e.valid_from <= ?) AND (e.valid_until IS NULL OR e.valid_until > ?)
             AND ${this.visible('a', sensitivities)} AND ${this.visible('b', sensitivities)} ORDER BY e.id LIMIT ?`,
             [scope, ...ids, ...(relations ?? []), asOf, asOf, ...sensitivities, asOf, asOf, ...sensitivities, asOf, asOf, command['limit']]));
@@ -236,12 +265,17 @@ export class MemoryIndexDatabase {
         const sensitivities = command['sensitivities'] as string[]; const asOf = command['asOf'] as string; const lists = command['lists'] as number[] | undefined;
         const after = command['after'] as string | undefined;
         if (sensitivities.length === 0) return [];
-        const rows = await this.backend.transaction(tx => tx.query<VectorSqlRow>(`SELECT v.record_id, v.record_version, v.vector, v.list FROM ${this.t('vectors')} v
-          JOIN ${this.t('records')} r ON r.scope = v.scope AND r.id = v.record_id AND r.version = v.record_version
-          WHERE v.scope = ? AND v.embedder_id = ? AND ${this.visible('r', sensitivities)}
-          ${lists ? `AND (v.list IS NULL${lists.length > 0 ? ` OR v.list IN (${marks(lists.length)})` : ''})` : ''}${after === undefined ? '' : ' AND v.record_id > ?'}
-          ORDER BY v.record_id LIMIT ?`,
-          [scope, command['embedderId'], ...sensitivities, asOf, asOf, ...(lists ?? []), ...(after === undefined ? [] : [after]), command['limit']]));
+        // Unassigned and listed vectors are read as two index-friendly branches rather than one OR predicate, and list reads
+        // order by an expression so SQLite keeps the list index instead of merging both branches through the primary key.
+        const branch = (condition: string, values: readonly unknown[]) => ({ sql: `SELECT v.record_id, v.record_version, v.vector, v.list FROM ${this.t('vectors')} v
+          CROSS JOIN ${this.t('records')} r
+          WHERE r.scope = v.scope AND r.id = v.record_id AND r.version = v.record_version AND v.scope = ? AND v.embedder_id = ?${condition} AND ${this.visible('r', sensitivities)}${after === undefined ? '' : ' AND v.record_id > ?'}`,
+          values: [scope, command['embedderId'], ...values, ...sensitivities, asOf, asOf, ...(after === undefined ? [] : [after])] });
+        const parts = lists === undefined ? [branch('', [])]
+          : [branch(' AND v.list IS NULL', []), ...(lists.length > 0 ? [branch(` AND v.list IN (${marks(lists.length)})`, lists)] : [])];
+        const rows = await this.backend.transaction(tx => tx.query<VectorSqlRow>(`SELECT * FROM (${parts.map(part => part.sql).join(' UNION ALL ')}) selected
+          ORDER BY ${lists !== undefined && lists.length > 0 ? "record_id || ''" : 'record_id'} LIMIT ?`,
+          [...parts.flatMap(part => part.values), command['limit']]));
         return rows.map(row => ({ recordId: row.record_id, recordVersion: storedInteger(row.record_version), vector: row.vector, list: row.list === null ? null : storedInteger(row.list) }));
       }
       case 'indexState': return this.backend.transaction(async tx => {

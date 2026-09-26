@@ -42,6 +42,7 @@ jobs:
       - run: node examples/workflow-graph-coordinator.mjs
       - run: node examples/durable-budgets.mjs
       - run: pnpm test:templates
+      - run: pnpm api:report
       - run: pnpm release:artifacts
       - run: node scripts/sbom.mjs
   postgres:

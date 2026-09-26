@@ -50,6 +50,9 @@ export interface MemoryIndexStore {
   /** Postings for authorized, current, active records, plus corpus statistics for ranking. */
   postings(command: { readonly scope: string; readonly terms: readonly string[]; readonly limit: number } & MemoryFilter):
     Promise<{ readonly documents: number; readonly averageLength: number; readonly postings: readonly { readonly id: string; readonly term: string; readonly frequency: number; readonly length: number }[] }>;
+  /** BM25 ranking computed inside the database; returns only the top `limit` authorized, current, active records. */
+  rank(command: { readonly scope: string; readonly terms: readonly string[]; readonly limit: number } & MemoryFilter):
+    Promise<{ readonly documents: number; readonly hits: readonly { readonly id: string; readonly score: number }[] }>;
   /** CAS edge write. An active edge requires both endpoints to be active records in scope. */
   putEdge(command: { readonly scope: string; readonly edge: MemoryEdgeRow; readonly expectedVersion: number }): Promise<{ readonly edge: MemoryEdgeRow; readonly sequence: number }>;
   getEdge(command: { readonly scope: string; readonly id: string }): Promise<MemoryEdgeRow | undefined>;
@@ -78,7 +81,7 @@ export interface MemoryIndexStore {
 export interface MemoryIndexAggregateStore extends AggregateStore { readonly memory: MemoryIndexStore }
 export type MemoryIndexMethod = keyof MemoryIndexStore;
 
-const methods = new Set<MemoryIndexMethod>(['initialize', 'putRecord', 'getRecords', 'listRecords', 'postings', 'putEdge', 'getEdge', 'listEdges', 'edges',
+const methods = new Set<MemoryIndexMethod>(['initialize', 'putRecord', 'getRecords', 'listRecords', 'postings', 'rank', 'putEdge', 'getEdge', 'listEdges', 'edges',
   'putVectors', 'missingVectors', 'vectors', 'indexState', 'setCentroids', 'assignLists', 'changes', 'stats']);
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const scopeKey = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
@@ -176,6 +179,10 @@ export function memoryIndexCommand(method: MemoryIndexMethod, value: unknown): J
       keys(input, ['scope', 'terms', 'limit', 'sensitivities', 'asOf']);
       output = { scope, terms: list(input['terms'], 32, entry => { if (typeof entry !== 'string' || entry.length === 0 || entry.length > 64) invalid(); return entry; }),
         limit: integer(input['limit'], 1, 100_000), ...filter(input) }; break;
+    case 'rank':
+      keys(input, ['scope', 'terms', 'limit', 'sensitivities', 'asOf']);
+      output = { scope, terms: list(input['terms'], 32, entry => { if (typeof entry !== 'string' || entry.length === 0 || entry.length > 64) invalid(); return entry; }),
+        limit: integer(input['limit'], 1, 1_000), ...filter(input) }; break;
     case 'putEdge': {
       keys(input, ['scope', 'edge', 'expectedVersion']); const edge = memoryEdgeRow(input['edge']); const expectedVersion = integer(input['expectedVersion']);
       if (edge.version <= expectedVersion) invalid(); output = { scope, edge, expectedVersion }; break;
@@ -218,6 +225,9 @@ export function memoryIndexCommand(method: MemoryIndexMethod, value: unknown): J
   return freezeJson(jsonValue(output!, { maxBytes: 64 * 1_048_576, maxNodes: 2_000_000 })) as JsonObject;
 }
 
+/** Results can be large (vector pages); bound them like commands rather than by the 1 MiB JSON default. */
+function snapshot(value: unknown): unknown { return freezeJson(jsonValue(value, { maxBytes: 64 * 1_048_576, maxNodes: 2_000_000 })); }
+
 /** Revalidate adapter results against the command that produced them. */
 export function memoryIndexResult(method: MemoryIndexMethod, value: unknown, command: JsonObject): unknown {
   try {
@@ -226,14 +236,14 @@ export function memoryIndexResult(method: MemoryIndexMethod, value: unknown, com
       case 'putRecord': {
         const result = record(value); keys(result, ['record', 'sequence']); const row = memoryRow(result['record']);
         if (JSON.stringify(row) !== JSON.stringify(command['record'])) corrupt();
-        return freezeJson(jsonValue({ record: row, sequence: integer(result['sequence'], 1) }));
+        return snapshot(({ record: row, sequence: integer(result['sequence'], 1) }));
       }
       case 'getRecords': case 'listRecords': {
         const rows = list(value, MEMORY_MAX_BATCH, memoryRow);
         if (method === 'getRecords' && rows.some(row => !(command['ids'] as string[]).includes(row.id))) corrupt();
         if (method === 'listRecords' && (rows.length > (command['limit'] as number) || rows.some(row => !(command['statuses'] as string[]).includes(row.status)
           || !(command['sensitivities'] as string[]).includes(row.sensitivity)))) corrupt();
-        return freezeJson(jsonValue(rows));
+        return snapshot((rows));
       }
       case 'postings': {
         const result = record(value); keys(result, ['documents', 'averageLength', 'postings']);
@@ -244,33 +254,42 @@ export function memoryIndexResult(method: MemoryIndexMethod, value: unknown, com
           if (!(command['terms'] as string[]).includes(posting['term'] as string)) corrupt();
           return { id: id(posting['id']), term: posting['term'] as string, frequency: integer(posting['frequency'], 1), length: integer(posting['length'], 1) };
         });
-        return freezeJson(jsonValue({ documents: integer(result['documents']), averageLength, postings }));
+        return snapshot(({ documents: integer(result['documents']), averageLength, postings }));
+      }
+      case 'rank': {
+        const result = record(value); keys(result, ['documents', 'hits']);
+        return snapshot({ documents: integer(result['documents']), hits: list(result['hits'], command['limit'] as number, entry => {
+          const hit = record(entry); keys(hit, ['id', 'score']);
+          if (typeof hit['score'] !== 'number' || !Number.isFinite(hit['score'])) corrupt();
+          return { id: id(hit['id']), score: hit['score'] as number };
+        }) });
       }
       case 'putEdge': {
         const result = record(value); keys(result, ['edge', 'sequence']); const edge = memoryEdgeRow(result['edge']);
         if (JSON.stringify(edge) !== JSON.stringify(command['edge'])) corrupt();
-        return freezeJson(jsonValue({ edge, sequence: integer(result['sequence'], 1) }));
+        return snapshot(({ edge, sequence: integer(result['sequence'], 1) }));
       }
-      case 'getEdge': return value === undefined || value === null ? undefined : freezeJson(jsonValue(memoryEdgeRow(value)));
-      case 'listEdges': return freezeJson(jsonValue(list(value, command['limit'] as number, memoryEdgeRow)));
-      case 'edges': return freezeJson(jsonValue(list(value, command['limit'] as number, entry => {
+      case 'getEdge': return value === undefined || value === null ? undefined : snapshot((memoryEdgeRow(value)));
+      case 'listEdges': return snapshot((list(value, command['limit'] as number, memoryEdgeRow)));
+      case 'edges': return snapshot((list(value, command['limit'] as number, entry => {
         const edge = memoryEdgeRow(entry); if (edge.status !== 'active') corrupt(); return edge; })));
       case 'putVectors': {
         const result = record(value); keys(result, ['written', 'stale']);
-        return freezeJson(jsonValue({ written: integer(result['written'], 0, MEMORY_MAX_BATCH), stale: list(result['stale'], MEMORY_MAX_BATCH, id) }));
+        return snapshot(({ written: integer(result['written'], 0, MEMORY_MAX_BATCH), stale: list(result['stale'], MEMORY_MAX_BATCH, id) }));
       }
-      case 'missingVectors': return freezeJson(jsonValue(list(value, command['limit'] as number, entry => {
+      case 'missingVectors': return snapshot((list(value, command['limit'] as number, entry => {
         const row = record(entry); keys(row, ['id', 'version']); return { id: id(row['id']), version: integer(row['version'], 1) }; })));
-      case 'vectors': return freezeJson(jsonValue(list(value, command['limit'] as number, vectorRow)));
+      // Vector pages are large; each row is rebuilt from validated primitives, so a shallow freeze is a complete snapshot.
+      case 'vectors': return Object.freeze(list(value, command['limit'] as number, entry => Object.freeze(vectorRow(entry))));
       case 'indexState': {
         const result = record(value); keys(result, ['vectors', 'trainedAt', 'dimensions', 'centroids']);
-        return freezeJson(jsonValue({ vectors: integer(result['vectors']), trainedAt: integer(result['trainedAt']), dimensions: integer(result['dimensions']),
+        return snapshot(({ vectors: integer(result['vectors']), trainedAt: integer(result['trainedAt']), dimensions: integer(result['dimensions']),
           centroids: list(result['centroids'], 1_024, vector) }));
       }
       case 'assignLists': return integer(value, 0, 10_000);
       case 'changes': {
         let previous = command['after'] as number;
-        return freezeJson(jsonValue(list(value, command['limit'] as number, entry => {
+        return snapshot((list(value, command['limit'] as number, entry => {
           const change = record(entry); keys(change, ['sequence', 'kind', 'id', 'version', 'status']);
           const sequence = integer(change['sequence'], 1); if (sequence <= previous) corrupt(); previous = sequence;
           return { sequence, kind: member(change['kind'], ['record', 'edge'] as const), id: id(change['id']), version: integer(change['version'], 1),
@@ -279,7 +298,7 @@ export function memoryIndexResult(method: MemoryIndexMethod, value: unknown, com
       }
       case 'stats': {
         const result = record(value); keys(result, ['records', 'edges', 'sequence']);
-        return freezeJson(jsonValue({ records: integer(result['records']), edges: integer(result['edges']), sequence: integer(result['sequence']) }));
+        return snapshot(({ records: integer(result['records']), edges: integer(result['edges']), sequence: integer(result['sequence']) }));
       }
     }
   } catch (error) { if (error instanceof StorageError && error.code !== 'INVALID_INPUT') throw error; return corrupt(); }
@@ -294,7 +313,7 @@ export function memoryIndexFacade(request: (method: MemoryIndexMethod, input: Js
   };
   return Object.freeze<MemoryIndexStore>({
     initialize: () => call('initialize', {}), putRecord: value => call('putRecord', value), getRecords: value => call('getRecords', value),
-    listRecords: value => call('listRecords', value), postings: value => call('postings', value), putEdge: value => call('putEdge', value),
+    listRecords: value => call('listRecords', value), postings: value => call('postings', value), rank: value => call('rank', value), putEdge: value => call('putEdge', value),
     getEdge: value => call('getEdge', value), listEdges: value => call('listEdges', value), edges: value => call('edges', value), putVectors: value => call('putVectors', value),
     missingVectors: value => call('missingVectors', value), vectors: value => call('vectors', value), indexState: value => call('indexState', value),
     setCentroids: value => call('setCentroids', value), assignLists: value => call('assignLists', value), changes: value => call('changes', value),

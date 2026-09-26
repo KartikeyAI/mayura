@@ -1,9 +1,70 @@
-# Public API stability and upgrade policy
+# Public API stability, support and deprecation policy
 
-Mayura `0.1.0-dev.0` is a development preview. It has no stable entry points. Every exported workspace entry point is explicitly experimental; `@mayura/consumer-tests` is internal and is never a distribution entry point. The machine-readable classification is `compatibility/api-stability.json`, and the package `exports` maps are the exact supported import paths. Deep imports are unsupported.
+Status: **adopted for 1.0** (E2 in the [v1 release plan](v1-release-plan.md)). Owner decision (2026-09-27): every package is stable at v1. The support-window lengths below are proposed defaults; the owner confirms them before the first release (F12).
 
-Experimental means the current revision is documented and tested but may change incompatibly before 1.0. A changelog and migration note are required for an intentional incompatible change. Development previews receive best-effort support only; a stable support window, deprecation period and long-term maintenance promise must be approved before 1.0. This prevents development-preview APIs from acquiring an accidental enterprise support claim.
+## What is stable
 
-Persisted formats are separately versioned from package SemVer. A current runtime must refuse an unknown format. Migration is explicit, one-way, reviewed and tested; opening a store never silently applies an incompatible migration. `migrateSqliteStoreV0ToV1` is the first recorded prior-version fixture. It requires an existing persistent v0 file, validates integrity plus the exact v0 layout, migrates transactionally, preserves aggregate/event data, and refuses a second or ambiguous migration. Operators must retain and verify a backup before invoking it.
+Every package entry point listed in `compatibility/api-stability.json` → `stableEntryPoints` is stable from 1.0.0. That is all 47 application-facing entry points. There are no experimental entry points at 1.0.
 
-Consumer type/runtime checks, exact package export checks, adapter conformance suites and the prior-version migration fixture form V21 evidence. They do not create stable APIs or expand the development-preview support terms in `SUPPORT.md`.
+The stable contract is more than function names. It covers:
+
+- the exported symbols and their TypeScript declarations;
+- the `MayuraError` codes, and the error behavior documented for each API;
+- run, workflow and hook event types, and their metadata keys;
+- the HTTP protocol served by `@mayura/server`, and the CLI commands and flags;
+- persisted storage formats, under the separate rules below;
+- documented behavior, including fail-closed and at-least-once guarantees.
+
+The three **trusted-host** entry points are stable for authors of adapters and hosts, under the same versioning rules:
+
+- `@mayura/core/host`
+- `@mayura/storage-sql/host`
+- `@mayura/tools/host`
+
+They are not an application-facing surface. They grant integration capabilities that must never reach model or guard contexts.
+
+Deep imports, meaning any path not in a package's `exports` map, are unsupported and may change in any release.
+
+## How changes are versioned
+
+Mayura follows [Semantic Versioning](https://semver.org/).
+
+| Change | Release |
+|---|---|
+| Removing or incompatibly changing a stable symbol, error code, event, protocol field or documented behavior | major |
+| Adding an entry point, a symbol, an optional field, an event type or a capability | minor |
+| A fix that restores documented behavior | patch |
+
+`compatibility/api-report.json` records every exported symbol with a digest of its declaration. CI runs `node scripts/api-report.mjs`, and any difference fails the build until someone reviews it and regenerates the report with `--update`. The review decides the version bump:
+
+- a removed or changed symbol means a major release, or a deprecation;
+- an added symbol means a minor release.
+
+Strict clients reject unknown event types. Adding a run event type is therefore announced in the changelog, and the reference clients (`@mayura/client`, `@mayura/observability`) accept it in the same release.
+
+## Deprecation
+
+A stable API is deprecated before it is removed. Deprecation requires three things:
+
+1. A `@deprecated` JSDoc tag naming the replacement.
+2. A changelog entry.
+3. A migration note in the docs.
+
+A deprecated API stays for at least one minor release **and** at least 6 months. It is removed only in a major release. Deprecations never change runtime behavior and never log at runtime; Mayura emits no telemetry.
+
+## Support window (proposed defaults)
+
+- The **latest major** receives features, fixes and security fixes.
+- The **previous major** receives security fixes for **12 months** after the next major's first release.
+- **Node.js:** each supported release line is supported while it is in active or maintenance LTS: 22 until 2027-04-30 and 24 until 2028-04-30. Dropping a Node.js line is a major change.
+- **Security fixes** follow [SECURITY.md](../SECURITY.md). A security release never widens grants, changes data destinations or enables telemetry.
+
+## Persisted formats
+
+Storage schemas and durable workflow formats are versioned separately from package SemVer.
+
+- A runtime refuses an unknown format.
+- Schema migrations are explicit (`mayura migrate`), one-way, reviewed and tested ([storage operations](how-to/storage-operations.md)).
+- A durable run stays pinned to its definition digest ([workflow versions](how-to/workflow-versions.md)).
+- `pnpm upgrade:compat` proves on every release that runs started by the previous release resume on the new one.
+- Changing a package version never, by itself, makes an old run resumable under a different definition.

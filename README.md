@@ -2,7 +2,7 @@
 
 An independent TypeScript framework for building agents, typed tools and durable workflows.
 
-**Development preview — not production-qualified.** No package is published and no public API is stable. Mayura is Apache-2.0 licensed; the currently qualified platforms are intentionally narrow. See [development status](docs/development-status.md) and the [support matrix](docs/support-matrix.md).
+**Pre-1.0 — not yet published.** The public API is classified stable for 1.0 and gated by an API report ([policy](docs/api-stability.md)), but no package is published. Owner-held release steps remain; see the [v1 release plan](docs/v1-release-plan.md). Mayura is Apache-2.0 licensed; the currently qualified platforms are intentionally narrow. See [development status](docs/development-status.md) and the [support matrix](docs/support-matrix.md).
 
 ## Developing this checkout
 

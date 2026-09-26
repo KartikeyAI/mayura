@@ -113,21 +113,6 @@ export function nearestCentroids(vector: ArrayLike<number>, centroids: readonly 
     .sort((a, b) => b.score - a.score || a.index - b.index).slice(0, count).map(entry => entry.index);
 }
 
-/** Okapi BM25 over pre-counted term frequencies. */
-export function bm25(options: {
-  readonly frequencies: ReadonlyMap<string, number>; readonly length: number; readonly averageLength: number;
-  readonly documentFrequency: ReadonlyMap<string, number>; readonly documents: number; readonly terms: readonly string[];
-}): number {
-  const k1 = 1.2; const b = 0.75; let score = 0;
-  for (const term of options.terms) {
-    const frequency = options.frequencies.get(term) ?? 0; if (frequency === 0) continue;
-    const df = options.documentFrequency.get(term) ?? 0;
-    const idf = Math.log(1 + (options.documents - df + 0.5) / (df + 0.5));
-    score += idf * (frequency * (k1 + 1)) / (frequency + k1 * (1 - b + b * options.length / Math.max(1, options.averageLength)));
-  }
-  return score;
-}
-
 /** Reciprocal-rank fusion of ranked id lists. */
 export function reciprocalRankFusion(lists: readonly (readonly string[])[], k = 60): { id: string; score: number }[] {
   const scores = new Map<string, number>();

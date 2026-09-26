@@ -127,6 +127,13 @@ export function nativeMemoryConformance(name: string, open: () => Promise<Native
       await expect(createNativeMemory({ store: fixture.store, scope, permissions: { allow: ['memory:read'] }, embedder: hashingEmbedder() }).index()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     });
 
+    it('reads vector pages larger than the default 1 MiB JSON bound', async () => {
+      const { memory } = await setup({ embedder: hashingEmbedder({ dimensions: 1_024 }) });
+      for (let index = 0; index < 320; index++) await memory.add(input(`big-${String(index).padStart(3, '0')}`, `${words[index % 16]} ${words[(index * 5) % 16]} sample ${index}`));
+      expect((await memory.index({ limit: 999 })).embedded).toBe(320);
+      expect((await memory.semanticSearch('alpha sample', { limit: 5 })).hits).toHaveLength(5);
+    }, 60_000);
+
     it('trains an IVF index above the threshold with high recall against exact search', async () => {
       const embedder = hashingEmbedder({ dimensions: 48 });
       const { fixture, memory } = await setup({ embedder, exactThreshold: 128 });
@@ -191,6 +198,8 @@ export function nativeMemoryConformance(name: string, open: () => Promise<Native
       await store.putRecord({ scope: key, record: row('pub', 1, 'public'), expectedVersion: 0, terms: [['shared', 1]] });
       await store.putRecord({ scope: key, record: row('int', 1, 'internal'), expectedVersion: 0, terms: [['shared', 3]] });
       const asOf = '2026-06-01T00:00:00.000Z';
+      expect((await store.rank({ scope: key, terms: ['shared'], limit: 10, sensitivities: ['public'], asOf })).hits.map(hit => hit.id)).toEqual(['pub']);
+      expect((await store.rank({ scope: key, terms: ['shared'], limit: 10, sensitivities: ['public', 'internal'], asOf })).hits.map(hit => hit.id)).toEqual(['int', 'pub']);
       const publicOnly = await store.postings({ scope: key, terms: ['shared'], limit: 100, sensitivities: ['public'], asOf });
       expect(publicOnly.postings.map(posting => posting.id)).toEqual(['pub']); expect(publicOnly.documents).toBe(1);
       const vector = Buffer.alloc(8).toString('base64');

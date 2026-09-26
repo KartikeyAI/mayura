@@ -14,6 +14,7 @@ export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin
       ...(config.limits === undefined ? {} : { limits: Object.freeze({ ...config.limits }) }),
     }))), authenticate: options.authenticate,
     ...(options.publicLiveness === undefined ? {} : { publicLiveness: options.publicLiveness }),
+    ...(options.inspector === undefined ? {} : { inspector: options.inspector }),
     ...(options.healthChecks === undefined ? {} : { healthChecks: Object.freeze(options.healthChecks.map(check => Object.freeze({ id: check.id, check: check.check }))) }),
     ...(options.humanRequests === undefined ? {} : { humanRequests: options.humanRequests }),
     ...(options.workflowViews === undefined ? {} : { workflowViews: options.workflowViews }),

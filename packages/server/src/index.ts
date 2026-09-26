@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, type JsonObject, type JsonValue, type Outcome, type Permissions, type RunHandle, type Scope } from '@mayura/core';
+import { inspectorAsset } from './inspector.js';
 import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type RuntimeLimits } from '@mayura/runtime';
 
 export interface ServerIdentity {
@@ -98,6 +99,8 @@ export interface AgentServerOptions {
   readonly agents: readonly RegisteredAgent[];
   /** Expose only a content-free process liveness response at GET /healthz. */
   readonly publicLiveness?: boolean;
+  /** Serve the read-only local inspector at GET /inspector. Its static assets contain no data; every read is authenticated. */
+  readonly inspector?: boolean;
   /** Access-controlled readiness checks. Credentials and exception details must remain inside callbacks. */
   readonly healthChecks?: readonly HealthCheck[];
   readonly humanRequests?: HumanRequestTransport;
@@ -262,6 +265,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   if (typeof options.authenticate !== 'function' || !Array.isArray(options.agents) || options.agents.length > 256) throw new Error('Explicit authentication and a bounded agent registry are required.');
   const authenticate = options.authenticate;
   if (options.publicLiveness !== undefined && typeof options.publicLiveness !== 'boolean') throw new Error('Public liveness must be explicit.');
+  if (options.inspector !== undefined && typeof options.inspector !== 'boolean') throw new Error('The inspector setting must be a boolean.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
     maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32, maxWorkflowOperations: 32,
     requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
@@ -502,6 +506,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (requestOrigin !== null && !origins.has(requestOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
     // A preflight is validated as the request it announces: the same query rules apply, so query credentials still fail,
     // but a legitimate paginated GET can be preflighted.
+    if (options.inspector === true && !url.search) { const asset = inspectorAsset(request.method, url.pathname); if (asset) return asset; }
     const effectiveMethod = request.method === 'OPTIONS' ? request.headers.get('access-control-request-method') ?? '' : request.method;
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
     const catalogQuery = effectiveMethod === 'GET' && url.pathname === '/v1/tools';

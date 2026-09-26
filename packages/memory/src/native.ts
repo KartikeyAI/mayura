@@ -7,7 +7,7 @@ import type {
 } from './contracts.js';
 import { SENSITIVITIES, activeRecord, allowedKeys, exactKeys, immutable, integer, memoryId, object, parseEntry, provenance, sensitivity, text, timestamp, validity } from './validation.js';
 import {
-  admitEmbeddings, bm25, decodeVector, dot, encodeVector, nearestCentroids, reciprocalRankFusion, tokens, trainCentroids, type MemoryEmbedder,
+  admitEmbeddings, decodeVector, dot, encodeVector, nearestCentroids, reciprocalRankFusion, tokens, trainCentroids, type MemoryEmbedder,
 } from './vectors.js';
 
 export type NativeMemoryEntry = MemoryEntry;
@@ -215,16 +215,8 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
   const lexical = async (query: string, limit: number): Promise<{ id: string; score: number }[]> => {
     const terms = [...new Set(tokens(text(query, 'Search query', 512)))].filter(term => term.length <= 64);
     if (terms.length === 0 || terms.length > 16) throw new MayuraError('INVALID_INPUT', 'Lexical search requires 1–16 query terms.');
-    const result = await storage(() => database.postings({ scope: key, terms, limit: 100_000, ...filter() }));
-    const documents = new Map<string, { frequencies: Map<string, number>; length: number }>(); const df = new Map<string, number>();
-    for (const posting of result.postings) {
-      const document = documents.get(posting.id) ?? { frequencies: new Map(), length: posting.length };
-      document.frequencies.set(posting.term, posting.frequency); documents.set(posting.id, document);
-      df.set(posting.term, (df.get(posting.term) ?? 0) + 1);
-    }
-    return [...documents.entries()].map(([id, document]) => ({ id, score: bm25({ frequencies: document.frequencies, length: document.length,
-      averageLength: result.averageLength, documentFrequency: df, documents: result.documents, terms }) }))
-      .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1)).slice(0, limit);
+    const result = await storage(() => database.rank({ scope: key, terms, limit, ...filter() }));
+    return result.hits.map(hit => ({ id: hit.id, score: hit.score }));
   };
 
   const embed = async (texts: readonly string[], signal: AbortSignal): Promise<number[][]> => {
