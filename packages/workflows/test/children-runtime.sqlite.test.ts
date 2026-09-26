@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from '@mayura/tools';
 import { createSqliteStore } from '@mayura/storage';
 import { createWorkflowTreeRuntime, defineWorkflowTree } from '../src/children.js';
-import { defineWorkflow } from '../src/definition.js';
+import { defineWorkflow, digest } from '../src/definition.js';
 
 const scope={principalId:'tree-runtime',projectId:'project'};
 const stores:ReturnType<typeof createSqliteStore>[]=[];const runtimes:ReturnType<typeof createWorkflowTreeRuntime>[]=[];
@@ -29,6 +29,74 @@ describe('workflow-tree developer runtime',()=>{
 
   it('persists approval and completes a root-local tool exactly once',async()=>{
     const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();const source=fixture();const rootTool=source.tree.nodes[0]!.kind==='child'?source.tree.nodes[0]!.workflow.nodes[0]:undefined;if(!rootTool||rootTool.kind!=='tool')throw new Error('fixture');const tree=defineWorkflowTree({id:'root-tool',version:'1',input:z.number(),output:z.number(),nodes:[{...rootTool,approval:true}],result:{kind:'step',stepId:'work',path:[]}});const verifyHuman=vi.fn(async()=>({id:'root-reviewer',projectId:'project',canApprove:true}));const selected=runtime(store,verifyHuman);const submitted=await selected.submit(tree,{input:1,idempotencyKey:'root-tool'});const waiting=await selected.runUntilSettled(tree,submitted.id);expect(waiting.status).toBe('waiting');expect(source.execute).not.toHaveBeenCalled();const review=waiting.steps['work']?.approval as {digest?:unknown}|null;if(!review||typeof review.digest!=='string')throw new Error('Expected a root approval digest.');await selected.approve({id:waiting.id,nodeId:'work',digest:review.digest,credential:'trusted'});const finished=await selected.runUntilSettled(tree,waiting.id);expect(finished).toMatchObject({status:'succeeded',output:2,budget:{accounts:expect.arrayContaining([expect.objectContaining({id:'root',closed:true,spentMicros:2,calls:1})])}});expect(source.execute).toHaveBeenCalledTimes(1);expect(verifyHuman).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists a tree-wide quiescent pause across runtimes before admitting a child',async()=>{
+    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();const source=fixture();const first=runtime(store);
+    const submitted=await first.submit(source.tree,{input:1,idempotencyKey:'paused-root'});
+    const paused=await first.pause(submitted.id);expect(paused.status).toBe('paused');expect((await first.pause(submitted.id)).version).toBe(paused.version);
+    await first.close();runtimes.splice(runtimes.indexOf(first),1);const second=runtime(store);
+    expect(await second.runUntilSettled(source.tree,submitted.id)).toMatchObject({status:'paused',steps:{child:{status:'pending',child:null}}});expect(source.execute).not.toHaveBeenCalled();
+    expect((await second.resume(submitted.id)).status).toBe('running');
+    expect(await second.runUntilSettled(source.tree,submitted.id)).toMatchObject({status:'succeeded',output:2});expect(source.execute).toHaveBeenCalledTimes(1);
+    expect((await second.events(submitted.id)).map(event=>event.type)).toEqual(expect.arrayContaining(['run.paused','run.resumed']));
+    await expect(second.pause(submitted.id)).rejects.toMatchObject({code:'CONFLICT'});await expect(second.resume(submitted.id)).rejects.toMatchObject({code:'CONFLICT'});
+  });
+
+  it('records child approval while paused and restores the unresolved review to waiting',async()=>{
+    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();const source=fixture(undefined,true);
+    const selected=runtime(store,async()=>({id:'reviewer',projectId:'project',canApprove:true}));const submitted=await selected.submit(source.tree,{input:1,idempotencyKey:'paused-child-approval'});
+    const waiting=await selected.runUntilSettled(source.tree,submitted.id);expect(waiting.status).toBe('waiting');const childId=waiting.steps['child']!.child!.runId;
+    const review=((await selected.inspectChild(submitted.id,childId)).steps['work']!.approval as {digest:string}).digest;
+    await selected.pause(submitted.id);expect((await selected.resume(submitted.id)).status).toBe('waiting');
+    await selected.pause(submitted.id);expect((await selected.approve({id:submitted.id,childId,nodeId:'work',digest:review,credential:'trusted'})).status).toBe('paused');
+    expect((await selected.runUntilSettled(source.tree,submitted.id)).status).toBe('paused');expect(source.execute).not.toHaveBeenCalled();
+    await selected.resume(submitted.id);expect(await selected.runUntilSettled(source.tree,submitted.id)).toMatchObject({status:'succeeded',output:2});expect(source.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('records root approval while paused and fences child scheduling at the root',async()=>{
+    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();const execute=vi.fn(async(value:number)=>value+1);
+    const tool=defineTool({id:'increment',version:'1',description:'Increment a number.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:2,execute});
+    const tree=defineWorkflowTree({id:'paused-root-approval',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'work',tool,input:{kind:'input',path:[]},approval:true}],result:{kind:'step',stepId:'work',path:[]}});
+    const selected=runtime(store,async()=>({id:'reviewer',projectId:'project',canApprove:true}));const submitted=await selected.submit(tree,{input:1,idempotencyKey:'paused-root-approval'});
+    const waiting=await selected.runUntilSettled(tree,submitted.id);const review=(waiting.steps['work']!.approval as {digest:string}).digest;
+    await selected.pause(submitted.id);expect((await selected.approve({id:submitted.id,nodeId:'work',digest:review,credential:'trusted'})).status).toBe('paused');
+    expect((await selected.runUntilSettled(tree,submitted.id)).status).toBe('paused');expect(execute).not.toHaveBeenCalled();
+    expect((await selected.resume(submitted.id)).status).toBe('running');expect(await selected.runUntilSettled(tree,submitted.id)).toMatchObject({status:'succeeded',output:2});
+
+    const source=fixture();const childRoot=await selected.submit(source.tree,{input:1,idempotencyKey:'paused-child-prepare'});const scopeKey=digest('mayura:scope:v1',scope);
+    const access={scope:scopeKey,rootId:childRoot.id,rootPolicyHash:(await store.read(scopeKey,childRoot.id))!.state['policy'] as string};
+    const admitted=await store.workflowTrees.admitChild({...access,parentId:childRoot.id,nodeId:'child',expectedVersion:childRoot.version,input:1});
+    await store.workflowTrees.pauseRoot!({...access,expectedVersion:admitted.root.record.version});
+    await expect(store.workflowTrees.prepareChildTool({...access,childId:admitted.childId,childPolicyHash:admitted.policyHash,nodeId:'work',
+      expectedVersion:admitted.child.version,input:1})).rejects.toMatchObject({code:'CONFLICT'});
+    expect(source.execute).not.toHaveBeenCalled();
+  });
+
+  it('refuses a pause while a root effect is in flight and fences claims while paused',async()=>{
+    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();let started!:()=>void;const entered=new Promise<void>(resolve=>{started=resolve;});let release!:()=>void;const released=new Promise<void>(resolve=>{release=resolve;});
+    const execute=vi.fn(async(value:number)=>{started();await released;return value+1;});
+    const tool=defineTool({id:'increment',version:'1',description:'Increment a number.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:2,execute});
+    const tree=defineWorkflowTree({id:'paused-root-tool',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'work',tool,input:{kind:'input',path:[]}}],result:{kind:'step',stepId:'work',path:[]}});
+    const selected=runtime(store);const inFlight=await selected.submit(tree,{input:1,idempotencyKey:'pause-in-flight'});const execution=selected.runUntilSettled(tree,inFlight.id);await entered;
+    await expect(selected.pause(inFlight.id)).rejects.toMatchObject({code:'CONFLICT'});release();expect((await execution).status).toBe('succeeded');
+
+    const fenced=await selected.submit(tree,{input:1,idempotencyKey:'pause-fenced'});const scopeKey=digest('mayura:scope:v1',scope);
+    const access={scope:scopeKey,rootId:fenced.id,rootPolicyHash:(await store.read(scopeKey,fenced.id))!.state['policy'] as string};
+    const prepared=await store.workflowTrees.prepareRootTool({...access,nodeId:'work',expectedVersion:fenced.version,input:1});
+    const pausedRoot=await store.workflowTrees.pauseRoot!({...access,expectedVersion:prepared.root.record.version});expect(pausedRoot.record.state['status']).toBe('paused');
+    expect(await store.workflowTrees.claimPreparedRootTool({...access,nodeId:'work',workerId:'fenced-worker',leaseMs:60_000})).toBeUndefined();
+    await expect(store.workflowTrees.finalizeRoot({...access,expectedVersion:pausedRoot.record.version,output:2})).rejects.toMatchObject({code:'CONFLICT'});
+    expect((await selected.resume(fenced.id)).status).toBe('running');expect(await selected.runUntilSettled(tree,fenced.id)).toMatchObject({status:'succeeded',output:2});
+
+    const claimed=await selected.submit(tree,{input:3,idempotencyKey:'pause-claimed'});const claimedAccess={...access,rootId:claimed.id};
+    const preparedClaim=await store.workflowTrees.prepareRootTool({...claimedAccess,nodeId:'work',expectedVersion:claimed.version,input:3});
+    expect(await store.workflowTrees.claimPreparedRootTool({...claimedAccess,nodeId:'work',workerId:'claimant',leaseMs:60_000})).toBeDefined();
+    await expect(store.workflowTrees.pauseRoot!({...claimedAccess,expectedVersion:preparedClaim.root.record.version+1})).rejects.toMatchObject({code:'CONFLICT'});
+    await expect(selected.pause(claimed.id)).rejects.toMatchObject({code:'CONFLICT'});
+
+    const cancelled=await selected.submit(tree,{input:5,idempotencyKey:'pause-cancel'});await selected.pause(cancelled.id);
+    expect(await selected.cancel(cancelled.id)).toMatchObject({status:'cancelled',steps:{work:{status:'skipped'}}});expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it('shares bounded execution capacity across ready root and child branches',async()=>{

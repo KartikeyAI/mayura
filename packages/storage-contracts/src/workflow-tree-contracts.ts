@@ -88,6 +88,10 @@ export interface WorkflowTreeStore {
   finalizeRoot(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number;readonly output:JsonValue}):Promise<WorkflowTreeRootSnapshot>;
   cancelChild(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly childId:string;readonly childPolicyHash:string;readonly expectedVersion:number;readonly commandId:string}):Promise<WorkflowTreeChildCancellationResult>;
   cancelRoot(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number;readonly commandId:string}):Promise<WorkflowTreeCancellationResult>;
+  /** Optional tree-wide quiescent pause; refused while any root or child job is leased or started. Custom adapters may omit it. */
+  pauseRoot?(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number}):Promise<WorkflowTreeRootSnapshot>;
+  /** Optional scheduling-only resume; unresolved approvals and child waits remain unresolved. */
+  resumeRoot?(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number}):Promise<WorkflowTreeRootSnapshot>;
   recoverExpired(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly limit:number}):Promise<WorkflowTreeRecoveryResult>;
 }
 export interface WorkflowTreeAggregateStore extends AggregateStore {readonly workflowTrees:WorkflowTreeStore}

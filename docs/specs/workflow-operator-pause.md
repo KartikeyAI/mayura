@@ -1,6 +1,6 @@
 # Durable operator pause foundation
 
-Status: **experimental format-2, format-3 and format-5 foundation; broader operational control remains incomplete**.
+Status: **experimental foundation for formats 2–5; broader operational control remains incomplete**.
 
 The conservative format-2 runtime exposes explicit `pause(runId)` and `resume(runId)` operations. A pause is an atomic durable transition from `running` or `waiting` to `paused`. It is admitted only while every tool effect is quiescent: no step may be `dispatching`. If dispatch preparation races the command, aggregate compare-and-set permits exactly one transition to win; the loser reloads authoritative state. A started or uncertain effect must settle or be reconciled before pause can succeed.
 
@@ -26,6 +26,14 @@ Quiescence is stricter than in the aggregate-only formats because the scheduler 
 
 The graph driver treats `paused` as a halt, like a terminal state, and `createWorkflowGraphRuntime` exposes `pause(runId)`/`resume(runId)`. Graph discovery continues to return only `running` and `waiting` runs, so a coordinator does not load paused graphs; a graph paused between discovery and continuation is reported as an observed `paused` outcome.
 
+## Format 4 workflow trees
+
+A format-4 pause is tree-wide and recorded on the root. `WorkflowTreeStore` gains optional `pauseRoot`/`resumeRoot` commands, implemented by both SQL adapters. Pause locks the root's job links and conflicts while any root **or child** job is `leased` or `started`; claim and pause serialize on the root lock. While the root is paused, root and child claims return no work, and root/child start, child approval requests, child preparation, child finalization, child join and root finalization conflict; new child admission and root preparation were already limited to a `running`/`waiting` root. Root and child approvals may still be recorded, and a root approval no longer resets a paused root to `running`. Cancellation remains available and now cancels a paused tree rather than preserving the pause as an outcome.
+
+Child aggregates keep their own status; the pause lives only on the root. Resume restores `waiting` when a root step is waiting (an approval or an admitted child), otherwise `running`. Expiry recovery is not suppressed: an approval that expires on a prepared-but-unclaimed job may still settle the affected member as `blocked` during a pause, because that is an observation of elapsed authority rather than new scheduling.
+
+The tree runtime halts on a paused root before its terminal-cleanup path, reports a pause committed mid-drive as a `paused` snapshot rather than a storage conflict, and exposes `pause(runId)`/`resume(runId)`. Custom tree adapters that omit the optional commands keep working; pause then fails with `UNSUPPORTED_PROFILE`. Tree discovery continues to return only `running` and `waiting` roots.
+
 ## Remaining work
 
-The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. This slice does not yet provide an authenticated pause command, format-4 storage transitions, fleet-wide pause, worker draining or public-ingress qualification; those must be completed before the general operator-pause roadmap item can close.
+The content-free server, browser and CLI workflow-view validators recognize `paused`, so application adapters can display the authoritative state without payload disclosure. All four durable formats now have a storage-level pause. This slice does not yet provide an authenticated pause command, fleet-wide pause, worker draining or public-ingress qualification; those must be completed before the general operator-pause roadmap item can close.

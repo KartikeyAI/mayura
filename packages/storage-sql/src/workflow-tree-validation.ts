@@ -42,6 +42,7 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
     case 'cancelChild':fields(raw,['scope','rootId','rootPolicyHash','childId','childPolicyHash','expectedVersion','commandId']);child(raw);integer(raw['expectedVersion'],1);identifier(raw['commandId'],'Command');break;
     case 'cancelRoot':fields(raw,['scope','rootId','rootPolicyHash','expectedVersion','commandId']);root(raw);integer(raw['expectedVersion'],1);identifier(raw['commandId'],'Command');break;
     case 'recoverExpired':fields(raw,['scope','rootId','rootPolicyHash','limit']);root(raw);integer(raw['limit'],1,128);break;
+    case 'pauseRoot':case 'resumeRoot':fields(raw,['scope','rootId','rootPolicyHash','expectedVersion']);root(raw);integer(raw['expectedVersion'],1);break;
     default:invalid();
   }
   return raw;
@@ -96,7 +97,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
       const raw=exactObject(value,['snapshot','created']);boolean(raw['created']);const policy=workflowTreePolicy(command['policy']);const scope=digest('mayura:scope:v1',policy.scope);const policyHash=digest('mayura:workflow-tree-policy:v1',policy);const rootId=digest('mayura:workflow-tree-run:v1',{scope,submissionKey:command['idempotencyKey']});const expected={scope,rootId,rootPolicyHash:policyHash} as unknown as JsonObject;const snapshot=rootSnapshot(raw['snapshot'],expected);
       if(snapshot.manifestHash!==digest('mayura:workflow-tree:v1',command['manifest'])||snapshot.resourceHash!==digest('mayura:workflow-tree-resources:v1',command['resources']))unavailable();return immutable(raw);
     }
-    if(method==='inspect'||method==='joinChild'||method==='finalizeRoot')return immutable(rootSnapshot(value,command));
+    if(method==='inspect'||method==='joinChild'||method==='finalizeRoot'||method==='pauseRoot'||method==='resumeRoot')return immutable(rootSnapshot(value,command));
     if(method==='requestRootApproval'||method==='approveRootTool')return immutable(rootSnapshot(value,command));
     if(method==='inspectChild'||method==='requestChildApproval'||method==='approveChildTool'||method==='finalizeChild')return immutable(memberResult(value,command));
     if(method==='admitChild'){
@@ -149,12 +150,13 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
 }
 
 /** Finite optional adapter facade; base aggregate adapters remain source-compatible. */
-export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:JsonObject)=>Promise<unknown>):WorkflowTreeStore{
+export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:JsonObject)=>Promise<unknown>):Required<WorkflowTreeStore>{
   const call=async<T>(method:WorkflowTreeMethod,input:unknown):Promise<T>=>{const command=workflowTreeCommand(method,input);const result=await request(method,command);return workflowTreeResult(method,result,command) as T;};
   return Object.freeze({
     initialize:()=>call<void>('initialize',{}),submit:value=>call('submit',value),inspect:value=>call('inspect',value),requestRootApproval:value=>call('requestRootApproval',value),approveRootTool:value=>call('approveRootTool',value),prepareRootTool:value=>call('prepareRootTool',value),claimPreparedRootTool:value=>call('claimPreparedRootTool',value),renewClaimedRootTool:value=>call('renewClaimedRootTool',value),startClaimedRootTool:value=>call('startClaimedRootTool',value),recordRootToolReceipt:value=>call('recordRootToolReceipt',value),completeRootTool:value=>call('completeRootTool',value),inspectChild:value=>call('inspectChild',value),admitChild:value=>call('admitChild',value),requestChildApproval:value=>call('requestChildApproval',value),approveChildTool:value=>call('approveChildTool',value),
     prepareChildTool:value=>call('prepareChildTool',value),claimPreparedChildTool:value=>call('claimPreparedChildTool',value),renewClaimedChildTool:value=>call('renewClaimedChildTool',value),startClaimedChildTool:value=>call('startClaimedChildTool',value),
     recordChildToolReceipt:value=>call('recordChildToolReceipt',value),completeChildTool:value=>call('completeChildTool',value),finalizeChild:value=>call('finalizeChild',value),joinChild:value=>call('joinChild',value),finalizeRoot:value=>call('finalizeRoot',value),
     cancelChild:value=>call('cancelChild',value),cancelRoot:value=>call('cancelRoot',value),recoverExpired:value=>call('recoverExpired',value),
-  } satisfies WorkflowTreeStore);
+    pauseRoot:value=>call('pauseRoot',value),resumeRoot:value=>call('resumeRoot',value),
+  } satisfies Required<WorkflowTreeStore>);
 }

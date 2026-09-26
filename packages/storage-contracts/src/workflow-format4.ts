@@ -5,7 +5,7 @@ import type { WorkflowTreeManifest, WorkflowTreePolicyManifest } from './workflo
 import { workflowManifest, workflowResources } from './workflow-format2.js';
 import { workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources } from './workflow-tree-contracts.js';
 
-export type WorkflowTreeStatus = 'running'|'waiting'|'succeeded'|'failed'|'blocked'|'cancelled'|'outcome_unknown';
+export type WorkflowTreeStatus = 'running'|'waiting'|'paused'|'succeeded'|'failed'|'blocked'|'cancelled'|'outcome_unknown';
 export type WorkflowTreeStepStatus = 'pending'|'waiting'|'approved'|'dispatching'|'succeeded'|'failed'|'blocked'|'unknown'|'skipped';
 export interface WorkflowTreeChildLink {
   readonly runId: string; readonly accountId: string; readonly definitionHash: string;
@@ -60,7 +60,7 @@ export function workflowTreeState(record: Pick<StoredRecord,'id'|'state'>): Work
     if(!idDescriptor||!('value'in idDescriptor)||!stateDescriptor||!('value'in stateDescriptor)) corrupt(); hash(idDescriptor.value);
     const state=object(jsonValue(stateDescriptor.value));
     fields(state,['format','rootId','accountId','definition','policy','input','status','steps','maxCostMicros','maxCalls','spentMicros','reservedMicros','budgetVersion','output']);
-    if(state['format']!==4||!['running','waiting','succeeded','failed','blocked','cancelled','outcome_unknown'].includes(state['status'] as string)) corrupt();
+    if(state['format']!==4||!['running','waiting','paused','succeeded','failed','blocked','cancelled','outcome_unknown'].includes(state['status'] as string)) corrupt();
     hash(state['rootId']); hash(state['definition']); hash(state['policy']);
     if(typeof state['accountId']!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(state['accountId'])) corrupt();
     integer(state['maxCostMicros']); integer(state['maxCalls'],1); const spent=integer(state['spentMicros']); const reserved=integer(state['reservedMicros']); integer(state['budgetVersion'],1);
