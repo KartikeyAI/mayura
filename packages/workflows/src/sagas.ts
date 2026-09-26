@@ -1,3 +1,4 @@
+export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 export {
   assertWorkflowSaga,
   defineWorkflowSaga,

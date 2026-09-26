@@ -99,6 +99,20 @@ describe('workflow-tree developer runtime',()=>{
     expect(await selected.cancel(cancelled.id)).toMatchObject({status:'cancelled',steps:{work:{status:'skipped'}}});expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('drains an admitted root effect and admits no child',async()=>{
+    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();let started!:()=>void;const entered=new Promise<void>(resolve=>{started=resolve;});let release!:()=>void;const released=new Promise<void>(resolve=>{release=resolve;});
+    const execute=vi.fn(async(value:number)=>{started();await released;return value+1;});const tool=defineTool({id:'increment',version:'1',description:'Increment a number.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:1,execute});
+    const source=fixture();const leafNode=source.tree.nodes[0]!;
+    const tree=defineWorkflowTree({id:'drained-tree',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'first',tool,input:{kind:'input',path:[]}},{...leafNode,dependsOn:['first']}],result:{kind:'step',stepId:'first',path:[]}});
+    const options={store,scope,permissions:{allow:['tool:increment']},policyVersion:'1',maxCostMicros:3,maxCalls:2,maxOutputBytes:1_024,leaseMs:3_000};
+    const selected=createWorkflowTreeRuntime({...options,workerId:'worker'});runtimes.push(selected);
+    const submitted=await selected.submit(tree,{input:1,idempotencyKey:'drained-tree'});const execution=selected.runUntilSettled(tree,submitted.id).catch(()=>undefined);await entered;
+    const draining=selected.drain({timeoutMs:5_000});await expect(selected.runUntilSettled(tree,submitted.id)).rejects.toMatchObject({code:'CANCELLED'});
+    release();expect(await draining).toEqual({drained:true,interrupted:0});await execution;
+    const observer=createWorkflowTreeRuntime({...options,workerId:'observer'});runtimes.push(observer);
+    expect(await observer.inspect(submitted.id)).toMatchObject({steps:{first:{status:'succeeded'},child:{status:'pending',child:null}}});expect(execute).toHaveBeenCalledTimes(1);expect(source.execute).not.toHaveBeenCalled();
+  });
+
   it('shares bounded execution capacity across ready root and child branches',async()=>{
     const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();let active=0;let peak=0;let arrivals=0;let release!:()=>void;const bothStarted=new Promise<void>(resolve=>{release=resolve;});const execute=vi.fn(async(value:number)=>{active++;peak=Math.max(peak,active);arrivals++;if(arrivals===2)release();await bothStarted;active--;return value+1;});const tool=defineTool({id:'parallel-increment',version:'1',description:'Increment concurrently.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:1,execute});const leaf=defineWorkflow({id:'parallel-leaf',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'childWork',tool,input:{kind:'input',path:[]}}],result:{kind:'step',stepId:'childWork',path:[]}});const tree=defineWorkflowTree({id:'parallel-tree',version:'1',input:z.number(),output:z.array(z.number()),nodes:[{kind:'tool',id:'rootWork',tool,input:{kind:'input',path:[]}},{kind:'child',id:'child',workflow:leaf,input:{kind:'input',path:[]},policy:{permissions:['tool:parallel-increment'],maxCostMicros:1,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:1_000},resources:{childWork:[]}},{kind:'join',id:'joined',dependsOn:['rootWork','child']}],result:{kind:'step',stepId:'joined',path:[]}});const selected=createWorkflowTreeRuntime({store,scope,permissions:{allow:['tool:parallel-increment']},policyVersion:'1',maxCostMicros:2,maxCalls:2,maxOutputBytes:1_024,workerId:'parallel-worker',leaseMs:3_000,maxConcurrentJobs:2});runtimes.push(selected);const submitted=await selected.submit(tree,{input:1,idempotencyKey:'parallel'});const finished=await selected.runUntilSettled(tree,submitted.id);expect(finished).toMatchObject({status:'succeeded',output:[2,2]});expect(peak).toBe(2);expect(execute).toHaveBeenCalledTimes(2);
   });

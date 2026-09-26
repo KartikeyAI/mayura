@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode, type JsonObject } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, workflowGraphDiscoveryCommand, workflowGraphResources, workflowPolicy,
   type ExecutionRef, type WorkflowGraphDiscoveryAggregateStore, type WorkflowGraphDiscoveryCursor,
   type WorkflowGraphDiscoveryPage, type WorkflowGraphDiscoveryScan, type WorkflowResourcePlan } from '@mayura/storage-contracts';
@@ -31,6 +32,8 @@ export interface WorkflowGraphCoordinator {
   runPage(command?: { readonly cursor?: WorkflowGraphDiscoveryCursor | null; readonly limit?: number }): Promise<WorkflowGraphPageReport>;
   /** Stop local admission/waits, preserving durable runs, shared storage and late evidence. */
   close(): Promise<void>;
+  /** Claim no new work, let admitted effects and receipts settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 const errorCodes = new Set<ErrorCode>(['INVALID_CONFIG', 'INVALID_INPUT', 'INVALID_OUTPUT', 'INVALID_JSON', 'PERMISSION_DENIED',
@@ -197,6 +200,10 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
     close(): Promise<void> {
       if (!closing) { closed = true; closing = Promise.allSettled([discovery.close(), driver.close()]).then(() => {}); }
       return closing;
+    },
+    async drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport> {
+      const report = await driver.drain(options); closed = true;
+      closing ??= Promise.allSettled([discovery.close()]).then(() => {}); await closing; return report;
     },
   });
 }

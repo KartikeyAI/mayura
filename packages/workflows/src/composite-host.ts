@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { createWorkflowCompositeFleetRuntime, type WorkflowCompositeCursor, type WorkflowCompositeFleetOptions,
   type WorkflowCompositeFleetRuntime, type WorkflowCompositeOutcome } from './composite-fleet.js';
 import { assertWorkflowLoop, type AnyWorkflowLoop } from './loop-definition.js';
@@ -14,7 +15,9 @@ export interface WorkflowCompositeHostCycle { readonly pages: number; readonly e
 export interface WorkflowCompositeHostStatus { readonly running: boolean; readonly cycles: number;
   readonly consecutiveFailures: number; readonly lastError: ErrorCode | null; readonly lastCycle: WorkflowCompositeHostCycle | null }
 export interface WorkflowCompositeHost { readonly runtime: WorkflowCompositeFleetRuntime; start(): void;
-  runOnce(): Promise<WorkflowCompositeHostCycle>; status(): WorkflowCompositeHostStatus; stop(): Promise<void>; close(): Promise<void> }
+  runOnce(): Promise<WorkflowCompositeHostCycle>; status(): WorkflowCompositeHostStatus; stop(): Promise<void>; close(): Promise<void>;
+  /** Start no further cycle, let admitted effects settle within the deadline, then close the owned runtime. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport> }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> { return new Promise(resolve => {
   if (signal.aborted) { resolve(); return; } const timer = setTimeout(done, milliseconds);
@@ -51,5 +54,9 @@ export function createWorkflowCompositeHost(options: WorkflowCompositeHostOption
   const stop = async (): Promise<void> => { controller?.abort(); await loop; if (active) await Promise.allSettled([active]); controller = undefined; };
   return Object.freeze({ runtime, start, runOnce,
     status: () => freezeJson(jsonValue({ running: loop !== undefined, cycles, consecutiveFailures: failures, lastError, lastCycle })) as unknown as WorkflowCompositeHostStatus,
-    stop, close: async () => { if (closed) return; await stop(); closed = true; runtime.close(); } });
+    stop, close: async () => { if (closed) return; await stop(); closed = true; runtime.close(); },
+    drain: async (options?: WorkflowDrainOptions) => {
+      controller?.abort(); const report = await runtime.drain(options);
+      await loop; if (active) await Promise.allSettled([active]); controller = undefined; closed = true; return report;
+    } });
 }

@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, validate, type InferInput, type JsonObject, type JsonValue } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowSagaStateMatchesManifest, initialWorkflowSagaState, workflowSagaState,
   type StoredRecord, type WorkflowSagaState, type WorkflowSagaStatus, type WorkflowSagaStepState } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
@@ -28,6 +29,8 @@ export interface WorkflowSagaRuntime {
   runUntilSettled(definition: AnyWorkflowSaga, id: string): Promise<WorkflowSagaSnapshot>;
   cancel(id: string): Promise<WorkflowSagaSnapshot>;
   close(): void;
+  /** Let admitted child effects settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -331,5 +334,6 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       return snapshot(record);
     },
     close: () => { if (!closed) { closed = true; lifecycle.close(); } },
+    drain: async options => { const report = await lifecycle.drain(options); closed = true; return report; },
   });
 }

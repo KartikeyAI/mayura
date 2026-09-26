@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, validate, type InferInput, type JsonObject, type JsonValue } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLoopStateMatchesManifest, initialWorkflowLoopState, workflowLoopState,
   type StoredRecord, type WorkflowLoopBinding, type WorkflowLoopState, type WorkflowLoopStatus } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
@@ -19,6 +20,8 @@ export interface WorkflowLoopRuntime {
   events(id: string, after?: number): ReturnType<WorkflowLoopRuntimeOptions['store']['events']>;
   runUntilSettled(definition: AnyWorkflowLoop, id: string): Promise<WorkflowLoopSnapshot>;
   cancel(id: string): Promise<WorkflowLoopSnapshot>; close(): void;
+  /** Let admitted iteration effects settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -198,5 +201,6 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
         current.status = 'cancelled'; return true;
       }, 'loop.run.cancelled'); return view(record); },
     close: () => { if (!closed) { closed = true; lifecycle.close(); } },
+    drain: async options => { const report = await lifecycle.drain(options); closed = true; return report; },
   });
 }

@@ -1,5 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, workflowState, workflowOutputs, mergeWorkflowReceipt,
   type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
   type WorkflowFormat2Status as Status, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
@@ -86,7 +87,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
   const scopeKey = digest('mayura:scope:v1', scope);
   const policy = digest('mayura:policy:v1', { scope, permissions: [...permissions.allow].sort(), policyVersion: options.policyVersion, maxCostMicros, maxOutputBytes, approvalTtlMs });
   const active = new Map<string, AbortController>();
-  let closed = false;
+  let closed = false; const gate = createWorkflowDrainGate();
   const ensureOpen = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Workflow runtime is closed.'); };
   const load = async (id: string, allowClosed = false): Promise<StoredRecord> => {
     if (!allowClosed) ensureOpen();
@@ -214,7 +215,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     inspect: async (id: string): Promise<WorkflowSnapshot> => snapshot(await load(id)),
     events: (id: string, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     async runUntilSettled(definition: AnyWorkflow, id: string): Promise<WorkflowSnapshot> {
-      ensureOpen();
+      ensureOpen(); if (gate.draining) throw new MayuraError('CANCELLED', 'Workflow runtime is draining.');
       assertWorkflow(definition);
       for (let wave = 0; wave <= definition.nodes.length + 1; wave++) {
         const before = await load(id); const state = stateFrom(before);
@@ -225,7 +226,9 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
           if (step.kind !== node.kind || (node.kind === 'tool' && step.receipt && step.receipt.toolId !== node.tool.id) || (step.status === 'succeeded' && (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded'))) throw new MayuraError('CONFLICT', 'Stored step evidence does not match the pinned graph.');
         }
         if (state.status === 'paused' || state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return snapshot(before);
-        await Promise.all(definition.nodes.map(node => executeNode(id, node)));
+        // Each wave holds one drain admission until its effects and receipts settle.
+        const release = gate.enter(); if (!release) return snapshot(before);
+        try { await Promise.all(definition.nodes.map(node => executeNode(id, node))); } finally { release(); }
         let after = await load(id); const next = stateFrom(after); const steps = Object.values(next.steps);
         if (next.status === 'paused' || next.status === 'cancelled') return snapshot(after);
         if (steps.every(item => terminalSteps.has(item.status))) {
@@ -301,5 +304,9 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       }, 'run.recovery_required'));
     },
     close(): void { closed = true; for (const controller of active.values()) controller.abort(); },
+    /** Admit no new wave, let admitted effects settle within the deadline, then close. */
+    drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport> {
+      return gate.drain(options, () => { closed = true; for (const controller of active.values()) controller.abort(); });
+    },
   };
 }

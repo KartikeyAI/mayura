@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { assertWorkflowLifecycle, type AnyWorkflowLifecycle } from './lifecycle-definition.js';
 import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecycleFleetCursor,
   type WorkflowLifecycleFleetOutcome, type WorkflowLifecycleFleetRuntime,
@@ -27,6 +28,8 @@ export interface WorkflowLifecycleHost {
   status(): WorkflowLifecycleHostStatus;
   stop(): Promise<void>;
   close(): Promise<void>;
+  /** Start no further cycle, let admitted effects settle within the deadline, then close the owned runtime. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 function code(error: unknown): ErrorCode { return error instanceof MayuraError ? error.code : 'STORAGE_UNAVAILABLE'; }
@@ -89,5 +92,10 @@ export function createWorkflowLifecycleHost(options: WorkflowLifecycleHostOption
     status: () => freezeJson(jsonValue({ running: loop !== undefined, cycles, consecutiveFailures, lastError, lastCycle })) as unknown as WorkflowLifecycleHostStatus,
     stop,
     close: async () => { if (closed) return; await stop(); closed = true; runtime.close(); },
+    drain: async (options?: WorkflowDrainOptions) => {
+      // Stop the loop first so no new cycle begins; the active cycle's in-flight wave still settles.
+      controller?.abort(); const report = await runtime.drain(options);
+      await loop; if (inFlight) await Promise.allSettled([inFlight]); controller = undefined; closed = true; return report;
+    },
   });
 }

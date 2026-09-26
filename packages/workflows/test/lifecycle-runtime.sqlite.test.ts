@@ -196,6 +196,25 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
     scheduler.close(); operator.close();
   });
 
+  it('drains an admitted lifecycle effect without starting the next wave', async () => {
+    const clock = { value: 100 }; const runtime = await open(clock); let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
+    let release!: () => void; const released = new Promise<void>(resolve => { release = resolve; }); let effects = 0;
+    const slow = defineTool({ id: 'fixture/draft', version: '1', description: 'Create a draft.', input: any, output: any,
+      effects: 'none', capabilities: [], costMicros: 2, execute: async input => { effects++; started(); await released; return input; } });
+    const chained = defineWorkflowLifecycle({ id: 'drained', version: '1', input: any, output: any, nodes: [
+      { kind: 'tool', id: 'draft', tool: slow, input: { kind: 'input', path: [] } },
+      { kind: 'timer', id: 'later', dependsOn: ['draft'], fireAtMs: { kind: 'literal', value: 50 } },
+    ], result: { kind: 'step', stepId: 'draft', path: [] } });
+    const submitted = await runtime.submit(chained, { input: 'value', idempotencyKey: 'drain' });
+    const execution = runtime.runUntilSettled(chained, submitted.id).catch(() => undefined); await entered;
+    const draining = runtime.drain({ timeoutMs: 5_000 });
+    await expect(runtime.runUntilSettled(chained, submitted.id)).rejects.toMatchObject({ code: 'CANCELLED' });
+    release(); expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
+    await currentStore!.close(); currentStore = undefined; const observer = await open(clock);
+    expect(await observer.inspect(submitted.id)).toMatchObject({ status: 'running', steps: { draft: { status: 'succeeded' }, later: { status: 'pending' } } });
+    expect(effects).toBe(1);
+  });
+
   it('retains callback admission after a noncooperative validator times out', async () => {
     fixture = await sqliteFixture(); currentStore = fixture.store; opens = 1; await currentStore.initialize();
     let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });

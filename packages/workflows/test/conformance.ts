@@ -171,6 +171,32 @@ export function workflowConformance(name: string, factory: () => Promise<Workflo
       expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
     });
 
+    it('drains an admitted effect and its receipt without dispatching dependents', async () => {
+      const started = deferred<void>(); const release = deferred<{ value: number }>(); let effects = 0;
+      const definition = defineWorkflow({ id: 'fixture.drain', version: '1', input: numberInput, output: z.unknown(), nodes: [
+        { kind: 'tool', id: 'write', tool: tool({ execute: async () => { effects++; started.resolve(); return release.promise; } }), input: { kind: 'input', path: [] } },
+        { kind: 'tool', id: 'follow', dependsOn: ['write'], tool: tool({ id: 'fixture.second', execute: input => { effects++; return input; } }), input: { kind: 'input', path: [] } },
+      ], result: { kind: 'step', stepId: 'follow', path: [] } });
+      const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'drain' });
+      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined); await started.promise;
+      const draining = engine.drain({ timeoutMs: 5_000 });
+      await expect(engine.runUntilSettled(definition, run.id)).rejects.toMatchObject({ code: 'CANCELLED' });
+      release.resolve({ value: 2 }); expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
+      expect(await runtime().inspect(run.id)).toMatchObject({ status: 'running',
+        steps: { write: { status: 'succeeded', receipt: { execution: 'succeeded' } }, follow: { status: 'pending' } } });
+      expect(effects).toBe(1);
+    });
+
+    it('reports an effect still in flight at the drain deadline', async () => {
+      const started = deferred<void>(); const release = deferred<{ value: number }>();
+      const definition = single(tool({ execute: async () => { started.resolve(); return release.promise; } }));
+      const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'drain-deadline' });
+      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined); await started.promise;
+      expect(await engine.drain({ timeoutMs: 20 })).toEqual({ drained: false, interrupted: 1 });
+      release.resolve({ value: 2 }); await execution;
+      await expect(engine.submit(definition, { input: { value: 3 }, idempotencyKey: 'after-drain' })).rejects.toMatchObject({ code: 'CANCELLED' });
+    });
+
     it('rejects a quiescent pause while an external effect is in flight', async () => {
       const started = deferred<void>(); const release = deferred<{ value: number }>();
       const definition = single(tool({ execute: async () => { started.resolve(); return release.promise; } }));

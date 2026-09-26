@@ -1,6 +1,7 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate,
   type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLifecycleStateMatchesManifest, initialWorkflowLifecycleState,
   mergeWorkflowReceipt, workflowLifecycleOutputs, workflowLifecycleState,
   type AggregateStore, type StoredRecord, type WorkflowLifecycleState as State,
@@ -70,6 +71,8 @@ export interface WorkflowLifecycleRuntime {
   cancel(id: string): Promise<WorkflowLifecycleSnapshot>;
   recoverAbandoned(id: string): Promise<WorkflowLifecycleSnapshot>;
   close(): void;
+  /** Admit no new wave, let admitted effects and receipts settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 const finalRunStatuses = new Set<WorkflowLifecycleStatus>(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
@@ -175,7 +178,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
   const scopeKey = digest('mayura:scope:v1', scope);
   const policy = digest('mayura:workflow-lifecycle-policy:v1', { scope, permissions: [...permissions.allow].sort(),
     policyVersion: options.policyVersion, maxCostMicros, maxOutputBytes, approvalTtlMs });
-  const active = new Map<string, AbortController>(); let closed = false;
+  const active = new Map<string, AbortController>(); let closed = false; const gate = createWorkflowDrainGate();
   const ensureOpen = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Workflow lifecycle runtime is closed.'); };
   const load = async (id: string, allowClosed = false): Promise<StoredRecord> => {
     if (!allowClosed) ensureOpen();
@@ -466,11 +469,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     },
     events: (id, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     runUntilSettled: async (definition, id) => {
-      ensureOpen(); assertWorkflowLifecycle(definition);
+      ensureOpen(); if (gate.draining) throw new MayuraError('CANCELLED', 'Workflow lifecycle runtime is draining.'); assertWorkflowLifecycle(definition);
       for (let wave = 0; wave <= definition.nodes.length + 2; wave++) {
         const before = await load(id); const state = stateFrom(before); verifyDefinition(definition, before, state);
         if (state.status === 'paused' || finalRunStatuses.has(state.status)) return publicSnapshot(before);
-        await Promise.all(definition.nodes.map(node => executeNode(id, definition, node)));
+        // Each wave holds one drain admission until its effects and receipts settle.
+        const release = gate.enter(); if (!release) return publicSnapshot(before);
+        try { await Promise.all(definition.nodes.map(node => executeNode(id, definition, node))); } finally { release(); }
         let after = await load(id); const next = stateFrom(after); verifyDefinition(definition, after, next);
         const steps = Object.values(next.steps);
         if (!schedulable(next)) return publicSnapshot(after);
@@ -553,5 +558,6 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       if (changed && state.status !== 'cancelled') state.status = 'running'; return changed;
     }, 'lifecycle.run.recovery_required')),
     close: () => { closed = true; for (const controller of active.values()) controller.abort(); },
+    drain: options => gate.drain(options, () => { closed = true; for (const controller of active.values()) controller.abort(); }),
   });
 }

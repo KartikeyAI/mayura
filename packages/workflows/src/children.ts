@@ -1,3 +1,4 @@
+export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 export {
   assertWorkflowTree, defineWorkflowTree, treeManifest,
   type AnyWorkflowTree, type WorkflowTreeChildNode, type WorkflowTreeDefinition,

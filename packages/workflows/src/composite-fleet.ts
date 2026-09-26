@@ -1,4 +1,5 @@
 import { freezeJson, jsonValue, MayuraError, type ErrorCode, type InferInput, type JsonObject, type JsonValue } from '@mayura/core';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, type StoredRecord } from '@mayura/storage-contracts';
 import { digest } from './definition.js';
 import { assertWorkflowLoop, type AnyWorkflowLoop } from './loop-definition.js';
@@ -29,6 +30,8 @@ export interface WorkflowCompositeFleetRuntime {
   runPage(catalog: { readonly sagas?: readonly AnyWorkflowSaga[]; readonly loops?: readonly AnyWorkflowLoop[] },
     command?: { readonly cursor?: WorkflowCompositeCursor | null; readonly limit?: number; readonly maxShardReads?: number }): Promise<WorkflowCompositeReport>;
   close(): void;
+  /** Drain saga and loop children in parallel within one deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 interface Entry { kind: WorkflowCompositeKind; runId: string; definitionHash: string; version: number }
@@ -125,6 +128,10 @@ export function createWorkflowCompositeFleetRuntime(options: WorkflowCompositeFl
         catch (error) { outcomes.push({ kind: 'failed', runId: candidate.runId, workflowKind: candidate.kind, code: failure(error) }); } }
       return freezeJson(jsonValue({ page, outcomes })) as unknown as WorkflowCompositeReport; },
     close: () => { if (!closed) { closed = true; sagas.close(); loops.close(); } },
+    drain: async options => {
+      const [saga, loop] = await Promise.all([sagas.drain(options), loops.drain(options)]); closed = true;
+      return Object.freeze({ drained: saga.drained && loop.drained, interrupted: saga.interrupted + loop.interrupted });
+    },
   };
   return Object.freeze(wrapped);
 }

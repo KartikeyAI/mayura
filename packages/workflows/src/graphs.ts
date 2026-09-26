@@ -2,6 +2,8 @@ import type { InferInput, Schema } from '@mayura/core';
 import type { ExecutionRef, WorkflowGraphAggregateStore, WorkflowGraphFormat3Step } from '@mayura/storage-contracts';
 import { createScheduledDriver, type ReconcileExternalEffectCommand, type ScheduledWorkflowRuntimeOptions } from './scheduled.js';
 import type { WorkflowSnapshot } from './runtime.js';
+import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
+export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import type { AnyWorkflowGraph, WorkflowGraphDefinition } from './graph-definition.js';
 
 export { defineWorkflowGraph, type WorkflowGraphDefinition, type WorkflowGraphOptions,
@@ -37,6 +39,8 @@ export interface WorkflowGraphRuntime {
   recoverExpired(id: string): Promise<WorkflowGraphSnapshot>;
   /** Stop this finite driver without cancelling durable waits or closing caller-owned storage. */
   close(): Promise<void>;
+  /** Claim no new work, let admitted effects and receipts settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 
 /** Opt in explicitly to format-3 graph waits; no fallback to legacy or unfenced execution. */

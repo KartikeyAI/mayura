@@ -43,6 +43,7 @@ export {
   type WorkflowLifecycleHostOptions,
   type WorkflowLifecycleHostStatus,
 } from './lifecycle-host.js';
+export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 export type {
   WorkflowLifecycleHumanKind,
   WorkflowLifecycleHumanNodeManifest,

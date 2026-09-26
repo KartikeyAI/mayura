@@ -226,6 +226,7 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
       return freezeJson(jsonValue({ page, outcomes })) as unknown as WorkflowLifecycleFleetReport;
     },
     close: () => { if (!closed) { closed = true; runtime.close(); } },
+    drain: async options => { const report = await runtime.drain(options); closed = true; return report; },
   } satisfies WorkflowLifecycleFleetRuntime;
   return Object.freeze(wrapped);
 }

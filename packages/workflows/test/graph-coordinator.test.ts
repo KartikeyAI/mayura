@@ -66,7 +66,7 @@ describe('finite registered graph coordinator', () => {
       outcomes: source.candidates.map(candidate => ({ kind: 'observed', reference: candidate.reference, version: 2, status: 'cancelled' })) });
     expect(source.inspect.mock.calls.map(([command]) => command.id)).toEqual(source.candidates.map(candidate => candidate.reference.runId));
     expect(source.initialize).toHaveBeenCalledOnce(); expect(source.discoveryInitialize).toHaveBeenCalledOnce();
-    expect(Object.keys(client).sort()).toEqual(['close', 'runPage']); expect(Object.isFrozen(report)).toBe(true);
+    expect(Object.keys(client).sort()).toEqual(['close', 'drain', 'runPage']); expect(Object.isFrozen(report)).toBe(true);
     expect(Object.isFrozen(report.outcomes[0]!.reference)).toBe(true); expect(JSON.stringify(report)).not.toContain('PRIVATE');
     expect(source.mutation).not.toHaveBeenCalled(); expect(source.unused).not.toHaveBeenCalled();
     await client.close(); expect(source.close).not.toHaveBeenCalled();

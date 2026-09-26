@@ -1,5 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import {
   StorageError, executionRef, workflowPolicy, workflowResources, workflowOutputs,
   workflowGraphOutputs, workflowGraphResources, workflowGraphTargets, assertWorkflowGraphStateMatchesManifest,
@@ -68,6 +69,8 @@ export interface ScheduledWorkflowRuntime {
   recoverExpired(id: string): Promise<WorkflowSnapshot>;
   /** Stops this worker, not the shared workflow. Keeps caller-owned storage available for late evidence. */
   close(): Promise<void>;
+  /** Claim no new work, let admitted effects and receipts settle within the deadline, then close. */
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 /** A paused run is nonterminal but schedules nothing until an explicit resume. */
@@ -100,6 +103,7 @@ interface ScheduledDriverRuntime {
   readonly resume?: (id: string) => Promise<ScheduledPublicSnapshot>;
   recoverExpired(id: string): Promise<ScheduledPublicSnapshot>;
   close(): Promise<void>;
+  drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
 }
 /** Internal catalog input only; public runtimes retain their single resource-plan option. */
 interface ScheduledGraphCatalogEntry { readonly definition: AnyWorkflowGraph; readonly resources: WorkflowResourcePlan }
@@ -186,7 +190,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
   let slots = 0;
   let closed = false;
   let initialized: Promise<void> | undefined;
-  let closing: Promise<void> | undefined;
+  let closing: Promise<void> | undefined; const gate = createWorkflowDrainGate();
   const open = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Scheduled worker is closed.'); };
   const initialize = (): Promise<void> => {
     initialized ??= scheduledStorage(() => api.initialize()).catch((error: unknown) => { initialized = undefined; throw error; });
@@ -383,74 +387,78 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       open();
       let current = await load(id); matches(definition, current);
       if (halted(stateFrom(current.record).status)) return snapshot(current.record);
-      const before = current.record.version;
-      current = await write(id, command => api.recover(command));
-      current = await write(id, command => api.advance(command));
-      if (halted(stateFrom(current.record).status)) return snapshot(current.record);
-      let preparingState = stateFrom(current.record);
-      for (const node of definition.nodes) {
-        if (node.kind !== 'tool') continue;
-        // A validated terminal step or immutable prepared-job link can never become a new
-        // preparation candidate. Avoid re-reading the entire aggregate for each such node.
-        // Potential candidates still receive a fresh read and the same authoritative CAS.
-        const observedStep = preparingState.steps[node.id];
-        if (!observedStep || !['pending', 'waiting', 'approved'].includes(observedStep.status)
-          || current.jobs.some(job => job.nodeId === node.id)) continue;
-        current = await load(id);
-        const state = stateFrom(current.record); preparingState = state; const step = state.steps[node.id];
-        if (halted(state.status)) return snapshot(current.record);
-        if (!step || !['pending', 'waiting', 'approved'].includes(step.status) || current.jobs.some(job => job.nodeId === node.id)
-          || (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded')) continue;
-        const required = [`tool:${node.tool.id}`, ...node.tool.capabilities, ...(node.tool.effects === 'none' ? [] : [`effect:${node.tool.effects}`])];
-        if (required.some(grant => !permissions.allow.includes(grant))) {
-          current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'blocked' }));
-          preparingState = stateFrom(current.record); continue;
-        }
-        let input: JsonValue;
-        try {
-          const raw = resolveBinding(node.input, state.input, outputs(state));
-          input = safeScheduledJson(await scheduledCallback(() => validate(node.tool.input, raw, 'input', { maxBytes: policy.maxOutputBytes }), node.tool.timeoutMs, shutdown.signal), policy.maxOutputBytes, 'input');
-        } catch {
-          open(); current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'failed' }));
-          preparingState = stateFrom(current.record); continue;
-        }
-        if (node.approval) {
-          current = await updatePendingNode(id, node.id, command => api.requestApproval({ ...command, nodeId: node.id, input }));
+      // Each wave holds one drain admission, covering its claims, effects and receipts.
+      const release = gate.enter(); if (!release) return snapshot(current.record);
+      try {
+        const before = current.record.version;
+        current = await write(id, command => api.recover(command));
+        current = await write(id, command => api.advance(command));
+        if (halted(stateFrom(current.record).status)) return snapshot(current.record);
+        let preparingState = stateFrom(current.record);
+        for (const node of definition.nodes) {
+          if (node.kind !== 'tool') continue;
+          // A validated terminal step or immutable prepared-job link can never become a new
+          // preparation candidate. Avoid re-reading the entire aggregate for each such node.
+          // Potential candidates still receive a fresh read and the same authoritative CAS.
+          const observedStep = preparingState.steps[node.id];
+          if (!observedStep || !['pending', 'waiting', 'approved'].includes(observedStep.status)
+            || current.jobs.some(job => job.nodeId === node.id)) continue;
+          current = await load(id);
+          const state = stateFrom(current.record); preparingState = state; const step = state.steps[node.id];
+          if (halted(state.status)) return snapshot(current.record);
+          if (!step || !['pending', 'waiting', 'approved'].includes(step.status) || current.jobs.some(job => job.nodeId === node.id)
+            || (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded')) continue;
+          const required = [`tool:${node.tool.id}`, ...node.tool.capabilities, ...(node.tool.effects === 'none' ? [] : [`effect:${node.tool.effects}`])];
+          if (required.some(grant => !permissions.allow.includes(grant))) {
+            current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'blocked' }));
+            preparingState = stateFrom(current.record); continue;
+          }
+          let input: JsonValue;
+          try {
+            const raw = resolveBinding(node.input, state.input, outputs(state));
+            input = safeScheduledJson(await scheduledCallback(() => validate(node.tool.input, raw, 'input', { maxBytes: policy.maxOutputBytes }), node.tool.timeoutMs, shutdown.signal), policy.maxOutputBytes, 'input');
+          } catch {
+            open(); current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'failed' }));
+            preparingState = stateFrom(current.record); continue;
+          }
+          if (node.approval) {
+            current = await updatePendingNode(id, node.id, command => api.requestApproval({ ...command, nodeId: node.id, input }));
+            preparingState = stateFrom(current.record);
+            if (preparingState.steps[node.id]?.status !== 'approved') continue;
+          }
+          current = await updatePendingNode(id, node.id, command => api.prepare({ ...command, nodeId: node.id, input }));
           preparingState = stateFrom(current.record);
-          if (preparingState.steps[node.id]?.status !== 'approved') continue;
         }
-        current = await updatePendingNode(id, node.id, command => api.prepare({ ...command, nodeId: node.id, input }));
-        preparingState = stateFrom(current.record);
-      }
-      const available = maxConcurrentJobs - slots;
-      let count = 0;
-      if (available > 0 && !closed) {
-        slots += available;
-        let claims: Awaited<ReturnType<ScheduledWorkflowStore['claim']>>;
-        try { claims = scheduledClaims(await scheduledStorage(() => api.claim({ ...access(id), workerId, limit: available, leaseMs })), scopeKey, id, workerId, available); }
-        catch (error) { slots -= available; throw error; }
-        slots -= available - claims.length; count = claims.length;
-        // A sibling storage failure does not detach already claimed local work from this driver.
-        const results = await Promise.allSettled(claims.map(item => executeClaim(definition, id, item.job.jobId, item.claim)));
-        const failure = results.find(result => result.status === 'rejected');
-        if (failure?.status === 'rejected') throw failure.reason;
-      }
-      current = await write(id, command => api.advance(command));
-      const state = stateFrom(current.record);
-      if (halted(state.status)) return snapshot(current.record);
-      if (Object.values(state.steps).every(step => step.status === 'succeeded')) {
-        let final: { validation: 'passed'; output: JsonValue } | { validation: 'failed' };
-        try {
-          const raw = resolveBinding(definition.result, state.input, outputs(state));
-          const output = await scheduledCallback(() => validate(definition.output, raw, 'output', { maxBytes: policy.maxOutputBytes }), 30_000, shutdown.signal);
-          final = { validation: 'passed', output: safeScheduledJson(output, policy.maxOutputBytes, 'output') };
-        } catch { open(); final = { validation: 'failed' }; }
-        try {
-          const committed = await scheduledStorage(() => api.finalize({ ...access(id), expectedVersion: current.record.version, commandId: crypto.randomUUID(), ...final }));
-          return snapshot(view(committed, id).record);
-        } catch (error) { if (!isStorageCode(error, 'CONFLICT')) throw error; }
-      }
-      if (count === 0 && current.record.version === before) return snapshot(current.record);
+        const available = maxConcurrentJobs - slots;
+        let count = 0;
+        if (available > 0 && !closed) {
+          slots += available;
+          let claims: Awaited<ReturnType<ScheduledWorkflowStore['claim']>>;
+          try { claims = scheduledClaims(await scheduledStorage(() => api.claim({ ...access(id), workerId, limit: available, leaseMs })), scopeKey, id, workerId, available); }
+          catch (error) { slots -= available; throw error; }
+          slots -= available - claims.length; count = claims.length;
+          // A sibling storage failure does not detach already claimed local work from this driver.
+          const results = await Promise.allSettled(claims.map(item => executeClaim(definition, id, item.job.jobId, item.claim)));
+          const failure = results.find(result => result.status === 'rejected');
+          if (failure?.status === 'rejected') throw failure.reason;
+        }
+        current = await write(id, command => api.advance(command));
+        const state = stateFrom(current.record);
+        if (halted(state.status)) return snapshot(current.record);
+        if (Object.values(state.steps).every(step => step.status === 'succeeded')) {
+          let final: { validation: 'passed'; output: JsonValue } | { validation: 'failed' };
+          try {
+            const raw = resolveBinding(definition.result, state.input, outputs(state));
+            const output = await scheduledCallback(() => validate(definition.output, raw, 'output', { maxBytes: policy.maxOutputBytes }), 30_000, shutdown.signal);
+            final = { validation: 'passed', output: safeScheduledJson(output, policy.maxOutputBytes, 'output') };
+          } catch { open(); final = { validation: 'failed' }; }
+          try {
+            const committed = await scheduledStorage(() => api.finalize({ ...access(id), expectedVersion: current.record.version, commandId: crypto.randomUUID(), ...final }));
+            return snapshot(view(committed, id).record);
+          } catch (error) { if (!isStorageCode(error, 'CONFLICT')) throw error; }
+        }
+        if (count === 0 && current.record.version === before) return snapshot(current.record);
+      } finally { release(); }
     }
     return snapshot((await load(id)).record);
   }
@@ -502,7 +510,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       return scheduledEvents(await scheduledStorage(() => events(scopeKey, id, after)), after);
     },
     runUntilSettled(definition, id) {
-      open(); assertDefinition(definition); access(id); enrollment(definition);
+      open(); if (gate.draining) return Promise.reject(new MayuraError('CANCELLED', 'Scheduled worker is draining.'));
+      assertDefinition(definition); access(id); enrollment(definition);
       const existing = drivers.get(id);
       if (existing) return existing.definitionHash === definition.digest ? existing.operation
         : Promise.reject(new MayuraError('CONFLICT', 'The active driver uses a different workflow definition.'));
@@ -615,6 +624,12 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     close() {
       if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
       return closing;
+    },
+    drain(options) {
+      return gate.drain(options, () => {
+        if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
+        return closing;
+      });
     },
   });
 }

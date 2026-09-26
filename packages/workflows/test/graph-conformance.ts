@@ -217,6 +217,23 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       expect(await engine.runUntilSettled(definition, fenced.id)).toMatchObject({ status: 'succeeded', output: 'done' });
     });
 
+    it('drains an admitted graph effect and claims no dependent work', async () => {
+      let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
+      let release!: () => void; const released = new Promise<void>(resolve => { release = resolve; }); let effects = 0;
+      const definition = defineWorkflowGraph({ id: 'graph.drain', version: '1', input: z.unknown(), output: z.unknown(), nodes: [
+        { kind: 'tool', id: 'first', tool: action(async () => { effects++; started(); await released; return 'one'; }), input: literal(null) },
+        { kind: 'tool', id: 'second', dependsOn: ['first'], tool: action(() => { effects++; return 'two'; }), input: literal(null) },
+      ], result: step('second') });
+      const engine = runtime(); const run = await engine.submit(definition, { input: null, idempotencyKey: 'drain' });
+      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined); await bounded(entered);
+      const draining = engine.drain({ timeoutMs: 5_000 });
+      await expect(engine.runUntilSettled(definition, run.id)).rejects.toMatchObject({ code: 'CANCELLED' });
+      release(); expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
+      expect((await detail(run.id)).record.state['steps']).toMatchObject({ first: { status: 'succeeded' }, second: { status: 'pending' } });
+      expect((await detail(run.id)).jobs.map(job => job.nodeId)).toEqual(['first']); expect(effects).toBe(1);
+      expect(await runtime().runUntilSettled(definition, run.id)).toMatchObject({ status: 'succeeded', output: 'two' });
+    });
+
     it('resolves input targets after schema transformation and preserves declared target order', async () => {
       const first = await target(); const second = await target();
       const definition = defineWorkflowGraph({ id: 'graph.transformed', version: '1',

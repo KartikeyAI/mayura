@@ -1,3 +1,4 @@
+export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 export { assertWorkflowLoop, defineWorkflowLoop, loopManifest, type AnyWorkflowLoop,
   type WorkflowLoopDefinition, type WorkflowLoopOptions, type WorkflowLoopOutput } from './loop-definition.js';
 export { createWorkflowLoopRuntime, type WorkflowLoopRuntime, type WorkflowLoopRuntimeOptions,
