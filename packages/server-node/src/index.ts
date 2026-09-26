@@ -5,6 +5,7 @@ import { createAgentServer, type AgentServer, type AgentServerOptions } from '@m
 import { hardenServer, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
 
 export { listenProductionServer, type ProductionAgentServer, type ProductionServerOptions } from './production.js';
+export { listenProbe, type ProbeServer, type ProbeServerOptions } from './probe.js';
 
 export interface LocalServerOptions extends Omit<AgentServerOptions, 'publicOrigin'> {
   readonly hostname?: '127.0.0.1' | '::1';

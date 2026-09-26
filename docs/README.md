@@ -57,8 +57,10 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Authenticated workflow continuation](specs/workflow-resume-transport.md) and [resume guide](how-to/workflow-resume.md) — revision-bound continuation that cannot force an unresolved gate.
 - [Pause console example](../examples/pause-console/README.md) — live local operator UI for per-run pause and fleet hold, used for the pause-control qualification.
 - [Fleet-wide pause](specs/fleet-pause.md) and [fleet control guide](how-to/fleet-control.md) — durable per-scope hold honored by hosts and coordinators, a ledger-backed sweep that pauses discoverable runs and resumes only the ones it paused, and an authenticated `workflows:fleet` transport for server, browser and CLI.
+- [Storage operations](how-to/storage-operations.md) — schema version policy, `mayura migrate`, SQLite online backup/verified restore, PostgreSQL dump/restore and restore drills.
 - [Container deployment guide](how-to/production-deployment.md) — offline-built server/worker image, compose smoke test, probes and graceful drain on SIGTERM.
 - [Production server host](specs/production-server.md) — explicit public binding, HTTPS origin, in-process or proxy TLS, host check, probes, HSTS and durable submission idempotency.
+- [Threat model](threat-model.md) — assets, trust boundaries, threats, controls with evidence, and residual risks.
 - [v1 release plan](v1-release-plan.md) — the working checklist for Mayura v1.
 - [Workers and leadership](specs/workers.md) — durable leadership lease and a worker supervisor for hosts and coordinators with fail-safe stop, readiness and drain handover.
 - [Bounded worker draining](specs/worker-draining.md) — graceful `drain` for every workflow runtime, coordinator and host: no new wave or claim, admitted effects settle within a deadline, interrupted work is reported.

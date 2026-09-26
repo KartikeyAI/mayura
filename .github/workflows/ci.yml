@@ -22,8 +22,10 @@ jobs:
           node-version: 24.14.1
       - run: npm install --global pnpm@10.17.1 --ignore-scripts
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node scripts/secret-scan.mjs
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:consumer
       - run: pnpm test:consumer:optional
       - run: pnpm test:consumer:storage
       - run: pnpm example
@@ -38,6 +40,9 @@ jobs:
       - run: node examples/workflow-graph-discovery.mjs
       - run: node examples/workflow-graph-coordinator.mjs
       - run: node examples/durable-budgets.mjs
+      - run: pnpm test:templates
+      - run: pnpm release:artifacts
+      - run: node scripts/sbom.mjs
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -66,3 +71,19 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:integration
       - run: pnpm test:consumer:storage
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.14.1
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm build
+      - run: docker pull node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e4431297a24d246b8add4d5
+      - run: docker pull postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+      - run: node scripts/server-image.mjs --smoke

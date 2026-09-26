@@ -77,5 +77,7 @@ export default {
     if (process.env.MAYURA_SEED_DUE_AT_MS) await host.runtime.submit(reminder, { input: { dueAtMs: Number(process.env.MAYURA_SEED_DUE_AT_MS) }, idempotencyKey: 'seed-reminder' });
     return createWorkflowWorker({ units: [host], leadership: createWorkflowLeadership({ store, scope, role: 'lifecycle-host', holderId: process.env.MAYURA_WORKER_ID ?? hostname() }) });
   },
+  // Storage schema version 1 is the v1 baseline; later releases ship explicit, one-way, versioned migrations here.
+  async migrate() { await ready(); return { schemaVersion: 1 }; },
   async shutdown() { await store.close(); },
 };

@@ -28,4 +28,4 @@ Put a TLS-terminating proxy or load balancer in front of the server that forward
 
 ## Scope
 
-The image is PostgreSQL-only; SQLite's native driver is intentionally not included. Storage schema migration and backup/restore are covered by the [v1 plan](../v1-release-plan.md) item A7.
+The image is PostgreSQL-only; SQLite's native driver is intentionally not included. Run `mayura migrate --app /app/app.mjs` as a one-off step before rolling out new servers and workers; schema versions, backups and restore drills are covered in [storage operations](storage-operations.md).

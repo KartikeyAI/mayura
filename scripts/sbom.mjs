@@ -1,0 +1,57 @@
+// Generate a CycloneDX 1.5 SBOM for every workspace package and its production dependency closure, and review
+// licences: every component must declare one, and strong-copyleft or source-available licences fail the build.
+//   node scripts/sbom.mjs [--output path]
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { delimiter, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const pnpm = [dirname(process.execPath), ...(process.env.PATH ?? '').split(delimiter)].flatMap(directory =>
+  ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'].map(suffix => join(directory, 'node_modules', suffix))).find(existsSync);
+assert(pnpm, 'Could not locate the local pnpm CLI.');
+const projects = JSON.parse(execFileSync(process.execPath, [pnpm, 'ls', '-r', '--prod', '--json', '--depth', 'Infinity'],
+  { cwd: workspace, encoding: 'utf8', maxBuffer: 128 * 1_048_576 }));
+const denied = /\b(?:A?GPL|LGPL|SSPL|BUSL|Commons-Clause|Elastic-2\.0)\b/i;
+const purl = (name, version) => `pkg:npm/${name.startsWith('@') ? `%40${name.slice(1)}` : name}@${version}`;
+const components = new Map(); const edges = new Map(); const findings = [];
+const license = path => {
+  try { const manifest = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
+    return typeof manifest.license === 'string' ? manifest.license : manifest.license?.type ?? null; } catch { return null; }
+};
+const visit = (name, node, parentRef) => {
+  const ref = purl(name, node.version); if (parentRef) edges.get(parentRef).add(ref);
+  if (!components.has(ref)) {
+    const declared = license(node.path);
+    if (!declared) findings.push({ component: ref, problem: 'no declared licence' });
+    else if (denied.test(declared)) findings.push({ component: ref, problem: `licence not permitted in production dependencies: ${declared}` });
+    components.set(ref, { type: 'library', 'bom-ref': ref, name, version: node.version, purl: ref, ...(declared ? { licenses: [{ expression: declared }] } : {}) });
+    edges.set(ref, new Set());
+    for (const [child, value] of Object.entries(node.dependencies ?? {})) visit(child, value, ref);
+  }
+};
+for (const project of projects) {
+  if (!project.name?.startsWith('@mayura/') || project.name === '@mayura/consumer-tests') continue;
+  const ref = purl(project.name, project.version);
+  components.set(ref, { type: 'library', 'bom-ref': ref, name: project.name, version: project.version, purl: ref, licenses: [{ expression: 'Apache-2.0' }] });
+  edges.set(ref, new Set());
+  for (const [child, value] of Object.entries(project.dependencies ?? {})) {
+    if (child.startsWith('@mayura/')) edges.get(ref).add(purl(child, value.version)); else visit(child, value, ref);
+  }
+}
+const root = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8'));
+const sbom = { bomFormat: 'CycloneDX', specVersion: '1.5', serialNumber: `urn:uuid:${randomUUID()}`, version: 1,
+  metadata: { timestamp: new Date().toISOString(), tools: { components: [{ type: 'application', name: 'mayura-sbom', version: '1' }] },
+    component: { type: 'framework', 'bom-ref': 'pkg:generic/mayura', name: 'mayura', version: root.version, licenses: [{ expression: 'Apache-2.0' }] } },
+  components: [...components.values()].sort((a, b) => a['bom-ref'].localeCompare(b['bom-ref'])),
+  dependencies: [...edges.entries()].map(([ref, dependsOn]) => ({ ref, dependsOn: [...dependsOn].sort() })).sort((a, b) => a.ref.localeCompare(b.ref)) };
+const argument = process.argv.indexOf('--output');
+const output = argument >= 0 ? resolve(process.argv[argument + 1]) : join(await mkdtemp(join(workspace, '.artifacts', 'sbom-')), 'sbom.cdx.json');
+await mkdir(dirname(output), { recursive: true }); await writeFile(output, `${JSON.stringify(sbom, null, 2)}\n`);
+const licences = {}; for (const component of components.values()) { const key = component.licenses?.[0]?.expression ?? 'UNDECLARED'; licences[key] = (licences[key] ?? 0) + 1; }
+console.log(JSON.stringify({ status: findings.length ? 'failed' : 'passed', components: components.size, thirdParty: [...components.keys()].filter(ref => !ref.startsWith('pkg:npm/%40mayura/')).length,
+  licences, findings, sbom: relative(workspace, output) }));
+if (findings.length) process.exitCode = 1;

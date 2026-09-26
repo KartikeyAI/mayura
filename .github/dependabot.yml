@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Dependency updates are proposals: every one must pass the exact-version qualification review before merge.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      development: { dependency-type: development }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

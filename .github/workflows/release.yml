@@ -1,0 +1,51 @@
+name: Mayura release
+# Publishes only from a version tag, only after every qualification step passes, and only through the
+# protected `release` environment (configure required reviewers in repository settings).
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: mayura-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # npm provenance through OpenID Connect; no long-lived token is stored
+    services:
+      postgres:
+        image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+        env:
+          POSTGRES_USER: mayura
+          POSTGRES_PASSWORD: mayura_ci_test_only
+          POSTGRES_DB: mayura
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U mayura"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.14.1
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node scripts/secret-scan.mjs
+      - run: pnpm check
+      - run: pnpm test:consumer
+      - run: pnpm test:consumer:optional
+      - run: pnpm test:consumer:storage
+      - run: pnpm test:templates
+      - run: pnpm release:artifacts
+      - run: node scripts/sbom.mjs
+      - run: node scripts/publish-staged.mjs --tag ${{ contains(github.ref_name, '-') && 'next' || 'latest' }} --publish

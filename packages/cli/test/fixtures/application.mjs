@@ -32,5 +32,6 @@ export default {
     return createWorkflowWorker({ units: [host], renewIntervalMs: 100,
       leadership: createWorkflowLeadership({ store, scope, role: 'lifecycle-host', holderId: process.env.MAYURA_FIXTURE_HOLDER ?? 'replica-1', leaseMs: 3_000 }) });
   },
+  async migrate() { await ready(); return { schemaVersion: 1 }; },
   async shutdown() { globalThis.mayuraFixtureShutdown = true; await store.close(); },
 };

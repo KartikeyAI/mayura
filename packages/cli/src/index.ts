@@ -248,5 +248,5 @@ export async function readProject(path: string): Promise<MayuraProject> {
 export function templates(): readonly Readonly<{ name: TemplateName; description: string; dependencies: readonly string[] }>[] {
   return Object.freeze(TEMPLATE_NAMES.map(name => Object.freeze({ name, description: descriptions[name], dependencies: dependencies[name] })));
 }
-export { defineMayuraApplication, loadApplication, runWorkerApplication, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
+export { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
   type MayuraServerHandle, type MayuraWorkerHandle } from './application.js';

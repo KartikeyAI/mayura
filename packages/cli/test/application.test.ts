@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defineMayuraApplication, loadApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from '../src/index.js';
+import { listenProbe } from '../../server-node/src/index.js';
+import { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from '../src/index.js';
 
 const fixture = fileURLToPath(new URL('./fixtures/application.mjs', import.meta.url));
 const directories: string[] = [];
@@ -29,7 +30,7 @@ describe('mayura application lifecycle', () => {
   it('drives a real worker with probes, then drains and shuts down on abort', async () => {
     process.env['MAYURA_FIXTURE_DIRECTORY'] = await directory(); const application = await loadApplication(fixture);
     const events: MayuraLifecycleEvent[] = []; const controller = new AbortController();
-    const running = runWorkerApplication({ application, signal: controller.signal, probe: { hostname: '127.0.0.1', port: 0 }, drainTimeoutMs: 5_000,
+    const running = runWorkerApplication({ application, signal: controller.signal, probe: { hostname: '127.0.0.1', port: 0 }, drainTimeoutMs: 5_000, listenProbe,
       log: event => { events.push(event); } });
     await vi.waitFor(() => expect(events[0]).toMatchObject({ event: 'worker-started' }), { timeout: 5_000 });
     const port = (events[0] as { probe: { port: number } }).probe.port;
@@ -44,6 +45,13 @@ describe('mayura application lifecycle', () => {
     expect(events.map(event => event.event)).toEqual(['worker-started', 'stopping', 'stopped']);
     expect((globalThis as { mayuraFixtureShutdown?: boolean }).mayuraFixtureShutdown).toBe(true);
     await expect(probe(port, '/livez')).rejects.toBeDefined();
+  });
+
+  it('migrates through the application contract and shuts down afterwards', async () => {
+    process.env['MAYURA_FIXTURE_DIRECTORY'] = await directory(); (globalThis as { mayuraFixtureShutdown?: boolean }).mayuraFixtureShutdown = false;
+    expect(await migrateApplication(await loadApplication(fixture))).toEqual({ status: 'migrated', report: { schemaVersion: 1 } });
+    expect((globalThis as { mayuraFixtureShutdown?: boolean }).mayuraFixtureShutdown).toBe(true);
+    await expect(migrateApplication(defineMayuraApplication({ shutdown: async () => {} }))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
   });
 
   it('serves until abort and closes the server before shutdown', async () => {

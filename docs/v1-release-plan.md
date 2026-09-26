@@ -2,6 +2,8 @@
 
 Status: **active**. Owner decision (2026-09-26): nothing is published before v1. This file is the working checklist for v1; every item needs public contracts, failure-path tests, packed-consumer evidence where it ships, documentation and a local Git checkpoint, as for every earlier slice. It refines — and does not replace — the governing [plan](create-mayura-agentic-framework-plan.md) (§17.1 server release, §21.3 measures, §21.4 release operations) and the [roadmap audit](roadmap-completion-audit.md).
 
+Owner scope decisions (2026-09-27): the **full** §8.2 hook catalog including fail-closed context, memory and retry hooks; **all** memory and context capabilities including graph memory, a scalable native semantic index and speculation; **Node.js 22 LTS and 24**; and **every package stable** at v1.
+
 Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the owner (accounts, spend, hardware or authority the development environment does not have).
 
 ## A. Production server and workers (§17.1: "container packaging, health checks, migrations, backup/restore, graceful shutdown and worker draining are required before a server release")
@@ -14,7 +16,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 | A4 Worker supervisor: hosts/coordinators under leadership, readiness, drain | ✅ |
 | A5 CLI `serve` and `worker` commands over an explicit application module | ✅ |
 | A6 Container image and compose profile (server, worker, PostgreSQL) with health checks ([guide](how-to/production-deployment.md)) | ✅ |
-| A7 Versioned storage schema, `migrate` command, backup/restore runbook with a restore drill | ⬜ |
+| A7 Versioned storage schema, `migrate` command, backup/restore runbook with a restore drill ([runbook](how-to/storage-operations.md)) | ✅ |
 | Worker draining (bounded `drain`) | ✅ |
 | Operator pause, fleet hold and authenticated transport | ✅ |
 
@@ -29,7 +31,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| C1 Reconcile the implemented hook catalog against plan §8.2 and close or formally defer each gap | ⬜ |
+| C1 Implement the full §8.2 hook catalog: observer hooks for every lifecycle point plus fail-closed context-build, memory-write and retry hooks ([reconciliation](specs/hook-catalog-reconciliation.md)) | 🔨 |
 
 ## D. Memory and context
 
@@ -37,24 +39,26 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 |---|---|
 | D1 Native memory import/export | ⬜ |
 | D2 Context cache invalidation | ⬜ |
-| D3 Formal v1 scope decision for graph memory, scalable native semantic indexing and speculation (deliver or mark post-v1 experimental) | ⬜ |
+| D3 Graph memory | ⬜ |
+| D4 Scalable native semantic index | ⬜ |
+| D5 Context speculation | ⬜ |
 
 ## E. Developer surface
 
 | Item | Status |
 |---|---|
 | E1 Local inspector UI over the authenticated read APIs | ⬜ |
-| E2 Stable v1 API surface declared in `compatibility/api-stability.json`, with support window and deprecation policy | ⬜ |
-| E3 Node 22 LTS support decision and engines range | ⬜ |
+| E2 Every package declared stable in `compatibility/api-stability.json` after a surface audit, with support window and deprecation policy | ⬜ |
+| E3 Node.js 22 LTS and 24 support: engines range, compatibility fixes, CI matrix | ⬜ |
 
 ## F. Qualification and release operations (§21.3, §21.4)
 
 | Item | Status |
 |---|---|
 | F1 Performance suite for the §21.3 reference targets, with a declared-hardware report | ⬜ |
-| F2 Standalone threat model covering every trust boundary | ⬜ |
-| F3 SBOM generation and license review in the release artifact check | ⬜ |
-| F4 CI: secret scanning, CodeQL, dependency updates, release workflow with provenance (files prepared locally) | ⬜ |
+| F2 Standalone threat model covering every trust boundary ([threat model](threat-model.md)) | ✅ |
+| F3 SBOM generation and license review (`pnpm sbom`, in CI and the release workflow) | ✅ |
+| F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job (prepared; runs once hosted). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |
 | F5 Flaky timing-sensitive tests stabilized | ⬜ |
 | F6 Upgrade-compatibility test: a run started on one version resumes on the next | ⬜ |
 | F7 Host the repository, enable CI, branch protection and private vulnerability reporting | 👤 |

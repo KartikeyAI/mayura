@@ -23,6 +23,10 @@
     "release:artifacts": "node scripts/release-artifact-check.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
     "server:image": "node scripts/server-image.mjs",
+    "restore:drill:postgres": "node scripts/postgres-restore-drill.mjs",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "sbom": "node scripts/sbom.mjs",
+    "release:publish": "node scripts/publish-staged.mjs",
     "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },
   "devDependencies": {
