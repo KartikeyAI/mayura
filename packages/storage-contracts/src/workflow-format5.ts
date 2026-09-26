@@ -38,7 +38,7 @@ export interface WorkflowLifecycleManifest {
   readonly result: WorkflowBinding;
 }
 
-export type WorkflowLifecycleStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type WorkflowLifecycleStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type WorkflowLifecycleHumanStepStatus = 'pending' | 'waiting' | 'succeeded' | 'timed_out' | 'skipped';
 export type WorkflowLifecycleTimerStepStatus = 'pending' | 'waiting' | 'succeeded' | 'skipped';
 
@@ -82,7 +82,7 @@ const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const schemaIdPattern = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 const humanKinds = new Set<WorkflowLifecycleHumanKind>(['information', 'correction', 'plan_selection']);
-const lifecycleStatuses = new Set<WorkflowLifecycleStatus>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const lifecycleStatuses = new Set<WorkflowLifecycleStatus>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const humanStepStatuses = new Set<WorkflowLifecycleHumanStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped']);
 const timerStepStatuses = new Set<WorkflowLifecycleTimerStepStatus>(['pending', 'waiting', 'succeeded', 'skipped']);
 
@@ -298,7 +298,7 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
       steps: common, maxCostMicros, spentMicros, reservedMicros, output: null,
     } });
     if (state['status'] === 'waiting' && waiting === 0) invalid();
-    if (state['status'] !== 'running' && state['status'] !== 'waiting' && waiting > 0) invalid();
+    if (!['running', 'waiting', 'paused'].includes(state['status'] as string) && waiting > 0) invalid();
     if (state['status'] === 'succeeded' && entries.some(([, raw]) => object(raw)['status'] !== 'succeeded')) invalid();
     if (state['status'] !== 'succeeded' && state['output'] !== null) invalid();
     return state as unknown as WorkflowLifecycleState;

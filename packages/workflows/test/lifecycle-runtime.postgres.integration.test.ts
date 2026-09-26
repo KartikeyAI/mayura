@@ -36,6 +36,24 @@ suite('PostgreSQL format-5 lifecycle integration', () => {
     } finally { await Promise.allSettled(stores.map(store => store.close())); await fixture.cleanup(); }
   });
 
+  it('keeps an operator pause durable across reopened adapters', async () => {
+    const fixture = await postgresFixture(connectionString!); const stores = [fixture.store]; const clock = 500;
+    const timer = defineWorkflowLifecycle({ id: 'postgres-pause', version: '1', input: any, output: any,
+      nodes: [{ kind: 'timer', id: 'wake', fireAtMs: { kind: 'input', path: ['fireAtMs'] } }],
+      result: { kind: 'step', stepId: 'wake', path: [] } });
+    const open = async () => { const store = stores.at(-1)!; await store.initialize(); return createWorkflowLifecycleRuntime({
+      store, scope: { principalId: 'integration', projectId: 'project' }, permissions: { allow: [] }, policyVersion: '1',
+      maxCostMicros: 0, now: () => clock }); };
+    try {
+      let runtime = await open(); const submitted = await runtime.submit(timer, { input: { fireAtMs: 500 }, idempotencyKey: 'pause' });
+      expect((await runtime.pause(submitted.id)).status).toBe('paused');
+      runtime.close(); await stores.at(-1)!.close(); stores.push(fixture.reopen()); runtime = await open();
+      expect(await runtime.runUntilSettled(timer, submitted.id)).toMatchObject({ status: 'paused', steps: { wake: { status: 'pending' } } });
+      expect((await runtime.resume(submitted.id)).status).toBe('running');
+      expect(await runtime.runUntilSettled(timer, submitted.id)).toMatchObject({ status: 'succeeded' }); runtime.close();
+    } finally { await Promise.allSettled(stores.map(store => store.close())); await fixture.cleanup(); }
+  });
+
   it('rediscovers and advances a due fleet run after reopening PostgreSQL', async () => {
     const fixture = await postgresFixture(connectionString!); const stores = [fixture.store]; let clock = 100;
     const timer = defineWorkflowLifecycle({ id: 'postgres-fleet', version: '1', input: any, output: any,

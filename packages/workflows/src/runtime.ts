@@ -227,7 +227,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         if (state.status === 'paused' || state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return snapshot(before);
         await Promise.all(definition.nodes.map(node => executeNode(id, node)));
         let after = await load(id); const next = stateFrom(after); const steps = Object.values(next.steps);
-        if (next.status === 'cancelled') return snapshot(after);
+        if (next.status === 'paused' || next.status === 'cancelled') return snapshot(after);
         if (steps.every(item => terminalSteps.has(item.status))) {
           if (steps.every(item => item.status === 'succeeded')) {
             try { next.output = jsonValue(await bounded(() => validate(definition.output, resolveBinding(definition.result, next.input, outputs(next)), 'output'), 30_000), { maxBytes: maxOutputBytes }); next.status = 'succeeded'; }

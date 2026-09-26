@@ -50,6 +50,20 @@ describe('durable lifecycle fleet index on SQLite', () => {
     runtime.close();
   });
 
+  it('indexes and defers a paused run until it is resumed', async () => {
+    const clock = { value: 500 }; let runtime = await open(clock);
+    const submitted = await runtime.submit(definition, { input: { fireAtMs: 500 }, idempotencyKey: 'paused' });
+    expect((await runtime.pause(submitted.id)).status).toBe('paused');
+    runtime.close(); await store!.close(); store = undefined;
+
+    runtime = await open(clock, true);
+    expect((await find(runtime)).outcomes).toEqual([{ kind: 'deferred', runId: submitted.id, nextWakeAtMs: null }]);
+    expect(await runtime.inspect(submitted.id)).toMatchObject({ status: 'paused', steps: { wake: { status: 'pending' } } });
+    expect((await runtime.resume(submitted.id)).status).toBe('running');
+    expect((await find(runtime)).outcomes).toEqual([{ kind: 'advanced', runId: submitted.id, status: 'succeeded' }]);
+    runtime.close();
+  });
+
   it('rejects cross-scope cursors and keeps caller-owned storage open', async () => {
     const clock = { value: 100 }; const runtime = await open(clock);
     await runtime.submit(definition, { input: { fireAtMs: 500 }, idempotencyKey: 'timer' });

@@ -99,6 +99,103 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
       steps: { review: { status: 'skipped' }, publishAt: { status: 'skipped' } } });
   });
 
+  it('persists a quiescent operator pause across restart and resumes without bypassing waits', async () => {
+    const clock = { value: 100 }; let effects = 0; let runtime = await open(clock);
+    const counted = defineTool({ id: 'fixture/draft', version: '1', description: 'Create a draft.', input: any, output: any,
+      effects: 'none', capabilities: [], costMicros: 2, execute: input => { effects++; return { draft: input }; } });
+    const pausable = defineWorkflowLifecycle({ id: 'pausable', version: '1', input: any, output: any, nodes: [
+      { kind: 'tool', id: 'draft', tool: counted, input: { kind: 'input', path: ['payload'] } },
+      { kind: 'human', id: 'review', dependsOn: ['draft'], request: { kind: 'information', schemaId: 'fixture/review',
+        schemaDigest: hash, prompt: 'Review the draft.', response } },
+      { kind: 'timer', id: 'publishAt', dependsOn: ['review'], fireAtMs: { kind: 'input', path: ['publishAt'] } },
+    ], result: { kind: 'step', stepId: 'review', path: [] } });
+    const submitted = await runtime.submit(pausable, { input: { payload: 'draft', publishAt: 500 }, idempotencyKey: 'pause' });
+    const paused = await runtime.pause(submitted.id); expect(paused.status).toBe('paused');
+    expect((await runtime.pause(submitted.id)).version).toBe(paused.version);
+    runtime.close(); await currentStore!.close(); currentStore = undefined;
+
+    runtime = await open(clock);
+    expect(await runtime.runUntilSettled(pausable, submitted.id)).toMatchObject({ status: 'paused', steps: { draft: { status: 'pending' } } });
+    expect(effects).toBe(0);
+    expect((await runtime.resume(submitted.id)).status).toBe('running');
+    const waiting = await runtime.runUntilSettled(pausable, submitted.id);
+    expect(waiting).toMatchObject({ status: 'waiting', steps: { draft: { status: 'succeeded' }, review: { status: 'waiting' } } });
+    expect(effects).toBe(1);
+    const requestDigest = waiting.steps['review']?.kind === 'human' ? waiting.steps['review'].requestDigest! : '';
+
+    expect((await runtime.pause(submitted.id)).status).toBe('paused');
+    expect((await runtime.resume(submitted.id)).status).toBe('waiting');
+    await runtime.pause(submitted.id);
+    expect(await runtime.respond(pausable, { id: submitted.id, nodeId: 'review', requestDigest, commandId: 'answer',
+      credential: 'reviewer', value: 'accept' })).toMatchObject({ status: 'paused', steps: { review: { status: 'succeeded' } } });
+    clock.value = 500;
+    expect(await runtime.runUntilSettled(pausable, submitted.id)).toMatchObject({ status: 'paused', steps: { publishAt: { status: 'pending' } } });
+    expect((await runtime.resume(submitted.id)).status).toBe('running');
+    expect(await runtime.runUntilSettled(pausable, submitted.id)).toMatchObject({ status: 'succeeded', output: { decision: 'accept' },
+      steps: { publishAt: { status: 'succeeded', firedAtMs: 500 } } });
+    expect(effects).toBe(1);
+    expect((await runtime.events(submitted.id)).map(event => event.type)).toEqual(expect.arrayContaining(['lifecycle.run.paused', 'lifecycle.run.resumed']));
+    await expect(runtime.pause(submitted.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(runtime.resume(submitted.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('keeps approval, cancellation and in-flight effects consistent with a pause', async () => {
+    const clock = { value: 100 }; const runtime = await open(clock);
+    const approvalDefinition = defineWorkflowLifecycle({ id: 'approval', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'draft', tool, approval: true, input: { kind: 'input', path: [] } }],
+      result: { kind: 'step', stepId: 'draft', path: [] } });
+    const submitted = await runtime.submit(approvalDefinition, { input: 'draft', idempotencyKey: 'paused-approval' });
+    const waiting = await runtime.runUntilSettled(approvalDefinition, submitted.id);
+    const digest = waiting.steps['draft']?.kind === 'tool' ? waiting.steps['draft'].approval?.digest ?? '' : '';
+    await runtime.pause(submitted.id);
+    expect((await runtime.resume(submitted.id)).status).toBe('waiting');
+    expect((await runtime.runUntilSettled(approvalDefinition, submitted.id)).status).toBe('waiting');
+    await runtime.pause(submitted.id);
+    expect((await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' })).status).toBe('paused');
+    expect((await runtime.runUntilSettled(approvalDefinition, submitted.id)).status).toBe('paused');
+    expect((await runtime.cancel(submitted.id)).status).toBe('cancelled');
+    await expect(runtime.resume(submitted.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
+    let release!: (value: JsonValue) => void; const released = new Promise<JsonValue>(resolve => { release = resolve; });
+    const slow = defineTool({ id: 'fixture/draft', version: '1', description: 'Create a draft.', input: any, output: any,
+      effects: 'none', capabilities: [], costMicros: 2, execute: () => { started(); return released; } });
+    const slowDefinition = defineWorkflowLifecycle({ id: 'in-flight', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'draft', tool: slow, input: { kind: 'input', path: [] } }],
+      result: { kind: 'step', stepId: 'draft', path: [] } });
+    const inFlight = await runtime.submit(slowDefinition, { input: 'draft', idempotencyKey: 'in-flight' });
+    const execution = runtime.runUntilSettled(slowDefinition, inFlight.id); await entered;
+    await expect(runtime.pause(inFlight.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+    release('done'); expect((await execution).status).toBe('succeeded');
+  });
+
+  it('does not let a scheduling transition overwrite a pause committed after its read', async () => {
+    fixture = await sqliteFixture(); currentStore = fixture.store; opens = 1; await currentStore.initialize();
+    const store = currentStore; let beforeRead: (() => Promise<unknown>) | undefined; let armed = false; let runId = '';
+    const intercepted = new Proxy(store, { get(target, property) {
+      if (property === 'read') return async (...args: Parameters<typeof store.read>) => {
+        const hook = beforeRead; beforeRead = undefined; if (hook) await hook(); return target.read(...args);
+      };
+      const value = Reflect.get(target, property) as unknown;
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    } });
+    const options = { scope: { principalId: 'operator', projectId: 'project' }, permissions: { allow: [] },
+      policyVersion: '1', maxCostMicros: 0 };
+    const operator = createWorkflowLifecycleRuntime({ ...options, store });
+    // The timer path reads the clock after its initial load and before its transition reloads the run.
+    const scheduler = createWorkflowLifecycleRuntime({ ...options, store: intercepted, now: () => {
+      if (armed) { armed = false; beforeRead = () => operator.pause(runId); } return 100;
+    } });
+    const timer = defineWorkflowLifecycle({ id: 'raced-timer', version: '1', input: any, output: any,
+      nodes: [{ kind: 'timer', id: 'wake', fireAtMs: { kind: 'input', path: ['fireAtMs'] } }],
+      result: { kind: 'step', stepId: 'wake', path: [] } });
+    runId = (await scheduler.submit(timer, { input: { fireAtMs: 500 }, idempotencyKey: 'raced' })).id;
+    armed = true;
+    expect(await scheduler.runUntilSettled(timer, runId)).toMatchObject({ status: 'paused', steps: { wake: { status: 'pending', fireAtMs: null } } });
+    expect(await operator.inspect(runId)).toMatchObject({ status: 'paused' });
+    scheduler.close(); operator.close();
+  });
+
   it('retains callback admission after a noncooperative validator times out', async () => {
     fixture = await sqliteFixture(); currentStore = fixture.store; opens = 1; await currentStore.initialize();
     let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });

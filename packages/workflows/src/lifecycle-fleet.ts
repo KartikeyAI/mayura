@@ -15,7 +15,7 @@ export interface WorkflowLifecycleFleetCandidate {
   readonly runId: string;
   readonly definitionHash: string;
   readonly version: number;
-  readonly status: 'running' | 'waiting';
+  readonly status: 'running' | 'waiting' | 'paused';
   readonly nextWakeAtMs: number | null;
 }
 export interface WorkflowLifecycleFleetPage {
@@ -45,7 +45,7 @@ export interface WorkflowLifecycleFleetRuntimeOptions extends WorkflowLifecycleR
 }
 
 interface IndexEntry {
-  runId: string; definitionHash: string; version: number; status: 'running' | 'waiting'; nextWakeAtMs: number | null;
+  runId: string; definitionHash: string; version: number; status: 'running' | 'waiting' | 'paused'; nextWakeAtMs: number | null;
 }
 interface IndexState { format: 1; shard: string; entries: IndexEntry[] }
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -68,7 +68,7 @@ function stateFrom(record: StoredRecord, scope: string, shard: string, maximum: 
       if (Object.keys(entry).length !== 5 || typeof entry['runId'] !== 'string' || !hashPattern.test(entry['runId']) || !entry['runId'].startsWith(shard)
         || typeof entry['definitionHash'] !== 'string' || !hashPattern.test(entry['definitionHash'])
         || typeof entry['version'] !== 'number' || !Number.isSafeInteger(entry['version']) || entry['version'] < 1
-        || !['running', 'waiting'].includes(String(entry['status']))
+        || !['running', 'waiting', 'paused'].includes(String(entry['status']))
         || (entry['nextWakeAtMs'] !== null && (typeof entry['nextWakeAtMs'] !== 'number' || !Number.isSafeInteger(entry['nextWakeAtMs']) || entry['nextWakeAtMs'] < 0))) throw new Error();
       return entry as unknown as IndexEntry;
     });
@@ -129,7 +129,9 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
       if (terminal.has(snapshot.status)) {
         if (index < 0) return; current.state.entries.splice(index, 1);
       } else {
-        if (snapshot.status !== 'running' && snapshot.status !== 'waiting') throw new MayuraError('CONFLICT', 'Lifecycle fleet received an invalid nonterminal state.');
+        if (snapshot.status !== 'running' && snapshot.status !== 'waiting' && snapshot.status !== 'paused') {
+          throw new MayuraError('CONFLICT', 'Lifecycle fleet received an invalid nonterminal state.');
+        }
         const previous = current.state.entries[index]; const hash = definitionHash ?? previous?.definitionHash;
         if (!hash || !hashPattern.test(hash)) throw new MayuraError('CONFLICT', 'Lifecycle run is missing its durable fleet definition identity.');
         const entry: IndexEntry = { runId: snapshot.id, definitionHash: hash, version: snapshot.version,
@@ -202,6 +204,8 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     respondVerified: async (definition: AnyWorkflowLifecycle, command: Parameters<WorkflowLifecycleRuntime['respondVerified']>[1]) => {
       const snapshot = await runtime.respondVerified(definition, command); await write(snapshot, definition.digest); return snapshot;
     },
+    pause: async (id: string) => { const snapshot = await runtime.pause(id); await write(snapshot); return snapshot; },
+    resume: async (id: string) => { const snapshot = await runtime.resume(id); await write(snapshot); return snapshot; },
     cancel: async (id: string) => { const snapshot = await runtime.cancel(id); await write(snapshot); return snapshot; },
     recoverAbandoned: async (id: string) => { const snapshot = await runtime.recoverAbandoned(id); await write(snapshot); return snapshot; },
     scan,
@@ -213,7 +217,7 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
       for (const candidate of page.candidates) {
         const definition = catalog.get(candidate.definitionHash);
         if (!definition) { outcomes.push({ kind: 'skipped', runId: candidate.runId, reason: 'unregistered_definition' }); continue; }
-        if (candidate.status === 'waiting' && (candidate.nextWakeAtMs === null || candidate.nextWakeAtMs > observedAtMs)) {
+        if (candidate.status === 'paused' || (candidate.status === 'waiting' && (candidate.nextWakeAtMs === null || candidate.nextWakeAtMs > observedAtMs))) {
           outcomes.push({ kind: 'deferred', runId: candidate.runId, nextWakeAtMs: candidate.nextWakeAtMs }); continue;
         }
         try { const snapshot = await wrapped.runUntilSettled(definition, candidate.runId); outcomes.push({ kind: 'advanced', runId: candidate.runId, status: snapshot.status }); }

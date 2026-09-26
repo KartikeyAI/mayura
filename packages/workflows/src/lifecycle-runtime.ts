@@ -65,6 +65,8 @@ export interface WorkflowLifecycleRuntime {
     readonly requestDigest: string; readonly commandId: string; readonly credential: unknown; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
   respondVerified(definition: AnyWorkflowLifecycle, command: { readonly id: string; readonly nodeId: string;
     readonly requestDigest: string; readonly commandId: string; readonly actor: WorkflowLifecycleVerifiedActor; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
+  pause(id: string): Promise<WorkflowLifecycleSnapshot>;
+  resume(id: string): Promise<WorkflowLifecycleSnapshot>;
   cancel(id: string): Promise<WorkflowLifecycleSnapshot>;
   recoverAbandoned(id: string): Promise<WorkflowLifecycleSnapshot>;
   close(): void;
@@ -210,6 +212,8 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     runId: string, expiresAt: number | null): string => digest('mayura:approval:v1', { runId, nodeId: node.id,
       tool: node.tool.id, toolVersion: node.tool.version, input, policy, expiresAt });
 
+  const schedulable = (state: State): boolean => state.status !== 'paused' && state.status !== 'cancelled';
+
   const skip = (step: WorkflowLifecycleStep): boolean => {
     if (terminalStepStatuses.has(step.status)) return false;
     if (step.kind === 'tool') { step.status = 'skipped'; step.costReserved = 0; }
@@ -224,10 +228,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
 
   async function executeNode(id: string, definition: AnyWorkflowLifecycle, node: WorkflowLifecycleNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
-    if (!step || step.kind !== node.kind || state.policy !== policy || state.status === 'cancelled') return;
+    if (!step || step.kind !== node.kind || state.policy !== policy || !schedulable(state)) return;
+    // A pause or cancellation may commit after this read; every scheduling transition rechecks the latest state.
+    const advance = (transition: (current: State) => boolean, type: string, data: JsonObject): Promise<StoredRecord> =>
+      mutate(id, current => schedulable(current) && transition(current), type, data);
     const dependencies = (node.dependsOn ?? []).map(key => state.steps[key]!);
     if (dependencies.some(item => terminalStepStatuses.has(item.status) && item.status !== 'succeeded')) {
-      await mutate(id, current => skip(current.steps[node.id]!), 'lifecycle.step.skipped', { nodeId: node.id }); return;
+      await advance(current => skip(current.steps[node.id]!), 'lifecycle.step.skipped', { nodeId: node.id }); return;
     }
     if (dependencies.some(item => item.status !== 'succeeded')) return;
 
@@ -236,7 +243,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       if (step.status === 'waiting') {
         const observedAtMs = now();
         if (step.deadlineAtMs === null || observedAtMs < step.deadlineAtMs) return;
-        await mutate(id, current => {
+        await advance(current => {
           const target = current.steps[node.id];
           if (!target || target.kind !== 'human' || target.status !== 'waiting' || target.deadlineAtMs === null || observedAtMs < target.deadlineAtMs) return false;
           target.status = 'timed_out'; current.status = 'running'; return true;
@@ -249,13 +256,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         if (node.request.subjectDigest) subjectDigest = exactDigest(resolveBinding(node.request.subjectDigest, state.input, outputs(state)));
         if (node.request.deadlineAtMs) deadlineAtMs = exactTimestamp(resolveBinding(node.request.deadlineAtMs, state.input, outputs(state)));
       } catch {
-        await mutate(id, current => skip(current.steps[node.id]!), 'lifecycle.human.invalid', { nodeId: node.id }); return;
+        await advance(current => skip(current.steps[node.id]!), 'lifecycle.human.invalid', { nodeId: node.id }); return;
       }
       const requestDigest = digest('mayura:human-request:v1', { format: 1, runId: id, nodeId: node.id,
         definitionHash: definition.digest, kind: node.request.kind, schemaId: node.request.schemaId,
         schemaDigest: node.request.schemaDigest, prompt: node.request.prompt, context, subjectDigest, deadlineAtMs });
       const observedAtMs = now();
-      await mutate(id, current => {
+      await advance(current => {
         const target = current.steps[node.id]; if (!target || target.kind !== 'human' || target.status !== 'pending') return false;
         target.requestDigest = requestDigest; target.deadlineAtMs = deadlineAtMs;
         target.status = deadlineAtMs !== null && observedAtMs >= deadlineAtMs ? 'timed_out' : 'waiting';
@@ -270,10 +277,10 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       let fireAtMs: number;
       try { fireAtMs = step.fireAtMs ?? exactTimestamp(resolveBinding(node.fireAtMs, state.input, outputs(state))); }
       catch {
-        await mutate(id, current => skip(current.steps[node.id]!), 'lifecycle.timer.invalid', { nodeId: node.id }); return;
+        await advance(current => skip(current.steps[node.id]!), 'lifecycle.timer.invalid', { nodeId: node.id }); return;
       }
       const observedAtMs = now();
-      await mutate(id, current => {
+      await advance(current => {
         const target = current.steps[node.id]; if (!target || target.kind !== 'timer' || !['pending', 'waiting'].includes(target.status)) return false;
         if (target.fireAtMs !== null && target.fireAtMs !== fireAtMs) throw new MayuraError('CONFLICT', 'Persisted timer deadline does not match its pinned binding.');
         target.fireAtMs = fireAtMs;
@@ -287,7 +294,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
 
     if (node.kind === 'tool' && step.kind === 'tool' && step.status === 'waiting') {
       if (!step.approval || step.approval.expiresAt > now()) return;
-      await mutate(id, current => {
+      await advance(current => {
         const target = current.steps[node.id];
         if (!target || target.kind !== 'tool' || target.status !== 'waiting' || !target.approval || target.approval.expiresAt > now()) return false;
         target.status = 'pending'; target.approval = null; current.status = 'running'; return true;
@@ -347,7 +354,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes,
         beforeDispatch: async processed => {
           const current = stateFrom(await load(id)); const target = current.steps[node.id];
-          if (!target || target.kind !== 'tool' || current.status === 'cancelled' || current.policy !== policy
+          if (!target || target.kind !== 'tool' || current.status !== 'running' || current.policy !== policy
             || target.status !== 'dispatching' || approvalCandidate(node, processed, id,
               node.approval ? target.approval!.expiresAt : null) !== candidateHash) throw new MayuraError('CONFLICT', 'Lifecycle dispatch candidate is no longer authorized.');
           if (node.approval && target.approval!.expiresAt <= now()) throw new MayuraError('PERMISSION_DENIED', 'Approval expired before dispatch.');
@@ -414,7 +421,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         throw new MayuraError('CONFLICT', 'Human request is no longer accepting responses.');
       }
       step.status = 'succeeded'; step.responseDigest = responseDigest; step.actorId = actor.id; step.output = value;
-      state.status = 'running'; return true;
+      if (state.status !== 'paused') state.status = 'running'; return true;
     }, 'lifecycle.human.responded', { nodeId: command.nodeId, requestDigest: command.requestDigest,
       responseDigest, actorId: actor.id }));
   };
@@ -462,11 +469,11 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       ensureOpen(); assertWorkflowLifecycle(definition);
       for (let wave = 0; wave <= definition.nodes.length + 2; wave++) {
         const before = await load(id); const state = stateFrom(before); verifyDefinition(definition, before, state);
-        if (finalRunStatuses.has(state.status)) return publicSnapshot(before);
+        if (state.status === 'paused' || finalRunStatuses.has(state.status)) return publicSnapshot(before);
         await Promise.all(definition.nodes.map(node => executeNode(id, definition, node)));
         let after = await load(id); const next = stateFrom(after); verifyDefinition(definition, after, next);
         const steps = Object.values(next.steps);
-        if (next.status === 'cancelled') return publicSnapshot(after);
+        if (!schedulable(next)) return publicSnapshot(after);
         if (steps.every(step => terminalStepStatuses.has(step.status))) {
           if (steps.every(step => step.status === 'succeeded')) {
             try { next.output = jsonValue(await controlled(() => validate(definition.output,
@@ -505,7 +512,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         if (state.status === 'cancelled' || step.status !== 'waiting' || step.approval.expiresAt <= observedAtMs) {
           throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
         }
-        step.approval.humanId = human.id; step.status = 'approved'; state.status = 'running'; return true;
+        step.approval.humanId = human.id; step.status = 'approved'; if (state.status !== 'paused') state.status = 'running'; return true;
       }, 'lifecycle.approval.resolved', { nodeId: command.nodeId, humanId: human.id }));
     },
     respond: async (definition, command) => {
@@ -517,6 +524,18 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       return respondAs(definition, command, { id: human.id, projectId: human.projectId });
     },
     respondVerified: (definition, command) => respondAs(definition, command, command.actor),
+    pause: async id => publicSnapshot(await mutate(id, state => {
+      if (state.status === 'paused') return false;
+      if (finalRunStatuses.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal lifecycle workflow cannot be paused.');
+      if (Object.values(state.steps).some(step => step.kind === 'tool' && step.status === 'dispatching')) {
+        throw new MayuraError('CONFLICT', 'A lifecycle workflow with an in-flight effect cannot enter the quiescent paused state.');
+      }
+      state.status = 'paused'; return true;
+    }, 'lifecycle.run.paused')),
+    resume: async id => publicSnapshot(await mutate(id, state => {
+      if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused lifecycle workflow can be resumed.');
+      state.status = Object.values(state.steps).some(step => step.status === 'waiting') ? 'waiting' : 'running'; return true;
+    }, 'lifecycle.run.resumed')),
     cancel: async id => {
       const record = await mutate(id, state => {
         if (finalRunStatuses.has(state.status)) return false;
