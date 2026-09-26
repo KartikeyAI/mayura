@@ -48,7 +48,9 @@ export interface MemoryRecord extends MemoryIdentity {
 }
 /** Minimal permanent deletion marker. It intentionally contains no prior content or provenance. */
 export interface MemoryTombstone extends MemoryIdentity { readonly status: 'deleted'; readonly deletedAt: string }
-export type MemoryEntry = MemoryRecord | MemoryTombstone;
+/** A record replaced by a newer one (native profile). Its content stays for history but is never returned by search. */
+export interface MemorySupersededRecord extends Omit<MemoryRecord, 'status'> { readonly status: 'superseded'; readonly supersededBy: string }
+export type MemoryEntry = MemoryRecord | MemorySupersededRecord | MemoryTombstone;
 
 export interface MemoryStoreOptions {
   readonly store: AggregateStore;
@@ -58,7 +60,7 @@ export interface MemoryStoreOptions {
   /** Fail-closed lifecycle hooks around every write. */
   readonly hooks?: MemoryHooks;
 }
-export type MemoryWriteOperation = 'add' | 'correct' | 'forget' | 'publish' | 'remove';
+export type MemoryWriteOperation = 'add' | 'correct' | 'forget' | 'supersede' | 'relate' | 'unrelate' | 'publish' | 'remove';
 /** Validated write intent. `candidate` is present for writes that carry content (add, correct, publish). */
 export interface BeforeMemoryWriteEvent {
   readonly operation: MemoryWriteOperation;
@@ -80,7 +82,7 @@ export interface AfterMemoryWriteEvent {
   readonly scope: Scope;
   readonly id: string;
   readonly version?: number;
-  readonly status: 'active' | 'deleted';
+  readonly status: 'active' | 'superseded' | 'deleted';
 }
 export interface MemoryHooks {
   /** Runs after permission and validation checks and before any storage access; a block writes nothing. */

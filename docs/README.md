@@ -58,6 +58,8 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Pause console example](../examples/pause-console/README.md) — live local operator UI for per-run pause and fleet hold, used for the pause-control qualification.
 - [Fleet-wide pause](specs/fleet-pause.md) and [fleet control guide](how-to/fleet-control.md) — durable per-scope hold honored by hosts and coordinators, a ledger-backed sweep that pauses discoverable runs and resumes only the ones it paused, and an authenticated `workflows:fleet` transport for server, browser and CLI.
 - [Storage operations](how-to/storage-operations.md) — schema version policy, `mayura migrate`, SQLite online backup/verified restore, PostgreSQL dump/restore and restore drills.
+- [Native memory](how-to/native-memory.md) and [spec](specs/native-memory-v1.md) — table-backed memory with BM25, IVF semantic and hybrid search, graph relationships, import/export, context cache invalidation and speculation.
+- [Lifecycle hook catalog](specs/lifecycle-hook-catalog.md) — all 25 lifecycle points: agent control/observer hooks, context/memory/retry hooks and durable workflow hook delivery.
 - [Container deployment guide](how-to/production-deployment.md) — offline-built server/worker image, compose smoke test, probes and graceful drain on SIGTERM.
 - [Production server host](specs/production-server.md) — explicit public binding, HTTPS origin, in-process or proxy TLS, host check, probes, HSTS and durable submission idempotency.
 - [Threat model](threat-model.md) — assets, trust boundaries, threats, controls with evidence, and residual risks.

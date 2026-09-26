@@ -191,3 +191,15 @@ function contextHooks(value: ContextHooks | undefined): { readonly before?: NonN
   return { ...(handlers.beforeContextBuild ? { before: handlers.beforeContextBuild as NonNullable<ContextHooks['beforeContextBuild']> } : {}),
     ...(handlers.afterContextBuild ? { after: handlers.afterContextBuild as NonNullable<ContextHooks['afterContextBuild']> } : {}), timeoutMs };
 }
+
+/**
+ * Internal cache key: a digest of every admission input except hooks and signals, which a cache re-runs.
+ * Any change to candidates, source revisions, scope, policy, time, sensitivity profile, budget or estimator changes it.
+ */
+export async function admissionKey(options: AssembleContextOptions, asOf: string): Promise<string> {
+  const material = safeJson({ scope: options.scope as unknown as JsonValue, policyVersion: options.policyVersion, asOf,
+    candidates: options.candidates as unknown as JsonValue, sources: options.sources as unknown as JsonValue,
+    allowedSensitivities: options.allowedSensitivities as unknown as JsonValue, budget: options.budget as unknown as JsonValue,
+    estimatorId: (options.estimator ?? byteTokenEstimator).id });
+  return hash('mayura:context-admission:v1', canonical(material));
+}

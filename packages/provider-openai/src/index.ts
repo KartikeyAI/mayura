@@ -291,3 +291,70 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
     },
   });
 }
+
+export interface OpenAIEmbeddingsOptions {
+  readonly apiKey: string;
+  /** For example `text-embedding-3-small`. The adapter id includes model and dimensions, so changing either re-indexes. */
+  readonly model: string;
+  readonly dimensions: number;
+  readonly maxBatch?: number;
+  readonly maxResponseBytes?: number;
+  readonly timeoutMs?: number;
+  /** Receives provider-reported token usage per request for application accounting. */
+  readonly onUsage?: (usage: { readonly inputTokens: number }) => void;
+  /** Trusted test/proxy transport; the destination is fixed. */
+  readonly fetch?: typeof globalThis.fetch;
+}
+/**
+ * Hosted embedding adapter for native memory (`createNativeMemory({ embedder })`). It declares `location: 'hosted'`,
+ * so native memory sends it only the configured `embedSensitivities` and requires the `memory:index` grant.
+ */
+export function openAIEmbeddings(options: OpenAIEmbeddingsOptions): {
+  readonly id: string; readonly dimensions: number; readonly maxBatch: number; readonly location: 'hosted';
+  embed(texts: readonly string[], signal: AbortSignal): Promise<readonly (readonly number[])[]>;
+} {
+  if (typeof options.apiKey !== 'string' || !options.apiKey.trim() || /[\r\n]/.test(options.apiKey) || options.apiKey.length > 4096
+    || typeof options.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.model)) throw new MayuraError('INVALID_CONFIG', 'A model ID and bounded API key are required.');
+  const dimensions = options.dimensions; const maxBatch = options.maxBatch ?? 128;
+  const maxResponseBytes = options.maxResponseBytes ?? 16_777_216; const timeoutMs = options.timeoutMs ?? 30_000;
+  if (!Number.isSafeInteger(dimensions) || dimensions < 1 || dimensions > 4_096 || !Number.isSafeInteger(maxBatch) || maxBatch < 1 || maxBatch > 2_048) {
+    throw new MayuraError('INVALID_CONFIG', 'Embedding dimensions must be 1–4096 and batches 1–2048.');
+  }
+  assertPositiveInteger(maxResponseBytes, 'maxResponseBytes'); assertPositiveInteger(timeoutMs, 'timeoutMs');
+  const transport = options.fetch ?? globalThis.fetch;
+  if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
+  const apiKey = options.apiKey; const model = options.model;
+  return Object.freeze({
+    id: `openai.${model}.${dimensions}`, dimensions, maxBatch, location: 'hosted' as const,
+    async embed(texts: readonly string[], requestSignal: AbortSignal): Promise<readonly (readonly number[])[]> {
+      if (!Array.isArray(texts) || texts.length === 0 || texts.length > maxBatch || texts.some(text => typeof text !== 'string' || text.length === 0 || text.length > 32_768)) {
+        throw new MayuraError('INVALID_INPUT', 'Embedding input must be 1–maxBatch nonempty bounded strings.');
+      }
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const signal = AbortSignal.any([requestSignal, controller.signal]);
+        if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
+        const response = await abortable(transport('https://api.openai.com/v1/embeddings', {
+          method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, input: texts, dimensions, encoding_format: 'float' }), signal, redirect: 'error',
+        }), signal);
+        const payload = await responseBody(response, maxResponseBytes, signal);
+        const data = payload['data'];
+        if (!Array.isArray(data) || data.length !== texts.length) return failed();
+        const vectors: number[][] = new Array(texts.length);
+        for (const entry of data) {
+          const item = object(entry); const index = integer(item['index']); const embedding = item['embedding'];
+          if (index >= texts.length || vectors[index] !== undefined || !Array.isArray(embedding) || embedding.length !== dimensions
+            || embedding.some(value => typeof value !== 'number' || !Number.isFinite(value))) return failed();
+          vectors[index] = embedding as number[];
+        }
+        const usage = object(payload['usage']);
+        try { options.onUsage?.({ inputTokens: integer(usage['prompt_tokens']) }); } catch { /* Accounting callbacks cannot change the result. */ }
+        return vectors;
+      } catch (error) {
+        if (error instanceof MayuraError) throw error;
+        throw new ProviderFailure();
+      } finally { clearTimeout(timer); }
+    },
+  });
+}

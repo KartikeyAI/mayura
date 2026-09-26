@@ -14,3 +14,4 @@ export * from './workflow-format5.js';
 export * from './workflow-saga-format1.js';
 export * from './workflow-loop-format1.js';
 export * from './submission-journal.js';
+export * from './memory-contracts.js';

@@ -35,6 +35,31 @@ export interface RuntimeLimits {
   readonly maxDepth?: number;
   readonly maxConcurrentOperations?: number;
 }
+export interface SpeculationBranch<I extends Schema, O extends Schema> {
+  readonly id: string;
+  readonly agent: AgentDefinition<I, O>;
+  readonly input: InferInput<I>;
+  readonly permissions: Permissions;
+  readonly limits?: RuntimeLimits;
+  /** The assumptions this branch depends on; their digest is recorded and passed to `verify`. */
+  readonly assumptions: JsonValue;
+}
+export interface SpeculationOptions<I extends Schema, O extends Schema> {
+  /** 1–8 branches with unique ids. */
+  readonly branches: readonly SpeculationBranch<I, O>[];
+  /** Re-check current inputs, scope and policy before promotion. Only an exact `true` promotes; errors and timeouts do not. */
+  readonly verify: (candidate: { readonly branchId: string; readonly assumptionsDigest: string; readonly output: InferOutput<O> }) => boolean | Promise<boolean>;
+  /** Deadline for each `verify` call (default 5000 ms, maximum 30000). */
+  readonly verifyTimeoutMs?: number;
+}
+export interface SpeculationResult<T> {
+  readonly status: 'promoted' | 'none';
+  readonly branchId?: string;
+  readonly output?: T;
+  readonly assumptionsDigest?: string;
+  readonly branches: readonly { readonly id: string; readonly runId: string; readonly status: Outcome<unknown>['status']; readonly assumptionsDigest: string; readonly verified: boolean }[];
+}
+
 export interface RuntimeOptions {
   readonly profile: 'ephemeral';
   readonly permissions?: Permissions;
@@ -46,6 +71,11 @@ export interface Runtime {
   submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
   spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
   inspect(handle: RunHandle<unknown>): RunInspection;
+  /**
+   * Run isolated speculative child branches under the parent's shared budget and promote at most one. Branches may
+   * not hold write, host, delegation or memory-mutation grants; losing and unverified branches are cancelled.
+   */
+  speculate<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, options: SpeculationOptions<I, O>): Promise<SpeculationResult<InferOutput<O>>>;
   /** Stop admissions, request cancellation, and wait for accepted runs to reach a terminal outcome. */
   close(): Promise<void>;
 }
@@ -130,6 +160,8 @@ interface RunState {
   readonly controller: AbortController;
   readonly handle: RunHandle<unknown>;
   readonly children: RunState[];
+  /** A speculative branch: awaited by its parent, but its failure or cancellation never becomes the parent's outcome. */
+  readonly speculative: boolean;
   readonly receipts: Map<string, ExecutionReceipt>;
   accepting: boolean;
   status: 'running' | Outcome<unknown>['status'];
@@ -214,6 +246,11 @@ function consumeCall(state: RunState, entry: CallTicket, kind: 'model' | 'tool')
 const violationBoundary: Record<ControlHookStage, HookEvents['onViolation']['boundary']> = {
   beforeExecution: 'execution', beforeStep: 'execution', beforeModelCall: 'model', beforeToolCall: 'tool', beforeDelegate: 'delegate', beforeOutputRelease: 'output',
 };
+function canonicalJson(value: JsonValue): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`).join(',')}}`;
+}
 function terminalView(stage: TerminalHookStage, outcome: Outcome<unknown>): HookEvent<TerminalHookStage> {
   return Object.freeze({ stage, status: outcome.status, ...(outcome.status === 'succeeded' ? {} : { error: Object.freeze({ code: outcome.error.code }) }) });
 }
@@ -239,7 +276,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     return state;
   };
   const admitChild = <I extends Schema, O extends Schema>(
-    parent: RunState, agent: AgentDefinition<I, O>, input: unknown, child: ChildOptions, inputAdmitted = false, signal?: AbortSignal,
+    parent: RunState, agent: AgentDefinition<I, O>, input: unknown, child: ChildOptions, inputAdmitted = false, signal?: AbortSignal, speculative = false,
   ): RunHandle<InferOutput<O>> => {
     if (Date.now() >= parent.deadline && !parent.controller.signal.aborted) parent.controller.abort(new MayuraError('TIMEOUT', 'The parent deadline elapsed.'));
     if (closed || !parent.accepting || parent.status !== 'running' || parent.controller.signal.aborted || signal?.aborted) {
@@ -260,12 +297,12 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     }
     const requested = permissionsFor(child.permissions, true);
     const permissions = permissionsFor({ allow: requested.allow.filter((grant) => parent.permissions.allow.includes(grant)) });
-    return start(agent, input, limits, permissions, parent, inputAdmitted, signal);
+    return start(agent, input, limits, permissions, parent, inputAdmitted, signal, speculative);
   };
 
   const start = <I extends Schema, O extends Schema>(
     agent: AgentDefinition<I, O>, suppliedInput: unknown, limits: Required<RuntimeLimits>, permissions: Permissions,
-    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal,
+    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false,
   ): RunHandle<InferOutput<O>> => {
     if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot accept new runs.');
     assertAgent(agent);
@@ -295,7 +332,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
     const state = { id, events, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
-      handle, children: [], receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
+      handle, children: [], speculative, receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
       heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
     const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
@@ -680,7 +717,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         if (candidate.status !== 'succeeded' && !controller.signal.aborted) {
           controller.abort(new MayuraError('CANCELLED', 'Parent execution ended before its required children.'));
         }
-        const children = await Promise.all(state.children.map((child) => child.handle.result()));
+        const settled = await Promise.all(state.children.map((child) => child.handle.result()));
+        const children = settled.filter((_, index) => !state.children[index]!.speculative);
         let outcome: Outcome<InferOutput<O>> = candidate;
         if (outcome.status === 'succeeded' && controller.signal.aborted) outcome = outcomeFor(controller.signal.reason);
         const unknown = children.find((child) => child.status === 'outcome_unknown');
@@ -723,6 +761,61 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       start(agent, submission.input, rootLimits, rootPermissions),
     spawn: <I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, submission: ChildOptions & { readonly input: InferInput<I> }) =>
       admitChild(lookup(parent), agent, submission.input, submission),
+    speculate: async <I extends Schema, O extends Schema>(parentHandle: RunHandle<unknown>, speculation: SpeculationOptions<I, O>): Promise<SpeculationResult<InferOutput<O>>> => {
+      const parent = lookup(parentHandle);
+      const branches = speculation?.branches; const verify = speculation?.verify;
+      const verifyTimeoutMs = speculation?.verifyTimeoutMs ?? 5_000;
+      if (!Array.isArray(branches) || branches.length < 1 || branches.length > 8 || typeof verify !== 'function'
+        || !Number.isSafeInteger(verifyTimeoutMs) || verifyTimeoutMs < 1 || verifyTimeoutMs > 30_000
+        || new Set(branches.map(branch => branch?.id)).size !== branches.length || branches.some(branch => !isIdentifier(branch?.id))) {
+        throw new MayuraError('INVALID_CONFIG', 'Speculation needs 1–8 uniquely identified branches, a verify function and a bounded verify deadline.');
+      }
+      const prepared = await Promise.all(branches.map(async branch => {
+        const permissions = permissionsFor(branch.permissions, true);
+        // No speculative external writes, host execution, further delegation or durable memory promotion.
+        if (permissions.allow.some(grant => grant === 'agent:delegate' || (grant.startsWith('effect:') && grant !== 'effect:read')
+          || (grant.startsWith('memory:') && grant !== 'memory:read'))) {
+          throw new MayuraError('PERMISSION_DENIED', 'Speculative branches cannot hold write, host, delegation or memory-mutation grants.');
+        }
+        let assumptions: JsonValue;
+        try { assumptions = freezeJson(jsonValue(branch.assumptions, { maxBytes: 65_536 })); }
+        catch { throw new MayuraError('INVALID_INPUT', 'Branch assumptions must be bounded plain JSON.'); }
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`mayura:speculation-assumptions:v1\0${canonicalJson(assumptions)}`));
+        return { branch, permissions, digest: [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('') };
+      }));
+      const handles: RunHandle<InferOutput<O>>[] = [];
+      try {
+        for (const { branch, permissions } of prepared) {
+          handles.push(admitChild(parent, branch.agent, branch.input, { permissions, ...(branch.limits ? { limits: branch.limits } : {}) }, false, undefined, true));
+        }
+      } catch (error) { for (const handle of handles) handle.cancel(); throw error; }
+      const outcomes = new Map<number, Outcome<InferOutput<O>>>(); const verified = new Set<number>();
+      let winner: number | undefined;
+      const pending = new Map(handles.map((handle, index) => [index, handle.result().then(outcome => ({ index, outcome }))]));
+      while (pending.size > 0 && winner === undefined) {
+        const { index, outcome } = await Promise.race(pending.values());
+        pending.delete(index); outcomes.set(index, outcome);
+        if (outcome.status !== 'succeeded') continue;
+        let accepted = false;
+        try {
+          accepted = await new Promise<boolean>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(false), verifyTimeoutMs);
+            Promise.resolve().then(() => verify(Object.freeze({ branchId: prepared[index]!.branch.id, assumptionsDigest: prepared[index]!.digest, output: outcome.output })))
+              .then(value => { clearTimeout(timer); resolve(value === true); }, error => { clearTimeout(timer); reject(error); });
+          });
+        } catch { accepted = false; }
+        if (accepted) { verified.add(index); winner = index; }
+      }
+      for (const [index, handle] of handles.entries()) if (index !== winner && !outcomes.has(index)) handle.cancel();
+      for (const [index, promise] of pending) outcomes.set(index, (await promise).outcome);
+      const promoted = winner === undefined ? undefined : outcomes.get(winner);
+      return Object.freeze({
+        status: winner === undefined ? 'none' as const : 'promoted' as const,
+        ...(winner === undefined || promoted?.status !== 'succeeded' ? {} : { branchId: prepared[winner]!.branch.id, output: promoted.output, assumptionsDigest: prepared[winner]!.digest }),
+        branches: Object.freeze(prepared.map(({ branch, digest }, index) => Object.freeze({ id: branch.id, runId: handles[index]!.id,
+          status: outcomes.get(index)!.status, assumptionsDigest: digest, verified: verified.has(index) }))),
+      });
+    },
     inspect: (handle: RunHandle<unknown>): RunInspection => {
       const state = lookup(handle);
       return Object.freeze({ id: state.id, rootId: state.root.id, ...(state.parent ? { parentId: state.parent.id } : {}),

@@ -1,12 +1,12 @@
 import { Pool, type PoolClient } from 'pg';
-import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore } from '@mayura/storage-contracts';
+import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerBackend, type SchedulerSession, schedulerFacade,
   ScheduledWorkflowDatabase, scheduledFacade, workflowGraphFacade, initializeOwnership, ownedRun, writerRequired,
   ExecutionWaitDatabase, executionWaitFacade,
   workflowGraphDiscoveryFacade,
-  DurableBudgetDatabase, durableBudgetFacade,
+  DurableBudgetDatabase, durableBudgetFacade, MemoryIndexDatabase, memoryIndexFacade,
   WorkflowTreeDatabase, workflowTreeFacade, workflowTreeDiscoveryFacade,
 } from '@mayura/storage-sql/host';
 
@@ -37,7 +37,7 @@ function safeFailure(error: unknown): StorageError {
 }
 
 /** Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. */
-export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }
@@ -100,6 +100,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
   const executionWaitDatabase = new ExecutionWaitDatabase(backend,workflowsDatabase);
   const durableBudgetDatabase = new DurableBudgetDatabase(backend);
   const workflowTreeDatabase = new WorkflowTreeDatabase(backend,schedulerDatabase);
+  const memoryDatabase = new MemoryIndexDatabase(backend);
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     workflows: scheduledFacade((method,input) => { available(); return workflowsDatabase.execute(method,input); }),
@@ -109,6 +110,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
     durableBudgets: durableBudgetFacade((method,input) => { available(); return durableBudgetDatabase.execute(method,input); }),
     workflowTrees: workflowTreeFacade((method,input) => { available(); return workflowTreeDatabase.execute(method,input); }),
     workflowTreeDiscovery: workflowTreeDiscoveryFacade((method,input)=>{available();return workflowTreeDatabase.discover(method,input);}),
+    memory: memoryIndexFacade((method,input) => { available(); return memoryDatabase.execute(method,input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

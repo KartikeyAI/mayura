@@ -2,9 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createPostgresStore, createSqliteStore, type AggregateStore } from '@mayura/storage';
+import { createPostgresStore, createSqliteStore } from '@mayura/storage';
 
-export interface MemoryFixture { readonly store: AggregateStore; reopen(): AggregateStore; cleanup(): Promise<void> }
+export interface MemoryFixture { readonly store: ReturnType<typeof createSqliteStore>; reopen(): ReturnType<typeof createSqliteStore>; cleanup(): Promise<void> }
 export async function sqliteFixture(): Promise<MemoryFixture> {
   const directory = await mkdtemp(join(tmpdir(), 'mayura-memory-')); const filename = join(directory, 'memory.sqlite');
   const open = () => createSqliteStore({ filename });

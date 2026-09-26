@@ -37,11 +37,11 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| D1 Native memory import/export | ⬜ |
-| D2 Context cache invalidation | ⬜ |
-| D3 Graph memory | ⬜ |
-| D4 Scalable native semantic index | ⬜ |
-| D5 Context speculation | ⬜ |
+| D1 Native memory import/export ([spec](specs/native-memory-v1.md), [guide](how-to/native-memory.md)) | ✅ |
+| D2 Context cache invalidation and prefetch | ✅ |
+| D3 Graph memory | ✅ |
+| D4 Scalable native semantic index (IVF; local hashing and hosted OpenAI embedders) | ✅ |
+| D5 Speculation (`runtime.speculate`) and context prefetch | ✅ |
 
 ## E. Developer surface
 

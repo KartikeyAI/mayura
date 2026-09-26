@@ -198,6 +198,8 @@ export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemorySt
         if (!stored || !equalScope(stored.scope, scope) || stored.version !== copy.canonicalVersion
           || (stored.status === 'active' && stored.contentSha256 !== copy.contentSha256)) { excluded.stale++; continue; }
         if (stored.status === 'deleted') { excluded.deleted++; continue; }
+        // A superseded record is history, not a current retrieval candidate.
+        if (stored.status !== 'active') { excluded.stale++; continue; }
         hits.push({ record: stored, score: number(copy.score, 0, 1), reference: copy.reference });
       }
       return immutable<RemoteMemorySearchResult>({ mode: 'semantic-index', provider, hits, excluded });

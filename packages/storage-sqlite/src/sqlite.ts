@@ -1,13 +1,13 @@
 import { Worker } from 'node:worker_threads';
-import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore } from '@mayura/storage-contracts';
-import { createCommand, updateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade, workflowGraphDiscoveryFacade, durableBudgetFacade, workflowTreeFacade, workflowTreeDiscoveryFacade } from '@mayura/storage-sql/host';
+import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
+import { createCommand, updateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade, workflowGraphDiscoveryFacade, durableBudgetFacade, workflowTreeFacade, workflowTreeDiscoveryFacade, memoryIndexFacade } from '@mayura/storage-sql/host';
 
 export interface SqliteStoreOptions { readonly filename: string }
 interface Pending { resolve(value: unknown): void; reject(error: Error): void }
 interface Response { id: number; result?: unknown; error?: { code: StorageErrorCode; message: string } }
 
 /** Creates an optional SQLite adapter with one database-owning worker and a bounded IPC queue. */
-export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore {
+export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore {
   if (typeof options.filename !== 'string' || options.filename.length === 0 || options.filename.includes('\0')) {
     throw new StorageError('INVALID_INPUT', 'SQLite filename must be nonempty and contain no null characters.');
   }
@@ -54,6 +54,7 @@ export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDis
     durableBudgets: durableBudgetFacade((method,input) => request('durableBudgets',[method,input])),
     workflowTrees: workflowTreeFacade((method,input) => request('workflowTrees',[method,input])),
     workflowTreeDiscovery: workflowTreeDiscoveryFacade((method,input) => request('workflowTreeDiscovery',[method,input])),
+    memory: memoryIndexFacade((method,input) => request('memory',[method,input])),
     initialize: () => request<void>('initialize', []),
     create: async (command: CreateRecord) => request<{ record: StoredRecord; created: boolean }>('create', [createCommand(command)]),
     read: async (scope, id) => request<StoredRecord | undefined>('read', [identifier(scope, 'Scope'), identifier(id, 'Record ID')]),

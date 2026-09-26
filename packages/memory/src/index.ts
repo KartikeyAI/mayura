@@ -236,3 +236,6 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
     },
   });
 }
+export { createNativeMemory, type NativeMemory, type NativeMemoryOptions, type NativeMemoryEntry, type MemoryEdge, type MemoryEdgeInput,
+  type MemoryEdgeTombstone, type MemorySubgraph, type MemoryIndexReport, type SemanticSearchResult, type MemoryExportPage, type MemoryImportReport } from './native.js';
+export { hashingEmbedder, type MemoryEmbedder } from './vectors.js';

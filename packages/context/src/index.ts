@@ -1,2 +1,3 @@
 export { assembleContext, byteTokenEstimator } from './assemble.js';
 export type { ContextKind, ContextTrust, Sensitivity, SourceKind, ContextSource, UpstreamEvidence, ContextValidity, ContextProvenance, ContextCandidate, SourceState, ContextBudget, TokenEstimator, AssembleContextOptions, ReadonlyJson, ContextItem, ContextExclusion, ExclusionReason, ContextUsage, ContextAssembly, ContextHooks, BeforeContextBuildEvent, AfterContextBuildEvent } from './contracts.js';
+export { createContextCache, type ContextCache, type ContextCacheOptions, type ContextCacheStats, type ContextChangeFeed } from './cache.js';

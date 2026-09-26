@@ -7,6 +7,8 @@ export { ScheduledWorkflowDatabase } from './scheduled-database.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';
 export { WorkflowTreeDatabase } from './workflow-tree-database.js';
+export { MemoryIndexDatabase } from './memory-database.js';
+export { memoryIndexFacade } from '@mayura/storage-contracts';
 export type { WorkflowTreeCancellationResult, WorkflowTreeChildAdmission, WorkflowTreeChildCancellationResult, WorkflowTreeClaimedTool, WorkflowTreeCompletedTool, WorkflowTreeMemberResult, WorkflowTreePreparedTool, WorkflowTreeReceiptResult, WorkflowTreeRecoveryResult, WorkflowTreeRenewedTool, WorkflowTreeRootSnapshot, WorkflowTreeRootSubmission, WorkflowTreeStartedTool } from '@mayura/storage-contracts';
 export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js';
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';
