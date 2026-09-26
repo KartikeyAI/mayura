@@ -1,4 +1,4 @@
-import { freezeJson, jsonValue, MayuraError, type JsonValue } from '@mayura/core';
+import { freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue } from '@mayura/core';
 
 export interface OperationalClientOptions {
   readonly baseUrl: string;
@@ -376,6 +376,62 @@ export async function pauseWorkflow(options: OperationalClientOptions, input: {
     throw new MayuraError('INVALID_CONFIG', 'Workflow pause identity is invalid.');
   const raw = await transport(options, `/v1/workflow-runs/${input.id}/pause`, [200], 'POST', { commandId: input.commandId, revision: input.revision });
   exact(raw, ['workflow']); const result = workflow(raw['workflow'], input.id); if (result.revision < input.revision) return fail(); return result;
+}
+
+export interface OperationalFleetHold { readonly held: boolean; readonly generation: number; readonly changedAtMs: number | null }
+export type OperationalFleetSweepOutcome =
+  | { readonly target: string; readonly runId: string;
+      readonly outcome: 'paused' | 'already_paused' | 'terminal' | 'busy' | 'resumed' | 'not_paused' | 'missing' | 'unregistered' }
+  | { readonly target: string; readonly runId: string; readonly outcome: 'failed'; readonly code: string };
+export interface OperationalFleetSweep { readonly outcomes: readonly OperationalFleetSweepOutcome[]; readonly nextCursor: JsonObject | null }
+const fleetOutcomes = new Set(['paused', 'already_paused', 'terminal', 'busy', 'resumed', 'not_paused', 'missing', 'unregistered']);
+function fleetHold(value: unknown, expectedHeld?: boolean): OperationalFleetHold {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
+  const raw = value as Record<string, unknown>; exact(raw, ['held', 'generation', 'changedAtMs']);
+  const { held, generation, changedAtMs } = raw;
+  if (typeof held !== 'boolean' || (expectedHeld !== undefined && held !== expectedHeld) || typeof generation !== 'number'
+    || !Number.isSafeInteger(generation) || generation < (held ? 1 : 0)
+    || (changedAtMs !== null && (typeof changedAtMs !== 'number' || !Number.isSafeInteger(changedAtMs) || changedAtMs < 0))) return fail();
+  return Object.freeze({ held, generation, changedAtMs: changedAtMs as number | null });
+}
+
+/** Read the durable fleet hold for the authenticated scope. */
+export async function inspectWorkflowFleet(options: OperationalClientOptions): Promise<OperationalFleetHold> {
+  const raw = await transport(options, '/v1/workflow-fleet', [200]); exact(raw, ['fleet']); return fleetHold(raw['fleet']);
+}
+/** Durably hold or release the authenticated scope's fleet with one request; both are idempotent and never retried. */
+export async function holdWorkflowFleet(options: OperationalClientOptions): Promise<OperationalFleetHold> {
+  const raw = await transport(options, '/v1/workflow-fleet/hold', [200], 'POST', {}); exact(raw, ['fleet']); return fleetHold(raw['fleet'], true);
+}
+export async function releaseWorkflowFleet(options: OperationalClientOptions): Promise<OperationalFleetHold> {
+  const raw = await transport(options, '/v1/workflow-fleet/release', [200], 'POST', {}); exact(raw, ['fleet']); return fleetHold(raw['fleet'], false);
+}
+/** Run one bounded content-free pause or resume sweep page; pass `nextCursor` back unchanged to continue. */
+export async function sweepWorkflowFleet(options: OperationalClientOptions, input: {
+  readonly phase: 'pause' | 'resume'; readonly cursor: JsonObject | null; readonly limit?: number;
+}): Promise<OperationalFleetSweep> {
+  const limit = input.limit ?? 32;
+  if (!['pause', 'resume'].includes(input.phase) || !Number.isSafeInteger(limit) || limit < 1 || limit > 128
+    || (input.cursor !== null && (!input.cursor || typeof input.cursor !== 'object' || Array.isArray(input.cursor)))) throw new MayuraError('INVALID_CONFIG', 'Fleet sweep request is invalid.');
+  const raw = await transport(options, `/v1/workflow-fleet/sweeps/${input.phase}`, [200], 'POST', { cursor: input.cursor, limit });
+  exact(raw, ['sweep']); const sweep = raw['sweep'];
+  if (!sweep || typeof sweep !== 'object' || Array.isArray(sweep)) return fail();
+  const page = sweep as Record<string, unknown>; exact(page, ['outcomes', 'nextCursor']);
+  if (!Array.isArray(page['outcomes']) || page['outcomes'].length > limit) return fail();
+  const outcomes = page['outcomes'].map((entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fail();
+    const item = entry as Record<string, unknown>; const failed = item['outcome'] === 'failed';
+    exact(item, failed ? ['target', 'runId', 'outcome', 'code'] : ['target', 'runId', 'outcome']);
+    if (typeof item['target'] !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/u.test(item['target']) || typeof item['runId'] !== 'string'
+      || !workflowRunIdentifier.test(item['runId']) || (failed ? typeof item['code'] !== 'string' || !/^[A-Z][A-Z_]{0,39}$/u.test(item['code'])
+        : !fleetOutcomes.has(String(item['outcome'])))) return fail();
+    return Object.freeze({ ...item }) as unknown as OperationalFleetSweepOutcome;
+  });
+  const next = page['nextCursor'];
+  if (next !== null && (!next || typeof next !== 'object' || Array.isArray(next))) return fail();
+  let nextCursor: JsonObject | null = null;
+  if (next !== null) { try { nextCursor = jsonValue(next, { maxBytes: 4_096 }) as JsonObject; } catch { return fail(); } }
+  return Object.freeze({ outcomes: Object.freeze(outcomes), nextCursor });
 }
 
 /** Bounded explicit polling of read-only run state; commands are never issued or retried. */

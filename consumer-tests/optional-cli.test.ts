@@ -1,5 +1,5 @@
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, pauseWorkflow, planProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, validateProject, waitForRun,
+  inspectServerTools, inspectWorkflow, inspectWorkflowFleet, inspectWorkflows, holdWorkflowFleet, pauseWorkflow, planProject, releaseWorkflowFleet, sweepWorkflowFleet, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, validateProject, waitForRun,
   type InitPlan, type OperationalHealth, type OperationalHumanRequestPage, type OperationalRun, type OperationalToolPage, type OperationalWorkflow,
   type OperationalWorkflowIndexPage } from '@mayura/cli';
 
@@ -17,4 +17,4 @@ declare const run: OperationalRun;
 declare const workflow: OperationalWorkflow;
 declare const workflowPage: OperationalWorkflowIndexPage;
 void health; void tools; void humans; void run; void workflow; void inspectServerHealth; void inspectServerTools; void inspectHumanRequests; void inspectHumanRequest;
-void workflowPage; void respondHumanRequest; void inspectRun; void waitForRun; void cancelRun; void inspectWorkflow; void inspectWorkflows; void cancelWorkflow; void approveWorkflow; void signalWorkflow; void resumeWorkflow; void pauseWorkflow;
+void workflowPage; void respondHumanRequest; void inspectRun; void waitForRun; void cancelRun; void inspectWorkflow; void inspectWorkflows; void cancelWorkflow; void approveWorkflow; void signalWorkflow; void resumeWorkflow; void pauseWorkflow; void inspectWorkflowFleet; void holdWorkflowFleet; void releaseWorkflowFleet; void sweepWorkflowFleet;

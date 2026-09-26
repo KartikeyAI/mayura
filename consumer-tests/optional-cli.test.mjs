@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, pauseWorkflow, planProject, readProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, waitForRun } from '@mayura/cli';
+  inspectServerTools, inspectWorkflow, inspectWorkflowFleet, inspectWorkflows, holdWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, sweepWorkflowFleet, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, waitForRun } from '@mayura/cli';
 
 const target = resolve('generated-agent'); const catalog = templates();
 const plan = await planProject('basic-agent', target); const beforeApply = plan.changes.every(change => change.operation === 'create');
@@ -14,6 +14,8 @@ const operationalFetch = async (url, options) => { const path = new URL(url).pat
   : path === '/v1/human-requests' ? { items: [human], next: null }
   : path === `/v1/runs/${runId}/cancel` ? (cancellationCalls++, { id: runId, cancellationRequested: true })
   : path === `/v1/runs/${runId}` ? { id: runId, status: 'succeeded', budget: { spentMicros: 1, reservedMicros: 0, calls: 1 }, evidence: [], outcome: { status: 'succeeded', output: 'PRIVATE' } }
+  : path.startsWith('/v1/workflow-fleet') ? (path.includes('/sweeps/') ? { sweep: { outcomes: [{ target: 'graphs', runId: workflowId, outcome: 'paused' }], nextCursor: null } }
+    : { fleet: { held: path.endsWith('/hold'), generation: 1, changedAtMs: 1 } })
   : path === '/v1/workflow-runs' ? { items: [{ format: 2, definitionId: 'workflow', definitionVersion: '1', runId: workflowId, revision: 1, status: 'running' }], next: null }
   : path.startsWith(`/v1/workflow-runs/${workflowId}`) ? (options?.method === 'POST' && (workflowCommands += 1), { workflow: { format: 2, definitionId: 'workflow', definitionVersion: '1',
     runId: workflowId, revision: path.endsWith('/pause') ? 6 : path.endsWith('/resume') ? 5 : path.endsWith('/signals') ? 4 : path.endsWith('/approvals') ? 3 : path.endsWith('/cancel') ? 2 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
@@ -31,9 +33,12 @@ await approveWorkflow(operational, { id: workflowId, revision: 2, commandId: 'ap
 await signalWorkflow(operational, { id: workflowId, revision: 3, commandId: 'signal', signalId: 'ready/1', signalName: 'ready', value: true });
 await resumeWorkflow(operational, { id: workflowId, revision: 4, commandId: 'resume' });
 await pauseWorkflow(operational, { id: workflowId, revision: 5, commandId: 'pause' });
+const fleetHeld = await holdWorkflowFleet(operational); const fleetPage = await sweepWorkflowFleet(operational, { phase: 'pause', cursor: null });
+const fleetReleased = await releaseWorkflowFleet(operational); const fleetRead = await inspectWorkflowFleet(operational);
 console.log(JSON.stringify({ status: 'passed', eightTemplates: catalog.length === 8, planFirst: beforeApply,
   catalogValidated: project.template === 'basic-agent', noOverwrite: unchanged.changes.every(change => change.operation === 'unchanged'),
   authenticatedOperations: health.status === 'ready' && tools.tools.length === 0,
   authenticatedHuman: humanPage.items.length === 1 && inspected.id === 'review' && answered.status === 'answered',
   authenticatedRuns: inspectedRun.status === 'succeeded' && waitedRun.status === 'succeeded' && !('outcome' in inspectedRun) && cancellationCalls === 1,
-  authenticatedWorkflows: workflowPage.items[0]?.runId === workflowId && inspectedWorkflow.revision === 1 && workflowCommands === 5 }));
+  authenticatedWorkflows: workflowPage.items[0]?.runId === workflowId && inspectedWorkflow.revision === 1 && workflowCommands === 5,
+  authenticatedFleet: fleetHeld.held && fleetPage.outcomes[0]?.outcome === 'paused' && !fleetReleased.held && fleetRead.generation === 1 }));

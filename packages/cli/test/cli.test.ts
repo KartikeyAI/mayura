@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, pauseWorkflow, planProject, readProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, validateProject, waitForRun } from '../src/index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -296,6 +296,49 @@ describe('@mayura/cli authenticated operations', () => {
       child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; }); const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
       expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toMatch(/TOKEN_PRIVATE|resume-1/); expect(requests).toBe(1);
       expect(received).toEqual({ commandId: 'resume-1', revision: 2 });
+    } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
+  });
+
+  it('reads, holds and releases the fleet and validates each acknowledgement', async () => {
+    const calls: { path: string; body?: unknown }[] = [];
+    const transport: typeof fetch = async (input, init) => { const path = new URL(String(input)).pathname;
+      calls.push({ path, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+      const fleet = path.endsWith('/hold') ? { held: true, generation: 2, changedAtMs: 9 } : { held: false, generation: 2, changedAtMs: 10 };
+      return new Response(JSON.stringify({ fleet }), { headers: { 'content-type': 'application/json' } }); };
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: transport };
+    expect(await inspectWorkflowFleet(settings)).toEqual({ held: false, generation: 2, changedAtMs: 10 });
+    expect((await holdWorkflowFleet(settings)).held).toBe(true); expect((await releaseWorkflowFleet(settings)).held).toBe(false);
+    expect(calls).toEqual([{ path: '/v1/workflow-fleet' }, { path: '/v1/workflow-fleet/hold', body: {} }, { path: '/v1/workflow-fleet/release', body: {} }]);
+    const lying = { ...settings, fetch: (async () => new Response(JSON.stringify({ fleet: { held: false, generation: 0, changedAtMs: null } }),
+      { headers: { 'content-type': 'application/json' } })) as typeof fetch };
+    await expect(holdWorkflowFleet(lying)).rejects.toMatchObject({ code: 'INVALID_OUTPUT' });
+    await expect(sweepWorkflowFleet(settings, { phase: 'pause', cursor: null, limit: 0 })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+  });
+
+  it('follows bounded fleet sweep pages from the executable and resumes from a cursor file', async () => {
+    const runId = 'b'.repeat(64); const bodies: unknown[] = [];
+    const host = createServer(async (request, response) => { expect(request.headers.authorization).toBe('Bearer TOKEN_PRIVATE');
+      expect(request.url).toBe('/v1/workflow-fleet/sweeps/pause'); let body = ''; for await (const chunk of request) body += String(chunk);
+      const parsed = JSON.parse(body) as { cursor: unknown }; bodies.push(parsed);
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ sweep: { outcomes: [{ target: 'lifecycle', runId, outcome: parsed.cursor === null ? 'paused' : 'busy' }],
+        nextCursor: parsed.cursor === null ? { next: 1 } : null } })); });
+    await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(0, '127.0.0.1', resolve); });
+    const run = async (extra: readonly string[]) => {
+      const address = host.address(); if (!address || typeof address === 'string') throw new Error();
+      const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/bin.js', import.meta.url)), 'fleet-sweep', '--url', `http://127.0.0.1:${address.port}`,
+        '--phase', 'pause', ...extra, '--token-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child.stdin.end('TOKEN_PRIVATE\n'); let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; }); const exitCode = await new Promise<number | null>(resolve => { child.once('exit', resolve); });
+      expect(exitCode).toBe(0); expect(stderr).toBe(''); expect(stdout).not.toContain('TOKEN_PRIVATE'); return JSON.parse(stdout) as Record<string, unknown>;
+    };
+    try {
+      expect(await run(['--max-pages', '8'])).toEqual({ status: 'succeeded', phase: 'pause', pages: 2, nextCursor: null,
+        outcomes: [{ target: 'lifecycle', runId, outcome: 'paused' }, { target: 'lifecycle', runId, outcome: 'busy' }] });
+      expect(await run(['--max-pages', '1', '--limit', '4'])).toMatchObject({ status: 'incomplete', pages: 1, nextCursor: { next: 1 } });
+      const root = await directory(); const cursorFile = join(root, 'cursor.json'); await writeFile(cursorFile, JSON.stringify({ next: 1 }));
+      expect(await run(['--cursor-file', cursorFile])).toMatchObject({ status: 'succeeded', pages: 1, outcomes: [{ outcome: 'busy' }] });
+      expect(bodies).toEqual([{ cursor: null, limit: 32 }, { cursor: { next: 1 }, limit: 32 }, { cursor: null, limit: 4 }, { cursor: { next: 1 }, limit: 32 }]);
     } finally { await new Promise<void>(resolve => { host.close(() => { resolve(); }); }); }
   });
 

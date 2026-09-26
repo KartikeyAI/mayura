@@ -59,6 +59,8 @@ await client.approveWorkflow(workflow.runId, { revision: workflow.revision, node
 await client.signalWorkflow(workflow.runId, { revision: workflow.revision, signalId: 'ready/1', signalName: 'ready', value: true }, { commandId: 'signal' });
 await client.resumeWorkflow(workflow.runId, workflow.revision, { commandId: 'resume' });
 await client.pauseWorkflow(workflow.runId, workflow.revision, { commandId: 'pause' });
+const fleetHold: { readonly held: boolean; readonly generation: number } = await client.holdWorkflowFleet();
+const fleetSweep = await client.sweepWorkflowFleet('pause', { cursor: null, limit: 8 }); void fleetHold; void fleetSweep.nextCursor;
 void workflowFormat; void workflowPage;
 const humanPage = await client.humanRequests({ limit: 1 });
 if (humanPage.items[0]) await client.respondHumanRequest(humanPage.items[0].id, humanPage.items[0].digest, { accepted: true }, { commandId: 'answer' });

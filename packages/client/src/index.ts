@@ -50,6 +50,13 @@ export interface WorkflowIndexEntry {
   readonly revision: number; readonly status: WorkflowViewRunStatus;
 }
 export interface WorkflowIndexPage { readonly items: readonly WorkflowIndexEntry[]; readonly next: string | null }
+export interface WorkflowFleetHold { readonly held: boolean; readonly generation: number; readonly changedAtMs: number | null }
+export type WorkflowFleetSweepOutcome =
+  | { readonly target: string; readonly runId: string;
+      readonly outcome: 'paused' | 'already_paused' | 'terminal' | 'busy' | 'resumed' | 'not_paused' | 'missing' | 'unregistered' }
+  | { readonly target: string; readonly runId: string; readonly outcome: 'failed'; readonly code: string };
+/** One content-free sweep page. Pass `nextCursor` back unchanged to continue; null means the sweep is complete. */
+export interface WorkflowFleetSweep { readonly outcomes: readonly WorkflowFleetSweepOutcome[]; readonly nextCursor: ClientJson | null }
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token: () => string | Promise<string>;
@@ -70,6 +77,15 @@ export interface MayuraClient {
   approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   signalWorkflow(id: string, command: WorkflowSignalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   resumeWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
+  /** Read the durable fleet hold for the authenticated scope. */
+  workflowFleet(options?: { readonly signal?: AbortSignal }): Promise<WorkflowFleetHold>;
+  /** Durably hold the authenticated scope's fleet; idempotent. Requires `workflows:fleet`. */
+  holdWorkflowFleet(options?: { readonly signal?: AbortSignal }): Promise<WorkflowFleetHold>;
+  /** Durably lift the fleet hold; resumes no run by itself. Requires `workflows:fleet`. */
+  releaseWorkflowFleet(options?: { readonly signal?: AbortSignal }): Promise<WorkflowFleetHold>;
+  /** Run one bounded pause or resume sweep page. Requires `workflows:fleet`; a wrong hold state is HTTP 409. */
+  sweepWorkflowFleet(phase: 'pause' | 'resume', command: { readonly cursor: ClientJson | null; readonly limit?: number },
+    options?: { readonly signal?: AbortSignal }): Promise<WorkflowFleetSweep>;
   pauseWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
@@ -107,6 +123,32 @@ function hookMetadata(metadata: Record<string, unknown>, completed: boolean): vo
   }
 }
 function fail(): never { throw new ClientError('INVALID_RESPONSE'); }
+const fleetOutcomes = new Set(['paused', 'already_paused', 'terminal', 'busy', 'resumed', 'not_paused', 'missing', 'unregistered']);
+function fleetHold(value: unknown): WorkflowFleetHold {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
+  const raw = value as Record<string, unknown>; const keys = Object.keys(raw);
+  if (keys.length !== 3 || !['held', 'generation', 'changedAtMs'].every(key => Object.hasOwn(raw, key))) return fail();
+  const { held, generation, changedAtMs } = raw;
+  if (typeof held !== 'boolean' || typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < (held ? 1 : 0)
+    || (changedAtMs !== null && (typeof changedAtMs !== 'number' || !Number.isSafeInteger(changedAtMs) || changedAtMs < 0))) return fail();
+  return Object.freeze({ held, generation, changedAtMs: changedAtMs as number | null });
+}
+function fleetSweep(value: unknown, limit: number): WorkflowFleetSweep {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
+  const raw = value as Record<string, unknown>;
+  if (Object.keys(raw).length !== 2 || !Array.isArray(raw['outcomes']) || !Object.hasOwn(raw, 'nextCursor') || raw['outcomes'].length > limit) return fail();
+  const outcomes = raw['outcomes'].map((entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fail();
+    const item = entry as Record<string, unknown>; const failed = item['outcome'] === 'failed';
+    if (Object.keys(item).length !== (failed ? 4 : 3) || typeof item['target'] !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(item['target'])
+      || typeof item['runId'] !== 'string' || !/^[a-f0-9]{64}$/.test(item['runId'])
+      || (failed ? typeof item['code'] !== 'string' || !/^[A-Z][A-Z_]{0,39}$/.test(item['code']) : !fleetOutcomes.has(String(item['outcome'])))) return fail();
+    return Object.freeze({ ...item }) as unknown as WorkflowFleetSweepOutcome;
+  });
+  const next = raw['nextCursor'];
+  if (next !== null && (!next || typeof next !== 'object' || Array.isArray(next))) return fail();
+  return Object.freeze({ outcomes: Object.freeze(outcomes), nextCursor: next === null ? null : json(next, 4_096) });
+}
 function record(value: unknown): Record<string, unknown> { if (typeof value !== 'object' || value === null || Array.isArray(value)) return fail(); return value as Record<string, unknown>; }
 function text(value: unknown, maximum = 256): string { if (typeof value !== 'string' || value.length === 0 || value.length > maximum) return fail(); return value; }
 function natural(value: unknown): number { if (!Number.isSafeInteger(value) || (value as number) < 0) return fail(); return value as number; }
@@ -454,6 +496,29 @@ export function createClient(options: ClientOptions): MayuraClient {
       const raw = await command(`/v1/workflow-runs/${id}/pause`, 'POST', settings.signal,
         json({ commandId: settings.commandId, revision }, maxBytes));
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async workflowFleet(settings?: { readonly signal?: AbortSignal }) {
+      const raw = await command('/v1/workflow-fleet', 'GET', settings?.signal);
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'fleet')) return fail(); return fleetHold(raw['fleet']);
+    },
+    async holdWorkflowFleet(settings?: { readonly signal?: AbortSignal }) {
+      const raw = await command('/v1/workflow-fleet/hold', 'POST', settings?.signal, json({}, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'fleet')) return fail();
+      const fleet = fleetHold(raw['fleet']); if (!fleet.held) return fail(); return fleet;
+    },
+    async releaseWorkflowFleet(settings?: { readonly signal?: AbortSignal }) {
+      const raw = await command('/v1/workflow-fleet/release', 'POST', settings?.signal, json({}, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'fleet')) return fail();
+      const fleet = fleetHold(raw['fleet']); if (fleet.held) return fail(); return fleet;
+    },
+    async sweepWorkflowFleet(phase: 'pause' | 'resume', sweep: { readonly cursor: ClientJson | null; readonly limit?: number }, settings?: { readonly signal?: AbortSignal }) {
+      const limit = sweep?.limit ?? 32;
+      if (!['pause', 'resume'].includes(phase) || !Number.isSafeInteger(limit) || limit < 1 || limit > 128
+        || (sweep.cursor !== null && (!sweep.cursor || typeof sweep.cursor !== 'object' || Array.isArray(sweep.cursor)))) throw new ClientError('INVALID_REQUEST');
+      let cursor: ClientJson | null;
+      try { cursor = sweep.cursor === null ? null : json(sweep.cursor, 4_096); } catch { throw new ClientError('INVALID_REQUEST'); }
+      const raw = await command(`/v1/workflow-fleet/sweeps/${phase}`, 'POST', settings?.signal, json({ cursor, limit }, maxBytes));
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'sweep')) return fail(); return fleetSweep(raw['sweep'], limit);
     },
     async respondHumanRequest(id: string, requestDigest: string, value: unknown, settings: { readonly commandId: string; readonly signal?: AbortSignal }) {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id) || !/^[a-f0-9]{64}$/.test(requestDigest)

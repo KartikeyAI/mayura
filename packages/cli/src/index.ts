@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
 
 export { approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, inspectWorkflow, inspectWorkflows,
-  pauseWorkflow, respondHumanRequest, resumeWorkflow, signalWorkflow, waitForRun,
+  holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, signalWorkflow, sweepWorkflowFleet, waitForRun,
+  type OperationalFleetHold, type OperationalFleetSweep, type OperationalFleetSweepOutcome,
   type OperationalClientOptions, type OperationalHealth, type OperationalHealthCheck, type OperationalHumanRequest,
   type OperationalHumanRequestPage, type OperationalRun, type OperationalRunReceipt, type OperationalTool, type OperationalToolPage,
   type OperationalWorkflow, type OperationalWorkflowFormat, type OperationalWorkflowNode, type OperationalWorkflowNodeKind,

@@ -253,14 +253,14 @@ async function main() {
       await writeFile(join(application, 'consumer.mjs'), await readFile(join(workspace, 'consumer-tests', fixture.replace(/\.ts$/, '.mjs'))));
       await writeFile(join(application, 'isolation.mjs'), await readFile(join(workspace, 'consumer-tests', 'optional-isolation.test.mjs')));
       const execution = JSON.parse((await run(['--import', pathToFileURL(join(application, 'isolation.mjs')).href, join(application, 'consumer.mjs')], application)).stdout);
-      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); assert.equal(execution.http.workflowIndex, true); assert.equal(execution.http.workflowControls, true); assert.equal(execution.http.workflowSignals, true); assert.equal(execution.http.workflowResume, true); assert.equal(execution.http.workflowPause, true); }
+      if (name === 'node') { assert.equal(execution.batchOutputReferences, true); assert.equal(execution.externalConsumerMatrix, true); assert.equal(execution.http.humanTransport, true); assert.equal(execution.http.workflowTransport, true); assert.equal(execution.http.workflowIndex, true); assert.equal(execution.http.workflowControls, true); assert.equal(execution.http.workflowSignals, true); assert.equal(execution.http.workflowResume, true); assert.equal(execution.http.workflowPause, true); assert.equal(execution.http.workflowFleet, true); }
       if (name === 'helpers') {
         assert.equal(execution.secretReferenceOnly, true); assert.equal(execution.retrySafety, true);
         assert.equal(execution.budgetAccounting, true); assert.equal(execution.redactedLogging, true); assert.equal(execution.credentialStore, true);
       }
       if (name === 'cli') {
         assert.equal(execution.eightTemplates, true); assert.equal(execution.planFirst, true);
-        assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true); assert.equal(execution.authenticatedOperations, true); assert.equal(execution.authenticatedHuman, true); assert.equal(execution.authenticatedRuns, true); assert.equal(execution.authenticatedWorkflows, true);
+        assert.equal(execution.catalogValidated, true); assert.equal(execution.noOverwrite, true); assert.equal(execution.authenticatedOperations, true); assert.equal(execution.authenticatedHuman, true); assert.equal(execution.authenticatedRuns, true); assert.equal(execution.authenticatedWorkflows, true); assert.equal(execution.authenticatedFleet, true);
       }
       if (name === 'react') {
         assert.equal(execution.reactPeer, true); assert.equal(execution.publicTypesWithoutReactTypes, true); assert.equal(execution.noImplicitNetwork, true);
@@ -354,6 +354,8 @@ async function main() {
       const fetcher = async (url, options) => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
         const path = new URL(url).pathname; const body = path === '/v1/workflow-runs'
           ? { items: [{ format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1, status: 'running' }], next: null }
+          : path.startsWith('/v1/workflow-fleet') ? (path.includes('/sweeps/') ? { sweep: { outcomes: [{ target: 'graphs', runId: 'a'.repeat(64), outcome: 'paused' }], nextCursor: null } }
+            : { fleet: { held: path.endsWith('/hold'), generation: 1, changedAtMs: 1 } })
           : path.startsWith('/v1/workflow-runs/')
           ? { workflow: { format: 4, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64),
             revision: path.endsWith('/cancel') ? 2 : path.endsWith('/approvals') ? 3 : path.endsWith('/signals') ? 4 : path.endsWith('/resume') ? 5 : path.endsWith('/pause') ? 6 : 1, status: path.endsWith('/cancel') ? 'cancelled' : 'running',
@@ -410,6 +412,7 @@ async function main() {
   result.checks.push('browser-workflow-signal-command-state');
   result.checks.push('authenticated-workflow-resume-route', 'browser-explicit-workflow-resume', 'browser-workflow-resume-command-state', 'cli-workflow-resume');
   result.checks.push('authenticated-workflow-pause-route', 'browser-explicit-workflow-pause', 'browser-workflow-pause-command-state', 'cli-workflow-pause');
+  result.checks.push('authenticated-workflow-fleet-routes', 'browser-workflow-fleet-control', 'cli-workflow-fleet-control');
   await writeFile(join(output, 'report.json'), `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result));
 }
 

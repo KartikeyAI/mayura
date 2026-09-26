@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, pauseWorkflow, planProject, readProject, respondHumanRequest, resumeWorkflow, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
 
 function option(arguments_: readonly string[], name: string): string | undefined {
   const index = arguments_.indexOf(name); if (index < 0) return undefined;
@@ -110,6 +110,27 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
+  if (command === 'fleet-get' || command === 'fleet-hold' || command === 'fleet-release' || command === 'fleet-sweep') {
+    assertArguments(arguments_, command === 'fleet-sweep' ? ['--url', '--phase', '--limit', '--max-pages', '--cursor-file'] : ['--url'], ['--token-stdin']);
+    const baseUrl = option(arguments_, '--url');
+    if (!baseUrl || !arguments_.includes('--token-stdin')) throw new Error(`${command} requires --url and --token-stdin.`);
+    const phase = option(arguments_, '--phase'); const cursorFile = option(arguments_, '--cursor-file');
+    const limit = Number(option(arguments_, '--limit') ?? 32); const maxPages = Number(option(arguments_, '--max-pages') ?? 32);
+    if (command === 'fleet-sweep' && (phase !== 'pause' && phase !== 'resume' || !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256))
+      throw new Error('fleet-sweep requires --phase pause|resume and --max-pages between 1 and 256.');
+    // Read the continuation cursor before consuming the credential so a bad file never reaches the network.
+    const cursor = cursorFile === undefined ? null : await jsonFile(cursorFile, 'Fleet sweep cursor', 4_096);
+    if (cursor !== null && (typeof cursor !== 'object' || Array.isArray(cursor))) throw new Error('Fleet sweep cursor file must contain a JSON object.');
+    const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
+    if (command === 'fleet-get') return { status: 'succeeded', fleet: await inspectWorkflowFleet(settings) };
+    if (command === 'fleet-hold') return { status: 'succeeded', fleet: await holdWorkflowFleet(settings) };
+    if (command === 'fleet-release') return { status: 'succeeded', fleet: await releaseWorkflowFleet(settings) };
+    // Bounded continuation: each page is one request; an unfinished sweep prints its cursor instead of looping further.
+    const outcomes: unknown[] = []; let next = cursor as Parameters<typeof sweepWorkflowFleet>[1]['cursor']; let pages = 0;
+    do { const page = await sweepWorkflowFleet(settings, { phase: phase as 'pause' | 'resume', cursor: next, limit });
+      outcomes.push(...page.outcomes); next = page.nextCursor; pages += 1; } while (next && pages < maxPages);
+    return { status: next ? 'incomplete' : 'succeeded', phase, pages, outcomes, nextCursor: next };
+  }
   if (command === 'workflow-list' || command === 'workflow-get' || command === 'workflow-cancel' || command === 'workflow-approve' || command === 'workflow-signal' || command === 'workflow-resume' || command === 'workflow-pause') {
     const valued = command === 'workflow-list' ? ['--url', '--after', '--limit'] : command === 'workflow-get' ? ['--url', '--id'] : command === 'workflow-cancel'
       ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-resume' || command === 'workflow-pause'
@@ -138,7 +159,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause');
+  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause | fleet-get | fleet-hold | fleet-release | fleet-sweep');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

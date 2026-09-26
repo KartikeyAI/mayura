@@ -4,7 +4,7 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control' | 'workflows:fleet')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
@@ -68,6 +68,21 @@ export interface WorkflowResumeTransport {
 export interface WorkflowPauseTransport {
   readonly pause: (input: WorkflowControlBase) => Promise<WorkflowControlResult>;
 }
+export interface WorkflowFleetHoldRecord { readonly held: boolean; readonly generation: number; readonly changedAtMs: number | null }
+export type WorkflowFleetSweepOutcomeRecord =
+  | { readonly target: string; readonly runId: string;
+      readonly outcome: 'paused' | 'already_paused' | 'terminal' | 'busy' | 'resumed' | 'not_paused' | 'missing' | 'unregistered' }
+  | { readonly target: string; readonly runId: string; readonly outcome: 'failed'; readonly code: string };
+export interface WorkflowFleetSweepRecord { readonly outcomes: readonly WorkflowFleetSweepOutcomeRecord[]; readonly nextCursor: JsonObject | null }
+interface WorkflowFleetBase { readonly scope: Scope; readonly agentIds: readonly string[]; readonly actorId: string; readonly signal: AbortSignal }
+/** Durable fleet hold and ledger-backed sweep for one verified scope. Mutations require the separate `workflows:fleet` capability. */
+export interface WorkflowFleetTransport {
+  readonly inspect: (input: WorkflowFleetBase) => Promise<WorkflowFleetHoldRecord>;
+  readonly hold: (input: WorkflowFleetBase) => Promise<WorkflowFleetHoldRecord>;
+  readonly release: (input: WorkflowFleetBase) => Promise<WorkflowFleetHoldRecord>;
+  readonly sweep: (input: WorkflowFleetBase & { readonly phase: 'pause' | 'resume'; readonly cursor: JsonObject | null; readonly limit: number })
+    => Promise<{ readonly status: 'applied'; readonly sweep: WorkflowFleetSweepRecord } | { readonly status: 'conflict' }>;
+}
 export interface RegisteredAgent {
   readonly agent: AgentDefinition;
   readonly permissions: Permissions;
@@ -88,6 +103,7 @@ export interface AgentServerOptions {
   readonly workflowSignals?: WorkflowSignalTransport;
   readonly workflowResumes?: WorkflowResumeTransport;
   readonly workflowPauses?: WorkflowPauseTransport;
+  readonly workflowFleet?: WorkflowFleetTransport;
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -180,6 +196,33 @@ function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewReco
   }
   if (queue.length !== graph.size) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
   return freezeJson(raw) as unknown as WorkflowViewRecord;
+}
+const fleetOutcomes = new Set(['paused', 'already_paused', 'terminal', 'busy', 'resumed', 'not_paused', 'missing', 'unregistered']);
+function fleetHold(value: unknown): WorkflowFleetHoldRecord {
+  let raw: JsonObject; try { raw = object(value, 1_024); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['held', 'generation', 'changedAtMs']);
+  const { held, generation, changedAtMs } = raw;
+  if (typeof held !== 'boolean' || typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < (held ? 1 : 0)
+    || (changedAtMs !== null && (typeof changedAtMs !== 'number' || !Number.isSafeInteger(changedAtMs) || changedAtMs < 0)))
+    throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  return Object.freeze({ held, generation, changedAtMs: changedAtMs as number | null });
+}
+/** Sweep pages are content-free: target names, run identities and fixed outcome codes only. */
+function fleetSweep(value: unknown, limit: number): WorkflowFleetSweepRecord {
+  let raw: JsonObject; try { raw = object(value, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['outcomes', 'nextCursor']);
+  if (!Array.isArray(raw['outcomes']) || raw['outcomes'].length > limit) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  const outcomes = raw['outcomes'].map(entry => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    const failed = entry['outcome'] === 'failed'; workflowExact(entry, failed ? ['target', 'runId', 'outcome', 'code'] : ['target', 'runId', 'outcome']);
+    if (typeof entry['target'] !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(entry['target']) || typeof entry['runId'] !== 'string'
+      || !/^[a-f0-9]{64}$/.test(entry['runId']) || (failed ? typeof entry['code'] !== 'string' || !/^[A-Z][A-Z_]{0,39}$/.test(entry['code'])
+        : !fleetOutcomes.has(String(entry['outcome'])))) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    return Object.freeze({ ...entry }) as unknown as WorkflowFleetSweepOutcomeRecord;
+  });
+  let nextCursor: JsonObject | null = null;
+  if (raw['nextCursor'] !== null) { try { nextCursor = object(raw['nextCursor'], 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); } }
+  return Object.freeze({ outcomes: Object.freeze(outcomes), nextCursor });
 }
 function workflowIndexRecord(value: unknown): WorkflowIndexRecord {
   let raw: JsonObject; try { raw = object(value, 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
@@ -288,6 +331,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       throw new Error('Workflow pause transport requires one exact pause callback.');
     return Object.freeze({ pause: fields['pause'].value as WorkflowPauseTransport['pause'] });
   })();
+  const workflowFleet: WorkflowFleetTransport | undefined = (() => {
+    if (options.workflowFleet === undefined) return undefined;
+    if (options.workflowFleet === null || typeof options.workflowFleet !== 'object') throw new Error('Workflow fleet transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowFleet); const names = ['inspect', 'hold', 'release', 'sweep'] as const;
+    if (Reflect.ownKeys(fields).length !== names.length || names.some(name => !fields[name] || !('value' in fields[name]!) || typeof fields[name]!.value !== 'function'))
+      throw new Error('Workflow fleet transport requires exact inspect, hold, release and sweep callbacks.');
+    return Object.freeze(Object.fromEntries(names.map(name => [name, fields[name]!.value])) as unknown as WorkflowFleetTransport);
+  })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
     assertAgent(config.agent);
@@ -358,7 +409,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 8 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 9 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -466,6 +517,39 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const items = page['items'].map(workflowIndexRecord); if (new Set(items.map(item => item.runId)).size !== items.length)
         throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ items, next: page['next'] });
+    }
+    const fleetMatch = /^\/v1\/workflow-fleet(?:\/(hold|release|sweeps\/pause|sweeps\/resume))?$/.exec(url.pathname);
+    if (fleetMatch && request.method === (fleetMatch[1] === undefined ? 'GET' : 'POST')) {
+      const action = fleetMatch[1] ?? 'inspect'; const capability = action === 'inspect' ? 'workflows:read' : 'workflows:fleet';
+      requireCapability(identity, capability); if (!workflowFleet) throw new HttpFailure(404, 'NOT_FOUND');
+      let cursor: JsonObject | null = null; let limit = 0; const sweep = action.startsWith('sweeps/');
+      if (action !== 'inspect') {
+        const data = await body(request, signal);
+        if (!sweep) exact(data, []);
+        else {
+          exact(data, ['cursor', 'limit']);
+          if (typeof data['limit'] !== 'number' || !Number.isSafeInteger(data['limit']) || data['limit'] < 1 || data['limit'] > 128) throw new HttpFailure(400, 'INVALID_REQUEST');
+          limit = data['limit']; if (data['cursor'] !== null) cursor = object(data['cursor'], 4_096);
+        }
+      }
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
+      const base = Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId, signal });
+      const call = (): Promise<unknown> => action === 'inspect' ? workflowFleet.inspect(base) : action === 'hold' ? workflowFleet.hold(base)
+        : action === 'release' ? workflowFleet.release(base)
+          : workflowFleet.sweep(Object.freeze({ ...base, phase: action === 'sweeps/pause' ? 'pause' as const : 'resume' as const, cursor, limit }));
+      const operation = Promise.resolve().then(call).finally(() => { workflowOperations--; });
+      let result: unknown;
+      try { result = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      assertActive(signal); requireCapability(identity, capability);
+      if (sweep) {
+        let raw: JsonObject; try { raw = object(result, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+        if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw new HttpFailure(409, 'WORKFLOW_CONFLICT');
+        workflowExact(raw, ['status', 'sweep']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+        return response({ sweep: fleetSweep(raw['sweep'], limit) });
+      }
+      const fleet = fleetHold(result);
+      if ((action === 'hold' && !fleet.held) || (action === 'release' && fleet.held)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      return response({ fleet });
     }
     const workflowMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})$/.exec(url.pathname);
     if (workflowMatch && request.method === 'GET') {

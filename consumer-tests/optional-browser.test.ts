@@ -47,6 +47,8 @@ export async function verifyBrowserClient(transport: typeof fetch): Promise<numb
   if ((await pauseController.pause({ commandId: 'pause-1' })).revision !== 6 || pauseController.getSnapshot().action !== 'pause')
     throw new Error('Workflow pause state failed.');
   pauseController.dispose();
+  if (!(await client.holdWorkflowFleet()).held || (await client.sweepWorkflowFleet('pause', { cursor: null })).outcomes.length !== 1)
+    throw new Error('Workflow fleet control failed.');
   return agents.length;
 }
 

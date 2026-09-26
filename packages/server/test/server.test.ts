@@ -655,6 +655,64 @@ describe('authenticated durable workflow pause', () => {
   });
 });
 
+describe('authenticated workflow fleet control', () => {
+  const fleetIdentity = () => identity({ capabilities: ['workflows:read', 'workflows:control', 'workflows:fleet'] });
+  const runId = 'c'.repeat(64);
+  const adapter = (overrides: Partial<NonNullable<AgentServerOptions['workflowFleet']>> = {}) => ({
+    inspect: vi.fn(async () => ({ held: false, generation: 0, changedAtMs: null })),
+    hold: vi.fn(async () => ({ held: true, generation: 1, changedAtMs: 5 })),
+    release: vi.fn(async () => ({ held: false, generation: 1, changedAtMs: 6 })),
+    sweep: vi.fn(async () => ({ status: 'applied' as const, sweep: { outcomes: [{ target: 'lifecycle', runId, outcome: 'paused' as const }], nextCursor: { page: 2 } } })),
+    ...overrides,
+  });
+  const post = (path: string, value: unknown) => request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
+
+  it('reads with workflows:read and holds, releases and sweeps with workflows:fleet only', async () => {
+    const fleet = adapter(); const value = server({ authenticate: async () => fleetIdentity(), workflowFleet: fleet });
+    expect(await json(await value.fetch(request('/v1/workflow-fleet')))).toEqual({ fleet: { held: false, generation: 0, changedAtMs: null } });
+    expect(await json(await value.fetch(post('/v1/workflow-fleet/hold', {})))).toEqual({ fleet: { held: true, generation: 1, changedAtMs: 5 } });
+    expect(fleet.hold).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'] }));
+    expect(await json(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: { page: 1 }, limit: 16 }))))
+      .toEqual({ sweep: { outcomes: [{ target: 'lifecycle', runId, outcome: 'paused' }], nextCursor: { page: 2 } } });
+    expect(fleet.sweep).toHaveBeenCalledWith(expect.objectContaining({ phase: 'pause', cursor: { page: 1 }, limit: 16 }));
+    expect((await json(await value.fetch(post('/v1/workflow-fleet/release', {}))))['fleet']).toMatchObject({ held: false });
+    const controlOnly = adapter(); const denied = server({ workflowFleet: controlOnly });
+    for (const path of ['/v1/workflow-fleet/hold', '/v1/workflow-fleet/release', '/v1/workflow-fleet/sweeps/resume']) {
+      await error(await denied.fetch(request(path, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    }
+    expect(controlOnly.hold).not.toHaveBeenCalled(); expect(controlOnly.release).not.toHaveBeenCalled(); expect(controlOnly.sweep).not.toHaveBeenCalled();
+    expect((await denied.fetch(request('/v1/workflow-fleet'))).status).toBe(200);
+    await error(await server({ authenticate: async () => fleetIdentity() }).fetch(post('/v1/workflow-fleet/hold', {})), 404, 'NOT_FOUND');
+  });
+
+  it('maps a wrong-phase sweep to conflict and rejects malformed commands before the adapter', async () => {
+    const fleet = adapter({ sweep: vi.fn(async () => ({ status: 'conflict' as const })) });
+    const value = server({ authenticate: async () => fleetIdentity(), workflowFleet: fleet });
+    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/resume', { cursor: null, limit: 8 })), 409, 'WORKFLOW_CONFLICT'); expect(fleet.sweep).toHaveBeenCalledOnce();
+    await error(await value.fetch(post('/v1/workflow-fleet/hold', { force: true })), 400, 'INVALID_REQUEST');
+    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: null, limit: 129 })), 400, 'INVALID_REQUEST');
+    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: { value: 'x'.repeat(5_000) }, limit: 8 })), 400, 'INVALID_REQUEST');
+    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: [], limit: 8 })), 400, 'INVALID_REQUEST');
+    expect(fleet.sweep).toHaveBeenCalledOnce(); expect(fleet.hold).not.toHaveBeenCalled();
+    expect(() => server({ workflowFleet: { ...adapter(), extra: () => undefined } as never })).toThrow();
+  });
+
+  it('fails closed on inconsistent or content-bearing acknowledgements', async () => {
+    const cases: [string, unknown, Partial<NonNullable<AgentServerOptions['workflowFleet']>>][] = [
+      ['/v1/workflow-fleet/hold', {}, { hold: vi.fn(async () => ({ held: false, generation: 0, changedAtMs: null })) }],
+      ['/v1/workflow-fleet/release', {}, { release: vi.fn(async () => ({ held: true, generation: 1, changedAtMs: 1 })) }],
+      ['/v1/workflow-fleet/sweeps/pause', { cursor: null, limit: 1 }, { sweep: vi.fn(async () => ({ status: 'applied' as const, sweep: {
+        outcomes: [{ target: 'lifecycle', runId, outcome: 'paused' as const, output: 'PRIVATE' }], nextCursor: null } }) as never) }],
+      ['/v1/workflow-fleet/sweeps/pause', { cursor: null, limit: 1 }, { sweep: vi.fn(async () => ({ status: 'applied' as const, sweep: {
+        outcomes: [{ target: 'lifecycle', runId, outcome: 'paused' as const }, { target: 'lifecycle', runId: 'd'.repeat(64), outcome: 'paused' as const }], nextCursor: null } })) }],
+    ];
+    for (const [path, body, overrides] of cases) {
+      const value = server({ authenticate: async () => fleetIdentity(), workflowFleet: adapter(overrides) });
+      const response = await value.fetch(post(path, body)); await error(response, 503, 'WORKFLOW_TRANSPORT_INVALID');
+    }
+  });
+});
+
 describe('origin and credential transport boundaries', () => {
   it('requires an exact public destination origin', async () => {
     const authenticate = vi.fn(async () => identity()); const value = server({ authenticate });

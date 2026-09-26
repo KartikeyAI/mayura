@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { createClient, ClientError, escapeHtmlText, type ClientEvent, type ClientOptions, type ClientSchema } from '../src/index.js';
+import { createClient, ClientError, escapeHtmlText, type ClientEvent, type ClientJson, type ClientOptions, type ClientSchema } from '../src/index.js';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '../../server/src/index.js';
 import { createWorkflowGraphProjection } from '../src/workflows.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
+import { createSqliteStore } from '../../storage/dist/index.js';
+import { createWorkflowFleetControl, lifecycleFleetTarget } from '../../workflows/dist/index.js';
+import { createWorkflowLifecycleFleetRuntime, defineWorkflowLifecycle } from '../../workflows/dist/lifecycle.js';
+import { MayuraError } from '../../core/dist/index.js';
 import type { Guard, JsonValue, ModelAdapter, ModelResponse, Schema } from '../../core/src/index.js';
 
 const origin = 'https://mayura.test';
@@ -39,6 +43,7 @@ function fixture(options: {
   workflowSignals?: AgentServerOptions['workflowSignals'];
   workflowResumes?: AgentServerOptions['workflowResumes'];
   workflowPauses?: AgentServerOptions['workflowPauses'];
+  workflowFleet?: AgentServerOptions['workflowFleet'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -51,7 +56,7 @@ function fixture(options: {
   });
   const server = createAgentServer({ publicOrigin: origin, agents: [{ agent, permissions: { allow: ['model:fixture.model','tool:fixture.write','effect:write'] } }],
     authenticate: options.authenticate ?? (async ({ token }) => token === 'test-token' ? {
-      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control'], expiresAtMs: Date.now() + 60_000,
+      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control','workflows:fleet'], expiresAtMs: Date.now() + 60_000,
     } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
     ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
     ...(options.workflowIndex ? { workflowIndex: options.workflowIndex } : {}),
@@ -59,6 +64,7 @@ function fixture(options: {
     ...(options.workflowSignals ? { workflowSignals: options.workflowSignals } : {}),
     ...(options.workflowResumes ? { workflowResumes: options.workflowResumes } : {}),
     ...(options.workflowPauses ? { workflowPauses: options.workflowPauses } : {}),
+    ...(options.workflowFleet ? { workflowFleet: options.workflowFleet } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -265,6 +271,73 @@ describe('browser durable workflow view client', () => {
     const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
     await expect(conflict.client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
     expect(conflict.transport).toHaveBeenCalledOnce();
+  });
+
+  it('holds, sweeps and releases the fleet through the authenticated boundary', async () => {
+    const runId2 = 'e'.repeat(64);
+    const workflowFleet = {
+      inspect: vi.fn(async () => ({ held: false, generation: 0, changedAtMs: null })),
+      hold: vi.fn(async () => ({ held: true, generation: 1, changedAtMs: 10 })),
+      release: vi.fn(async () => ({ held: false, generation: 1, changedAtMs: 20 })),
+      sweep: vi.fn(async (input: { readonly cursor: unknown }) => ({ status: 'applied' as const, sweep: input.cursor === null
+        ? { outcomes: [{ target: 'graphs', runId: runId2, outcome: 'paused' as const }], nextCursor: { next: 1 } }
+        : { outcomes: [{ target: 'graphs', runId: runId2, outcome: 'failed' as const, code: 'CONFLICT' }], nextCursor: null } })),
+    };
+    const { client, transport } = fixture({ workflowFleet });
+    expect(await client.workflowFleet()).toEqual({ held: false, generation: 0, changedAtMs: null });
+    expect(await client.holdWorkflowFleet()).toMatchObject({ held: true, generation: 1 });
+    const first = await client.sweepWorkflowFleet('pause', { cursor: null, limit: 4 });
+    expect(first).toEqual({ outcomes: [{ target: 'graphs', runId: runId2, outcome: 'paused' }], nextCursor: { next: 1 } });
+    expect((await client.sweepWorkflowFleet('pause', { cursor: first.nextCursor })).nextCursor).toBeNull();
+    expect(workflowFleet.sweep).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'pause', cursor: { next: 1 }, limit: 32 }));
+    expect((await client.releaseWorkflowFleet()).held).toBe(false);
+    await expect(client.sweepWorkflowFleet('pause', { cursor: null, limit: 0 })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.sweepWorkflowFleet('drain' as never, { cursor: null })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(transport).toHaveBeenCalledTimes(5);
+    const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
+    await expect(conflict.client.sweepWorkflowFleet('resume', { cursor: null })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    expect(conflict.transport).toHaveBeenCalledOnce();
+    const lying = fakeClient(() => jsonResponse({ fleet: { held: false, generation: 0, changedAtMs: null } }));
+    await expect(lying.client.holdWorkflowFleet()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('pauses and resumes a real lifecycle fleet end to end through the authenticated adapter', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    try {
+      const scope = { principalId: 'developer', projectId: 'project' };
+      const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'fleet-e2e', validate: value => ({ value: value as JsonValue }) } };
+      const timer = defineWorkflowLifecycle({ id: 'e2e-timer', version: '1', input: any, output: any,
+        nodes: [{ kind: 'timer', id: 'wake', fireAtMs: { kind: 'input', path: ['fireAtMs'] } }], result: { kind: 'step', stepId: 'wake', path: [] } });
+      const runtime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0, now: () => 100 });
+      const run = await runtime.submit(timer, { input: { fireAtMs: 500 }, idempotencyKey: 'e2e' }); await runtime.runUntilSettled(timer, run.id);
+      const control = createWorkflowFleetControl({ store, scope }); const targets = [lifecycleFleetTarget(runtime)];
+      // The same adapter shape documented in docs/how-to/fleet-control.md.
+      const workflowFleet: NonNullable<AgentServerOptions['workflowFleet']> = {
+        inspect: () => control.inspect(), hold: () => control.hold(), release: () => control.release(),
+        sweep: async ({ phase, cursor, limit }) => {
+          try {
+            const page = phase === 'pause' ? await control.sweepPause(targets, { cursor: cursor as never, limit })
+              : await control.sweepResume(targets, { cursor: cursor as never, limit });
+            return { status: 'applied', sweep: page as never };
+          } catch (error) { if (error instanceof MayuraError && error.code === 'CONFLICT') return { status: 'conflict' }; throw error; }
+        },
+      };
+      const { client } = fixture({ workflowFleet });
+      const drain = async (phase: 'pause' | 'resume') => {
+        const outcomes: unknown[] = []; let cursor: ClientJson | null = null; let pages = 0;
+        do { const page = await client.sweepWorkflowFleet(phase, { cursor, limit: 64 }); outcomes.push(...page.outcomes); cursor = page.nextCursor; pages++; } while (cursor && pages < 600);
+        return outcomes;
+      };
+      await expect(client.sweepWorkflowFleet('pause', { cursor: null })).rejects.toMatchObject({ status: 409 });
+      expect(await client.holdWorkflowFleet()).toMatchObject({ held: true, generation: 1 });
+      expect(await drain('pause')).toEqual([{ target: 'lifecycle', runId: run.id, outcome: 'paused' }]);
+      expect((await runtime.inspect(run.id)).status).toBe('paused');
+      await expect(client.sweepWorkflowFleet('resume', { cursor: null })).rejects.toMatchObject({ status: 409 });
+      expect((await client.releaseWorkflowFleet()).held).toBe(false);
+      expect(await drain('resume')).toEqual([{ target: 'lifecycle', runId: run.id, outcome: 'resumed' }]);
+      expect((await runtime.inspect(run.id)).status).toBe('waiting'); expect(await client.workflowFleet()).toMatchObject({ held: false, generation: 1 });
+      runtime.close();
+    } finally { await store.close(); }
   });
 
   it('requests one operator pause and never retries a conflict', async () => {

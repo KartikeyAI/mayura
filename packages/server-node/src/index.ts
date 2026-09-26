@@ -37,6 +37,7 @@ export async function listenAgentServer(options: LocalServerOptions): Promise<Lo
   ...(options.workflowSignals === undefined ? {} : { workflowSignals: options.workflowSignals }),
   ...(options.workflowResumes === undefined ? {} : { workflowResumes: options.workflowResumes }),
   ...(options.workflowPauses === undefined ? {} : { workflowPauses: options.workflowPauses }),
+  ...(options.workflowFleet === undefined ? {} : { workflowFleet: options.workflowFleet }),
   ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: Object.freeze([...options.allowedOrigins]) }),
   ...(options.limits === undefined ? {} : { limits: Object.freeze({ ...options.limits }) }),
   };

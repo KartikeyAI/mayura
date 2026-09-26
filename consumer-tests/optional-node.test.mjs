@@ -112,9 +112,12 @@ const server = await listenAgentServer({
   workflowSignals: { deliver: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
   workflowResumes: { resume: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1 } }) },
   workflowPauses: { pause: async input => ({ status: 'applied', workflow: { ...workflowView, revision: input.revision + 1, status: 'paused' } }) },
+  workflowFleet: { inspect: async () => ({ held: false, generation: 0, changedAtMs: null }), hold: async () => ({ held: true, generation: 1, changedAtMs: 1 }),
+    release: async () => ({ held: false, generation: 1, changedAtMs: 2 }),
+    sweep: async input => ({ status: 'applied', sweep: { outcomes: [{ target: 'lifecycle', runId: workflowRunId, outcome: input.phase === 'pause' ? 'paused' : 'resumed' }], nextCursor: null } }) },
   authenticate: async ({ token: supplied, signal }) => {
     if (signal.aborted || expiresAtMs <= Date.now() || !/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied, 'hex'), secret)) return null;
-    return { scope: { principalId: 'consumer-user', projectId: 'consumer-project' }, agentIds: ['consumer.http'], capabilities: ['runs:read', 'runs:submit', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control'], expiresAtMs };
+    return { scope: { principalId: 'consumer-user', projectId: 'consumer-project' }, agentIds: ['consumer.http'], capabilities: ['runs:read', 'runs:submit', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet'], expiresAtMs };
   },
 });
 let httpReport;
@@ -138,6 +141,9 @@ try {
     { commandId: 'packed-signal' })).revision, 4);
   assert.equal((await client.resumeWorkflow(workflowRunId, 4, { commandId: 'packed-resume' })).revision, 5);
   assert.equal((await client.pauseWorkflow(workflowRunId, 5, { commandId: 'packed-pause' })).status, 'paused');
+  assert.equal((await client.holdWorkflowFleet()).held, true);
+  assert.equal((await client.sweepWorkflowFleet('pause', { cursor: null })).outcomes[0].outcome, 'paused');
+  assert.equal((await client.releaseWorkflowFleet()).held, false); assert.equal((await client.workflowFleet()).generation, 0);
   assert.equal(humanActor, 'consumer-user');
   const denied = createClient({ baseUrl: server.origin, token: () => 'incorrect' });
   await assert.rejects(denied.agents(), { code: 'HTTP_ERROR', status: 401 });
@@ -150,6 +156,6 @@ try {
   assert(!JSON.stringify({ result, events }).includes(token)); assert(!JSON.stringify({ result, events }).includes('PRIVATE'));
   assert.equal(globalThis.Request, globals.Request); assert.equal(globalThis.Response, globals.Response); assert.equal(globalThis.fetch, globals.fetch);
   httpReport = { status: result.status, events: events.length, explicitRetryDeduplicated: true, operationalSurface: true, humanTransport: true,
-    workflowTransport: true, workflowIndex: true, workflowControls: true, workflowSignals: true, workflowResume: true, workflowPause: true };
+    workflowTransport: true, workflowIndex: true, workflowControls: true, workflowSignals: true, workflowResume: true, workflowPause: true, workflowFleet: true };
 } finally { await server.close(); }
 console.log(JSON.stringify({ status: externalConsumerMatrix ? 'passed' : 'failed', batchOutputReferences: true, externalConsumerMatrix, observation: observationReport, http: httpReport }));
