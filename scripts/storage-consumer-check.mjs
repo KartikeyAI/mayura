@@ -102,7 +102,7 @@ function inspectMayura(name, files) {
     assert(!version.startsWith('workspace:'), 'Unresolved workspace protocol in archive.');
     assert.equal(version, dependency.startsWith('@mayura/') ? manifest.version : external[dependency]?.[0], 'Archive dependency must retain the exact qualified version.');
   }
-  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./agents','./children','./ephemeral','./graphs']:['.'];
+  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./agents','./children','./composites','./ephemeral','./graphs','./lifecycle','./loops','./sagas']:['.'];
   assert.deepEqual(Object.keys(manifest.exports ?? {}).sort(), expectedExports, 'Public export set changed.');
   let maps = 0;
   for (const [path, bytes] of files) {
