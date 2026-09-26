@@ -6,7 +6,7 @@ An independent TypeScript framework for building agents, typed tools and durable
 
 ## Developing this checkout
 
-Use Node.js 24.14.1 and pnpm 10.17.1 for the currently qualified local environment. Consumer applications will not need this workspace build system.
+Mayura supports Node.js 22 LTS (>= 22.12.0) and 24 (>= 24.14.1); the maintainer workspace uses Node.js 24.14.1 and pnpm 10.17.1. Consumer applications will not need this workspace build system.
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts

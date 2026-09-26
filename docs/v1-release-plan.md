@@ -49,7 +49,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 |---|---|
 | E1 Local inspector UI over the authenticated read APIs | ⬜ |
 | E2 Every package declared stable in `compatibility/api-stability.json` after a surface audit, with support window and deprecation policy | ⬜ |
-| E3 Node.js 22 LTS and 24 support: engines range, compatibility fixes, CI matrix | ⬜ |
+| E3 Node.js 22 LTS and 24 support: engines range, compatibility fixes, CI matrix. Local evidence: Node.js 22.23.2 packed install and server/worker image smoke ([matrix](support-matrix.md)); the full unit suite on 22 runs in hosted CI (F7) | ✅ |
 
 ## F. Qualification and release operations (§21.3, §21.4)
 

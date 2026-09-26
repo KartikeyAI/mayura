@@ -16,7 +16,7 @@
     "./composites": { "types": "./dist/composites.d.ts", "import": "./dist/composites.js" },
     "./agents": { "types": "./dist/agents.d.ts", "import": "./dist/agents.js" }
   },
-  "engines": { "node": ">=24.14.1 <25" },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
   "dependencies": { "@mayura/core": "workspace:*", "@mayura/tools": "workspace:*", "@mayura/storage-contracts": "workspace:*", "@mayura/runtime": "workspace:*" },
   "devDependencies": { "@mayura/storage": "workspace:*", "@mayura/server": "workspace:*" }
 }

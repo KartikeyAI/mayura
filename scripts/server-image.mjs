@@ -1,6 +1,6 @@
 // Build the Mayura server/worker container image from locally packed archives, offline, and optionally
 // smoke-test a compose deployment (PostgreSQL, one server, two leader-elected workers).
-//   node scripts/server-image.mjs [--smoke]
+//   node scripts/server-image.mjs [--smoke] [--node 22|24]
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -14,7 +14,14 @@ import { request as httpRequest } from 'node:http';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const baseImage = 'node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e4431297a24d246b8add4d5';
+// Supported Node.js lines, each pinned by digest. `--node 22` qualifies the same closure on the 22 LTS line.
+const baseImages = {
+  24: 'node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e4431297a24d246b8add4d5',
+  22: 'node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85',
+};
+const nodeLine = process.argv.includes('--node') ? process.argv[process.argv.indexOf('--node') + 1] : '24';
+assert(Object.hasOwn(baseImages, nodeLine), `Unsupported --node line: ${nodeLine}`);
+const baseImage = baseImages[nodeLine];
 const postgresImage = readFileSync(join(workspace, 'compose.test.yaml'), 'utf8').match(/image:\s*(postgres@sha256:[a-f0-9]{64})/)[1];
 const roots = ['@mayura/cli', '@mayura/core', '@mayura/server-node', '@mayura/storage-contracts', '@mayura/storage-postgres', '@mayura/workflows'];
 // Reviewed third-party closure: exact versions, no lifecycle scripts. Changes require a dependency review.
