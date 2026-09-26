@@ -13,7 +13,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 | A3 Durable leadership lease so several worker replicas drive a scope without duplicated host work ([spec](specs/workers.md)) | ✅ |
 | A4 Worker supervisor: hosts/coordinators under leadership, readiness, drain | ✅ |
 | A5 CLI `serve` and `worker` commands over an explicit application module | ✅ |
-| A6 Container image and compose profile (server, worker, PostgreSQL) with health checks | ⬜ |
+| A6 Container image and compose profile (server, worker, PostgreSQL) with health checks ([guide](how-to/production-deployment.md)) | ✅ |
 | A7 Versioned storage schema, `migrate` command, backup/restore runbook with a restore drill | ⬜ |
 | Worker draining (bounded `drain`) | ✅ |
 | Operator pause, fleet hold and authenticated transport | ✅ |

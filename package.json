@@ -22,6 +22,7 @@
     "model:live-check": "node examples/openai-agent.mjs",
     "release:artifacts": "node scripts/release-artifact-check.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
+    "server:image": "node scripts/server-image.mjs",
     "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },
   "devDependencies": {
