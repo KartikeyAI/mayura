@@ -27,8 +27,8 @@ Before this slice, `Budget.reserve` reserved money and consumed a call immediate
 Implemented authoring API:
 
 ```ts
-import { defineModerationGuard } from "@mayura/guardrails";
-import { defineAgent, createRuntime } from "@mayura/runtime";
+import { defineModerationGuard } from "mayura/guardrails";
+import { defineAgent, createRuntime } from "mayura/runtime";
 
 const moderation = defineModerationGuard({
   id: "content-policy",
@@ -67,7 +67,7 @@ The existing `createModerationGuard`/`createAuxiliaryCheck` helpers retain expli
 The core type is an opaque handle whose visible fields contain correlation metadata only. A module-private registration, not the discriminator or a copied TypeScript shape, establishes its identity:
 
 ```ts
-// @mayura/core: metadata/types only; no callable executor on this handle.
+// mayura/core: metadata/types only; no callable executor on this handle.
 interface ManagedGuardDefinition {
   readonly kind: "mayura.managed-guard";
   readonly id: string;
@@ -79,7 +79,7 @@ interface ManagedModerationVerdict {
 }
 type AgentGuard = Guard | ManagedGuardDefinition;
 
-// Additive substitutions in @mayura/runtime's existing generic agent types:
+// Additive substitutions in mayura/runtime's existing generic agent types:
 // AgentOptions<I, O>.guards?: {
 //   readonly input?: readonly AgentGuard[];
 //   readonly output?: readonly AgentGuard[];
@@ -90,7 +90,7 @@ type AgentGuard = Guard | ManagedGuardDefinition;
 // }
 ```
 
-`@mayura/guardrails.defineModerationGuard` accepts the authoring fields in §3 and returns `ManagedGuardDefinition`; its public options do not expose input/output schema replacement in this first moderation-only slice. The helper supplies the existing identity JSON input schema and strict moderation-result schema: exactly `decision` and `categories`, an `allow`/`block` decision, and at most 32 unique category IDs matching `/^[a-z0-9][a-z0-9._-]{0,63}$/`. No reason strings, extra fields, coercion or transforms are introduced. The verdict shape remains structurally compatible with the existing guardrails `ModerationVerdict`, rather than introducing another classification vocabulary.
+`mayura/guardrails.defineModerationGuard` accepts the authoring fields in §3 and returns `ManagedGuardDefinition`; its public options do not expose input/output schema replacement in this first moderation-only slice. The helper supplies the existing identity JSON input schema and strict moderation-result schema: exactly `decision` and `categories`, an `allow`/`block` decision, and at most 32 unique category IDs matching `/^[a-z0-9][a-z0-9._-]{0,63}$/`. No reason strings, extra fields, coercion or transforms are introduced. The verdict shape remains structurally compatible with the existing guardrails `ModerationVerdict`, rather than introducing another classification vocabulary.
 
 Require an explicit `egressGuards` list on the new factory, allowing `[]` only as an explicit choice that supplies no local screening guarantee; every supplied local guard is mandatory. This does not change existing standalone helper defaults. `GuardContext` retains its existing run/call/scope/signal/boundary fields and does not acquire model, check or destination descriptors. Destination-specific local guards must capture the application's explicitly selected and pinned adapter/destination policy when defined. The framework does not infer a destination URL or certify that arbitrary content is safe to send there.
 
@@ -98,7 +98,7 @@ Require an explicit `egressGuards` list on the new factory, allowing `[]` only a
 
 ### 3.2 Explicit trusted-host core bridge
 
-The `@mayura/core/host` subpath exports the following small integration seam. It shares the same core module registrations as the main entry point; neither package relies on an inaccessible private import, a global symbol registry or an implicitly shared context slot.
+The `mayura/core/host` subpath exports the following small integration seam. It shares the same core module registrations as the main entry point; neither package relies on an inaccessible private import, a global symbol registry or an implicitly shared context slot.
 
 ```ts
 interface ManagedGuardLimits {
@@ -142,7 +142,7 @@ The runtime reads a recognized descriptor into its private run-state evaluation 
 
 A missing descriptor is never an allow verdict. An object declaring `kind: 'mayura.managed-guard'` without a matching registration is invalid and cannot fall back to a local callback. Consumers that do not support this profile—standalone tool guard arrays, ordinary processor/pipeline guard positions, explicit caller-wired auxiliary helpers and durable runtimes—reject managed handles before dispatch rather than call a synthetic executor, ignore them or allocate a new budget. Preserve existing local-guard compatibility; rejection of a managed marker must not execute its supplied getters or `check` method.
 
-The host bridge is the only cross-package recognition mechanism in this proposal. `@mayura/guardrails` supplies definitions, core supplies identity and types, and `@mayura/runtime` owns invocation admission and execution. No managed gateway is added to the public context. Duplicate copies of core deliberately fail closed instead of accepting serialized brands; packed-consumer tests must verify the supported package graph resolves the shared registration correctly.
+The host bridge is the only cross-package recognition mechanism in this proposal. `mayura/guardrails` supplies definitions, core supplies identity and types, and `mayura/runtime` owns invocation admission and execution. No managed gateway is added to the public context. Duplicate copies of core deliberately fail closed instead of accepting serialized brands; packed-consumer tests must verify the supported package graph resolves the shared registration correctly.
 
 ## 4. Mandatory prerequisite: atomic reservation bundles
 
@@ -206,13 +206,13 @@ The runtime therefore keeps a private per-operation kind-hold registry separate 
 The existing `InvokeToolContext.budget` remains a genuine `Budget`. Do not replace it with a facade or let the caller provide a `Reservation`, `reserve` implementation or arbitrary ticket-consumption callback. The host APIs are:
 
 ```ts
-// @mayura/core/host: validates private ticket and exact account identity.
+// mayura/core/host: validates private ticket and exact account identity.
 function assertBudgetTicket(
   value: unknown,
   owner: Budget,
 ): asserts value is BudgetTicket;
 
-// @mayura/tools/host: captured, opaque binding; no public start/settle methods.
+// mayura/tools/host: captured, opaque binding; no public start/settle methods.
 interface ToolBudgetTicketBinding {
   readonly kind: "mayura.tool-budget-ticket";
 }
@@ -222,7 +222,7 @@ function bindToolBudgetTicket(
   context: Pick<InvokeToolContext, "budget" | "runId" | "callId" | "scope" | "signal">,
 ): ToolBudgetTicketBinding;
 
-// Additive trusted option in the existing @mayura/tools invocation contract:
+// Additive trusted option in the existing mayura/tools invocation contract:
 // InvokeToolContext.budgetBinding?: ToolBudgetTicketBinding;
 ```
 
@@ -281,7 +281,7 @@ The implemented observer contract reuses `model.started` and `model.completed` w
 
 ## 9. Profiles and package independence
 
-Managed definitions are not tied to Arth or a concrete provider. `@mayura/guardrails` remains optional and core-based; core owns the minimal identity/admission contracts, while the runtime implements execution. The base SDK does not gain a mandatory guardrail/provider/native/database dependency.
+Managed definitions are not tied to Arth or a concrete provider. `mayura/guardrails` remains optional and core-based; core owns the minimal identity/admission contracts, while the runtime implements execution. The base SDK does not gain a mandatory guardrail/provider/native/database dependency.
 
 The same definition may eventually be bound by another qualified runtime profile, but only the ephemeral agent profile is implemented by this slice. A durable or standalone caller lacking the managed capability fails explicitly before side effects; it cannot fall back to a fresh volatile account. Existing durable/scheduled format-2 storage is untouched. Durable reservations, call tickets, restart reconciliation and durable auxiliary evidence require a separate transaction/version contract.
 

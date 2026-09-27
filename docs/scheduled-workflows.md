@@ -12,11 +12,11 @@ Nothing is automatically migrated. Both durable profiles use the same finite `de
 
 ## Minimal adoption
 
-Import workflow APIs from `@mayura/workflows`, tools from `@mayura/tools`, and an explicitly chosen reference adapter from `@mayura/storage`. Packages are still private development builds; registry installation/publication is not yet available.
+Import workflow APIs from `mayura/workflows`, tools from `mayura/tools`, and an explicitly chosen reference adapter from `mayura/storage`. Packages are still private development builds; registry installation/publication is not yet available.
 
 ```ts
-import { createSqliteStore } from '@mayura/storage';
-import { createScheduledWorkflowRuntime } from '@mayura/workflows';
+import { createSqliteStore } from 'mayura/storage';
+import { createScheduledWorkflowRuntime } from 'mayura/workflows';
 
 const store = createSqliteStore({ filename: './mayura.sqlite' });
 await store.initialize();

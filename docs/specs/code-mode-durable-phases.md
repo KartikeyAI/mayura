@@ -2,7 +2,7 @@
 
 Status: experimental bridge to the existing scheduled-workflow profile.
 
-`@mayura/code-mode-workflows` defines finite workflows from genuine Code Program, Code Mode and durable audit handles. It adds no database driver. Run the returned definition with `createScheduledWorkflowRuntime` and an explicitly selected durable storage adapter.
+`mayura/code-mode-workflows` defines finite workflows from genuine Code Program, Code Mode and durable audit handles. It adds no database driver. Run the returned definition with `createScheduledWorkflowRuntime` and an explicitly selected durable storage adapter.
 
 ```ts
 const workflow = defineDurableCodeWorkflow({

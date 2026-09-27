@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createRuntime, defineAgent } from '@mayura/sdk';
+import { createRuntime, defineAgent } from 'mayura';
 import { defineModerationGuard } from '../packages/guardrails/dist/index.js';
 
 // Credential-free adapters establish mechanics only; they do not perform semantic moderation.

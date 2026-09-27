@@ -1,4 +1,4 @@
-# @mayura/provider-anthropic
+# mayura/provider-anthropic
 
 Explicit Anthropic Messages adapter for Mayura. It uses the fixed Anthropic API destination, never discovers ambient credentials, disables streaming, exposes only caller-declared client tools, requires strict portable JSON Schemas, and accounts for ordinary plus cache creation/read input tokens before accepting model output.
 

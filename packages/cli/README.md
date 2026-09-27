@@ -1,4 +1,4 @@
-# @mayura/cli
+# mayura/cli
 
 Node-only Mayura project initialization and inspection CLI. Initialization is plan-first: it prints every create/replace operation and a content-bound confirmation digest before it can write. Existing files are never replaced from a stale or unconfirmed plan.
 
@@ -31,5 +31,5 @@ Operational commands accept credentials only from piped stdin, never a command-l
 
 ## Running an application
 
-`mayura serve --app ./app.mjs` and `mayura worker --app ./app.mjs [--probe-port 9090] [--probe-host 0.0.0.0] [--drain-timeout-ms 30000]` import exactly the named regular `.js`/`.mjs` module. Its default export (see `defineMayuraApplication`) provides `server()` returning a running host such as `listenProductionServer(...)`, `worker()` returning a worker such as `createWorkflowWorker(...)`, and an optional `shutdown()` that closes storage. The application wires everything with its own installed Mayura packages; the CLI adds no dependency and owns only the process lifecycle: structured JSON status lines, worker `/livez` and `/readyz` probes (served by the application's own installed `@mayura/server-node`, so the CLI itself opens no listener), and graceful shutdown on `SIGINT`/`SIGTERM` (server close, or worker drain then lease release, followed by `shutdown()`). A second signal forces exit.
+`mayura serve --app ./app.mjs` and `mayura worker --app ./app.mjs [--probe-port 9090] [--probe-host 0.0.0.0] [--drain-timeout-ms 30000]` import exactly the named regular `.js`/`.mjs` module. Its default export (see `defineMayuraApplication`) provides `server()` returning a running host such as `listenProductionServer(...)`, `worker()` returning a worker such as `createWorkflowWorker(...)`, and an optional `shutdown()` that closes storage. The application wires everything with its own installed Mayura packages; the CLI adds no dependency and owns only the process lifecycle: structured JSON status lines, worker `/livez` and `/readyz` probes (served by the application's own installed `mayura/server-node`, so the CLI itself opens no listener), and graceful shutdown on `SIGINT`/`SIGTERM` (server close, or worker drain then lease release, followed by `shutdown()`). A second signal forces exit.
 

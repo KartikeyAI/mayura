@@ -3,12 +3,12 @@
 Install the optional React adapter and your application's React runtime/types:
 
 ```sh
-pnpm add @mayura/client @mayura/client-react react
+pnpm add mayura react
 pnpm add -D @types/react
 ```
 
 ```tsx
-import { MayuraHumanRequestCard, MayuraHumanResponseForm, MayuraRunSummary, MayuraWorkflowGraph } from '@mayura/client-react/components';
+import { MayuraHumanRequestCard, MayuraHumanResponseForm, MayuraRunSummary, MayuraWorkflowGraph } from 'mayura/client-react/components';
 
 export function OperationsView({ store, workflow, request, nowMs }: Props) {
   return <>

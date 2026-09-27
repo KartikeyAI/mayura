@@ -13,7 +13,7 @@ This advanced primitive is for framework/runtime and adapter authors. It does no
 An atomic bundle protects both money and future call slots before any operation begins. Competing children and ordinary reservations cannot take that capacity.
 
 ```ts
-import { Budget } from '@mayura/sdk';
+import { Budget } from 'mayura';
 
 const account = new Budget(10, 3);
 const bundle = account.reserveBundle([

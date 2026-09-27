@@ -23,11 +23,11 @@ Packages in this checkout remain private development artifacts; this guide does 
 
 ## Define and submit a graph
 
-Import `defineWorkflow` from `@mayura/workflows`, and the explicit profile from `@mayura/workflows/ephemeral`:
+Import `defineWorkflow` from `mayura/workflows`, and the explicit profile from `mayura/workflows/ephemeral`:
 
 ```ts
-import { defineWorkflow } from '@mayura/workflows';
-import { workflowAsAgent } from '@mayura/workflows/ephemeral';
+import { defineWorkflow } from 'mayura/workflows';
+import { workflowAsAgent } from 'mayura/workflows/ephemeral';
 
 const graph = defineWorkflow({
   id: 'normalize-text',
@@ -59,7 +59,7 @@ The default deterministic planner requires `model:mayura.workflow`; a custom `pl
 Ordinary nodes require `tool:<id>`, any declared effect grant, and every declared capability. The tool form additionally requires `tool:<wrapper-id>` and `agent:delegate`. Its configured child permissions are intersected with parent permissions: a child cannot regain authority absent from either side.
 
 ```ts
-import { workflowAsTool } from '@mayura/workflows/ephemeral';
+import { workflowAsTool } from 'mayura/workflows/ephemeral';
 
 const childTool = workflowAsTool(graph, {
   profile: 'ephemeral',

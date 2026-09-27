@@ -1,4 +1,4 @@
-# @mayura/code-mode
+# mayura/code-mode
 
 Experimental provider-neutral Code Mode contracts and a bounded nested-tool bridge. The package never evaluates generated source in the host process and provides no fallback when a sandbox is unavailable.
 

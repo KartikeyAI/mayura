@@ -12,7 +12,7 @@ Next, a separate new child-capable workflow profile must atomically bind ledger 
 
 ## Public storage contract
 
-Export `DurableBudgetStore`, `DurableBudgetAggregateStore`, `DurableBudgetKey`, `DurableBudgetSnapshot`, `DurableBudgetAccount`, `DurableBudgetReservation`, `DurableBudgetBundle`, command/result types and strict codecs from `@mayura/storage-contracts`. Both selected factories return their existing graph/discovery capabilities intersected with `DurableBudgetAggregateStore`; custom adapters gain no mandatory methods.
+Export `DurableBudgetStore`, `DurableBudgetAggregateStore`, `DurableBudgetKey`, `DurableBudgetSnapshot`, `DurableBudgetAccount`, `DurableBudgetReservation`, `DurableBudgetBundle`, command/result types and strict codecs from `mayura/storage-contracts`. Both selected factories return their existing graph/discovery capabilities intersected with `DurableBudgetAggregateStore`; custom adapters gain no mandatory methods.
 
 Every key contains `{ scope, id, policyHash }`; scope/id are nonempty well-formed Unicode strings of at most 256 UTF-8 bytes without NUL, and policyHash is a lowercase 64-character hexadecimal digest. Reject unpaired UTF-16 surrogates before transport; never replace or normalize identity text. Account, bundle and reservation IDs use 1–128 ASCII letters/digits plus internal `.`, `_`, `:`, `/`, `-`; `root` is the reserved root-account ID. Limits are nonnegative safe-integer `maxCostMicros` and positive safe-integer `maxCalls`.
 

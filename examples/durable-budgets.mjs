@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
+import { createSqliteStore } from 'mayura/storage-sqlite';
 
 // A financial-ledger fixture only: these test charges are not model/tool executions.
 const directory = await mkdtemp(join(tmpdir(), 'mayura-durable-budget-example-'));

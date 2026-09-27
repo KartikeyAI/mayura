@@ -3,9 +3,9 @@
 Define forms in trusted application code and bind them to the same registered schema identity returned by the server:
 
 ```tsx
-import { createHumanResponseController, defineHumanResponseForm } from '@mayura/client/forms';
-import { MayuraHumanResponseForm } from '@mayura/client-react/components';
-import { useMayuraHumanResponseCommand } from '@mayura/client-react';
+import { createHumanResponseController, defineHumanResponseForm } from 'mayura/client/forms';
+import { MayuraHumanResponseForm } from 'mayura/client-react/components';
+import { useMayuraHumanResponseCommand } from 'mayura/client-react';
 
 const reviewForm = defineHumanResponseForm({
   schemaId: 'deployment-review-v1',

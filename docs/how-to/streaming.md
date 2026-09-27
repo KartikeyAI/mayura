@@ -4,7 +4,7 @@ By default Mayura **buffers** output: nothing reaches the caller until the compl
 every output guard. An agent can opt into streaming one text field of its output, released in **guarded batches**.
 
 ```ts
-import { defineAgent } from '@mayura/sdk';
+import { defineAgent } from 'mayura';
 
 const assistant = defineAgent({
   id: 'support', version: '1', instructions, input, output, tools, model,

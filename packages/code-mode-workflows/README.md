@@ -1,4 +1,4 @@
-# @mayura/code-mode-workflows
+# mayura/code-mode-workflows
 
 Experimental bridge from bounded Code Mode programs to Mayura's durable scheduled-workflow engine. Each phase is an ordinary brokered tool with a stable program-digest version, mandatory exact human approval and an immutable nested-receipt audit. The workflow engine persists only JSON phase input/output and execution evidence; JavaScript heaps, closures and pending promises are never serialized.
 
@@ -6,4 +6,4 @@ Every phase reserves a conservative maximum nested-tool cost and inherits the st
 
 Create the required audit with `createDurableCodeAudit({ store, scope })`, pass it to `defineDurableCodeWorkflow`, and grant the generated phase capabilities. They include `code:audit:v2` and an exact `code:audit-scope:<digest>` grant, binding approval and dispatch to the audit scope. Each phase writes at most one immutable aggregate containing its exact program/execution identity, sanitized outcome, host-derived known/unresolved/max cost, admitted call count and up to 64 exact nested receipts. `audit.inspect(runId, phaseId)` validates the complete stored envelope before returning it. Missing evidence after an interrupted effect remains visibly absent; it is never fabricated.
 
-This package supplies definitions and an aggregate-store audit, not a SQL driver. Use a selected durable workflow store and `createScheduledWorkflowRuntime` from `@mayura/workflows`. The bridge remains experimental because the audit sidecar and workflow receipt are separate commits, external effects still require authoritative reconciliation, and Code Mode sandbox qualification remains independent. Real SQLite and PostgreSQL process-kill fixtures cover the post-effect, persisted outer-receipt and committed-completion boundaries without replay.
+This package supplies definitions and an aggregate-store audit, not a SQL driver. Use a selected durable workflow store and `createScheduledWorkflowRuntime` from `mayura/workflows`. The bridge remains experimental because the audit sidecar and workflow receipt are separate commits, external effects still require authoritative reconciliation, and Code Mode sandbox qualification remains independent. Real SQLite and PostgreSQL process-kill fixtures cover the post-effect, persisted outer-receipt and committed-completion boundaries without replay.

@@ -11,7 +11,7 @@ The agent server exposes workflow operations (index, views, cancel, approve, pau
 
 ```ts
 import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowMigrationCatalog, createWorkflowOperatorTransports,
-  graphOperatorTarget, lifecycleOperatorTarget, treeOperatorTarget } from '@mayura/workflows';
+  graphOperatorTarget, lifecycleOperatorTarget, treeOperatorTarget } from 'mayura/workflows';
 
 const operator = createWorkflowOperatorTransports({
   store, scope,                                              // the one scope these transports serve

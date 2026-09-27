@@ -4,7 +4,7 @@ Status: implemented experimental browser-safe definition, validation and React r
 
 ## Contract
 
-`@mayura/client/forms` captures one finite form with an exact `schemaId` and SHA-256 `schemaDigest`. A definition contains 1–32 uniquely named fields. Supported kinds are text, textarea, number, integer, boolean and finite select. Labels, names, options, lengths and numeric ranges are bounded and copied into a deeply frozen definition. Accessors, unexpected fields, unsafe property names, duplicate names, invalid Unicode and unbounded configuration are rejected.
+`mayura/client/forms` captures one finite form with an exact `schemaId` and SHA-256 `schemaDigest`. A definition contains 1–32 uniquely named fields. Supported kinds are text, textarea, number, integer, boolean and finite select. Labels, names, options, lengths and numeric ranges are bounded and copied into a deeply frozen definition. Accessors, unexpected fields, unsafe property names, duplicate names, invalid Unicode and unbounded configuration are rejected.
 
 `validateHumanResponse` accepts only a genuine captured definition, a frozen authenticated `RemoteHumanRequest` in `waiting` state and a frozen exact-key draft. The request schema identity must equal the definition. It converts browser number strings to finite numbers, enforces safe integers/ranges, admits only declared select values, validates Unicode-scalar text length and rejects NUL/unpaired surrogate input. The returned value has a null prototype, is deeply immutable, and carries only the exact request ID and request digest needed for optimistic response submission.
 

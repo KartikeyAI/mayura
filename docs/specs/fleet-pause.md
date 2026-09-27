@@ -4,7 +4,7 @@ Status: **implemented experimental durable hold and ledger-backed sweep for one 
 
 ```ts
 import { createWorkflowFleetControl, graphFleetTarget, lifecycleFleetTarget, treeFleetTarget,
-  type WorkflowFleetSweepCursor } from '@mayura/workflows';
+  type WorkflowFleetSweepCursor } from 'mayura/workflows';
 
 const fleet = createWorkflowFleetControl({ store, scope });
 const targets = [lifecycleFleetTarget(lifecycleFleet), graphFleetTarget(graphDiscovery, graphRuntime), treeFleetTarget(treeDiscovery, treeRuntime)];

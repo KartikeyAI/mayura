@@ -1,6 +1,6 @@
 # Run a compensating workflow saga
 
-Import `defineWorkflowSaga` and `createWorkflowSagaRuntime` from `@mayura/workflows/sagas`. Define each forward action and compensation as a format-5 lifecycle, then bind steps using submission input or earlier outputs.
+Import `defineWorkflowSaga` and `createWorkflowSagaRuntime` from `mayura/workflows/sagas`. Define each forward action and compensation as a format-5 lifecycle, then bind steps using submission input or earlier outputs.
 
 ```ts
 const order = defineWorkflowSaga({

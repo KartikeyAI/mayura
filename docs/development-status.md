@@ -1,5 +1,7 @@
 # Development status
 
+> Package naming: Mayura is published as one package, `mayura`, bundled from the workspace packages (the `@mayura` npm scope belongs to someone else). Entries below written before that change name the workspace packages (`@mayura/sdk`, `@mayura/workflows`, ...), which map to `mayura`, `mayura/workflows` and so on.
+
 Updated: 2026-09-27 (late). Release status: **all V01–V22 finite acceptance gates closed; experimental development preview / not production-qualified**. Remote CI is green on Ubuntu, Windows and macOS (Node 22 and 24); no pilot deployment, external security review, SSO/RBAC or scale/failover qualification yet.
 
 The owner authorized independent development in `mayura/`. The source is public at https://github.com/KartikeyAI/mayura; no npm package has been published and nothing is deployed. Mayura is Apache-2.0 licensed. Source package manifests remain private as an accidental-publication guard; controlled release staging produces inspected public artifacts after registry and repository ownership are verified. F01–F29 and G01–G11 remain the product contract. All finite V01–V22 scenarios are closed by direct evidence in the [release gate closure ledger](release-gate-closure.md).

@@ -3,8 +3,8 @@
 Native memory stores records in dedicated tables of the SQLite or PostgreSQL store, so it scales well past the compact profile's 128 records. The [spec](../specs/native-memory-v1.md) has the full contract.
 
 ```ts
-import { createSqliteStore } from '@mayura/storage';
-import { createNativeMemory, hashingEmbedder } from '@mayura/memory';
+import { createSqliteStore } from 'mayura/storage';
+import { createNativeMemory, hashingEmbedder } from 'mayura/memory';
 
 const store = createSqliteStore({ filename: 'agent.sqlite' });
 await store.initialize(); await store.memory.initialize();
@@ -35,7 +35,7 @@ Authorization runs inside the storage query. Scope, sensitivity profile, validit
 ## Hosted embeddings
 
 ```ts
-import { openAIEmbeddings } from '@mayura/provider-openai';
+import { openAIEmbeddings } from 'mayura/provider-openai';
 const embedder = openAIEmbeddings({ apiKey, model: 'text-embedding-3-small', dimensions: 512, onUsage: recordCost });
 ```
 
@@ -50,7 +50,7 @@ A hosted embedder only ever receives records in `embedSensitivities` (default `p
 ## Context cache
 
 ```ts
-import { createContextCache } from '@mayura/context';
+import { createContextCache } from 'mayura/context';
 const cache = createContextCache({ ttlMs: 60_000 });
 const context = await cache.assemble(options); // a cached assembly is still re-admitted by your hooks
 await cache.follow(memory);                    // invalidate entries that selected a changed memory record

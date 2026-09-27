@@ -4,7 +4,7 @@ Status: experimental optional adapter. This specification covers logs; traces an
 
 ## Boundary
 
-`@mayura/exporter-otlp` adapts the strict metadata events admitted by `@mayura/observability` into an OTLP `ExportLogsServiceRequest`. The exporter reuses the observer's validator at the final network boundary. Prompts, messages, model/provider payloads, tool arguments/results, source code, arbitrary exceptions and nested application metadata are outside that validator and cannot be encoded by this adapter.
+`mayura/exporter-otlp` adapts the strict metadata events admitted by `mayura/observability` into an OTLP `ExportLogsServiceRequest`. The exporter reuses the observer's validator at the final network boundary. Prompts, messages, model/provider payloads, tool arguments/results, source code, arbitrary exceptions and nested application metadata are outside that validator and cannot be encoded by this adapter.
 
 The package requires a complete explicit endpoint and service name. It reads no OTLP environment variables, discovers no credentials and has no default destination. HTTPS is required. An application may explicitly enable plain HTTP only for literal `127.0.0.1` or `::1` collector endpoints. URL credentials, query strings, fragments, redirects, cookies and user-controlled transport headers are rejected. Import and construction perform no network activity.
 

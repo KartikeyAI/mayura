@@ -52,11 +52,11 @@ Start with a small set of real packages and maintain the larger plan's logical b
 
 | Initial package | Owns | Must not depend on |
 | --- | --- | --- |
-| `@mayura/core` | IDs, messages, schemas, result/error types, execution context and adapter contracts | Database drivers, web frameworks, provider SDKs or UI libraries. |
-| `@mayura/tools` | Tool definitions, registry, validation, invocation and batch contracts | A mandatory agent loop, server, model or memory service. |
-| `@mayura/runtime` | Durable scheduler, policy/budget broker, approvals, waits, events and resource claims | A specific database, model provider, memory vendor or consumer application. |
+| `mayura/core` | IDs, messages, schemas, result/error types, execution context and adapter contracts | Database drivers, web frameworks, provider SDKs or UI libraries. |
+| `mayura/tools` | Tool definitions, registry, validation, invocation and batch contracts | A mandatory agent loop, server, model or memory service. |
+| `mayura/runtime` | Durable scheduler, policy/budget broker, approvals, waits, events and resource claims | A specific database, model provider, memory vendor or consumer application. |
 | Storage adapters | SQLite/PostgreSQL implementations and migrations | Agent prompts or application business logic. |
-| `@mayura/testing` | Deterministic clocks, model/tool fakes, storage conformance and crash fixtures | Live cloud credentials for the default test suite. |
+| `mayura/testing` | Deterministic clocks, model/tool fakes, storage conformance and crash fixtures | Live cloud credentials for the default test suite. |
 
 Add workflow and agent authoring, processors/guardrails, memory/context, Code Mode, server/client, observability and optional UI entry points as their vertical slices mature. Dependency injection occurs through explicit constructors/factories; avoid a mutable global runtime or service registry.
 

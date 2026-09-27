@@ -1,6 +1,6 @@
-import { createRuntime, defineTool } from '@mayura/sdk';
-import { defineWorkflow } from '@mayura/workflows';
-import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
+import { createRuntime, defineTool } from 'mayura';
+import { defineWorkflow } from 'mayura/workflows';
+import { workflowAsAgent, workflowAsTool } from 'mayura/workflows/ephemeral';
 
 // Small Standard Schema validators keep this example dependency-free.
 const text = { '~standard': { version: 1, vendor: 'example', validate: value => typeof value === 'string'

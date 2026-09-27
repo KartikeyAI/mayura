@@ -1,4 +1,4 @@
-# `@mayura/adapter-mcp`
+# `mayura/adapter-mcp`
 
 Wraps an application-selected MCP `tools/call` transport as a genuine Mayura tool. The adapter never discovers servers, credentials, effects, capabilities, or costs. Applications declare those values and own transport authentication and lifecycle.
 

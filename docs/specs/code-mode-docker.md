@@ -2,7 +2,7 @@
 
 Status: experimental local containment profile; not hostile-code production qualification.
 
-`@mayura/adapter-code-docker` launches the `@mayura/adapter-code-quickjs` worker protocol inside a disposable Linux container. It does not expose Docker to guest code. Nested tools still cross the JSON protocol and the ordinary Mayura broker; the container receives no SDK client, credential, host environment, network, host mount or Docker socket.
+`mayura/adapter-code-docker` launches the `mayura/adapter-code-quickjs` worker protocol inside a disposable Linux container. It does not expose Docker to guest code. Nested tools still cross the JSON protocol and the ordinary Mayura broker; the container receives no SDK client, credential, host environment, network, host mount or Docker socket.
 
 ## Image construction
 

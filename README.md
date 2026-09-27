@@ -4,6 +4,19 @@ An independent TypeScript framework for building agents, typed tools and durable
 
 **Pre-1.0 — not yet published.** The public API is classified stable for 1.0 and gated by an API report ([policy](docs/api-stability.md)), but no package is published. Owner-held release steps remain; see the [v1 release plan](docs/v1-release-plan.md). Mayura is Apache-2.0 licensed; the currently qualified platforms are intentionally narrow. See [development status](docs/development-status.md) and the [support matrix](docs/support-matrix.md).
 
+Mayura is one npm package, `mayura` (not yet published). `mayura` is the SDK, and each part has its own entry point:
+
+```ts
+import { createRuntime, defineAgent } from 'mayura';
+import { defineWorkflowLifecycle, fanOut } from 'mayura/workflows/lifecycle';
+import { createSqliteStore } from 'mayura/storage-sqlite'; // with the optional peer: npm install better-sqlite3
+```
+
+`npx mayura init` creates a project. Native SQLite, PostgreSQL, QuickJS and React are optional peers: install
+`better-sqlite3`, `pg`, `quickjs-emscripten-core` with `@jitl/quickjs-wasmfile-release-sync`, or `react` only when you
+use the part that needs it. Inside this repository the same entry points come from `packages/mayura`, a generated
+facade over the workspace packages (`@mayura/*`, which are internal and never published).
+
 ## Developing this checkout
 
 Mayura supports Node.js 22 LTS (>= 22.12.0) and 24 (>= 24.14.1); the maintainer workspace uses Node.js 24.14.1 and pnpm 10.17.1. Consumer applications will not need this workspace build system.
@@ -14,7 +27,7 @@ pnpm check
 pnpm example
 ```
 
-The basic SDK requires no Docker, native database, server or hosted account. [Select SQLite or PostgreSQL explicitly](docs/how-to/storage-installation.md); existing `@mayura/storage` imports remain a both-adapter compatibility option. Docker is used only for integration testing/deployment profiles that select it.
+The basic SDK requires no Docker, native database, server or hosted account. [Select SQLite or PostgreSQL explicitly](docs/how-to/storage-installation.md); existing `mayura/storage` imports remain a both-adapter compatibility option. Docker is used only for integration testing/deployment profiles that select it.
 
 ## Current development slices
 

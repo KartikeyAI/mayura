@@ -1,6 +1,6 @@
 # Pause console (live UI example)
 
-A local operator console for durable pause and fleet control. It runs a real SQLite lifecycle fleet driven by a lifecycle host, a durable fleet hold, and an authenticated loopback API; the page is built with Vite from `@mayura/client`, `@mayura/client/workflows` and the `@mayura/client-react/components` pause controls.
+A local operator console for durable pause and fleet control. It runs a real SQLite lifecycle fleet driven by a lifecycle host, a durable fleet hold, and an authenticated loopback API; the page is built with Vite from `mayura/client`, `mayura/client/workflows` and the `mayura/client-react/components` pause controls.
 
 ```sh
 pnpm build

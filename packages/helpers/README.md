@@ -1,4 +1,4 @@
-# @mayura/helpers
+# mayura/helpers
 
 Optional, provider-neutral utilities for explicit configuration, cancellation-aware control flow, bounded data movement and safe diagnostics. These helpers carry no tool, model, storage or network authority and cannot bypass Mayura admission contracts.
 

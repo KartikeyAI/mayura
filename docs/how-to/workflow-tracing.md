@@ -5,9 +5,9 @@ Export each settled workflow run as one OpenTelemetry trace: a root span for the
 ## Export settled runs from a worker
 
 ```ts
-import { createOtlpHttpJsonTraceExporter } from '@mayura/exporter-otlp';
-import { createWorkflowTraceExport, createWorkflowWorker, lifecycleFleetTarget } from '@mayura/workflows';
-import { createWorkflowLifecycleHost } from '@mayura/workflows/lifecycle';
+import { createOtlpHttpJsonTraceExporter } from 'mayura/exporter-otlp';
+import { createWorkflowTraceExport, createWorkflowWorker, lifecycleFleetTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleHost } from 'mayura/workflows/lifecycle';
 
 const host = createWorkflowLifecycleHost({ store, scope, definitions, ...policy });
 const exporter = createOtlpHttpJsonTraceExporter({ endpoint: 'https://collector.example/v1/traces', serviceName: 'orders' });
@@ -65,9 +65,9 @@ Span status: `ok` for succeeded; `error` for failed, blocked, unknown, timed out
 A step's tool receives `context.callId = "<runId>/step:<nodeId>"` in every format, so the step's span can be computed inside the tool:
 
 ```ts
-import { agentRunTraceSpans } from '@mayura/exporter-otlp';
-import { createObserver } from '@mayura/observability';
-import { workflowStepTraceContext } from '@mayura/workflows';
+import { agentRunTraceSpans } from 'mayura/exporter-otlp';
+import { createObserver } from 'mayura/observability';
+import { workflowStepTraceContext } from 'mayura/workflows';
 
 execute: async (input, context) => {
   const observer = createObserver({ maxRuns: 1 });

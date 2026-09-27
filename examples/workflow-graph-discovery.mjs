@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineWorkflow, createScheduledWorkflowRuntime } from '@mayura/workflows';
-import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery } from '@mayura/workflows/graphs';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineWorkflow, createScheduledWorkflowRuntime } from 'mayura/workflows';
+import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphDiscovery } from 'mayura/workflows/graphs';
 
 // Credential-free restart recovery. The application, not discovery, owns this finite loop.
 const json = { '~standard': { version: 1, vendor: 'example', validate: value => ({ value }) } };

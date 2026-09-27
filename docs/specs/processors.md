@@ -4,7 +4,7 @@ Status: experimental optional package design, implemented alongside deterministi
 
 ## Public developer journey
 
-`@mayura/guardrails` depends only on the core contracts. A pipeline has ordered content processors followed by a parallel required-guard barrier. It accepts ordinary JSON and returns a core `Outcome`; only success discloses processed content. An application can use the same pipeline at input or output boundaries.
+`mayura/guardrails` depends only on the core contracts. A pipeline has ordered content processors followed by a parallel required-guard barrier. It accepts ordinary JSON and returns a core `Outcome`; only success discloses processed content. An application can use the same pipeline at input or output boundaries.
 
 ```ts
 const pipeline = createPipeline({

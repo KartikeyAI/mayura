@@ -1,7 +1,7 @@
 # Bind Mayura to a UI framework
 
 ```ts
-import { createHeadlessRunStore, createRunActivityProjection } from '@mayura/client/headless';
+import { createHeadlessRunStore, createRunActivityProjection } from 'mayura/client/headless';
 
 const store = createHeadlessRunStore({ run: client.run(runId), maxEvents: 256 });
 const unsubscribe = store.subscribe(() => render(store.getSnapshot()));
@@ -17,7 +17,7 @@ unsubscribe();
 store.dispose();             // stops observation; does not cancel the run
 ```
 
-For React, use the optional `@mayura/client-react` hooks. Keep the store outside render execution and dispose it when its run view is permanently removed. Vue and Svelte adapters can subscribe through the same two methods.
+For React, use the optional `mayura/client-react` hooks. Keep the store outside render execution and dispose it when its run view is permanently removed. Vue and Svelte adapters can subscribe through the same two methods.
 
 When `activity.complete` is false or `hasGap` is true, present the timeline as incomplete and refresh the authoritative run snapshot. An item with `unknown` status has no safe terminal inference. Display `errorCode`, not caught transport messages. Call `observe()` again only after an explicit application/user reconnect decision.
 

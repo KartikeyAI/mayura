@@ -1,6 +1,6 @@
 # Native metadata observability
 
-Status: experimental optional `@mayura/observability` package; a bounded local run-event observer, not full plan section 18, mandatory audit, an OpenTelemetry exporter, or a hosted dashboard. Only core is a runtime dependency. Importing or constructing it performs no collection, network access, provider invocation, or credential lookup.
+Status: experimental optional `mayura/observability` package; a bounded local run-event observer, not full plan section 18, mandatory audit, an OpenTelemetry exporter, or a hosted dashboard. Only core is a runtime dependency. Importing or constructing it performs no collection, network access, provider invocation, or credential lookup.
 
 ## API and lifecycle
 

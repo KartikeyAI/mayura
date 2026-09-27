@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createRuntime, defineAgent, defineHook, defineTool } from '@mayura/sdk';
+import { createRuntime, defineAgent, defineHook, defineTool } from 'mayura';
 
 // Credential-free admission mechanics, not a filesystem or enterprise policy implementation.
 const text = { '~standard': { version: 1, vendor: 'example', validate: value =>

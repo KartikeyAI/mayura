@@ -1,5 +1,5 @@
-import { agentAsTool, createRuntime, defineAgent } from '@mayura/sdk';
-import { scriptedModel } from '@mayura/testing';
+import { agentAsTool, createRuntime, defineAgent } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
 
 // These Standard Schema validators need no application validator dependency.
 const text = { '~standard': { version: 1, vendor: 'example', validate: (value) => typeof value === 'string'

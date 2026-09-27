@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineTool } from '@mayura/tools';
-import { createScheduledWorkflowRuntime, defineWorkflow } from '@mayura/workflows';
-import { createExecutionWorkStream } from '@mayura/workstream/executions';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineTool } from 'mayura/tools';
+import { createScheduledWorkflowRuntime, defineWorkflow } from 'mayura/workflows';
+import { createExecutionWorkStream } from 'mayura/workstream/executions';
 
 // This optional SQLite example performs no provider calls and requires no credentials.
 const integer = { '~standard': { version: 1, vendor: 'example', validate: value =>

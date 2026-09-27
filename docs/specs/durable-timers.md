@@ -4,7 +4,7 @@ Status: implemented experimental driver-free profile with shared SQLite/PostgreS
 
 ## Contract
 
-`createTimerWorkStream` is exported by `@mayura/workstream/timers`. The application supplies an aggregate store, verified scope, dedicated stream ID and trusted synchronized clock. `initialize` creates or reopens one finite timer journal. It starts no interval, timeout, worker, network request or background process.
+`createTimerWorkStream` is exported by `mayura/workstream/timers`. The application supplies an aggregate store, verified scope, dedicated stream ID and trusted synchronized clock. `initialize` creates or reopens one finite timer journal. It starts no interval, timeout, worker, network request or background process.
 
 `schedule({id,dueAtMs,payload?})` persists one immutable absolute-time definition. An exact retry returns the current snapshot; changing time or payload under the same ID conflicts. Payload is bounded safe correlation data, not instructions, authentication, approval or execution authority.
 

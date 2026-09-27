@@ -16,7 +16,7 @@ Mayura v1 supports both:
 ## Inventory and deploy gate
 
 ```ts
-import { assertWorkflowVersionsRetained, compositeVersionTarget, graphFleetTarget, inventoryWorkflowVersions, lifecycleFleetTarget, treeFleetTarget } from '@mayura/workflows';
+import { assertWorkflowVersionsRetained, compositeVersionTarget, graphFleetTarget, inventoryWorkflowVersions, lifecycleFleetTarget, treeFleetTarget } from 'mayura/workflows';
 
 const inventory = await inventoryWorkflowVersions({
   store, scope,

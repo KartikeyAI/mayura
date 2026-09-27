@@ -4,7 +4,7 @@ Status: **experimental; not release-qualified**.
 
 ## Scope
 
-`@mayura/artifacts` provides an optional Node.js local-filesystem adapter for bounded, immutable artifacts. It is independent of workflows, servers and Arth. Applications remain responsible for persisting returned references alongside their own authoritative records. The buffering adapter rejects artifacts above 64 MiB, shared mutable input and configured staging populations above 4,096; applications normally select substantially smaller limits.
+`mayura/artifacts` provides an optional Node.js local-filesystem adapter for bounded, immutable artifacts. It is independent of workflows, servers and Arth. Applications remain responsible for persisting returned references alongside their own authoritative records. The buffering adapter rejects artifacts above 64 MiB, shared mutable input and configured staging populations above 4,096; applications normally select substantially smaller limits.
 
 The adapter stages bytes under a store-owned directory, computes a SHA-256 content identity, verifies the staged file immediately before promotion and atomically renames it into a scope-partitioned content-addressed location. A committed reference binds the store format, verified scope, digest, byte length, media type, classification and optional expiry. Reads revalidate the complete reference, exact scope, file size and digest; a missing or changed object fails closed with a stable integrity error. A genuine staged handle can be explicitly discarded; discard is idempotent for that issued handle and cannot target a forged path.
 

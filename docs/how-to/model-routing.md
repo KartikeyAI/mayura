@@ -1,13 +1,13 @@
 # Route between model providers with failover
 
-`createModelRouter` (from `@mayura/sdk` or `@mayura/runtime`) is a model adapter that tries other adapters in priority
+`createModelRouter` (from `mayura` or `mayura/runtime`) is a model adapter that tries other adapters in priority
 order when one is unavailable. Agents, tools and the runtime do not change: give the router to `defineAgent` like any
 other model and grant it once.
 
 ```ts
-import { createModelRouter, createRuntime, defineAgent } from '@mayura/sdk';
-import { anthropicMessages } from '@mayura/provider-anthropic';
-import { openAIResponses } from '@mayura/provider-openai';
+import { createModelRouter, createRuntime, defineAgent } from 'mayura';
+import { anthropicMessages } from 'mayura/provider-anthropic';
+import { openAIResponses } from 'mayura/provider-openai';
 
 const model = createModelRouter({
   id: 'router.support',

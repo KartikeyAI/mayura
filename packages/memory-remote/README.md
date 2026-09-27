@@ -1,4 +1,4 @@
-# @mayura/memory-remote
+# mayura/memory-remote
 
 Optional Mem0, Supermemory, and OpenViking semantic-index adapters for Mayura native memory.
 

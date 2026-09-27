@@ -2,12 +2,12 @@
 // Configuration comes only from the environment; nothing is discovered implicitly.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { hostname } from 'node:os';
-import { createPostgresStore } from '@mayura/storage-postgres';
-import { createAggregateSubmissionJournal } from '@mayura/storage-contracts';
-import { listenProductionServer } from '@mayura/server-node';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createAggregateSubmissionJournal } from 'mayura/storage-contracts';
+import { listenProductionServer } from 'mayura/server-node';
 import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowLeadership, createWorkflowOperatorTransports, createWorkflowWorker,
-  lifecycleOperatorTarget } from '@mayura/workflows';
-import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
+  lifecycleOperatorTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 
 const required = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required.`); return value; };
 const any = { '~standard': { version: 1, vendor: 'deployment', validate: value => ({ value }) } };

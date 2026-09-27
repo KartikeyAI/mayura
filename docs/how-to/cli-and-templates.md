@@ -1,6 +1,6 @@
 # Initialize a Mayura project
 
-`@mayura/cli` is an optional Node-only package. It inspects a non-executable `mayura.project.json` catalog and never imports application code merely to list definitions or tools.
+`mayura/cli` is an optional Node-only package. It inspects a non-executable `mayura.project.json` catalog and never imports application code merely to list definitions or tools.
 
 ```text
 mayura templates

@@ -1,5 +1,5 @@
-import { defineAgent, createRuntime } from '@mayura/sdk';
-import { openAIResponses } from '@mayura/provider-openai';
+import { defineAgent, createRuntime } from 'mayura';
+import { openAIResponses } from 'mayura/provider-openai';
 import { z } from 'zod';
 
 const required = name => {

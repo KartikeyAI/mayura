@@ -1,6 +1,6 @@
 # Use the bounded helper battery
 
-`@mayura/helpers` contains optional application-level utilities. It has no network, filesystem, model, tool or secret-store authority. Install it beside `@mayura/core` and pass every source, sink, signal and budget explicitly.
+`mayura/helpers` contains optional application-level utilities. It has no network, filesystem, model, tool or secret-store authority. Install it beside `mayura/core` and pass every source, sink, signal and budget explicitly.
 
 ## Safety rules
 

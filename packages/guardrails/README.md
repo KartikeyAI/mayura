@@ -1,4 +1,4 @@
-# @mayura/guardrails
+# mayura/guardrails
 
 Experimental content processors and required guard barriers. Native helpers provide user-envelope normalization, configurable heuristic PII redaction, protected-literal matching, bounded independently admitted output batches, and a fail-closed whole-output buffer for cross-chunk checks.
 

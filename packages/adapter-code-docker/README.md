@@ -1,9 +1,9 @@
-# @mayura/adapter-code-docker
+# mayura/adapter-code-docker
 
 Experimental outer-container adapter for the Mayura QuickJS Code Mode worker. It requires exact local `sha256:` image and SPDX-provenance digests created from the shipped Dockerfile and runs with no network, read-only root, non-root UID/GID, no Linux capabilities, no-new-privileges, default seccomp, bounded PID/memory/CPU/open-file limits and a bounded `tmpfs`.
 
 ```ts
-import { createDockerQuickJsSandboxAdapter } from '@mayura/adapter-code-docker';
+import { createDockerQuickJsSandboxAdapter } from 'mayura/adapter-code-docker';
 
 const adapter = createDockerQuickJsSandboxAdapter({
   dockerPath: '/usr/bin/docker',

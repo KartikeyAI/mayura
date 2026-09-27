@@ -2,7 +2,7 @@
 
 Status: format-1 authoring, strict state codec, SQLite/PostgreSQL runtime and driver-free public subpath implemented.
 
-`@mayura/workflows/loops` repeats one format-5 lifecycle body under an explicit maximum of 1–1,024 iterations. It is a separate persistence and digest boundary; it does not alter existing workflow or saga formats.
+`mayura/workflows/loops` repeats one format-5 lifecycle body under an explicit maximum of 1–1,024 iterations. It is a separate persistence and digest boundary; it does not alter existing workflow or saga formats.
 
 The definition declares four data-only bindings: the first child input, subsequent child input, a boolean continuation value, and the final result. Bindings can read immutable submission input or the latest successful child output. No expression text, callback, timer handle or unbounded condition is persisted.
 

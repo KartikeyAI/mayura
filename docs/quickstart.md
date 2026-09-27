@@ -12,7 +12,7 @@ The executed [example](../examples/first-agent.mjs) uses only public package exp
 
 ## Authoring model
 
-The small `@mayura/sdk` facade provides tools, agents and core contracts through one import. It adds no infrastructure dependency and uses the same definitions and admission broker as direct package imports.
+The small `mayura` facade provides tools, agents and core contracts through one import. It adds no infrastructure dependency and uses the same definitions and admission broker as direct package imports.
 
 1. `defineTool` declares input/output schemas, effects, capabilities and a trusted handler.
 2. `defineAgent` declares instructions, a model adapter, tools and result schemas.
@@ -24,7 +24,7 @@ Zod is the reference validator, not a mandatory framework runtime dependency. Ot
 
 ## Adding a real model
 
-The optional `@mayura/provider-openai` Responses adapter is implemented and tested with mocked HTTP. It has not been qualified against a live model in this checkout. Select a model supporting both function calls and strict structured output; supply its exact model ID, your API key, a strict portable output JSON Schema and explicit pricing/budget bounds. Do not reuse the zero-cost fixture configuration for a paid model.
+The optional `mayura/provider-openai` Responses adapter is implemented and tested with mocked HTTP. It has not been qualified against a live model in this checkout. Select a model supporting both function calls and strict structured output; supply its exact model ID, your API key, a strict portable output JSON Schema and explicit pricing/budget bounds. Do not reuse the zero-cost fixture configuration for a paid model.
 
 The adapter constructor is `openAIResponses({apiKey, model, outputJsonSchema, maxCostMicros, pricing})`. Pricing fields are `inputMicrosPerMillionTokens` and `outputMicrosPerMillionTokens`. Configure the runtime's `limits.maxCostMicros` too, and grant `model:openai.responses`. Every exposed tool needs `inputJsonSchema` as well as its local runtime validator. See [provider contract](specs/model-provider-contract.md) for schema constraints, accounting, private continuation and official protocol references.
 
@@ -34,26 +34,26 @@ Credentials stay in trusted server-side configuration. There is no automatic key
 
 | Need | Select | Important boundary |
 | --- | --- | --- |
-| One bounded agent | `@mayura/runtime` + tools and a model adapter | Explicitly non-durable. |
-| Parallel or dependent tools | `invokeBatch` + `batchOutput` from `@mayura/tools` | Exact predecessor JSON paths are revalidated by the broker; handles are process-local and resource keys are not distributed locks. |
-| Restartable tool graph and approvals | `@mayura/workflows` + selected SQLite/PostgreSQL adapter | Current conservative engine never automatically replays an uncertain effect. |
-| Durable event waits | `@mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
-| Existing scheduled-run completion joins | `@mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |
-| Wait inside a scheduled workflow | `@mayura/workflows/graphs` + selected storage | [Format-3 graphs](how-to/workflow-graph-waits.md) pin existing references at submission; explicit driving resumes without holding a waiting worker. |
-| Find unfinished graphs after restart | `createWorkflowGraphDiscovery` from `@mayura/workflows/graphs` | [Bounded candidate pages](how-to/workflow-graph-discovery.md), not readiness promises or automatic dispatch; the application owns its page budget and definition registry. |
-| Continue a trusted graph catalog | `createWorkflowGraphCoordinator` from `@mayura/workflows/graphs` | [One shared driver](how-to/workflow-graph-coordinator.md), finite pages and original-cursor retry reports; no submissions, approvals or polling service. |
-| Run durable workflow trees | `createWorkflowTreeRuntime` from `@mayura/workflows/children` | [Root-local tools and one-level owned children](how-to/workflow-tree-children.md), narrowed authority, exact verified approvals and joins. |
+| One bounded agent | `mayura/runtime` + tools and a model adapter | Explicitly non-durable. |
+| Parallel or dependent tools | `invokeBatch` + `batchOutput` from `mayura/tools` | Exact predecessor JSON paths are revalidated by the broker; handles are process-local and resource keys are not distributed locks. |
+| Restartable tool graph and approvals | `mayura/workflows` + selected SQLite/PostgreSQL adapter | Current conservative engine never automatically replays an uncertain effect. |
+| Durable event waits | `mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
+| Existing scheduled-run completion joins | `mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |
+| Wait inside a scheduled workflow | `mayura/workflows/graphs` + selected storage | [Format-3 graphs](how-to/workflow-graph-waits.md) pin existing references at submission; explicit driving resumes without holding a waiting worker. |
+| Find unfinished graphs after restart | `createWorkflowGraphDiscovery` from `mayura/workflows/graphs` | [Bounded candidate pages](how-to/workflow-graph-discovery.md), not readiness promises or automatic dispatch; the application owns its page budget and definition registry. |
+| Continue a trusted graph catalog | `createWorkflowGraphCoordinator` from `mayura/workflows/graphs` | [One shared driver](how-to/workflow-graph-coordinator.md), finite pages and original-cursor retry reports; no submissions, approvals or polling service. |
+| Run durable workflow trees | `createWorkflowTreeRuntime` from `mayura/workflows/children` | [Root-local tools and one-level owned children](how-to/workflow-tree-children.md), narrowed authority, exact verified approvals and joins. |
 | Persist shared financial accounting | Selected store's `durableBudgets` capability | [Root-transaction reservations](how-to/durable-budgets.md) and exact late evidence; standalone trusted-host primitive, not automatic workflow/child dispatch enforcement. |
-| Native content checks | `@mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
+| Native content checks | `mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
 | Runtime-owned moderation | `defineModerationGuard` with agent guards | [Shared limits and protected output-check capacity](how-to/managed-guardrails.md); model verdicts remain fallible. |
 | Required lifecycle control | `defineHook` + `defineAgent({ hooks })` | [Four awaited stages](how-to/lifecycle-hooks.md), no transforms or permission escalation; action tools use the owning run's broker. |
 
 These packages are experimental surfaces. Self-hosted HTTP, browser clients, child-agent orchestration, provider integrations, full memory/context and qualified Code Mode remain governed by the release ledger. A convenient import is not a promise that an unimplemented deployment profile exists.
 
-The [storage installation guide](how-to/storage-installation.md) separates `@mayura/storage-sqlite` from `@mayura/storage-postgres`. Existing `@mayura/storage` imports continue to select both adapters; custom storage implementations use only the driver-free contracts.
+The [storage installation guide](how-to/storage-installation.md) separates `mayura/storage-sqlite` from `mayura/storage-postgres`. Existing `mayura/storage` imports continue to select both adapters; custom storage implementations use only the driver-free contracts.
 
 ## Interpreting outcomes
 
 Always switch on `status` before reading `output`. `blocked` is a denied admission/disclosure, not a successful empty response. A tool can execute successfully while its output is withheld; inspect its receipt before deciding whether to retry. `outcome_unknown` means the application must reconcile the original operation instead of blindly executing it again. `cancelled` does not promise that an in-flight external action was undone.
 
-A tool with effects that throws is treated as possibly executed (`outcome_unknown`). When a tool can tell it refused the call before doing anything (the record does not exist, the request is not allowed), it should throw `ToolRefusal` from `@mayura/tools` (also exported by `@mayura/sdk`): the call is recorded as not started, the outcome is `failed`, nothing is charged, and a durable run needs no reconciliation. Only throw it when no effect can have happened, and never after reporting usage. To let the model recover instead of failing the run, return a structured result (for example `{ found: false }`) rather than throwing.
+A tool with effects that throws is treated as possibly executed (`outcome_unknown`). When a tool can tell it refused the call before doing anything (the record does not exist, the request is not allowed), it should throw `ToolRefusal` from `mayura/tools` (also exported by `mayura`): the call is recorded as not started, the outcome is `failed`, nothing is charged, and a durable run needs no reconciliation. Only throw it when no effect can have happened, and never after reporting usage. To let the model recover instead of failing the run, return a structured result (for example `{ found: false }`) rather than throwing.

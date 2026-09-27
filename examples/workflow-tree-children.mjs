@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineTool } from '@mayura/tools';
-import { defineWorkflow } from '@mayura/workflows';
-import { createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows/children';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineTool } from 'mayura/tools';
+import { defineWorkflow } from 'mayura/workflows';
+import { createWorkflowTreeRuntime, defineWorkflowTree } from 'mayura/workflows/children';
 
 const numberSchema=Object.freeze({'~standard':Object.freeze({version:1,vendor:'mayura-example',validate:value=>typeof value==='number'?{value}:{issues:[{message:'number required'}]}})});
 let executions=0;let approvals=0;

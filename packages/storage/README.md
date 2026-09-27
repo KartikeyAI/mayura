@@ -1,16 +1,16 @@
-# @mayura/storage
+# mayura/storage
 
 Compatibility facade for both Mayura SQL adapters. Development preview; not enterprise-qualified or published.
 
 Existing imports remain supported:
 
 ```ts
-import { createSqliteStore, createPostgresStore, StorageError } from '@mayura/storage';
+import { createSqliteStore, createPostgresStore, StorageError } from 'mayura/storage';
 ```
 
-This package deliberately installs both selected adapters. New applications that need only one database should use `@mayura/storage-sqlite` or `@mayura/storage-postgres` and import common types/errors from `@mayura/storage-contracts`. Those explicit packages export the identical factory functions used here.
+This package deliberately installs both selected adapters. New applications that need only one database should use `mayura/storage-sqlite` or `mayura/storage-postgres` and import common types/errors from `mayura/storage-contracts`. Those explicit packages export the identical factory functions used here.
 
-The shared SQL engine is implemented once in `@mayura/storage-sql`. There is no persisted-format migration when changing this import to a selected adapter: use the same SQLite file or PostgreSQL schema. Driver-free SDK, workflows, WorkStream and custom storage consumers do not acquire SQL dependencies unless an adapter is explicitly installed.
+The shared SQL engine is implemented once in `mayura/storage-sql`. There is no persisted-format migration when changing this import to a selected adapter: use the same SQLite file or PostgreSQL schema. Driver-free SDK, workflows, WorkStream and custom storage consumers do not acquire SQL dependencies unless an adapter is explicitly installed.
 
 Factory creation is synchronous; applications own `initialize()` and `close()`. Aggregate, scheduler, scheduled-workflow and completion-wait interfaces remain unchanged. Real-database and isolated package checks establish the current local evidence, not universal native compatibility or full enterprise qualification.
 
@@ -22,7 +22,7 @@ Both factories additionally expose `store.scheduler`. Initialize the containing 
 
 ```ts
 import { createHash } from 'node:crypto';
-import { createSqliteStore } from '@mayura/storage';
+import { createSqliteStore } from 'mayura/storage';
 
 const store = createSqliteStore({ filename: './jobs.sqlite' });
 await store.initialize();

@@ -1,9 +1,9 @@
 # Wait for scheduled workflow completion
 
-Use the optional `@mayura/workstream/executions` entry point to persist an `all` join over already-submitted scheduled-v1 workflows or scheduled-v2 graphs. The stream returns terminal metadata, not workflow outputs, prompts or receipts. Every target must use the same configured database, principal/project scope and pinned policy.
+Use the optional `mayura/workstream/executions` entry point to persist an `all` join over already-submitted scheduled-v1 workflows or scheduled-v2 graphs. The stream returns terminal metadata, not workflow outputs, prompts or receipts. Every target must use the same configured database, principal/project scope and pinned policy.
 
 ```ts
-import { createExecutionWorkStream } from '@mayura/workstream/executions';
+import { createExecutionWorkStream } from 'mayura/workstream/executions';
 
 // The caller initialized and owns store. worker uses that same store and scope.
 const reference = await worker.reference(run.id);

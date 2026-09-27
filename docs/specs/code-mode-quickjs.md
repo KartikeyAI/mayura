@@ -2,7 +2,7 @@
 
 Status: experimental inner interpreter; not a hostile-code sandbox.
 
-`@mayura/adapter-code-quickjs` implements the `@mayura/code-mode` sandbox-adapter protocol for JavaScript expression programs. Every run owns a new child process, WebAssembly module, QuickJS runtime and context. It exposes one JSON-only tool-call function; the parent independently resolves the pinned genuine tool and applies all Code Mode and ordinary broker limits.
+`mayura/adapter-code-quickjs` implements the `mayura/code-mode` sandbox-adapter protocol for JavaScript expression programs. Every run owns a new child process, WebAssembly module, QuickJS runtime and context. It exposes one JSON-only tool-call function; the parent independently resolves the pinned genuine tool and applies all Code Mode and ordinary broker limits.
 
 The adapter supports:
 

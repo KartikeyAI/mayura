@@ -23,7 +23,7 @@ Each run creates a uniquely named directory under `.artifacts/consumer-*`. It co
 
 The check:
 
-1. Packs the actual compiled `@mayura/core`, `@mayura/tools`, `@mayura/runtime`, `@mayura/testing`, and `@mayura/sdk` packages using pnpm, exercising workspace dependency rewriting.
+1. Packs the actual compiled `mayura/core`, `mayura/tools`, `mayura/runtime`, `mayura/testing`, and `mayura` packages using pnpm, exercising workspace dependency rewriting.
 2. Inspects real archive members. Only compiled JavaScript, declarations/maps, map-referenced TypeScript under `src`, package metadata, README, and license files are permitted. Unreferenced source, test/spec files, native files, lifecycle scripts, executable entries, unreviewed dependencies, and private-key markers fail the check.
 3. Packs Zod from the existing local development installation. Zod is a chosen application validator, not a dependency of Mayura's base runtime.
 4. Installs all six local archives into a clean application with npm's offline mode, installation scripts disabled, and an isolated cache. No workspace links or registry resolution satisfy these imports.

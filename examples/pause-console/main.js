@@ -1,8 +1,8 @@
 import { createElement as h, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createClient } from '@mayura/client';
-import { createWorkflowCommandController } from '@mayura/client/workflows';
-import { MayuraFleetHoldControl, MayuraWorkflowGraph, MayuraWorkflowPauseControl } from '@mayura/client-react/components';
+import { createClient } from 'mayura/client';
+import { createWorkflowCommandController } from 'mayura/client/workflows';
+import { MayuraFleetHoldControl, MayuraWorkflowGraph, MayuraWorkflowPauseControl } from 'mayura/client-react/components';
 
 const config = await (await fetch('/config.json', { cache: 'no-store' })).json();
 // Demo only: the loopback server hands this page a short-lived local token. Real apps use their identity provider.

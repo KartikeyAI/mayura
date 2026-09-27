@@ -1,5 +1,5 @@
 // Local pause console: a real SQLite lifecycle fleet, fleet control and authenticated loopback API,
-// plus a browser UI built from @mayura/client-react. Demo only: loopback, one process, in-memory command journal.
+// plus a browser UI built from mayura/client-react. Demo only: loopback, one process, in-memory command journal.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -7,14 +7,14 @@ import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
-import { MayuraError } from '@mayura/core';
-import { defineAgent } from '@mayura/sdk';
-import { createSqliteStore } from '@mayura/storage';
-import { scriptedModel } from '@mayura/testing';
-import { defineTool } from '@mayura/tools';
-import { listenAgentServer } from '@mayura/server-node';
-import { createWorkflowFleetControl, lifecycleFleetTarget } from '@mayura/workflows';
-import { createWorkflowLifecycleHost, defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
+import { MayuraError } from 'mayura/core';
+import { defineAgent } from 'mayura';
+import { createSqliteStore } from 'mayura/storage';
+import { scriptedModel } from 'mayura/testing';
+import { defineTool } from 'mayura/tools';
+import { listenAgentServer } from 'mayura/server-node';
+import { createWorkflowFleetControl, lifecycleFleetTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleHost, defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 
 const here = dirname(fileURLToPath(import.meta.url)); const workspace = resolve(here, '../..');
 const any = { '~standard': { version: 1, vendor: 'pause-console', validate: value => ({ value }) } };
@@ -61,8 +61,8 @@ const command = async (input, action, operate) => {
 const output = await mkdtemp(join(tmpdir(), 'mayura-pause-console-ui-'));
 await build({ root: here, logLevel: 'warn', configFile: false, build: { outDir: output, emptyOutDir: true, sourcemap: false },
   resolve: { dedupe: ['react', 'react-dom'], alias: {
-    '@mayura/client-react/components': join(workspace, 'packages/client-react/dist/components.js'),
-    '@mayura/client-react': join(workspace, 'packages/client-react/dist/index.js'),
+    'mayura/client-react/components': join(workspace, 'packages/client-react/dist/components.js'),
+    'mayura/client-react': join(workspace, 'packages/client-react/dist/index.js'),
   } } });
 let api;
 const secret = randomBytes(32); const token = secret.toString('hex');

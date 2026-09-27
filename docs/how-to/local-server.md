@@ -1,6 +1,6 @@
 # Run an authenticated local agent server
 
-The optional `@mayura/server-node` package serves Mayura's ephemeral runtime on an explicit loopback socket. `@mayura/client` talks to it with Fetch, validated JSON and metadata-only SSE. The base SDK does not install a web server.
+The optional `mayura/server-node` package serves Mayura's ephemeral runtime on an explicit loopback socket. `mayura/client` talks to it with Fetch, validated JSON and metadata-only SSE. The base SDK does not install a web server.
 
 ## Run the example
 
@@ -26,7 +26,7 @@ The scripted model is a consumable test fixture, not an inference model. Create 
 Supply an immutable agent definition, fixed execution grants and a trusted authentication callback:
 
 ```ts
-import { listenAgentServer } from "@mayura/server-node";
+import { listenAgentServer } from "mayura/server-node";
 
 const server = await listenAgentServer({
   agents: [{ agent, permissions: { allow: ["model:your-model"] } }],
@@ -49,7 +49,7 @@ Only literal `127.0.0.1` and `::1` binds are accepted. Public/wildcard/DNS binds
 ## Observe without replaying commands
 
 ```ts
-import { createClient } from "@mayura/client";
+import { createClient } from "mayura/client";
 
 const client = createClient({ baseUrl: server.origin, token: getAccessToken });
 const run = await client.submit(agent.id, input, { idempotencyKey: requestKey });

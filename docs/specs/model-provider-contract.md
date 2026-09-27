@@ -20,7 +20,7 @@ Token usage is converted using explicit application-supplied integer micro-USD r
 
 ## Anthropic Messages adapter
 
-`@mayura/provider-anthropic` uses only the fixed `https://api.anthropic.com/v1/messages` destination and fixed API version header, with an explicit application credential and model. It maps Mayura history to Messages content blocks, uses reversible aliases for client tools, enables strict input schemas, and requests a JSON-Schema final output. Provider-hosted tools, remote MCP, containers, prompt caching, extended thinking, redirects, retries and streaming are not enabled. [Messages API](https://platform.claude.com/docs/en/api/messages/create), [HTTP API](https://platform.claude.com/docs/en/api/http/messages), [strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use)
+`mayura/provider-anthropic` uses only the fixed `https://api.anthropic.com/v1/messages` destination and fixed API version header, with an explicit application credential and model. It maps Mayura history to Messages content blocks, uses reversible aliases for client tools, enables strict input schemas, and requests a JSON-Schema final output. Provider-hosted tools, remote MCP, containers, prompt caching, extended thinking, redirects, retries and streaming are not enabled. [Messages API](https://platform.claude.com/docs/en/api/messages/create), [HTTP API](https://platform.claude.com/docs/en/api/http/messages), [strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use)
 
 The adapter accepts only `tool_use` as a tool-call terminal reason and `end_turn` as a final terminal reason. Other reasons, mixed tool/text blocks, unknown aliases, duplicate call IDs and malformed structured output fail closed. Confirmed cost includes ordinary input, cache-creation input, cache-read input and output token counts using explicit integer rates. This is conservative configured accounting rather than invoice reconciliation.
 
@@ -40,7 +40,7 @@ validates and accounts the response exactly as a `generate` result. Adapters nev
 reasoning as deltas; events after the response, a missing response or an unknown event fail the call. The Responses
 adapter sends `stream: true` and parses the `response.completed` event's embedded response with the buffered code;
 the Messages adapter rebuilds the message from `message_start`, content-block and `message_delta` events. Both read
-the stream through the bounded `readServerSentEvents` decoder in `@mayura/core/host` and present it with
+the stream through the bounded `readServerSentEvents` decoder in `mayura/core/host` and present it with
 `streamModelCall`, which aborts the request when the consumer stops reading. See [Stream an agent's answer](../how-to/streaming.md).
 
 ## Provider router

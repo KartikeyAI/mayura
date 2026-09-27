@@ -4,7 +4,7 @@ Status: experimental foundation; optional adapters are test-qualified, not hosti
 
 ## Boundary
 
-`@mayura/code-mode` describes content-addressed JavaScript or TypeScript programs and executes them only through an explicitly supplied sandbox adapter. It never evaluates source in the Mayura process and has no host fallback. An unavailable adapter produces `UNSUPPORTED_PROFILE` before source execution.
+`mayura/code-mode` describes content-addressed JavaScript or TypeScript programs and executes them only through an explicitly supplied sandbox adapter. It never evaluates source in the Mayura process and has no host fallback. An unavailable adapter produces `UNSUPPORTED_PROFILE` before source execution.
 
 A sandbox adapter is trusted host integration code, not the security boundary by itself. A production profile must additionally prove an out-of-process, OS-enforced boundary with no ambient filesystem, process, credential, environment or network access; finite CPU, wall-clock, memory, scratch and output limits; deterministic termination; and authenticated IPC. Node `vm`, worker threads, TypeScript checks, source scanning and an interpreter isolate alone do not satisfy that claim.
 

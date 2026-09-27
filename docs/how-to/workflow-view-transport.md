@@ -16,7 +16,7 @@ const server = createAgentServer({
 Grant `workflows:read` only to identities allowed to inspect that project. In the browser:
 
 ```ts
-import { createWorkflowGraphProjection } from '@mayura/client/workflows';
+import { createWorkflowGraphProjection } from 'mayura/client/workflows';
 
 const view = await client.workflow(runId, { signal });
 const graph = createWorkflowGraphProjection(view);

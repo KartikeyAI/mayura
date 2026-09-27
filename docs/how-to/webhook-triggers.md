@@ -3,7 +3,7 @@
 Install the driver-free workstream and core/storage contracts, then select a storage adapter separately.
 
 ```ts
-import { createWebhookRuntime, defineWebhookTrigger } from '@mayura/workstream/webhooks';
+import { createWebhookRuntime, defineWebhookTrigger } from 'mayura/workstream/webhooks';
 
 const deploy = defineWebhookTrigger({
   id: 'deploy',

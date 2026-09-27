@@ -4,7 +4,7 @@ Status: implemented optional adapter profile with deterministic HTTP and packed-
 
 ## Authority model
 
-`@mayura/memory-remote` treats Mem0, Supermemory and OpenViking as untrusted semantic indexes, never canonical stores. `createRemoteMemoryBridge()` derives a domain-separated SHA-256 namespace from the verified Mayura principal/project scope. Raw scope identifiers, provenance, sensitivity labels and native metadata are not sent. The provider receives bounded record content plus only the namespace, canonical ID, version, content hash and adapter format marker.
+`mayura/memory-remote` treats Mem0, Supermemory and OpenViking as untrusted semantic indexes, never canonical stores. `createRemoteMemoryBridge()` derives a domain-separated SHA-256 namespace from the verified Mayura principal/project scope. Raw scope identifiers, provenance, sensitivity labels and native metadata are not sent. The provider receives bounded record content plus only the namespace, canonical ID, version, content hash and adapter format marker.
 
 Publishing first proves the supplied active record is the exact current native record. Removing first proves the supplied deletion is the exact current permanent tombstone. Remote search results contain only candidates. The bridge re-reads each candidate from native memory and returns current canonical content/provenance only when namespace, ID, active version and content hash all match. Wrong-scope, stale, deleted and duplicate hits are counted without exposing their content. A provider retaining deleted or old data therefore cannot resurrect it into Mayura context.
 

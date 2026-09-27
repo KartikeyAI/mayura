@@ -21,7 +21,7 @@ The compact profile stays, because it runs over custom aggregate adapters that c
 
 ## 2. Native storage capability (`store.memory`)
 
-The storage layer adds a validated command/result contract in `@mayura/storage-contracts`, like the other capabilities. It has one SQL implementation in `@mayura/storage-sql`, which the SQLite worker and PostgreSQL adapters expose. Tables use the store prefix and are created idempotently under the schema lock. The storage schema version is unchanged, because these are new tables only.
+The storage layer adds a validated command/result contract in `mayura/storage-contracts`, like the other capabilities. It has one SQL implementation in `mayura/storage-sql`, which the SQLite worker and PostgreSQL adapters expose. Tables use the store prefix and are created idempotently under the schema lock. The storage schema version is unchanged, because these are new tables only.
 
 - **Records** (`scope, id`): version, status (`active`/`superseded`/`deleted`), category, content, content hash, metadata, provenance, sensitivity, validity, timestamps, `superseded_by`. A tombstone keeps no content or provenance.
 - **Terms** (`scope, term, record_id, frequency`): the lexical inverted index, maintained in the same transaction as the record.
@@ -55,7 +55,7 @@ Every mutation is one transaction with a compare-and-set on the expected version
 
 - **Embedder adapter.** `{ id, dimensions, maxBatch, embed(texts, signal) }`.
   - Mayura ships `hashingEmbedder({ dimensions })`, which is local, deterministic, network-free and meant for tests and offline fallback.
-  - `@mayura/provider-openai` adds an authorized hosted embedding adapter.
+  - `mayura/provider-openai` adds an authorized hosted embedding adapter.
   - Restricted records are never sent to a hosted embedder: the `embedSensitivities` profile defaults to `public`/`internal`.
 - **Indexing.** `index({ limit })` embeds active records that have no current vector for the embedder, in batches under an explicit budget callback. Corrections and deletions remove stale vectors in the same transaction.
 - **Search.** `semanticSearch(query, { limit, minScore?, nprobe? })` uses cosine similarity.
@@ -67,7 +67,7 @@ Every mutation is one transaction with a compare-and-set on the expected version
 
 ## 6. D2 — Context cache invalidation
 
-`createContextCache({ maxEntries, ttlMs })` in `@mayura/context` provides:
+`createContextCache({ maxEntries, ttlMs })` in `mayura/context` provides:
 
 - `assemble(options)`, which returns a cached `ContextAssembly` only when the complete admission key matches: scope, policy version, `asOf`, the candidate and source-state digest, sensitivity profile, budget and estimator. Any change to a source revision changes the key.
 - `invalidate({ scope?, sourceIds? })` for deletion, revocation and permission changes.
@@ -78,7 +78,7 @@ Every mutation is one transaction with a compare-and-set on the expected version
 
 ## 7. D5 — Speculation
 
-- **Branches.** `speculate(runtime, parent, { branches, verify, maxBranches ≤ 8 })` in `@mayura/runtime` runs isolated child branches under the parent's shared budget. Each branch declares an `assumptions` JSON object, whose digest is recorded.
+- **Branches.** `speculate(runtime, parent, { branches, verify, maxBranches ≤ 8 })` in `mayura/runtime` runs isolated child branches under the parent's shared budget. Each branch declares an `assumptions` JSON object, whose digest is recorded.
   - Branch permissions are the parent's grants minus every write, host, external, delegation and memory-write capability. A branch that needs one is rejected at admission, never silently narrowed.
   - The first branch to succeed and pass `verify({ assumptionsDigest, output })` against current inputs is promoted. All others are cancelled.
   - Nothing is promoted when verification fails.

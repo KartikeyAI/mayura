@@ -22,7 +22,7 @@ Every workflow format supports migration:
 ## 1. Declare the migration
 
 ```ts
-import { defineWorkflowMigration } from '@mayura/workflows';
+import { defineWorkflowMigration } from 'mayura/workflows';
 
 const releaseV1toV2 = defineWorkflowMigration({
   id: 'release-1-to-2',            // letters, digits, '.', '_', '-'; recorded in the run's audit trail
@@ -111,7 +111,7 @@ The agent server exposes migrations through the `workflowMigrations` transport:
 The simplest wiring is the [production operator API](workflow-operator-api.md): pass `migrations: createWorkflowMigrationCatalog([...])` to `createWorkflowOperatorTransports`. It journals every apply, so a retried command returns the same plan. To wire one runtime by hand, `createWorkflowMigrationService` connects a migration catalog to it:
 
 ```ts
-import { createWorkflowMigrationCatalog, createWorkflowMigrationService, pinnedDefinitionHash } from '@mayura/workflows';
+import { createWorkflowMigrationCatalog, createWorkflowMigrationService, pinnedDefinitionHash } from 'mayura/workflows';
 
 const migrations = createWorkflowMigrationService({
   catalog: createWorkflowMigrationCatalog([releaseV1toV2]),

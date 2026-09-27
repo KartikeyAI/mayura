@@ -5,11 +5,11 @@ runtime grants each adapter explicitly as `model:<adapter id>`.
 
 | Adapter | Package | Adapter id | Streams |
 |---|---|---|---|
-| `openAIResponses` | `@mayura/provider-openai` | `openai.responses` | yes |
-| `anthropicMessages` | `@mayura/provider-anthropic` | `anthropic.messages` | yes |
-| `openAICompatibleChat` (local) | `@mayura/provider-openai` | `openai-compatible.chat` | yes |
-| `openAICompatibleChat` (remote) | `@mayura/provider-openai` | `openai-compatible.<id>` | yes |
-| `createModelRouter` | `@mayura/sdk` | your router id | yes |
+| `openAIResponses` | `mayura/provider-openai` | `openai.responses` | yes |
+| `anthropicMessages` | `mayura/provider-anthropic` | `anthropic.messages` | yes |
+| `openAICompatibleChat` (local) | `mayura/provider-openai` | `openai-compatible.chat` | yes |
+| `openAICompatibleChat` (remote) | `mayura/provider-openai` | `openai-compatible.<id>` | yes |
+| `createModelRouter` | `mayura` | your router id | yes |
 
 All adapters take the output JSON Schema, explicit prices per million tokens and a per-call cost bound. None reads
 credentials from the environment, retries, follows redirects or makes a request when it is created.
@@ -20,7 +20,7 @@ Many providers serve the OpenAI Chat Completions API. `openAICompatibleChat` rea
 (loopback HTTP only). To send prompts to a remote provider, name it explicitly with `remote`:
 
 ```ts
-import { openAICompatibleChat } from '@mayura/provider-openai';
+import { openAICompatibleChat } from 'mayura/provider-openai';
 
 const model = openAICompatibleChat({
   endpoint: 'https://api.groq.com/openai/v1/chat/completions',

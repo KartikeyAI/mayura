@@ -11,15 +11,15 @@ The stable contract is more than function names. It covers:
 - the exported symbols and their TypeScript declarations;
 - the `MayuraError` codes, and the error behavior documented for each API;
 - run, workflow and hook event types, and their metadata keys;
-- the HTTP protocol served by `@mayura/server`, and the CLI commands and flags;
+- the HTTP protocol served by `mayura/server`, and the CLI commands and flags;
 - persisted storage formats, under the separate rules below;
 - documented behavior, including fail-closed and at-least-once guarantees.
 
 The three **trusted-host** entry points are stable for authors of adapters and hosts, under the same versioning rules:
 
-- `@mayura/core/host`
-- `@mayura/storage-sql/host`
-- `@mayura/tools/host`
+- `mayura/core/host`
+- `mayura/storage-sql/host`
+- `mayura/tools/host`
 
 They are not an application-facing surface. They grant integration capabilities that must never reach model or guard contexts.
 
@@ -40,7 +40,7 @@ Mayura follows [Semantic Versioning](https://semver.org/).
 - a removed or changed symbol means a major release, or a deprecation;
 - an added symbol means a minor release.
 
-Strict clients reject unknown event types. Adding a run event type is therefore announced in the changelog, and the reference clients (`@mayura/client`, `@mayura/observability`) accept it in the same release.
+Strict clients reject unknown event types. Adding a run event type is therefore announced in the changelog, and the reference clients (`mayura/client`, `mayura/observability`) accept it in the same release.
 
 ## Deprecation
 

@@ -1,4 +1,4 @@
-# @mayura/provider-openai
+# mayura/provider-openai
 
 Explicit OpenAI Responses and OpenAI-compatible Chat Completions adapters for Mayura.
 

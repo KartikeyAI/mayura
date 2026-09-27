@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { defineAgent } from '@mayura/sdk';
-import { scriptedModel } from '@mayura/testing';
-import { listenAgentServer } from '@mayura/server-node';
-import { createClient } from '@mayura/client';
+import { defineAgent } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
+import { listenAgentServer } from 'mayura/server-node';
+import { createClient } from 'mayura/client';
 
 const input = { '~standard': { version: 1, vendor: 'example', validate(value) {
   return value !== null && typeof value === 'object' && typeof value.message === 'string'

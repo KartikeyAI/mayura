@@ -1,9 +1,9 @@
 # Wait inside a durable workflow graph
 
-Use `@mayura/workflows/graphs` when a workflow must pause until previously submitted scheduled runs reach a terminal outcome, then continue its own tool/join nodes. This explicit format-3 API is separate from legacy `defineWorkflow`; it needs an adapter with the optional `workflowGraphs` capability. Both selected SQL adapters provide it.
+Use `mayura/workflows/graphs` when a workflow must pause until previously submitted scheduled runs reach a terminal outcome, then continue its own tool/join nodes. This explicit format-3 API is separate from legacy `defineWorkflow`; it needs an adapter with the optional `workflowGraphs` capability. Both selected SQL adapters provide it.
 
 ```ts
-import { defineWorkflowGraph, createWorkflowGraphRuntime } from '@mayura/workflows/graphs';
+import { defineWorkflowGraph, createWorkflowGraphRuntime } from 'mayura/workflows/graphs';
 
 const release = defineWorkflowGraph({
   id: 'release', version: '1', input: releaseInputSchema, output: completionListSchema,

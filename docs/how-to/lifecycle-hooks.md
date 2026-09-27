@@ -16,7 +16,7 @@ Before-model hooks receive `purpose: 'primary'`, `modelId`, and `request: { mess
 ## Start with a local control check
 
 ```ts
-import { defineAgent, defineHook } from '@mayura/sdk';
+import { defineAgent, defineHook } from 'mayura';
 
 const release = defineHook({
   id: 'policy.release', version: '1', stage: 'beforeOutputRelease',

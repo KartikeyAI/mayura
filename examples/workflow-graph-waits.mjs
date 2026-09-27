@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineWorkflow, createScheduledWorkflowRuntime } from '@mayura/workflows';
-import { defineWorkflowGraph, createWorkflowGraphRuntime } from '@mayura/workflows/graphs';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineWorkflow, createScheduledWorkflowRuntime } from 'mayura/workflows';
+import { defineWorkflowGraph, createWorkflowGraphRuntime } from 'mayura/workflows/graphs';
 
 // No model, provider credentials, network calls or external effects are needed.
 const json = { '~standard': { version: 1, vendor: 'example', validate: value => ({ value }) } };

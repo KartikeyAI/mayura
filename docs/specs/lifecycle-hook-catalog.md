@@ -65,7 +65,7 @@ A child's `beforeDelegate` runs in the **parent's** hook context (parent run ID,
 
 ## 3. Library hooks: context, memory, retry
 
-These packages do not depend on the runtime, so their hooks are plain callback options. They use one shared evaluator from `@mayura/core/host`, which applies the same rules to all of them:
+These packages do not depend on the runtime, so their hooks are plain callback options. They use one shared evaluator from `mayura/core/host`, which applies the same rules to all of them:
 
 - bounded `timeoutMs` (default 5,000, maximum 30,000);
 - a deadline signal passed to the callback;

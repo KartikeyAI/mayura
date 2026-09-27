@@ -11,7 +11,7 @@ pnpm build
 node examples/agent-orchestration.mjs
 ```
 
-The [complete example](../../examples/agent-orchestration.mjs) imports only `@mayura/sdk` and `@mayura/testing`. Its Standard Schema validators transform text into a length and transform the child's answer into an object. No model account, paid call, database, Docker service or additional validator dependency is needed.
+The [complete example](../../examples/agent-orchestration.mjs) imports only `mayura` and `mayura/testing`. Its Standard Schema validators transform text into a length and transform the child's answer into an object. No model account, paid call, database, Docker service or additional validator dependency is needed.
 
 Expected output:
 

@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineWorkflow, createScheduledWorkflowRuntime } from '@mayura/workflows';
-import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphCoordinator } from '@mayura/workflows/graphs';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineWorkflow, createScheduledWorkflowRuntime } from 'mayura/workflows';
+import { defineWorkflowGraph, createWorkflowGraphRuntime, createWorkflowGraphCoordinator } from 'mayura/workflows/graphs';
 
 // No model, credentials or external effects. The application owns each finite sweep.
 const json = { '~standard': { version: 1, vendor: 'example', validate: value => ({ value }) } };

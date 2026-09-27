@@ -4,7 +4,7 @@ Status: implemented experimental WorkStream profile plus authenticated server/br
 
 ## Public contract
 
-`createHumanWorkStream` is exported from `@mayura/workstream/humans`. The application supplies an initialized aggregate store, verified scope, a dedicated stream ID, a trusted clock and an authorization callback. The facade owns neither the store nor authentication.
+`createHumanWorkStream` is exported from `mayura/workstream/humans`. The application supplies an initialized aggregate store, verified scope, a dedicated stream ID, a trusted clock and an authorization callback. The facade owns neither the store nor authentication.
 
 Each request declares a stable ID, `information`, `correction` or `plan_selection` kind, bounded human-facing prompt, Standard Schema response validator, application-owned schema ID and lowercase SHA-256 schema digest. Optional JSON context is persisted and therefore must already be safe for the authorized reviewer. Corrections must bind the exact candidate or artifact through `subjectDigest`; other request kinds cannot carry one. A deadline is an absolute Unix epoch millisecond value.
 

@@ -1,7 +1,7 @@
 # Start from a complete project
 
 Templates show one feature in one file. **Starters** are complete projects you can run, test and ship: a server and a
-worker, validated configuration, tests, a Dockerfile, a compose stack and CI. `@mayura/cli` ships them.
+worker, validated configuration, tests, a Dockerfile, a compose stack and CI. `mayura/cli` ships them.
 
 ```text
 mayura starters
@@ -15,7 +15,7 @@ every Mayura package to the CLI's exact release.
 
 ## Try a starter from this repository
 
-Before Mayura is published to npm, `npm install` in a generated project cannot find the `@mayura/*` packages. From a
+Before Mayura is published to npm, `npm install` in a generated project cannot find the `mayura` package. From a
 clone of this repository, create the project with `pnpm local:init` instead:
 
 ```text

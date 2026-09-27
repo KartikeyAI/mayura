@@ -3,7 +3,7 @@
 `createWorkflowGraphCoordinator` combines finite discovery with one shared graph driver. The application registers trusted definitions and immutable resource plans, calls one page at a time, and decides whether and when to continue. It does not submit graphs, approve actions, own child executions or run a background service.
 
 ```ts
-import { createWorkflowGraphCoordinator } from '@mayura/workflows/graphs';
+import { createWorkflowGraphCoordinator } from 'mayura/workflows/graphs';
 
 await store.initialize();
 const coordinator = createWorkflowGraphCoordinator({

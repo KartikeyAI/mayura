@@ -9,7 +9,7 @@ pnpm build
 node scripts/server-image.mjs            # add --smoke to run the compose smoke test below
 ```
 
-The script packs the needed Mayura packages and their reviewed third-party closure (exact versions, no install scripts), installs them offline into a staging directory with the application module, and builds `mayura-server:dev-<id>` with `--network=none` on a digest-pinned `node:24.14.1-alpine` base. The container runs as UID 65532 with `node /app/node_modules/@mayura/cli/dist/bin.js` as its entry point and `serve --app /app/app.mjs` as its default command. The report in `.artifacts/server-image-*/report.json` lists every packaged version.
+The script packs the needed Mayura packages and their reviewed third-party closure (exact versions, no install scripts), installs them offline into a staging directory with the application module, and builds `mayura-server:dev-<id>` with `--network=none` on a digest-pinned `node:24.14.1-alpine` base. The container runs as UID 65532 with `node /app/node_modules/mayura/cli/dist/bin.js` as its entry point and `serve --app /app/app.mjs` as its default command. The report in `.artifacts/server-image-*/report.json` lists every packaged version.
 
 ## Run it
 

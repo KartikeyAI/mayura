@@ -3,7 +3,7 @@
 Use `createWorkflowGraphDiscovery` when an application needs to find persisted format-3 graphs after losing its process-local run list. Discovery returns small continuation hints. It never runs tools, resolves waits, acquires execution leases or starts a background poller.
 
 ```ts
-import { createWorkflowGraphDiscovery, createWorkflowGraphRuntime, type WorkflowGraphDiscoveryCursor } from '@mayura/workflows/graphs';
+import { createWorkflowGraphDiscovery, createWorkflowGraphRuntime, type WorkflowGraphDiscoveryCursor } from 'mayura/workflows/graphs';
 
 // Reuse only the shared policy fields; discovery does not accept worker-only options.
 const policy = { scope, permissions, policyVersion: '1', maxCostMicros: 100 };

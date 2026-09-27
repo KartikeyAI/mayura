@@ -19,9 +19,9 @@ Mayura is an independent, open-source TypeScript framework for developers buildi
 This recipe tests the runtime protocol using a deterministic fixture. It is not a real language model, does not interpret the instructions, and must never be presented as evidence of agent reasoning quality. A separate real-provider recipe follows in Section 6.
 
 ```ts
-import { createRuntime, defineAgent } from "@mayura/runtime";
-import { defineTool } from "@mayura/tools";
-import { scriptedModel } from "@mayura/testing";
+import { createRuntime, defineAgent } from "mayura/runtime";
+import { defineTool } from "mayura/tools";
+import { scriptedModel } from "mayura/testing";
 import { z } from "zod";
 
 const add = defineTool({

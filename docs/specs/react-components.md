@@ -2,7 +2,7 @@
 
 Status: implemented experimental semantic component layer over the headless and workflow-view contracts. Unit/SSR and isolated package checks pass, and the pause controls have live-browser keyboard and accessibility-tree qualification in one Chromium-based browser (below). Visual-regression, localization, screen-reader and cross-browser qualification remain open.
 
-`@mayura/client-react/components` exports six unstyled reference components:
+`mayura/client-react/components` exports six unstyled reference components:
 
 - `MayuraRunSummary` subscribes once to a caller-owned run store and renders current status plus its bounded content-free activity list.
 - `MayuraWorkflowGraph` renders the validated durable DAG as an ordered semantic list with status, dependencies, depth metadata and terminal progress.
@@ -15,7 +15,7 @@ Mounting or server-rendering does not inspect, observe, retry, cancel, respond, 
 
 The component subpath intentionally exposes React types, unlike the hook-only root entry. Its isolated type profile installs exactly the adapter, base client, React, `@types/react` and `csstype`. React DOM remains a maintainer test dependency and is not shipped.
 
-The response form is uncontrolled: response content remains in browser controls until submit and is not mirrored into framework state. It never sends the response. Definitions, draft validation and optional single-flight command state come from the dependency-free [`@mayura/client/forms`](human-response-forms.md) boundary. Bound command state supplies safe status text and locks submitting, succeeded, conflict or disposed requests.
+The response form is uncontrolled: response content remains in browser controls until submit and is not mirrored into framework state. It never sends the response. Definitions, draft validation and optional single-flight command state come from the dependency-free [`mayura/client/forms`](human-response-forms.md) boundary. Bound command state supplies safe status text and locks submitting, succeeded, conflict or disposed requests.
 
 These components are a secure semantic baseline, not a branded design system. Loading/command feedback, localization, right-to-left layout, nested child expansion, keyboard/screen-reader matrix testing and visual regression remain required before a general UI qualification claim.
 

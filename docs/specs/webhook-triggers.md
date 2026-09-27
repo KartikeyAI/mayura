@@ -4,7 +4,7 @@ Status: implemented development preview. This contract is driver-free and has sh
 
 ## Contract
 
-`@mayura/workstream/webhooks` admits one bounded JSON request under an immutable trigger definition. A definition fixes its ID/version, secret reference, Standard Schema identity and dispatch callback. Schema identity is explicit because validator functions are trusted host code and cannot be derived portably.
+`mayura/workstream/webhooks` admits one bounded JSON request under an immutable trigger definition. A definition fixes its ID/version, secret reference, Standard Schema identity and dispatch callback. Schema identity is explicit because validator functions are trusted host code and cannot be derived portably.
 
 The caller supplies verified Mayura scope, initialized aggregate storage, a trusted clock, and a secret resolver. The transport supplies raw body bytes, a bounded delivery ID, an integer Unix epoch timestamp and a lowercase `sha256=<hex>` signature. The signed message is the exact concatenation:
 

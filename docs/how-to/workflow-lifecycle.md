@@ -1,9 +1,9 @@
 # Durable workflow lifecycle nodes
 
-Use `@mayura/workflows/lifecycle` when a workflow must stop for a typed human response or an absolute time and later continue from persisted state.
+Use `mayura/workflows/lifecycle` when a workflow must stop for a typed human response or an absolute time and later continue from persisted state.
 
 ```ts
-import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
+import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 
 const workflow = defineWorkflowLifecycle({
   id: 'release-review',
@@ -72,7 +72,7 @@ output as `null`. The condition is decided once, when the step's dependencies ar
 join that collects them:
 
 ```ts
-import { defineWorkflowLifecycle, fanOut } from '@mayura/workflows/lifecycle';
+import { defineWorkflowLifecycle, fanOut } from 'mayura/workflows/lifecycle';
 
 nodes: [
   { kind: 'tool', id: 'plan', tool: plan, input: { kind: 'input', path: [] } },

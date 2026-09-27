@@ -2,7 +2,7 @@
 
 Status: implemented experimental hook layer, locally qualified on 2026-09-24 with React 19.3.0. A separate semantic component subpath and typed response-form/command-state boundary exist; live-browser accessibility remains separate work.
 
-`@mayura/client-react` is an optional adapter over `@mayura/client/headless`. React is its only peer dependency; the Mayura client is its only runtime dependency. Core, runtime, server, storage and provider packages are not part of this browser closure.
+`mayura/client-react` is an optional adapter over `mayura/client/headless`. React is its only peer dependency; the Mayura client is its only runtime dependency. Core, runtime, server, storage and provider packages are not part of this browser closure.
 
 ## Contract
 
@@ -22,4 +22,4 @@ Prompts and status labels remain data. Applications must render prompts through 
 
 A structurally invalid store fails with `MayuraReactError` code `INVALID_REACT_STORE` before subscription. Store/network failures retain the bounded safe codes defined by the headless client.
 
-Public declarations expose Mayura contracts, not React declaration types. The isolated archive profile installs exactly `@mayura/client-react`, `@mayura/client` and React, compiles without `@types/react`, denies unrelated runtime imports and executes without implicit network work. The workflow hook does not fetch or authorize its view. This proves the current package boundary, not compatibility with every renderer, React minor, bundler, browser or server-component environment.
+Public declarations expose Mayura contracts, not React declaration types. The isolated archive profile installs exactly `mayura/client-react`, `mayura/client` and React, compiles without `@types/react`, denies unrelated runtime imports and executes without implicit network work. The workflow hook does not fetch or authorize its view. This proves the current package boundary, not compatibility with every renderer, React minor, bundler, browser or server-component environment.

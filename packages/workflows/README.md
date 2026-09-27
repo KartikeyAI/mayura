@@ -1,4 +1,4 @@
-# @mayura/workflows
+# mayura/workflows
 
 Experimental finite, schema-driven workflows for Mayura. Define versioned tools/joins once, then explicitly select conservative durable execution, opt-in leased scheduled execution, or approval-free ephemeral agent composition.
 
@@ -7,13 +7,13 @@ import {
   defineWorkflow,
   createWorkflowRuntime,
   createScheduledWorkflowRuntime,
-} from '@mayura/workflows';
-import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
+} from 'mayura/workflows';
+import { workflowAsAgent, workflowAsTool } from 'mayura/workflows/ephemeral';
 ```
 
-Both durable runtimes require an application-owned storage adapter. The scheduled runtime requires atomic `ScheduledWorkflowStore` support and does not silently upgrade conservative runs. Select `@mayura/storage-sqlite` or `@mayura/storage-postgres` for one driver, or `@mayura/storage` for the compatible both-adapter facade. This package installs no SQL driver.
+Both durable runtimes require an application-owned storage adapter. The scheduled runtime requires atomic `ScheduledWorkflowStore` support and does not silently upgrade conservative runs. Select `mayura/storage-sqlite` or `mayura/storage-postgres` for one driver, or `mayura/storage` for the compatible both-adapter facade. This package installs no SQL driver.
 
-The separate `@mayura/workflows/graphs` entry exports `defineWorkflowGraph` and `createWorkflowGraphRuntime` for explicit format-3 / scheduled-v2 graphs. It adds real wait nodes over already submitted same-scope/policy executions using literal/input target bindings. Waits release worker capacity, survive store close/reopen and yield ordered terminal metadata; no attachment, future references, target payload copying, child ownership or automatic polling is implied. The optional `WorkflowGraphStore` capability leaves existing custom scheduled-v1 adapters unchanged. Legacy definitions and hashes are not migrated.
+The separate `mayura/workflows/graphs` entry exports `defineWorkflowGraph` and `createWorkflowGraphRuntime` for explicit format-3 / scheduled-v2 graphs. It adds real wait nodes over already submitted same-scope/policy executions using literal/input target bindings. Waits release worker capacity, survive store close/reopen and yield ordered terminal metadata; no attachment, future references, target payload copying, child ownership or automatic polling is implied. The optional `WorkflowGraphStore` capability leaves existing custom scheduled-v1 adapters unchanged. Legacy definitions and hashes are not migrated.
 
 Scheduled execution admits at most 64 KiB per input/output, uses storage-clock leases and exact approvals, and retains late effect evidence without releasing late output. Trusted tool usage reports settle atomically with their receipts: known cost is charged, unused capacity is released and unresolved cost remains reserved. An optional application-owned `verifyExecution` boundary can authenticate an external provider attestation and atomically refine an unknown attempt to a withheld known receipt plus exact cost; it never resumes the workflow, publishes output, clears quarantine or replays the effect. Unknown started effects are never automatically replayed. Worker shutdown is cooperative, not hard isolation or provider-side cancellation.
 
@@ -23,13 +23,13 @@ The same graphs entry also exports `createWorkflowGraphDiscovery` with the separ
 
 `createWorkflowGraphCoordinator` adds explicit registered continuation over that capability: 1–32 trusted definitions and their exact resource plans share one driver across finite, sequential candidate pages. Frozen metadata reports distinguish completed pages from interrupted pages carrying the original retry cursor. Unknown definitions are skipped without dispatch. No submit/approve interface, background polling, fleet ownership or pooled cross-run monetary budget is added.
 
-The opt-in `@mayura/workflows/children` entry exports `defineWorkflowTree`, `createWorkflowTreeRuntime`, `createWorkflowTreeDiscovery` and `createWorkflowTreeCoordinator`. Its current `scheduled-v3` profile drives root-local tools and one-level required child workflows through selected adapters' explicit `workflowTrees` and optional `workflowTreeDiscovery` capabilities, including narrowed authority, exact restartable human approval, fenced dispatch, renewal, close/reopen continuation, exact joins, recovery and terminal accounting. One worker-wide bounded job pool is shared across ready root and child branches and retains timed-out handler capacity until actual settlement. The coordinator processes finite pages against an explicit genuine-definition catalog; it does not infer definitions or run a background poller. Nested children remain rejected in this preview.
+The opt-in `mayura/workflows/children` entry exports `defineWorkflowTree`, `createWorkflowTreeRuntime`, `createWorkflowTreeDiscovery` and `createWorkflowTreeCoordinator`. Its current `scheduled-v3` profile drives root-local tools and one-level required child workflows through selected adapters' explicit `workflowTrees` and optional `workflowTreeDiscovery` capabilities, including narrowed authority, exact restartable human approval, fenced dispatch, renewal, close/reopen continuation, exact joins, recovery and terminal accounting. One worker-wide bounded job pool is shared across ready root and child branches and retains timed-out handler capacity until actual settlement. The coordinator processes finite pages against an explicit genuine-definition catalog; it does not infer definitions or run a background poller. Nested children remain rejected in this preview.
 
-The `@mayura/workflows/lifecycle` entry adds format-5 human/timer suspension, authenticated human transport binding and finite fleet coordination. The separate `@mayura/workflows/sagas` and `@mayura/workflows/loops` entries compose lifecycle definitions into bounded sequential sagas with reverse compensation and finite conditional iteration. The generic aggregate contract does not provide a cross-aggregate transaction; replay repairs child linking through deterministic submission keys.
+The `mayura/workflows/lifecycle` entry adds format-5 human/timer suspension, authenticated human transport binding and finite fleet coordination. The separate `mayura/workflows/sagas` and `mayura/workflows/loops` entries compose lifecycle definitions into bounded sequential sagas with reverse compensation and finite conditional iteration. The generic aggregate contract does not provide a cross-aggregate transaction; replay repairs child linking through deterministic submission keys.
 
 `createWorkflowLifecycleHost` is an explicitly started single-flight worker for a registered format-5 fleet. It performs bounded sweeps, applies capped backoff and drains on shutdown without closing caller storage. It does not provide distributed leader election or discover saga/loop parent aggregates.
 
-The `@mayura/workflows/composites` entry supplies the separate durable saga/loop parent index and host. Submit through its wrapper to record the parent index; stable retries repair uncertain parent/index acknowledgements. It does not provide distributed leader election.
+The `mayura/workflows/composites` entry supplies the separate durable saga/loop parent index and host. Submit through its wrapper to record the parent index; stable retries repair uncertain parent/index acknowledgements. It does not provide distributed leader election.
 
 `workflowTraceSpans` projects a settled run's durable event log into deterministic, metadata-only spans (one root per run, one span per step), and `createWorkflowTraceExport` exports settled runs through any OTLP-style trace sink with a durable outbox, per-run markers and a worker unit, so a restarted worker neither loses nor corrupts traces.
 

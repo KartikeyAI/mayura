@@ -1,12 +1,12 @@
 # Durable required workflow children
 
-Install `@mayura/workflows`, `@mayura/tools` and one selected storage adapter. Import the opt-in API from `@mayura/workflows/children`:
+Install `mayura/workflows`, `mayura/tools` and one selected storage adapter. Import the opt-in API from `mayura/workflows/children`:
 
 ```ts
-import { defineTool } from '@mayura/tools';
-import { defineWorkflow } from '@mayura/workflows';
-import { createWorkflowTreeCoordinator, createWorkflowTreeRuntime, defineWorkflowTree } from '@mayura/workflows/children';
-import { createSqliteStore } from '@mayura/storage-sqlite';
+import { defineTool } from 'mayura/tools';
+import { defineWorkflow } from 'mayura/workflows';
+import { createWorkflowTreeCoordinator, createWorkflowTreeRuntime, defineWorkflowTree } from 'mayura/workflows/children';
+import { createSqliteStore } from 'mayura/storage-sqlite';
 ```
 
 Define each child as a genuine finite workflow, then embed it in a genuine tree with explicit narrowed permissions, cost/call limits, output size, approval TTL and resource plan. Create the runtime with the parent authority and a stable worker identity. `maxConcurrentJobs` (default 4, maximum 32) is one shared execution bound across every root and child driven by that runtime; timed-out handlers retain their slot until the actual callback settles. `maxConcurrentRuns` defaults to 16 and is capped at 128. Supply `verifyHuman` when a root or child tool declares `approval: true`. `submit` persists the root; `runUntilSettled` admits, fences, executes, validates and joins each required child. It returns a waiting snapshot before an approval-protected dispatch. Read the exact digest from the corresponding snapshot, pass the exact identities to `approve`, then continue with `runUntilSettled`. Credentials stay local to the verifier; only its bounded verified identity is persisted. `inspect`, `events`, `recoverExpired`, `cancel` and `close` remain explicit operations.

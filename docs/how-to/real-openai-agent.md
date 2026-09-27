@@ -1,6 +1,6 @@
 # Run the first real-provider agent
 
-This is an opt-in paid-network recipe. It uses the fixed OpenAI Responses endpoint through `@mayura/provider-openai`; it has no fixture fallback and ordinary tests never execute it.
+This is an opt-in paid-network recipe. It uses the fixed OpenAI Responses endpoint through `mayura/provider-openai`; it has no fixture fallback and ordinary tests never execute it.
 
 Set `OPENAI_API_KEY`, `MAYURA_OPENAI_MODEL`, `MAYURA_QUESTION`, `MAYURA_OPENAI_MAX_CALL_COST_MICROS`, `MAYURA_OPENAI_MAX_RUN_COST_MICROS`, `MAYURA_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS`, and `MAYURA_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS` in the process environment, then run `node examples/openai-agent.mjs`. Obtain the current model ID, model capabilities and prices from the provider and review them before setting the values; the example deliberately does not embed changeable pricing or discover credentials.
 

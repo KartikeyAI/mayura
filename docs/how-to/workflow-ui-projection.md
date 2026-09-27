@@ -5,7 +5,7 @@ On the trusted server, inspect the durable runtime and match its snapshot to the
 In browser code, deeply freeze the validated transport record and project it:
 
 ```ts
-import { createWorkflowGraphProjection, type WorkflowViewInput } from '@mayura/client/workflows';
+import { createWorkflowGraphProjection, type WorkflowViewInput } from 'mayura/client/workflows';
 
 const input: WorkflowViewInput = Object.freeze({
   format: 4,

@@ -1,12 +1,12 @@
 # Runtime-managed moderation
 
-This experimental integration lets an ephemeral agent own its configured moderation calls. Select the optional `@mayura/guardrails` package alongside the SDK. A guard definition captures policy and a model, not an account or runtime; Mayura binds it separately to each actual run and required child.
+This experimental integration lets an ephemeral agent own its configured moderation calls. Select the optional `mayura/guardrails` package alongside the SDK. A guard definition captures policy and a model, not an account or runtime; Mayura binds it separately to each actual run and required child.
 
 ## Define a policy once
 
 ```ts
-import { defineAgent, createRuntime } from '@mayura/sdk';
-import { defineModerationGuard } from '@mayura/guardrails';
+import { defineAgent, createRuntime } from 'mayura';
+import { defineModerationGuard } from 'mayura/guardrails';
 
 const moderation = defineModerationGuard({
   id: 'content-policy',
@@ -67,7 +67,7 @@ A local guard can rewrite content rather than only allow or block it. Return `{ 
 a guardrails pipeline with `pipelineGuard`:
 
 ```ts
-import { createPipeline, pipelineGuard, redactPII } from '@mayura/guardrails';
+import { createPipeline, pipelineGuard, redactPII } from 'mayura/guardrails';
 
 const redact = pipelineGuard('pii.redact', createPipeline({ processors: [redactPII({ email: true, phone: true })] }));
 const agent = defineAgent({ /* ... */ guards: { input: [redact], output: [redact] } });

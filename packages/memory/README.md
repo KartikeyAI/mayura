@@ -1,9 +1,9 @@
-# @mayura/memory
+# mayura/memory
 
 Experimental native canonical records for an explicitly scoped principal/project. Optional infrastructure package; it is not required by the basic Mayura SDK. No model, embedding provider, account or hosted service is used.
 
 ```ts
-import { createMemoryStore } from '@mayura/memory';
+import { createMemoryStore } from 'mayura/memory';
 
 // `store` is your already-initialized SQLite/PostgreSQL AggregateStore.
 const memory = createMemoryStore({
@@ -32,6 +32,6 @@ Scopes and capabilities must come from trusted application authorization, never 
 
 `correct` replaces a complete record body with required provenance and an expected version. `get`, `list`, `search` and `exportSnapshot` read current storage; there is no stale derived cache. A forgotten record becomes a permanent minimal tombstone; its current content/metadata/provenance disappear from retrieval and export, but physical database/WAL/backup erasure is not claimed.
 
-This first slice has hard limits of 128 lifetime record IDs per scope and 768 KiB total JSON. IDs retained by tombstones count toward capacity. It is an intentionally bounded correctness implementation, not repository-scale semantic memory. Search is case-insensitive token matching, not vector/meaning-based retrieval. The separate optional `@mayura/memory-remote` package can use this store as canonical authority for external semantic indexes. Scalable native indexes, replacement-state import, graph memory and consolidation remain future work.
+This first slice has hard limits of 128 lifetime record IDs per scope and 768 KiB total JSON. IDs retained by tombstones count toward capacity. It is an intentionally bounded correctness implementation, not repository-scale semantic memory. Search is case-insensitive token matching, not vector/meaning-based retrieval. The separate optional `mayura/memory-remote` package can use this store as canonical authority for external semantic indexes. Scalable native indexes, replacement-state import, graph memory and consolidation remain future work.
 
 The source repository contains `docs/specs/native-memory.md` with exact data, pagination, deletion and verification guarantees; it is not a relative file inside the npm archive. The caller owns and closes the underlying storage adapter.

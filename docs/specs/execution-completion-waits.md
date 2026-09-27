@@ -18,7 +18,7 @@ await stream.drainReady({ limit: 16 });
 const wait = await stream.inspect('join.release');
 ```
 
-`createExecutionWorkStream` is a new `@mayura/workstream/executions` export. Existing signal format 1 and workflow format 2 remain unchanged. Extend `ScheduledWorkflowRuntime` with `reference(id)` using its existing exact scoped/policy-checked inspection. A reference is immutable data, **not an authorization capability** or proof that a different configured database is the same logical backend.
+`createExecutionWorkStream` is a new `mayura/workstream/executions` export. Existing signal format 1 and workflow format 2 remain unchanged. Extend `ScheduledWorkflowRuntime` with `reference(id)` using its existing exact scoped/policy-checked inspection. A reference is immutable data, **not an authorization capability** or proof that a different configured database is the same logical backend.
 
 ```ts
 type ExecutionRef = {

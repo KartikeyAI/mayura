@@ -1,5 +1,5 @@
-import { defineTool, defineAgent, createRuntime } from '@mayura/sdk';
-import { scriptedModel } from '@mayura/testing';
+import { defineTool, defineAgent, createRuntime } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
 import { z } from 'zod';
 
 // This fixture verifies tool execution; it is not an inference model or a reasoning demonstration.

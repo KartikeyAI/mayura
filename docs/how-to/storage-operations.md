@@ -19,7 +19,7 @@ Stateful workflow runs are separate from the storage layout: definition changes 
 Back up a live store, from a separate read-only connection, through SQLite's online backup API. The copy is consistent even while the application writes, and it is verified (integrity check and schema version) before the call succeeds:
 
 ```ts
-import { backupSqliteStore, restoreSqliteBackup } from '@mayura/storage';
+import { backupSqliteStore, restoreSqliteBackup } from 'mayura/storage';
 await backupSqliteStore({ filename: '/data/mayura.sqlite', destination: '/backups/mayura-2026-09-27.sqlite' });
 ```
 

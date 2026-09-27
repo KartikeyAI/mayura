@@ -1,4 +1,4 @@
-# `@mayura/tools`
+# `mayura/tools`
 
 Typed tools, admission, execution receipts and bounded process-local batch orchestration for Mayura.
 
@@ -7,7 +7,7 @@ Typed tools, admission, execution receipts and bounded process-local batch orche
 `batchOutput(callId, path?)` connects one admitted tool output to another call's input without application-side scheduling. The handle adds its dependency edge automatically; paths use exact own object properties and array indices.
 
 ```ts
-import { Budget, batchOutput, invokeBatch } from '@mayura/tools';
+import { Budget, batchOutput, invokeBatch } from 'mayura/tools';
 
 const outcomes = await invokeBatch([
   { id: 'summarize', tool: summarize, input: { text: batchOutput<string>('load', ['body']) } },

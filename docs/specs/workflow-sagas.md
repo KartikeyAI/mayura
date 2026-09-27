@@ -2,7 +2,7 @@
 
 Status: format-1 authoring, strict state codec, SQLite/PostgreSQL runtime and packed custom-adapter surface implemented.
 
-`@mayura/workflows/sagas` composes format-5 lifecycle workflows into a finite sequential saga. It is a separate persistence format and digest domain; formats 2–5 remain unchanged.
+`mayura/workflows/sagas` composes format-5 lifecycle workflows into a finite sequential saga. It is a separate persistence format and digest domain; formats 2–5 remain unchanged.
 
 ## Contract
 

@@ -12,7 +12,7 @@ Reuse the existing scheduled worker's actual job/handler/storage capacities, sch
 
 ## Proposed developer-facing shape
 
-Expose the new API through an optional `@mayura/workflows/children` entry point, not through the base SDK. Proposed names:
+Expose the new API through an optional `mayura/workflows/children` entry point, not through the base SDK. Proposed names:
 
 - `defineWorkflowTree({ id, version, input, output, nodes, result })` creates a genuine immutable definition. Tool/join nodes retain familiar bindings. A child node contains `{ kind: 'child', id, dependsOn?, workflow, input, policy, resources? }` and pins one genuine leaf definition; model-supplied module names or dynamic imports are never resolved.
 - Child `policy` is explicit `{ permissions, maxCostMicros, maxCalls, maxOutputBytes, approvalTtlMs }`. No omission silently imports broader ambient grants. Scope and policy version are inherited immutable values, not child arguments.
@@ -23,7 +23,7 @@ Expose the new API through an optional `@mayura/workflows/children` entry point,
 
 Proposed optional storage capability: `WorkflowTreeAggregateStore.workflowTrees`. Its strict methods retain the scheduled finite controls, replacing submission with format-4 enrollment and adding `admitChild` and `joinChild`. Method inputs are snapshotted before any asynchronous initialization or transport. Replies are independently validated against the requested profile, root, member, account, policy and definition identities. A custom adapter is never silently treated as child-capable because it exposes legacy scheduled methods.
 
-Pinned foundation choices: the optional entry point is `@mayura/workflows/children`; the genuine factory is `defineWorkflowTree`; persisted manifests are format 4 in the `mayura:workflow-tree:v1` hash domain; child leaves are genuine legacy tool/join workflows; and scheduler accounting uses fixed owner `workflow-tree-v1` in `mayura_workflow_tree_budgets` / `mayura_workflow_tree_budget_events`. The public `host-v1` codec, tables and constructor remain unchanged.
+Pinned foundation choices: the optional entry point is `mayura/workflows/children`; the genuine factory is `defineWorkflowTree`; persisted manifests are format 4 in the `mayura:workflow-tree:v1` hash domain; child leaves are genuine legacy tool/join workflows; and scheduler accounting uses fixed owner `workflow-tree-v1` in `mayura_workflow_tree_budgets` / `mayura_workflow_tree_budget_events`. The public `host-v1` codec, tables and constructor remain unchanged.
 
 The storage write key must include the member policy pin and immutable tree identity, conceptually `{ scope, rootId, rootPolicyHash, id, policyHash, expectedVersion, commandId }`. Caller-provided root/account references are assertions to verify against stored ownership, not authority to move an existing member into a different tree. The exact exported type names and whether the redundant root pins are public or internally derived remain an API decision below.
 
