@@ -15,6 +15,7 @@ export {
   type WorkflowLifecycleRuntime,
   type WorkflowLifecycleRuntimeOptions,
   type WorkflowLifecycleHumanRequest,
+  type WorkflowLifecycleApprovalRequest,
   type WorkflowLifecycleSnapshot,
   type WorkflowLifecycleVerifiedActor,
 } from './lifecycle-runtime.js';

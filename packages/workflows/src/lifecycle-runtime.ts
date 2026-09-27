@@ -38,6 +38,19 @@ export interface WorkflowLifecycleHumanRequest {
   readonly deadlineAtMs: number | null;
 }
 
+/** What an operator approves: the exact tool call the approval digest binds, reconstructed and digest-verified. */
+export interface WorkflowLifecycleApprovalRequest {
+  readonly runId: string;
+  readonly nodeId: string;
+  readonly status: 'waiting' | 'approved';
+  readonly toolId: string;
+  readonly toolVersion: string;
+  /** The validated tool input that runs once approved. */
+  readonly input: JsonValue;
+  readonly digest: string;
+  readonly expiresAtMs: number;
+}
+
 export interface WorkflowLifecycleRuntimeOptions {
   readonly store: AggregateStore;
   readonly scope: Scope;
@@ -62,6 +75,8 @@ export interface WorkflowLifecycleRuntime {
   submit(definition: AnyWorkflowLifecycle, command: { readonly input: unknown; readonly idempotencyKey: string }): Promise<WorkflowLifecycleSnapshot>;
   inspect(id: string): Promise<WorkflowLifecycleSnapshot>;
   humanRequest(definition: AnyWorkflowLifecycle, id: string, nodeId: string): Promise<WorkflowLifecycleHumanRequest | undefined>;
+  /** The pending (or approved, not yet dispatched) approval of one tool node; undefined when none is outstanding. */
+  approvalRequest(definition: AnyWorkflowLifecycle, id: string, nodeId: string): Promise<WorkflowLifecycleApprovalRequest | undefined>;
   events(id: string, after?: number): ReturnType<AggregateStore['events']>;
   runUntilSettled(definition: AnyWorkflowLifecycle, id: string): Promise<WorkflowLifecycleSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowLifecycleSnapshot>;
@@ -481,6 +496,23 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       return freezeJson(jsonValue({ runId: id, nodeId, status: step.status, kind: node.request.kind,
         schemaId: node.request.schemaId, schemaDigest: node.request.schemaDigest, prompt: node.request.prompt,
         digest: requestDigest, context, subjectDigest, deadlineAtMs })) as unknown as WorkflowLifecycleHumanRequest;
+    },
+    approvalRequest: async (definition, id, nodeId) => {
+      ensureOpen(); assertWorkflowLifecycle(definition);
+      if (!nodePattern.test(nodeId)) throw new MayuraError('INVALID_INPUT', 'A lifecycle tool node ID is required.');
+      const record = await load(id); const state = stateFrom(record); verifyDefinition(definition, record, state);
+      const node = definition.nodes.find(candidate => candidate.id === nodeId);
+      const step = state.steps[nodeId];
+      if (!node || node.kind !== 'tool' || !step || step.kind !== 'tool') throw new MayuraError('NOT_FOUND', 'Lifecycle tool node was not found.');
+      if (!node.approval || !step.approval || (step.status !== 'waiting' && step.status !== 'approved')) return undefined;
+      // Rebuild the input exactly as preparation did; it must reproduce the persisted digest, or the evidence is refused.
+      const input = jsonValue(await controlled(() => validate(node.tool.input, resolveBinding(node.input, state.input, outputs(state)), 'input'),
+        node.tool.timeoutMs), { maxBytes: maxOutputBytes });
+      if (approvalCandidate(node, input, id, step.approval.expiresAt) !== step.approval.digest) {
+        throw new MayuraError('CONFLICT', 'Persisted approval evidence does not match its definition.');
+      }
+      return freezeJson(jsonValue({ runId: id, nodeId, status: step.status, toolId: node.tool.id, toolVersion: node.tool.version, input,
+        digest: step.approval.digest, expiresAtMs: step.approval.expiresAt })) as unknown as WorkflowLifecycleApprovalRequest;
     },
     events: (id, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     runUntilSettled: async (definition, id) => {

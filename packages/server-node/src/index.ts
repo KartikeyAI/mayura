@@ -5,6 +5,8 @@ import { createAgentServer, type AgentServer, type AgentServerOptions } from '@m
 import { hardenServer, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
 
 export { listenProductionServer, type ProductionAgentServer, type ProductionServerOptions } from './production.js';
+/** The identity an application's `authenticate` callback returns, re-exported so hosts need not import @mayura/server. */
+export type { ServerIdentity } from '@mayura/server';
 export { listenProbe, type ProbeServer, type ProbeServerOptions } from './probe.js';
 
 export interface LocalServerOptions extends Omit<AgentServerOptions, 'publicOrigin'> {

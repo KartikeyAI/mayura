@@ -52,6 +52,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - **Operator console.** A React and shadcn/ui console served same-origin by the agent server (`inspector: true`).
   - Views for workflows, human requests, fleet control, migrations and agent runs.
   - Confirmed, revision-bound operator commands.
+  - Tool approvals from the console and the API: a waiting tool step's view carries its approval digest and expiry, and lifecycle runs show the exact tool call it binds (`runtime.approvalRequest`, digest-verified).
   - A strict CSP with a per-response style nonce.
 - **Platform.** Node.js 22 LTS support alongside 24.
 - **Release engineering.**
@@ -62,6 +63,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- A strict TypeScript host could not pass `createWorkflowOperatorTransports` to the server: view node kinds, step statuses and fleet results were typed too loosely. They now use the server's record types, and `@mayura/server-node` re-exports `ServerIdentity`.
 - A scheduled run whose approval expired before its step was admitted retried the refused preparation until it failed with a contention error. The driver now requests a fresh review, and the run waits for a human again.
 - The migration planner could accept a settled tool step whose tool changed. The migrated state then failed validation. Such a plan is now refused, with the reason.
 - CI on Linux and macOS:

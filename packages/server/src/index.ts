@@ -31,7 +31,12 @@ export interface WorkflowViewRecord {
   readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer'; readonly dependsOn: readonly string[] }[];
   readonly steps: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
     readonly status: 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
-    readonly childRunId?: string }[];
+    readonly childRunId?: string; readonly approval?: WorkflowApprovalRecord }[];
+}
+/** A tool step waiting for approval: the digest an approval must name, its expiry and, when known, the exact tool call. */
+export interface WorkflowApprovalRecord {
+  readonly digest: string; readonly expiresAtMs: number;
+  readonly subject?: { readonly toolId: string; readonly toolVersion: string; readonly input: JsonValue };
 }
 export interface WorkflowViewTransport {
   readonly inspect: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly runId: string;
@@ -169,6 +174,16 @@ const workflowKinds = Object.freeze({ 2: new Set(['tool', 'join']), 3: new Set([
   4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']) });
 const workflowStatuses = new Set(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const workflowStepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
+const approvalRecord = (value: JsonValue | undefined): boolean => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value); const subject = value['subject'];
+  return keys.every(key => ['digest', 'expiresAtMs', 'subject'].includes(key)) && typeof value['digest'] === 'string' && /^[a-f0-9]{64}$/.test(value['digest'])
+    && typeof value['expiresAtMs'] === 'number' && Number.isSafeInteger(value['expiresAtMs']) && value['expiresAtMs'] > 0
+    && (subject === undefined || (subject !== null && typeof subject === 'object' && !Array.isArray(subject)
+      && Object.keys(subject).length === 3 && Object.hasOwn(subject, 'input')
+      && typeof subject['toolId'] === 'string' && identifier.test(subject['toolId'])
+      && typeof subject['toolVersion'] === 'string' && identifier.test(subject['toolVersion'])));
+};
 function object(value: unknown, maxBytes = 1_048_576): JsonObject {
   const copy = jsonValue(value, { maxBytes });
   if (copy === null || Array.isArray(copy) || typeof copy !== 'object') throw new HttpFailure(400, 'INVALID_REQUEST');
@@ -217,13 +232,14 @@ function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewReco
   const seen = new Set<string>();
   for (const candidate of steps) {
     let step: JsonObject; try { step = object(candidate, 16_384); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
-    const allowed = ['id', 'kind', 'status', 'childRunId'];
+    const allowed = ['id', 'kind', 'status', 'childRunId', 'approval'];
     if (Object.keys(step).some(key => !allowed.includes(key)) || !['id', 'kind', 'status'].every(key => Object.hasOwn(step, key)) || typeof step['id'] !== 'string'
       || seen.has(step['id']) || step['kind'] !== nodeKinds.get(step['id']) || typeof step['status'] !== 'string' || !workflowStepStatuses.has(step['status'])
       || (step['kind'] === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(step['status']))
       || (step['kind'] === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(step['status']))
       || (step['status'] === 'timed_out' && step['kind'] !== 'human')
       || (step['childRunId'] !== undefined && (step['kind'] !== 'child' || typeof step['childRunId'] !== 'string' || !/^[a-f0-9]{64}$/.test(step['childRunId'])))
+      || (step['approval'] !== undefined && (step['kind'] !== 'tool' || step['status'] !== 'waiting' || !approvalRecord(step['approval'])))
       ) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
     seen.add(step['id']);
   }

@@ -485,6 +485,24 @@ describe('authenticated durable workflow view transport', () => {
     }
   });
 
+  it('carries a pending tool approval and refuses one on any other step or with a malformed shape', async () => {
+    const approval = { digest: 'd'.repeat(64), expiresAtMs: 1_000, subject: { toolId: 'deploy.apply', toolVersion: '2', input: { region: 'eu' } } };
+    const waiting = { ...workflow(), steps: [{ id: 'prepare', kind: 'tool' as const, status: 'waiting' as const, approval }, workflow().steps[1]!] };
+    const accepted = server({ workflowViews: { inspect: async () => waiting } });
+    expect(await json(await accepted.fetch(request(`/v1/workflow-runs/${workflowId}`)))).toEqual({ workflow: waiting });
+    const refused = [
+      { ...workflow(), steps: [{ id: 'prepare', kind: 'tool', status: 'succeeded', approval }, workflow().steps[1]] },
+      { ...workflow(), steps: [workflow().steps[0], { ...workflow().steps[1], approval }] },
+      { ...waiting, steps: [{ ...waiting.steps[0], approval: { ...approval, digest: 'short' } }, waiting.steps[1]] },
+      { ...waiting, steps: [{ ...waiting.steps[0], approval: { ...approval, actor: 'PRIVATE' } }, waiting.steps[1]] },
+      { ...waiting, steps: [{ ...waiting.steps[0], approval: { ...approval, subject: { toolId: 'deploy.apply', toolVersion: '2' } } }, waiting.steps[1]] },
+    ];
+    for (const candidate of refused) {
+      const value = server({ workflowViews: { inspect: async () => candidate as never } });
+      await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    }
+  });
+
   it('sanitizes adapter failures and bounds concurrent inspections', async () => {
     const started = deferred<void>(); const pending = deferred<ReturnType<typeof workflow> | null>(); let calls = 0;
     const value = server({ limits: { maxWorkflowOperations: 1 }, workflowViews: { inspect: async () => { calls += 1; started.resolve(); return pending.promise; } } });

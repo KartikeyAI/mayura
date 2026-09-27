@@ -231,6 +231,17 @@ describe('browser durable workflow view client', () => {
     await expect(client.workflow(runId)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' }); expect(transport).toHaveBeenCalledOnce();
   });
 
+  it('admits a pending tool approval only on a waiting tool step with an exact shape', async () => {
+    const approval = { digest: 'd'.repeat(64), expiresAtMs: 5_000, subject: { toolId: 'deploy.apply', toolVersion: '2', input: { region: 'eu' } } };
+    const waiting = { ...view, steps: [{ id: 'prepare', kind: 'tool', status: 'waiting', approval }, view.steps[1]] };
+    expect((await fakeClient(() => jsonResponse({ workflow: waiting })).client.workflow(runId)).steps[0]).toEqual(waiting.steps[0]);
+    for (const steps of [
+      [{ id: 'prepare', kind: 'tool', status: 'succeeded', approval }, view.steps[1]],
+      [{ id: 'prepare', kind: 'tool', status: 'waiting', approval: { ...approval, digest: 'x' } }, view.steps[1]],
+      [{ id: 'prepare', kind: 'tool', status: 'waiting', approval: { ...approval, reviewer: 'PRIVATE' } }, view.steps[1]],
+    ]) await expect(fakeClient(() => jsonResponse({ workflow: { ...view, steps } })).client.workflow(runId)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
   it('sends exact cancellation and child-approval commands once through the authenticated facade', async () => {
     const cancel = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3, status: 'cancelled' as const } }));
     const approve = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...view, revision: 3 } }));
@@ -673,7 +684,8 @@ describe('production workflow operator transports', () => {
           graphOperatorTarget({ runtime: graphRuntime, discovery: graphDiscovery, store, scope, definitions: [graph], approvalCredential }),
           treeOperatorTarget({ runtime: treeRuntime, discovery: treeDiscovery, store, scope, definitions: [tree], approvalCredential }),
         ] });
-      const { client } = fixture(transports as never);
+      // No cast: the operator transports must be assignable to the server options as typed.
+      const { client } = fixture(transports);
 
       // Index: pages walk every format with opaque cursors.
       const listed: { runId: string; format: number }[] = []; let after: string | undefined; let pages = 0;
@@ -696,10 +708,13 @@ describe('production workflow operator transports', () => {
       expect(await client.migrateWorkflow(first.id, 'ops-1-to-2', paused.revision, { commandId: 'migrate-first' })).toEqual(migrated);
       expect((await client.workflow(first.id)).steps.map(step => step.id)).toEqual(['wake', 'settle']);
 
-      // Approvals map the operator to the runtime's verified human.
-      const review = (await graphRuntime.inspect(graphRun.id)).steps['ship']!.approval!.digest;
-      const graphView = await client.workflow(graphRun.id);
-      expect((await client.approveWorkflow(graphRun.id, { revision: graphView.revision, nodeId: 'ship', approvalDigest: review }, { commandId: 'approve-ship' })).steps[0]!.status).toBe('approved');
+      // The view carries each pending approval's digest, so an operator approves over HTTP alone; approvals map the
+      // operator to the runtime's verified human.
+      const graphView = await client.workflow(graphRun.id); const review = graphView.steps[0]!.approval!.digest;
+      expect(review).toBe((await graphRuntime.inspect(graphRun.id)).steps['ship']!.approval!.digest);
+      expect(graphView.steps[0]!.approval).toEqual({ digest: review, expiresAtMs: expect.any(Number) });
+      const approvedView = await client.approveWorkflow(graphRun.id, { revision: graphView.revision, nodeId: 'ship', approvalDigest: review }, { commandId: 'approve-ship' });
+      expect(approvedView.steps[0]).toEqual({ id: 'ship', kind: 'tool', status: 'approved' });
 
       // Fleet sweeps reach every format.
       await client.holdWorkflowFleet();
@@ -717,5 +732,33 @@ describe('production workflow operator transports', () => {
       await expect(other.client.workflowFleet()).rejects.toMatchObject({ status: 503 });
       expect((await lifecycleRuntime.inspect(second.id)).status).toBe('paused');
     } finally { for (const item of closers) await item.close(); await store.close(); }
+  });
+
+  it('shows a lifecycle approval with its verified tool call and approves it over HTTP', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    const scope = { principalId: 'developer', projectId: 'project' };
+    const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'approval-e2e', validate: value => ({ value: value as JsonValue }) } };
+    const refund = defineTool({ id: 'payments.refund', version: '3', description: 'refund', input: any, output: any, effects: 'write', capabilities: [], costMicros: 0,
+      execute: input => ({ refunded: (input as { amount: number }).amount }) });
+    const workflow = defineWorkflowLifecycle({ id: 'refund', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'pay', tool: refund, input: { kind: 'input', path: ['payment'] }, approval: true }], result: { kind: 'step', stepId: 'pay', path: [] } });
+    const runtime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: ['tool:payments.refund', 'effect:write'] }, policyVersion: '1', maxCostMicros: 0,
+      verifyHuman: async credential => ({ id: String((credential as { actor: string }).actor), projectId: 'project', canApprove: true }) });
+    try {
+      const run = await runtime.submit(workflow, { input: { payment: { amount: 1_250, currency: 'EUR' }, note: 'not approved' }, idempotencyKey: 'refund-1' });
+      await runtime.runUntilSettled(workflow, run.id);
+      const transports = createWorkflowOperatorTransports({ store, scope, journal: createWorkflowCommandJournal({ store, scope }),
+        targets: [lifecycleOperatorTarget({ runtime, store, scope, definitions: [workflow], approvalCredential: actor => ({ actor }) })] });
+      const { client } = fixture(transports);
+      const view = await client.workflow(run.id); const approval = view.steps[0]!.approval!;
+      // Exactly the bound tool input, not the whole run input.
+      expect(approval.subject).toEqual({ toolId: 'payments.refund', toolVersion: '3', input: { amount: 1_250, currency: 'EUR' } });
+      expect(approval.digest).toBe((await runtime.approvalRequest(workflow, run.id, 'pay'))!.digest);
+      await expect(client.approveWorkflow(run.id, { revision: view.revision, nodeId: 'pay', approvalDigest: 'f'.repeat(64) }, { commandId: 'wrong' }))
+        .rejects.toBeInstanceOf(ClientError);
+      const approved = await client.approveWorkflow(run.id, { revision: view.revision, nodeId: 'pay', approvalDigest: approval.digest }, { commandId: 'approve' });
+      expect(approved.steps[0]).toEqual({ id: 'pay', kind: 'tool', status: 'approved' });
+      expect(await runtime.runUntilSettled(workflow, run.id)).toMatchObject({ status: 'succeeded', output: { refunded: 1_250 } });
+    } finally { runtime.close(); await store.close(); }
   });
 });

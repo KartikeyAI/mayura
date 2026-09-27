@@ -5,7 +5,15 @@ export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' 
 export type WorkflowViewRunStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type WorkflowViewStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowViewNode { readonly id: string; readonly kind: WorkflowViewNodeKind; readonly dependsOn: readonly string[] }
-export interface WorkflowViewStep { readonly id: string; readonly kind: WorkflowViewNodeKind; readonly status: WorkflowViewStepStatus; readonly childRunId?: string }
+/** A tool step waiting for approval. Approve with `digest` before `expiresAtMs`; `subject` is the exact, verified tool call when the host can show it. */
+export interface WorkflowViewApproval {
+  readonly digest: string; readonly expiresAtMs: number;
+  readonly subject?: { readonly toolId: string; readonly toolVersion: string; readonly input: ClientJson };
+}
+export interface WorkflowViewStep {
+  readonly id: string; readonly kind: WorkflowViewNodeKind; readonly status: WorkflowViewStepStatus; readonly childRunId?: string;
+  readonly approval?: WorkflowViewApproval;
+}
 export interface WorkflowViewInput {
   readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string;
   readonly runId: string; readonly revision: number; readonly status: WorkflowViewRunStatus;

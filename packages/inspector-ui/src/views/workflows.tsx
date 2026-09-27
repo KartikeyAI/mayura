@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { ArrowLeft, Ban, ChevronRight, Pause, Play, RefreshCw } from 'lucide-react';
-import { createWorkflowGraphProjection, type WorkflowViewInput } from '@mayura/client/workflows';
+import { ArrowLeft, Ban, Check, ChevronRight, Pause, Play, RefreshCw } from 'lucide-react';
+import { createWorkflowGraphProjection, type WorkflowViewApproval, type WorkflowViewInput } from '@mayura/client/workflows';
 import { commandId, useLoad, useSession } from '@/lib/session';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/primitives';
@@ -74,6 +74,7 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
                   <TableCell><StatusBadge status={node.status} /></TableCell></TableRow>))}</TableBody></Table>
           </CardContent></Card>
           <div className="space-y-4">
+            <ApprovalPanel run={run} onApproved={view.reload} />
             <Card><CardHeader><CardTitle>Progress</CardTitle></CardHeader><CardContent className="space-y-3">
               <div className="bg-muted h-2 overflow-hidden rounded-full"><div className="bg-success h-full" style={{ width: `${projection.progress.total ? projection.progress.succeeded / projection.progress.total * 100 : 0}%` }} /></div>
               <dl className="grid grid-cols-2 gap-2 text-sm">
@@ -85,6 +86,40 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Tool steps waiting for approval: what will run, until when, and the exact digest the approval names. */
+function ApprovalPanel({ run, onApproved }: { run: WorkflowViewInput; onApproved: () => void }) {
+  const { client } = useSession();
+  const pending = run.steps.flatMap(step => step.approval ? [{ id: step.id, approval: step.approval }] : []);
+  if (pending.length === 0) return null;
+  return (
+    <Card><CardHeader><CardTitle>Awaiting approval</CardTitle><CardDescription>Nothing below runs until it is approved.</CardDescription></CardHeader>
+      <CardContent className="space-y-4">{pending.map(({ id, approval }) => (
+        <div key={id} className="space-y-2 border-b pb-4 last:border-b-0 last:pb-0">
+          <div className="flex items-center justify-between gap-2">
+            <div><Mono>{id}</Mono>{approval.subject ? <span className="text-muted-foreground ml-2 text-xs">{approval.subject.toolId}@{approval.subject.toolVersion}</span> : null}</div>
+            <ConfirmAction label="Approve" icon={<Check />} title={`Approve ${id}?`}
+              description={<ApprovalSummary approval={approval} />} confirm="Approve"
+              onConfirm={async () => { await client.approveWorkflow(run.runId, { revision: run.revision, nodeId: id, approvalDigest: approval.digest }, { commandId: commandId() }); }}
+              onDone={onApproved} />
+          </div>
+          <ApprovalSummary approval={approval} />
+        </div>))}
+      </CardContent></Card>
+  );
+}
+
+function ApprovalSummary({ approval }: { approval: WorkflowViewApproval }) {
+  return (
+    <div className="space-y-2 text-sm">
+      {approval.subject
+        ? <pre className="bg-muted max-h-64 overflow-auto rounded-md p-2 text-xs">{JSON.stringify(approval.subject.input, null, 2)}</pre>
+        : <p className="text-muted-foreground">The tool input is too large to show here; the digest identifies it exactly.</p>}
+      <p className="text-muted-foreground text-xs">Expires {new Date(approval.expiresAtMs).toLocaleString()} · digest <Mono title={approval.digest}>{short(approval.digest)}</Mono></p>
+      <p className="text-muted-foreground text-xs">An expired request is re-issued with a new digest; approve the current one.</p>
     </div>
   );
 }

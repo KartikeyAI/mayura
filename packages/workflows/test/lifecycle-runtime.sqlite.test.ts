@@ -83,15 +83,21 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
     const submitted = await runtime.submit(approvalDefinition, { input: 'draft', idempotencyKey: 'approval' });
     const waiting = await runtime.runUntilSettled(approvalDefinition, submitted.id);
     const expiredDigest = waiting.steps['draft']?.kind === 'tool' ? waiting.steps['draft'].approval?.digest ?? '' : '';
+    // The approver sees the exact tool call the digest binds, reconstructed and verified by the runtime.
+    expect(await runtime.approvalRequest(approvalDefinition, submitted.id, 'draft')).toEqual({ runId: submitted.id, nodeId: 'draft', status: 'waiting',
+      toolId: 'fixture/draft', toolVersion: '1', input: 'draft', digest: expiredDigest, expiresAtMs: 150 });
     expect(waiting.nextWakeAtMs).toBe(150); clock.value = 150;
     const refreshed = await runtime.runUntilSettled(approvalDefinition, submitted.id);
     const digest = refreshed.steps['draft']?.kind === 'tool' ? refreshed.steps['draft'].approval?.digest ?? '' : '';
     expect(digest).not.toBe(expiredDigest); expect(refreshed.nextWakeAtMs).toBe(200);
+    expect(await runtime.approvalRequest(approvalDefinition, submitted.id, 'draft')).toMatchObject({ digest, expiresAtMs: 200 });
     await expect(runtime.approve({ id: submitted.id, nodeId: 'draft', digest: expiredDigest, credential: 'approver' })).rejects.toMatchObject({ code: 'CONFLICT' });
     await expect(runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'reviewer' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     const approved = await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' });
     expect((await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' })).version).toBe(approved.version);
     expect(await runtime.runUntilSettled(approvalDefinition, submitted.id)).toMatchObject({ status: 'succeeded' });
+    expect(await runtime.approvalRequest(approvalDefinition, submitted.id, 'draft')).toBeUndefined();
+    await expect(runtime.approvalRequest(definition, submitted.id, 'draft')).rejects.toBeDefined();
 
     const pending = await runtime.submit(definition, { input: { payload: 'draft', subjectDigest: hash, reviewBy: 1_000, publishAt: 500 }, idempotencyKey: 'cancel' });
     await runtime.runUntilSettled(definition, pending.id);

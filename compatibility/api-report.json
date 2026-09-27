@@ -706,6 +706,10 @@
         "kind": "interface",
         "declaration": "622f48d5a912e0e4"
       },
+      "WorkflowViewApproval": {
+        "kind": "interface",
+        "declaration": "b0aa484e4e81895b"
+      },
       "WorkflowViewFormat": {
         "kind": "type",
         "declaration": "794f0f14a04699ae"
@@ -728,7 +732,7 @@
       },
       "WorkflowViewStep": {
         "kind": "interface",
-        "declaration": "c630079a0bdc5f83"
+        "declaration": "7149554735665aa4"
       },
       "WorkflowViewStepStatus": {
         "kind": "type",
@@ -2614,6 +2618,10 @@
         "kind": "interface",
         "declaration": "e3496140d12ede0c"
       },
+      "WorkflowApprovalRecord": {
+        "kind": "interface",
+        "declaration": "6f2f65c2cd3423fb"
+      },
       "WorkflowControlResult": {
         "kind": "type",
         "declaration": "d9402675f81fe233"
@@ -2672,7 +2680,7 @@
       },
       "WorkflowViewRecord": {
         "kind": "interface",
-        "declaration": "cc20846be15831cf"
+        "declaration": "96ddc2cd9a388f1f"
       },
       "WorkflowViewTransport": {
         "kind": "interface",
@@ -2715,6 +2723,10 @@
       "ProductionServerOptions": {
         "kind": "interface",
         "declaration": "03a89902bf0569c8"
+      },
+      "ServerIdentity": {
+        "kind": "interface",
+        "declaration": "e0fbf3de0a4592e5"
       }
     },
     "@mayura/storage": {
@@ -5214,13 +5226,25 @@
         "kind": "type",
         "declaration": "7188d1f549610b06"
       },
+      "WorkflowOperatorApproval": {
+        "kind": "interface",
+        "declaration": "7639162c4cc820b2"
+      },
       "WorkflowOperatorControlInput": {
         "kind": "interface",
         "declaration": "48845bb0d8b707e2"
       },
+      "WorkflowOperatorFleetSweepOutcome": {
+        "kind": "type",
+        "declaration": "923c0520f0c1e72f"
+      },
       "WorkflowOperatorIndexRecord": {
         "kind": "type",
         "declaration": "9104ffcf6dd6ac98"
+      },
+      "WorkflowOperatorNodeKind": {
+        "kind": "type",
+        "declaration": "33e10641f8f0fc04"
       },
       "WorkflowOperatorResult": {
         "kind": "type",
@@ -5229,6 +5253,10 @@
       "WorkflowOperatorStatus": {
         "kind": "type",
         "declaration": "de547a26ca9de93d"
+      },
+      "WorkflowOperatorStepStatus": {
+        "kind": "type",
+        "declaration": "8dccb4817fbfd4c5"
       },
       "WorkflowOperatorTarget": {
         "kind": "interface",
@@ -5240,11 +5268,11 @@
       },
       "WorkflowOperatorTransports": {
         "kind": "interface",
-        "declaration": "f47144321990c25d"
+        "declaration": "fe243d4be2d5a524"
       },
       "WorkflowOperatorView": {
         "kind": "interface",
-        "declaration": "c01159c3f5f7800f"
+        "declaration": "419c6bb72d884f0c"
       },
       "WorkflowOptions": {
         "kind": "interface",
@@ -5622,6 +5650,10 @@
         "kind": "interface",
         "declaration": "363cc10512002dff"
       },
+      "WorkflowLifecycleApprovalRequest": {
+        "kind": "interface",
+        "declaration": "fea5a3a5ac417f1c"
+      },
       "WorkflowLifecycleDefinition": {
         "kind": "interface",
         "declaration": "21a4622e836ca778"
@@ -5728,7 +5760,7 @@
       },
       "WorkflowLifecycleRuntime": {
         "kind": "interface",
-        "declaration": "a948bf52fb817bd7"
+        "declaration": "1d670425c70f3825"
       },
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",

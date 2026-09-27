@@ -42,6 +42,10 @@ await listenProductionServer({ /* ... */ ...operator });
 - **Paging.** The index walks every target with opaque cursors. It lists active runs: running, waiting and paused.
 - **Scope isolation.** A request authenticated for any other scope sees an empty index, gets `404` for runs, and gets an error for fleet operations. It changes nothing.
 - **Approvals.** `approvalCredential` maps the authenticated operator to the credential your runtime's `verifyHuman` accepts. Without it, approvals are unavailable (`503`).
+  - A tool step waiting for approval carries `approval: { digest, expiresAtMs }` in its view, so an operator approves over the API alone: `client.approveWorkflow(runId, { revision, nodeId, approvalDigest: step.approval.digest }, { commandId })`.
+  - Lifecycle runs also show `approval.subject`: the tool id, version and exact validated input the approval binds. The runtime rebuilds it with `runtime.approvalRequest(definition, runId, nodeId)` and checks that it reproduces the digest. An input over 8 KiB is left out; the digest still identifies it.
+  - An approval request lapses at `expiresAtMs` (the runtime's `approvalTtlMs`, 1 hour by default). The next pass re-requests it with a new digest, so approve the digest in the current view.
+  - Every operator token for a scope authenticates as that scope's principal, so approvals are attributed to the service principal. Per-person attribution needs your identity provider in front of the API.
 
 ## Journal records
 

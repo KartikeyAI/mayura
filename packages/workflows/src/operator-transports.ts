@@ -1,7 +1,7 @@
 import { MayuraError, jsonValue, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
 import { StorageError, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { digest } from './definition.js';
-import type { WorkflowFleetControl, WorkflowFleetTarget } from './fleet-control.js';
+import type { WorkflowFleetControl, WorkflowFleetHoldState, WorkflowFleetTarget } from './fleet-control.js';
 import { graphFleetTarget, lifecycleFleetTarget, treeFleetTarget } from './fleet-control.js';
 import type { WorkflowGraphDiscovery } from './graph-discovery.js';
 import type { AnyWorkflowGraph } from './graph-definition.js';
@@ -114,11 +114,22 @@ export function createWorkflowCommandJournal(options: WorkflowCommandJournalOpti
 
 /** Structural copies of the agent server's workflow transport records. */
 export type WorkflowOperatorStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type WorkflowOperatorNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+export type WorkflowOperatorStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowOperatorView {
   readonly format: 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string; readonly revision: number;
   readonly status: WorkflowOperatorStatus;
-  readonly nodes: readonly { readonly id: string; readonly kind: string; readonly dependsOn: readonly string[] }[];
-  readonly steps: readonly { readonly id: string; readonly kind: string; readonly status: string; readonly childRunId?: string }[];
+  readonly nodes: readonly { readonly id: string; readonly kind: WorkflowOperatorNodeKind; readonly dependsOn: readonly string[] }[];
+  readonly steps: readonly { readonly id: string; readonly kind: WorkflowOperatorNodeKind; readonly status: WorkflowOperatorStepStatus; readonly childRunId?: string;
+    readonly approval?: WorkflowOperatorApproval }[];
+}
+/**
+ * A tool step waiting for approval: the digest to approve and when the request lapses (it is then re-requested with a
+ * new digest). Targets that can reconstruct it also show the exact tool call, verified against the digest.
+ */
+export interface WorkflowOperatorApproval {
+  readonly digest: string; readonly expiresAtMs: number;
+  readonly subject?: { readonly toolId: string; readonly toolVersion: string; readonly input: JsonValue };
 }
 export type WorkflowOperatorIndexRecord = Pick<WorkflowOperatorView, 'format' | 'definitionId' | 'definitionVersion' | 'runId' | 'revision' | 'status'>;
 export type WorkflowOperatorResult = { readonly status: 'applied'; readonly workflow: WorkflowOperatorView } | { readonly status: 'conflict' } | { readonly status: 'not_found' };
@@ -148,12 +159,18 @@ const catalog = <D extends Registered>(definitions: readonly D[]): Map<string, D
   if (!Array.isArray(definitions) || definitions.length < 1 || definitions.length > 256) throw new MayuraError('INVALID_CONFIG', 'An operator target needs 1–256 registered definitions.');
   return new Map(definitions.map(definition => [definition.digest, definition]));
 };
+type Subjects = ReadonlyMap<string, NonNullable<WorkflowOperatorApproval['subject']>>;
 const project = (format: 3 | 4 | 5, definition: Registered, snapshot: { readonly id: string; readonly version: number; readonly status: string;
-  readonly steps: Readonly<Record<string, { readonly status: string; readonly child?: { readonly runId: string } | null }>> }): WorkflowOperatorView => Object.freeze({
+  readonly steps: Readonly<Record<string, { readonly status: string; readonly child?: { readonly runId: string } | null;
+    readonly approval?: unknown }>> }, subjects: Subjects = new Map()): WorkflowOperatorView => Object.freeze({
   format, definitionId: definition.id, definitionVersion: definition.version, runId: snapshot.id, revision: snapshot.version, status: snapshot.status as WorkflowOperatorStatus,
-  nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind, dependsOn: [...(node.dependsOn ?? [])] })),
+  nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind as WorkflowOperatorNodeKind, dependsOn: [...(node.dependsOn ?? [])] })),
   steps: definition.nodes.map(node => { const step = snapshot.steps[node.id]!;
-    return { id: node.id, kind: node.kind, status: step.status, ...(step.child?.runId ? { childRunId: step.child.runId } : {}) }; }),
+    // Lifecycle and graph tool steps carry their own approval; a tree's approvals live in its child runs.
+    const pending = format !== 4 && step.status === 'waiting' && step.approval ? step.approval as { readonly digest: string; readonly expiresAt: number } : null;
+    const subject = pending ? subjects.get(node.id) : undefined;
+    return { id: node.id, kind: node.kind as WorkflowOperatorNodeKind, status: step.status as WorkflowOperatorStepStatus, ...(step.child?.runId ? { childRunId: step.child.runId } : {}),
+      ...(pending ? { approval: { digest: pending.digest, expiresAtMs: pending.expiresAt, ...(subject ? { subject } : {}) } } : {}) }; }),
 });
 const approval = (credential: WorkflowApprovalCredential | undefined, actorId: string): unknown => {
   if (!credential) throw new MayuraError('UNSUPPORTED_PROFILE', 'Operator approvals need an approval credential mapping.');
@@ -182,7 +199,18 @@ export function lifecycleOperatorTarget(options: { readonly runtime: WorkflowLif
     async view(runId) {
       const hash = await pinnedDefinitionHash(store, scope, runId); const definition = hash === undefined ? undefined : definitions.get(hash);
       if (!definition) return null; const snapshot = await owned(() => runtime.inspect(runId));
-      return snapshot ? project(5, definition, snapshot) : null;
+      if (!snapshot) return null;
+      // Show each pending approval's exact tool call; the runtime verifies it reproduces the approval digest.
+      const subjects = new Map<string, NonNullable<WorkflowOperatorApproval['subject']>>();
+      for (const [nodeId, step] of Object.entries(snapshot.steps)) {
+        if (step.kind !== 'tool' || step.status !== 'waiting' || !step.approval) continue;
+        const request = await owned(() => runtime.approvalRequest(definition, runId, nodeId));
+        // A large input is left out rather than truncated; the digest still identifies exactly what is approved.
+        if (request && request.digest === step.approval.digest && Buffer.byteLength(JSON.stringify(request.input), 'utf8') <= 8_192) {
+          subjects.set(nodeId, { toolId: request.toolId, toolVersion: request.toolVersion, input: request.input });
+        }
+      }
+      return project(5, definition, snapshot, subjects);
     },
     pause: id => runtime.pause(id), resume: id => runtime.resume(id), cancel: id => runtime.cancel(id),
     approve: (id, command) => runtime.approve({ id, nodeId: command.nodeId, digest: command.digest, credential: approval(options.approvalCredential, command.actorId) }),
@@ -248,7 +276,12 @@ export interface WorkflowOperatorTransportOptions {
   readonly scope: Scope;
 }
 type ScopedInput = { readonly scope: Scope };
-type FleetSweep = { readonly outcomes: readonly JsonObject[]; readonly nextCursor: JsonObject | null };
+/** One run's outcome in a fleet sweep page (a structural copy of the server's sweep record). */
+export type WorkflowOperatorFleetSweepOutcome =
+  | { readonly target: string; readonly runId: string;
+      readonly outcome: 'paused' | 'already_paused' | 'terminal' | 'busy' | 'resumed' | 'not_paused' | 'missing' | 'unregistered' }
+  | { readonly target: string; readonly runId: string; readonly outcome: 'failed'; readonly code: string };
+type FleetSweep = { readonly outcomes: readonly WorkflowOperatorFleetSweepOutcome[]; readonly nextCursor: JsonObject | null };
 /** Structurally the agent server's workflow transport options: spread it into the server options. */
 export interface WorkflowOperatorTransports {
   readonly workflowIndex: { list(input: ScopedInput & { readonly after: string | null; readonly limit: number }): Promise<{ readonly items: readonly WorkflowOperatorIndexRecord[]; readonly next: string | null }> };
@@ -260,7 +293,7 @@ export interface WorkflowOperatorTransports {
   readonly workflowPauses: { pause(input: ControlInput): Promise<WorkflowOperatorResult> };
   readonly workflowResumes: { resume(input: ControlInput): Promise<WorkflowOperatorResult> };
   readonly workflowFleet?: {
-    inspect(input: ScopedInput): Promise<unknown>; hold(input: ScopedInput): Promise<unknown>; release(input: ScopedInput): Promise<unknown>;
+    inspect(input: ScopedInput): Promise<WorkflowFleetHoldState>; hold(input: ScopedInput): Promise<WorkflowFleetHoldState>; release(input: ScopedInput): Promise<WorkflowFleetHoldState>;
     sweep(input: ScopedInput & { readonly phase: 'pause' | 'resume'; readonly cursor: JsonObject | null; readonly limit: number }): Promise<{ readonly status: 'applied'; readonly sweep: FleetSweep } | { readonly status: 'conflict' }>;
   };
   readonly workflowMigrations?: {
@@ -347,7 +380,7 @@ function fleetTransport(fleet: WorkflowFleetControl, targets: readonly WorkflowF
       try {
         const sweep = input.phase === 'pause' ? await fleet.sweepPause(targets, { cursor: input.cursor as never, limit: input.limit })
           : await fleet.sweepResume(targets, { cursor: input.cursor as never, limit: input.limit });
-        return { status: 'applied' as const, sweep: sweep as unknown as { readonly outcomes: readonly JsonObject[]; readonly nextCursor: JsonObject | null } };
+        return { status: 'applied' as const, sweep: sweep as unknown as FleetSweep };
       } catch (error) { if (isCode(error, 'CONFLICT')) return { status: 'conflict' as const }; throw error; }
     },
   };

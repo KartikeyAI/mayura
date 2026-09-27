@@ -279,15 +279,27 @@ function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
   const seen = new Set<string>();
   for (const candidate of steps) {
     if (!candidate || typeof candidate !== 'object' || !Object.isFrozen(candidate)) return fail(); const step = Object.getOwnPropertyDescriptors(candidate);
-    const keys = Reflect.ownKeys(step); const allowed = ['id', 'kind', 'status', 'childRunId'];
+    const keys = Reflect.ownKeys(step); const allowed = ['id', 'kind', 'status', 'childRunId', 'approval'];
     if (keys.some(key => typeof key !== 'string' || !allowed.includes(key) || !('value' in step[key]!)) || !['id', 'kind', 'status'].every(key => step[key])) return fail();
     const stepId = step['id']!.value; const kind = step['kind']!.value; const status = step['status']!.value; const childRunId = step['childRunId']?.value;
+    const approval = step['approval']?.value;
     if (typeof stepId !== 'string' || seen.has(stepId) || kind !== ids.get(stepId) || typeof status !== 'string' || !stepStatuses.includes(status)
-      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !/^[a-f0-9]{64}$/.test(childRunId)))) return fail();
+      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !/^[a-f0-9]{64}$/.test(childRunId)))
+      || (approval !== undefined && (kind !== 'tool' || status !== 'waiting' || !workflowApproval(approval)))) return fail();
     seen.add(stepId);
   }
   if (seen.size !== ids.size) return fail();
   return raw as unknown as WorkflowViewInput;
+}
+/** A pending approval: exact digest, expiry and optionally the verified tool call it binds. */
+function workflowApproval(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.isFrozen(value)) return false;
+  const approval = value as Record<string, unknown>; const subject = approval['subject'] as Record<string, unknown> | undefined;
+  return Object.keys(approval).every(key => ['digest', 'expiresAtMs', 'subject'].includes(key)) && typeof approval['digest'] === 'string'
+    && /^[a-f0-9]{64}$/.test(approval['digest']) && typeof approval['expiresAtMs'] === 'number' && Number.isSafeInteger(approval['expiresAtMs']) && approval['expiresAtMs'] > 0
+    && (subject === undefined || (!!subject && typeof subject === 'object' && !Array.isArray(subject) && Object.isFrozen(subject) && Object.keys(subject).length === 3
+      && Object.hasOwn(subject, 'input') && typeof subject['toolId'] === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(subject['toolId'])
+      && typeof subject['toolVersion'] === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(subject['toolVersion'])));
 }
 function workflowIndexEntry(value: unknown): WorkflowIndexEntry {
   const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status'];
