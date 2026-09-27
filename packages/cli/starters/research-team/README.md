@@ -112,11 +112,14 @@ must resolve in the library, whose titles (not the model's) fill the reference l
 which re-verifies the digest.
 
 **Traces.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector's base URL; traces go to `/v1/traces`) and each research
-run becomes one trace: a span per step (`research.plan`, `research.investigate`, `research.write`, `research.store`)
-with child spans per model call (`model.call`) and tool call (`tool.library.search`, `tool.library.read`). Spans carry
-names, times, ok/error and the run id. Questions, prompts, sources, findings and reports are never exported: the
-exporter accepts no free-form attributes and the observer admits only allow-listed metadata. Unset, nothing is
-collected or sent.
+run becomes one trace rooted at the run (`workflow:research.run`), with a span per step (`tool:plan`,
+`tool:research.1`..`4`, `join:research`, `tool:write`, `tool:store`). Each agent a step runs is nested under that step
+(`agent:research.planner`, ...), with its model calls (`model.call`) and tool calls (`tool:library.search`,
+`tool:library.read`) under it. The run and step spans are built from the run's durable event log once it settles, so
+a worker that restarts exports them later, and exporting twice sends the same span ids. Spans carry names, times,
+ok/error, run and node ids, step statuses, definition id/version and budget figures. Questions, prompts, sources,
+findings and reports are never exported: span attributes come from a fixed catalog of identifiers and integers, and
+the observer admits only allow-listed metadata. Unset, nothing is collected or sent.
 
 ## Make it yours
 
@@ -177,7 +180,8 @@ from `.env`. The image builds from the npm registry, so it needs published Mayur
 - **The offline models are not research.** They split on punctuation, quote the sentence the keyword search matched
   and assemble a report from those quotes. They show the protocol a real model follows.
 - **The corpus is fictional.** Harlow Creek, its co-operative and every figure are invented for this starter.
-- **Traces have no root span.** Each step is a top-level span in the run's trace; the run itself has no span because
-  its start and end happen in different steps and possibly different processes.
+- **Run traces arrive when the run settles.** The worker exports a run's workflow spans after it succeeds, fails, is
+  blocked or is cancelled (every 2 s while it leads); a run still waiting has only its agent spans so far. Agent spans
+  are best effort: a worker that dies mid-step loses that agent's spans, never the run's.
 - Operator commands are attributed to the service principal. For per-person attribution, put your identity provider
   in front of the API.

@@ -234,7 +234,14 @@ The starters checkpoint added four complete starters and closed the gaps buildin
 - **Remote OpenAI-compatible providers** behind an explicit `remote` opt-in.
 - **Operator approvals over HTTP and in the console**: waiting tool steps carry their approval digest, and lifecycle runs show the exact, digest-verified tool call.
 - **Fixes found by the starters** (each with a regression test that fails without it): the agent server leaked finished runs and runtimes until it answered 429; durable budgets ignored reported tool usage; any exception from an effectful tool forced `outcome_unknown` (`ToolRefusal` now records a refused call as not started); the graph projector and operator transport types rejected the new approval data; plus smaller fixes (memory initialization error, webhook conflict type, named environment errors, MCP `_meta`, zero tool calls).
-Known gaps from this work: agent guards can allow or block but not rewrite (redaction runs in schemas); there is no workflow-level root trace span. No provider has been qualified against a live account.
+Known gaps from this work: none of the four items remain open in the framework (see the next checkpoint). No provider has been qualified against a live account.
+
+**Gap-closing checkpoint (2026-09-27).** Closed the starters' gaps, each with tests:
+- Guards can rewrite as well as allow or block; a rewrite is validated again against its boundary's schema, and `pipelineGuard` turns a guardrails pipeline such as `redactPII` into an agent guard. Managed and tool-level guards still only allow or block.
+- Operators can list finished and `outcome_unknown` lifecycle runs (`view=settled` on the workflow index, the client, `workflow-list --settled` and the console's Finished tab), from a bounded per-scope index that keeps unresolved runs longest. Graph and tree runs are not in that view yet.
+- Lifecycle nodes can be conditional (`when`), and `fanOut` gives bounded variable-width parallel steps; bypassed steps are never admitted or charged. Found and fixed on the way: a budget refusal could be lost to a concurrent sibling write and re-decided only in a later wave.
+- One trace per settled workflow run (lifecycle, format 2, graphs, tree roots), exported through a restart-safe outbox, with agent runs nested under their steps. A tree child's own steps, sagas and loops are not traced yet.
+- `pnpm providers:live-check` qualifies OpenAI, Anthropic, remote OpenAI-compatible providers and the router against the owner's accounts, under cost caps; its dry run runs in CI. It found that `anthropicMessages` refused text sent before a tool call, now fixed. The live run itself has not been performed: it needs the owner's credentials.
 
 ### How to verify
 
@@ -242,4 +249,4 @@ Run the CI list in `.github/workflows/ci.yml`: `node scripts/secret-scan.mjs`, `
 
 ## Next milestone
 
-Remote CI is green and the four starters ship. Next: close the gaps listed in the starters checkpoint (rewriting guards, an operator index of finished and unknown runs, optional fan-out, workflow tracing), qualify providers against live accounts, then a design-partner pilot, SSO/RBAC with an exportable audit trail, an external security review, and scale/failover testing. Separately: authenticate and qualify the live scanner/signer pipeline, then broaden outer-sandbox host/kernel qualification and provider-specific reconciliation fault matrices. The local Docker profile cannot be relabeled as hostile-code production containment. Provider integrations and production operations remain major workstreams. A general enterprise release requires closing all applicable gates.
+The four starters ship and the gaps they found are closed. Next: run `pnpm providers:live-check` against the owner's live accounts, then a design-partner pilot, SSO/RBAC with an exportable audit trail, an external security review, and scale/failover testing. Separately: authenticate and qualify the live scanner/signer pipeline, then broaden outer-sandbox host/kernel qualification and provider-specific reconciliation fault matrices. The local Docker profile cannot be relabeled as hostile-code production containment. Provider integrations and production operations remain major workstreams. A general enterprise release requires closing all applicable gates.

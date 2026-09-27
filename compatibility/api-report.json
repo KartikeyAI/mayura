@@ -1386,6 +1386,14 @@
       }
     },
     "@mayura/exporter-otlp": {
+      "AgentRunTraceOptions": {
+        "kind": "interface",
+        "declaration": "ea217af8837e12c2"
+      },
+      "agentRunTraceSpans": {
+        "kind": "function",
+        "declaration": "288206c70fa619ee"
+      },
       "createOtlpHttpJsonLogExporter": {
         "kind": "function",
         "declaration": "c8e08d53a0e9e5d1"
@@ -1454,9 +1462,21 @@
         "kind": "type",
         "declaration": "edd6d72cd5db896b"
       },
+      "OtlpSpanAttributeName": {
+        "kind": "type",
+        "declaration": "ea58c23d40fbd3c5"
+      },
+      "OtlpSpanAttributes": {
+        "kind": "type",
+        "declaration": "acf59b04cbf6739c"
+      },
+      "OtlpTraceParent": {
+        "kind": "interface",
+        "declaration": "e819bf6e1179a7d3"
+      },
       "OtlpTraceSpan": {
         "kind": "interface",
-        "declaration": "11bf49a903a2cd64"
+        "declaration": "2b7d237834fe34fc"
       }
     },
     "@mayura/guardrails": {
@@ -5070,6 +5090,10 @@
         "kind": "function",
         "declaration": "efdd344feea25c52"
       },
+      "createWorkflowTraceExport": {
+        "kind": "function",
+        "declaration": "f01055ca2ca57832"
+      },
       "createWorkflowWorker": {
         "kind": "function",
         "declaration": "24cfec109bbacacc"
@@ -5413,6 +5437,74 @@
       "WorkflowSnapshot": {
         "kind": "interface",
         "declaration": "150c52bbf321f78f"
+      },
+      "workflowStepTraceContext": {
+        "kind": "function",
+        "declaration": "2e9dd0b56645b850"
+      },
+      "WorkflowTraceAttributeName": {
+        "kind": "type",
+        "declaration": "49914f8ceb6add11"
+      },
+      "WorkflowTraceAttributes": {
+        "kind": "type",
+        "declaration": "fc257a9c38f97143"
+      },
+      "workflowTraceContext": {
+        "kind": "function",
+        "declaration": "ec1a35ac40943312"
+      },
+      "WorkflowTraceContext": {
+        "kind": "interface",
+        "declaration": "49e30a91cfc34c36"
+      },
+      "WorkflowTraceDefinition": {
+        "kind": "interface",
+        "declaration": "f13459f55b65a66a"
+      },
+      "WorkflowTraceExport": {
+        "kind": "interface",
+        "declaration": "3b7a3e456743b930"
+      },
+      "WorkflowTraceExportOptions": {
+        "kind": "interface",
+        "declaration": "0f521049aa25bbae"
+      },
+      "WorkflowTraceExportResult": {
+        "kind": "interface",
+        "declaration": "4418db5a66c68ce2"
+      },
+      "WorkflowTraceFlushReport": {
+        "kind": "interface",
+        "declaration": "2322af5d59d87538"
+      },
+      "WorkflowTraceInput": {
+        "kind": "interface",
+        "declaration": "8c0b7cbe9549cb28"
+      },
+      "WorkflowTraceSink": {
+        "kind": "type",
+        "declaration": "8155a023a361a9c3"
+      },
+      "WorkflowTraceSnapshot": {
+        "kind": "interface",
+        "declaration": "ae0c1f9673a3d554"
+      },
+      "WorkflowTraceSource": {
+        "kind": "interface",
+        "declaration": "eb7d9600f1a4a449"
+      },
+      "WorkflowTraceSpan": {
+        "kind": "interface",
+        "declaration": "f1cb7a5d8babdccc"
+      },
+      "workflowTraceSpans": {
+        "kind": "function",
+        "declaration": "ae9cf705289d83dc"
+      },
+      "WorkflowTraceUnitOptions": {
+        "kind": "interface",
+        "declaration": "c8fdf0a2bfd0d0c8"
       },
       "WorkflowVersionEntry": {
         "kind": "interface",

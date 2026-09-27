@@ -24,6 +24,8 @@ export async function startServer(config: Config, services: Services): Promise<R
     // with a different question is refused (the stored submission belongs to different content).
     start: async request => {
       const run = await runtime.submit(workflows.latest, { input: request, idempotencyKey: `research-${request.requestId}` });
+      // Remember the run for trace export once it settles (a no-op with telemetry off; it never fails the request).
+      await services.telemetry.track(run.id);
       return { runId: run.id, status: run.status };
     },
     report: runId => describeRun({ runtime, artifacts: services.artifacts, artifactScope: services.artifactScope }, runId),

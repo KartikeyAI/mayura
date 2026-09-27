@@ -2,7 +2,7 @@ import { assertPositiveInteger, jsonValue, MayuraError, type JsonObject, type Js
 import type {
   ExactCount, OtlpHttpJsonMetricExporter, OtlpHttpJsonMetricExporterOptions, OtlpHttpJsonSignalExporterOptions,
   OtlpHttpJsonTraceExporter, OtlpHttpJsonTraceExporterOptions, OtlpLogExporterMetrics, OtlpMetricPoint,
-  OtlpSignalExporterSnapshot, OtlpTraceSpan,
+  OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpTraceSpan,
 } from './contracts.js';
 
 const defaults = Object.freeze({ timeoutMs: 5_000, maxBatchSize: 256, maxRequestBytes: 1_048_576, maxResponseBytes: 65_536 });
@@ -16,6 +16,12 @@ const traceId = /^(?!0{32}$)[a-f0-9]{32}$/;
 const spanId = /^(?!0{16}$)[a-f0-9]{16}$/;
 const uint64Max = 18_446_744_073_709_551_615n;
 const metricNames = new Set(['mayura.runs', 'mayura.events', 'mayura.model.calls', 'mayura.tool.calls', 'mayura.cost.micros', 'mayura.export.dropped']);
+// Keep in sync with OtlpSpanAttributeName; a key outside this set rejects the whole batch before transport.
+const spanAttributeNames: ReadonlySet<string> = new Set<OtlpSpanAttributeName>([
+  'mayura.workflow.definition.id', 'mayura.workflow.definition.version', 'mayura.workflow.definition.digest', 'mayura.workflow.status', 'mayura.workflow.events',
+  'mayura.workflow.node.id', 'mayura.workflow.node.kind', 'mayura.workflow.step.status', 'mayura.workflow.step.code', 'mayura.workflow.receipt.execution',
+  'mayura.workflow.child.run.id', 'mayura.agent.id', 'mayura.run.status', 'mayura.model.call', 'mayura.tool.id', 'mayura.tool.version', 'mayura.tool.status',
+  'mayura.budget.spent_micros', 'mayura.budget.reserved_micros', 'mayura.budget.max_micros', 'mayura.budget.step_cost_micros']);
 
 const failed = (): never => { throw new MayuraError('TOOL_FAILED', 'The telemetry export failed. Inspect authorized local diagnostics.'); };
 function exact(value: bigint): ExactCount { return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString(); }
@@ -54,9 +60,21 @@ function nano(value: unknown, field: string): string {
   if (typeof value !== 'string' || !decimal.test(value) || BigInt(value) > uint64Max) throw new MayuraError('INVALID_INPUT', `${field} must be an unsigned 64-bit decimal nanosecond timestamp.`);
   return value;
 }
+/** Catalog attributes, validated and encoded in key order so one span always encodes identically. */
+function spanAttributes(value: JsonValue | undefined): JsonObject[] {
+  if (value === undefined) return [];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MayuraError('INVALID_INPUT', 'Trace span metadata is invalid.');
+  return Object.keys(value).sort().map(key => {
+    const item = value[key];
+    if (!spanAttributeNames.has(key) || !((typeof item === 'string' && stablePattern.test(item)) || (typeof item === 'number' && Number.isSafeInteger(item) && item >= 0))) {
+      throw new MayuraError('INVALID_INPUT', 'Trace span metadata is invalid.');
+    }
+    return { key, value: typeof item === 'string' ? { stringValue: item } : { intValue: String(item) } };
+  });
+}
 function span(value: unknown): JsonObject {
-  const raw = object(jsonValue(value, { maxBytes: 4_096, maxDepth: 4, maxNodes: 32 }));
-  if (Object.keys(raw).some(key => !['traceId', 'spanId', 'parentSpanId', 'name', 'startTimeUnixNano', 'endTimeUnixNano', 'status', 'runId'].includes(key))
+  const raw = object(jsonValue(value, { maxBytes: 8_192, maxDepth: 4, maxNodes: 96 }));
+  if (Object.keys(raw).some(key => !['traceId', 'spanId', 'parentSpanId', 'name', 'startTimeUnixNano', 'endTimeUnixNano', 'status', 'runId', 'attributes'].includes(key))
     || typeof raw['traceId'] !== 'string' || !traceId.test(raw['traceId']) || typeof raw['spanId'] !== 'string' || !spanId.test(raw['spanId'])
     || (raw['parentSpanId'] !== undefined && (typeof raw['parentSpanId'] !== 'string' || !spanId.test(raw['parentSpanId']) || raw['parentSpanId'] === raw['spanId']))
     || typeof raw['name'] !== 'string' || !stablePattern.test(raw['name']) || !['unset', 'ok', 'error'].includes(raw['status'] as string)
@@ -65,7 +83,8 @@ function span(value: unknown): JsonObject {
   if (BigInt(end) < BigInt(start)) throw new MayuraError('INVALID_INPUT', 'Span end must not precede its start.');
   const status = raw['status'] === 'ok' ? 1 : raw['status'] === 'error' ? 2 : 0;
   return { traceId: raw['traceId'], spanId: raw['spanId'], ...(raw['parentSpanId'] === undefined ? {} : { parentSpanId: raw['parentSpanId'] }), name: raw['name'], kind: 1,
-    startTimeUnixNano: start, endTimeUnixNano: end, status: { code: status }, attributes: attributes({ 'mayura.run.id': raw['runId'] as string | undefined }) };
+    startTimeUnixNano: start, endTimeUnixNano: end, status: { code: status },
+    attributes: [...attributes({ 'mayura.run.id': raw['runId'] as string | undefined }), ...spanAttributes(raw['attributes'])] };
 }
 function point(value: unknown): { readonly name: string; readonly kind: 'gauge'; readonly data: JsonObject }
   | { readonly name: string; readonly kind: 'sum'; readonly data: JsonObject; readonly monotonic: boolean } {

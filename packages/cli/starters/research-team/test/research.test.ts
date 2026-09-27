@@ -228,13 +228,23 @@ describe('telemetry', () => {
 
       assert.ok(received.length > 0);
       for (const request of received) { assert.equal(request.path, '/v1/traces'); assert.equal(request.headers['x-collector-key'], 'test key'); }
-      const spans = received.flatMap(request => (JSON.parse(request.body) as { resourceSpans: { scopeSpans: { spans: { traceId: string; name: string }[] }[] }[] })
+      type Span = { traceId: string; spanId: string; parentSpanId?: string; name: string };
+      const spans = received.flatMap(request => (JSON.parse(request.body) as { resourceSpans: { scopeSpans: { spans: Span[] }[] }[] })
         .resourceSpans.flatMap(resource => resource.scopeSpans.flatMap(scope => scope.spans)));
       const names = new Set(spans.map(span => span.name));
-      for (const name of ['research.plan', 'research.investigate', 'research.write', 'research.store', 'model.call', 'tool.library.search', 'tool.library.read']) {
+      for (const name of ['workflow:research.run', 'tool:plan', ...researchSlots.map(id => `tool:${id}`), 'join:research', 'tool:write', 'tool:store',
+        'agent:research.planner', 'agent:research.researcher', 'agent:research.writer', 'model.call', 'tool:library.search', 'tool:library.read']) {
         assert.ok(names.has(name), name);
       }
       assert.equal(new Set(spans.map(span => span.traceId)).size, 1);
+      // One root, the run; every step hangs off it; every agent run hangs off the step that ran it.
+      const roots = spans.filter(span => span.parentSpanId === undefined);
+      assert.deepEqual(roots.map(span => span.name), ['workflow:research.run']);
+      const byId = new Map(spans.map(span => [span.spanId, span]));
+      for (const span of spans.filter(item => item.name.startsWith('agent:'))) {
+        assert.ok(/^tool:(plan|research\.\d|write)$/u.test(byId.get(span.parentSpanId ?? '')?.name ?? ''), span.name);
+      }
+      for (const span of spans) if (span.parentSpanId !== undefined) assert.ok(byId.has(span.parentSpanId), `${span.name} has its parent exported`);
       // No question, finding, source or report text leaves the process: only names, ids and times.
       const exported = received.map(request => request.body).join('\n');
       for (const secret of ['Harlow', 'microgrid', 'batteries', 'co-operative', 'hc-finance', 'Research brief']) assert.ok(!exported.includes(secret), secret);

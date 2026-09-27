@@ -31,4 +31,6 @@ The `@mayura/workflows/lifecycle` entry adds format-5 human/timer suspension, au
 
 The `@mayura/workflows/composites` entry supplies the separate durable saga/loop parent index and host. Submit through its wrapper to record the parent index; stable retries repair uncertain parent/index acknowledgements. It does not provide distributed leader election.
 
+`workflowTraceSpans` projects a settled run's durable event log into deterministic, metadata-only spans (one root per run, one span per step), and `createWorkflowTraceExport` exports settled runs through any OTLP-style trace sink with a durable outbox, per-run markers and a worker unit, so a restarted worker neither loses nor corrupts traces.
+
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.

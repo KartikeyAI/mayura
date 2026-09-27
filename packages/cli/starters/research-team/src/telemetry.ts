@@ -1,106 +1,95 @@
-import { createHash, randomBytes } from 'node:crypto';
-import type { RunEvent, RunHandle } from '@mayura/core';
-import { createOtlpHttpJsonTraceExporter, type OtlpTraceSpan } from '@mayura/exporter-otlp';
+import type { RunHandle } from '@mayura/core';
+import { agentRunTraceSpans, createOtlpHttpJsonTraceExporter, type OtlpTraceSpan } from '@mayura/exporter-otlp';
 import { createObserver } from '@mayura/observability';
+import type { AggregateStore } from '@mayura/storage-contracts';
+import { createWorkflowTraceExport, workflowStepTraceContext, type WorkflowFleetTarget, type WorkflowTraceDefinition, type WorkflowTraceExport,
+  type WorkflowTraceSource, type WorkflowWorkerUnit } from '@mayura/workflows';
 import type { TelemetrySettings } from './config.js';
 
 /**
- * Metadata-only OpenTelemetry traces for research runs. One trace per research run (its id is derived from the run
- * id); each workflow step is a span, and each model call and tool call inside an agent step is a child span.
+ * Metadata-only OpenTelemetry traces for research runs. Each research run is one trace:
  *
- * What is exported: span names (`research.plan`, `model.call`, `tool.library.search`, ...), start and end times, ok or
- * error, and the research run id. What is never exported: questions, prompts, sources, findings, reports, tool
- * inputs or outputs. The exporter accepts no free-form attributes, and the observer admits only allow-listed metadata.
+ *   workflow:research.run                     the run, from submission to its last event
+ *   ├─ tool:plan, tool:research.1..4, join:research, tool:write, tool:store  one span per step
+ *   │  └─ agent:research.planner (…researcher, …writer)                        the agent a step ran
+ *   │     ├─ model.call                                                         each model call
+ *   │     └─ tool:library.search, tool:library.read                             each tool call
+ *
+ * The workflow spans come from the run's durable event log once the run settles (`@mayura/workflows` trace export):
+ * a worker that restarts exports them later, and exporting twice sends identical ids. Agent spans are projected when
+ * the agent finishes and nested under their step. What is exported: names, times, ok/error, run and node ids, step
+ * statuses and budget integers. Never questions, prompts, sources, findings, reports, tool inputs or outputs.
  */
 export interface Telemetry {
-  /** Time one workflow step. For agent steps, pass each agent run to `watch` so its calls become child spans. */
-  step(runId: string, name: string): StepSpan;
-  /** Deliver queued spans (tests and shutdown). Never throws; failed deliveries are counted and dropped. */
+  readonly enabled: boolean;
+  /** Nest one agent run's spans under the workflow step (`context`: the step tool's execution context) running it. */
+  watch(context: { readonly runId: string; readonly callId: string }, handle: RunHandle<unknown>): AgentWatch;
+  /** Export settled research runs from the durable event log. Call once, after the workflow definitions exist. */
+  exportWorkflows(options: { readonly source: WorkflowTraceSource; readonly store: AggregateStore;
+    readonly scope: { readonly principalId: string; readonly projectId: string }; readonly definitions: readonly WorkflowTraceDefinition[] }): void;
+  /** Durably remember a submitted run so its trace is exported once it settles. Never throws: the worker also discovers runs. */
+  track(runId: string): Promise<void>;
+  /** The worker unit that exports settled runs, discovering active ones through `targets`. Undefined when disabled. */
+  unit(targets: readonly WorkflowFleetTarget[]): WorkflowWorkerUnit | undefined;
+  /** Deliver queued agent spans and export settled tracked runs (tests and shutdown). Never throws. */
   flush(): Promise<void>;
   close(): Promise<void>;
-  readonly enabled: boolean;
 }
-export interface StepSpan {
-  watch(handle: RunHandle<unknown>): void;
-  end(status: 'ok' | 'error'): Promise<void>;
-}
+export interface AgentWatch { end(): Promise<void> }
 
-const disabledStep: StepSpan = { watch() {}, async end() {} };
-export const disabledTelemetry: Telemetry = { enabled: false, step: () => disabledStep, flush: async () => {}, close: async () => {} };
-
-const nanos = (milliseconds: number): string => (BigInt(Math.trunc(milliseconds)) * 1_000_000n).toString();
-const hex = (value: string, length: number): string => createHash('sha256').update(value).digest('hex').slice(0, length);
-const spanId = (): string => { let id = '0'.repeat(16); while (/^0+$/u.test(id)) id = randomBytes(8).toString('hex'); return id; };
+const idle: AgentWatch = { async end() {} };
+export const disabledTelemetry: Telemetry = { enabled: false, watch: () => idle, exportWorkflows() {}, track: async () => {}, unit: () => undefined,
+  flush: async () => {}, close: async () => {} };
 
 export function createTelemetry(settings: TelemetrySettings | undefined): Telemetry {
   if (!settings) return disabledTelemetry;
-  const exporter = createOtlpHttpJsonTraceExporter({ endpoint: settings.tracesEndpoint, serviceName: settings.serviceName,
+  // One exporter per producer: an exporter sends one request at a time, and the workflow export serializes only its own.
+  const exporter = () => createOtlpHttpJsonTraceExporter({ endpoint: settings.tracesEndpoint, serviceName: settings.serviceName,
     headers: settings.headers, allowInsecureLoopback: settings.allowInsecureLoopback, timeoutMs: 5_000 });
-  // The exporter sends one request at a time, while researchers finish in parallel: queue spans (bounded) and ship
-  // them from one loop. Telemetry is best-effort and never blocks or fails a research step.
+  const agentExporter = exporter(); const workflowExporter = exporter();
+  let workflows: WorkflowTraceExport | undefined;
+  // Researchers finish in parallel: queue their spans (bounded) and ship them from one loop. Telemetry is best effort
+  // and never blocks or fails a research step.
   const queue: OtlpTraceSpan[] = []; const maxQueued = 2_048;
   let shipping: Promise<void> | undefined; let closed = false;
   const ship = (): Promise<void> => shipping ??= (async () => {
     try {
       while (queue.length > 0) {
         const batch = queue.splice(0, 64);
-        try { await exporter.sink(batch, { signal: AbortSignal.timeout(10_000) }); } catch { /* Counted by exporter.inspect(); dropped. */ }
+        try { await agentExporter.sink(batch, { signal: AbortSignal.timeout(10_000) }); } catch { /* Counted by the exporter; dropped. */ }
       }
     } finally { shipping = undefined; }
   })();
   const emit = (spans: readonly OtlpTraceSpan[]): void => {
-    if (closed || queue.length + spans.length > maxQueued) return;
+    if (closed || spans.length === 0 || queue.length + spans.length > maxQueued) return;
     queue.push(...spans); void ship();
   };
 
   return {
     enabled: true,
-    step(runId, name) {
-      const traceId = hex(`research-trace:${runId}`, 32); const id = spanId(); const startedAt = Date.now();
-      const watched: { observer: ReturnType<typeof createObserver>; runId: string; done: Promise<unknown> }[] = [];
+    watch(context, handle) {
+      // An observer per agent run: it admits only allow-listed metadata and never cancels the run it watches.
+      const observer = createObserver({ maxRuns: 1, maxRecentEventsPerRun: 256, maxObservationMs: 600_000 });
+      const done = observer.observe(handle).done();
       return {
-        watch(handle) {
-          // An observer per agent run: it admits only allow-listed metadata and never cancels the run it watches.
-          const observer = createObserver({ maxRuns: 1, maxRecentEventsPerRun: 256, maxObservationMs: 600_000 });
-          watched.push({ observer, runId: handle.id, done: observer.observe(handle).done() });
-        },
-        async end(status) {
-          const endedAt = Date.now(); const spans: OtlpTraceSpan[] = [{ traceId, spanId: id, name, runId, status,
-            startTimeUnixNano: nanos(startedAt), endTimeUnixNano: nanos(Math.max(endedAt, startedAt)) }];
-          for (const item of watched) {
-            // The run has settled by now; give its final events a moment to arrive, then read what was observed.
-            await Promise.race([item.done, new Promise(resolve => setTimeout(resolve, 1_000).unref())]);
-            spans.push(...childSpans(item.observer.inspect(item.runId)?.recent ?? [], { traceId, parentSpanId: id, runId }));
-            await item.observer.close();
-          }
-          emit(spans);
+        async end() {
+          try {
+            // The run has settled by now; give its final events a moment to arrive, then project what was observed.
+            await Promise.race([done, new Promise(resolve => setTimeout(resolve, 1_000).unref())]);
+            emit(agentRunTraceSpans(observer.inspect(handle.id)?.recent ?? [], { parent: workflowStepTraceContext(context) }));
+          } catch { /* Telemetry never fails the step. */ } finally { await observer.close(); }
         },
       };
     },
-    flush: async () => { while (shipping) await shipping; },
-    close: async () => { if (closed) return; while (shipping) await shipping; closed = true; exporter.close(); },
+    exportWorkflows(options) {
+      workflows = createWorkflowTraceExport({ ...options, exportId: 'research-traces', sink: workflowExporter.sink });
+    },
+    async track(runId) { try { await workflows?.track(runId); } catch { /* The worker's discovery tracks it instead. */ } },
+    unit: targets => workflows?.unit({ intervalMs: 2_000, targets }),
+    flush: async () => {
+      while (shipping) await shipping;
+      try { await workflows?.flush(); } catch { /* Unexported runs stay in the durable outbox. */ }
+    },
+    close: async () => { if (closed) return; while (shipping) await shipping; closed = true; agentExporter.close(); workflowExporter.close(); },
   };
-}
-
-/** Pair start and completion events into spans. Only event types and timing are used; metadata stays behind. */
-function childSpans(events: readonly RunEvent[], parent: { readonly traceId: string; readonly parentSpanId: string; readonly runId: string }): OtlpTraceSpan[] {
-  const spans: OtlpTraceSpan[] = []; let model: RunEvent | undefined; const tools = new Map<string, RunEvent>();
-  const span = (name: string, start: RunEvent, end: RunEvent, ok: boolean): OtlpTraceSpan => {
-    const from = Date.parse(start.timestamp); const to = Math.max(from, Date.parse(end.timestamp));
-    return { traceId: parent.traceId, spanId: spanId(), parentSpanId: parent.parentSpanId, name, runId: parent.runId,
-      status: ok ? 'ok' : 'error', startTimeUnixNano: nanos(from), endTimeUnixNano: nanos(to) };
-  };
-  for (const event of events) {
-    const callId = String(event.metadata['callId'] ?? '');
-    if (event.type === 'model.started') model = event;
-    else if (event.type === 'model.completed' && model) { spans.push(span('model.call', model, event, true)); model = undefined; }
-    else if (event.type === 'tool.started') tools.set(callId, event);
-    else if (event.type === 'tool.completed' && tools.has(callId)) {
-      // Tool ids are identifiers from this code (`library.search`), never model- or user-supplied text.
-      const toolId = String(event.metadata['toolId'] ?? 'tool');
-      spans.push(span(/^[a-z][a-z0-9.]{0,63}$/u.test(toolId) ? `tool.${toolId}` : 'tool.call', tools.get(callId)!, event, event.metadata['status'] === 'succeeded'));
-      tools.delete(callId);
-    }
-  }
-  return spans;
 }

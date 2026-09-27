@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createOtlpHttpJsonLogExporter, createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter } from '@mayura/exporter-otlp';
+import { agentRunTraceSpans, createOtlpHttpJsonLogExporter, createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter } from '@mayura/exporter-otlp';
 
 const root = await realpath(process.cwd());
 for (const name of ['@mayura/core', '@mayura/exporter-otlp']) {
@@ -42,4 +42,16 @@ const points = createOtlpHttpJsonMetricExporter({ endpoint: 'https://collector.e
 await points.sink([{ name: 'mayura.events', kind: 'sum', value: 1, startTimeUnixNano: '1', timeUnixNano: '2', monotonic: true }], { signal: new AbortController().signal });
 assert.equal(calls, 3); assert.equal(bodies.get('https://collector.example/v1/traces').resourceSpans[0].scopeSpans[0].spans.length, 1);
 assert.equal(bodies.get('https://collector.example/v1/metrics').resourceMetrics[0].scopeMetrics[0].metrics.length, 1);
-console.log(JSON.stringify({ status: 'passed', explicitDestination: true, noConstructionNetwork: true, metadataOnly: true, partialAccounting: true, traces: true, metrics: true }));
+const agentSpans = agentRunTraceSpans([
+  { runId: 'consumer-agent', sequence: 1, timestamp: '2026-09-24T00:00:00.000Z', type: 'run.started', metadata: { profile: 'ephemeral', agentId: 'consumer' } },
+  { runId: 'consumer-agent', sequence: 2, timestamp: '2026-09-24T00:00:01.000Z', type: 'run.completed', metadata: { status: 'succeeded', spentMicros: 0, reservedMicros: 0, calls: 0 } },
+], { parent: { traceId: '1'.repeat(32), spanId: '2'.repeat(16) } });
+assert.deepEqual(agentSpans.map(span => [span.name, span.parentSpanId]), [['agent:consumer', '2'.repeat(16)]]);
+await traces.sink([...agentSpans, { traceId: '1'.repeat(32), spanId: '3'.repeat(16), name: 'tool:plan', startTimeUnixNano: '1', endTimeUnixNano: '2', status: 'ok',
+  attributes: { 'mayura.workflow.node.id': 'plan', 'mayura.budget.spent_micros': 5 } }], { signal: new AbortController().signal });
+const sentAttributes = bodies.get('https://collector.example/v1/traces').resourceSpans[0].scopeSpans[0].spans[1].attributes;
+assert.deepEqual(sentAttributes, [{ key: 'mayura.budget.spent_micros', value: { intValue: '5' } }, { key: 'mayura.workflow.node.id', value: { stringValue: 'plan' } }]);
+await assert.rejects(traces.sink([{ traceId: '1'.repeat(32), spanId: '4'.repeat(16), name: 'tool:plan', startTimeUnixNano: '1', endTimeUnixNano: '2', status: 'ok',
+  attributes: { 'mayura.prompt': 'PRIVATE' } }], { signal: new AbortController().signal }), { code: 'INVALID_INPUT' });
+console.log(JSON.stringify({ status: 'passed', explicitDestination: true, noConstructionNetwork: true, metadataOnly: true, partialAccounting: true, traces: true, metrics: true,
+  spanAttributes: true, agentSpans: true }));

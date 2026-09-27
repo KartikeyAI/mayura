@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { MAX_RESEARCHERS, type ModelSettings } from './config.js';
 import { libraryTools, sourceId, type SourceLibrary } from './library/index.js';
 import { finding, plannerAgent, question, researcherAgent, subQuestion, writerAgent } from './team.js';
-import type { StepSpan, Telemetry } from './telemetry.js';
+import type { Telemetry } from './telemetry.js';
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u);
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
@@ -66,12 +66,12 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
     id: 'research.plan', version: '1', effects: 'none', capabilities: ['research:plan'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
     description: 'Run the planner agent: split the research question into sub-questions, one per research slot.',
     input: researchRequest, output: planStepOutput,
-    execute: (request, context) => traced(telemetry, context, 'research.plan', async span => {
+    execute: async (request, context) => {
       const planned = await runAgent(planner, { question: request.question, maxSubQuestions: MAX_RESEARCHERS },
-        { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
+        { context, telemetry, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
       const subQuestions = [...new Set(planned.subQuestions)].slice(0, MAX_RESEARCHERS);
       return { question: request.question, assignments: subQuestions.map(item => ({ question: request.question, subQuestion: item })) };
-    }),
+    },
   });
 
   const investigate = defineTool({
@@ -80,17 +80,15 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
     input: assignment, output: researchStepOutput,
     execute: async (task, context) => {
       const asked = task.subQuestion;
-      return traced(telemetry, context, 'research.investigate', async span => {
-        // Fresh tool instances per step record which documents this researcher actually read.
-        const read = new Set<string>();
-        const tools = libraryTools(library, id => read.add(id));
-        const researcher = researcherAgent(dependencies.model, tools.tools);
-        const found = await runAgent({ ...researcher, permissions: [...researcher.permissions, ...tools.permissions] },
-          { question: task.question, subQuestion: asked }, { context, span, ceiling, limits: { maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 } });
-        // Trust, then verify: a finding may cite only documents this researcher read through library.read.
-        if (found.findings.some(item => item.sourceIds.some(id => !read.has(id)))) throw new Error('A finding cites a document its researcher did not read.');
-        return { question: task.question, subQuestion: asked, findings: found.findings };
-      });
+      // Fresh tool instances per step record which documents this researcher actually read.
+      const read = new Set<string>();
+      const tools = libraryTools(library, id => read.add(id));
+      const researcher = researcherAgent(dependencies.model, tools.tools);
+      const found = await runAgent({ ...researcher, permissions: [...researcher.permissions, ...tools.permissions] },
+        { question: task.question, subQuestion: asked }, { context, telemetry, ceiling, limits: { maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 } });
+      // Trust, then verify: a finding may cite only documents this researcher read through library.read.
+      if (found.findings.some(item => item.sourceIds.some(id => !read.has(id)))) throw new Error('A finding cites a document its researcher did not read.');
+      return { question: task.question, subQuestion: asked, findings: found.findings };
     },
   });
 
@@ -99,13 +97,13 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
     description: 'Run the writer agent over every researcher\'s findings and render the cited report.',
     // The join's output: one entry per slot, `null` for a slot the plan did not use.
     input: z.array(researchStepOutput.nullable()).length(MAX_RESEARCHERS), output: writeStepOutput,
-    execute: (slots, context) => traced(telemetry, context, 'research.write', async span => {
+    execute: async (slots, context) => {
       const research = slots.filter(item => item !== null);
       const asked = research[0]?.question ?? (() => { throw new Error('No researcher ran.'); })();
       const sections = research.map(item => ({ subQuestion: item.subQuestion, findings: item.findings }));
       const reported = new Set(sections.flatMap(section => section.findings.flatMap(item => item.sourceIds)));
       if (reported.size === 0) throw new Error('No researcher found a source for any sub-question; there is nothing to report.');
-      const draft = await runAgent(writer, { question: asked, sections }, { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
+      const draft = await runAgent(writer, { question: asked, sections }, { context, telemetry, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
       // The writer may only cite what researchers reported, and every citation must resolve in the library.
       const cited = [...new Set(draft.sections.flatMap(section => section.sourceIds))];
       if (cited.some(id => !reported.has(id))) throw new Error('The writer cited a source no researcher reported.');
@@ -122,20 +120,20 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
       ].join('\n');
       if (markdown.length > MAX_REPORT_CHARS) throw new Error('The report is longer than this starter stores.');
       return { question: asked, title: draft.title, markdown, citations: citations.map(({ sourceId: id, title }) => ({ sourceId: id, title })) };
-    }),
+    },
   });
 
   const store = defineTool({
     id: 'research.store', version: '1', effects: 'write', capabilities: ['artifacts:write'],
     description: 'Store the finished report in the content-addressed artifact store.',
     input: writeStepOutput, output: researchResult,
-    execute: (report, context) => traced(telemetry, context, 'research.store', async () => {
+    execute: async report => {
       // Content-addressed: the same report bytes always get the same digest, so a repeated store is harmless.
       const staged = await dependencies.artifacts.stage({ scope: dependencies.artifactScope, content: new TextEncoder().encode(report.markdown),
         mediaType: 'text/markdown', classification: 'internal', filename: 'research-report.md' });
       const artifact = await dependencies.artifacts.commit(staged);
       return { question: report.question, title: report.title, citations: report.citations, artifact };
-    }),
+    },
   });
 
   const nodes: WorkflowLifecycleNode[] = [
@@ -174,14 +172,15 @@ const stepTimeoutMs = agentDurationMs + 15_000;
 async function runAgent<I extends Schema, O extends Schema>(
   setup: { readonly agent: AgentDefinition<I, O>; readonly permissions: readonly string[] },
   input: InferInput<I>,
-  options: { readonly context: ToolExecutionContext; readonly span: StepSpan; readonly ceiling: number; readonly limits: RuntimeLimits },
+  options: { readonly context: ToolExecutionContext; readonly telemetry: Telemetry; readonly ceiling: number; readonly limits: RuntimeLimits },
 ): Promise<InferOutput<O>> {
   const { context } = options;
   const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions: { allow: [...setup.permissions] },
     limits: { ...options.limits, maxDurationMs: agentDurationMs, maxCostMicros: options.ceiling } });
   try {
     const handle = runtime.submit(setup.agent, { input });
-    options.span.watch(handle);
+    // The agent's spans nest under this step's span in the research run's trace.
+    const watch = options.telemetry.watch(context, handle);
     const stop = (): void => handle.cancel();
     context.signal.addEventListener('abort', stop, { once: true });
     try {
@@ -190,14 +189,8 @@ async function runAgent<I extends Schema, O extends Schema>(
       context.reportUsage({ knownCostMicros: typeof spent === 'number' ? Math.min(spent, options.ceiling) : options.ceiling, unknownCostMicros: 0 });
       if (outcome.status !== 'succeeded') throw new Error(`The ${setup.agent.id} agent ended ${outcome.status}.`);
       return outcome.output;
-    } finally { context.signal.removeEventListener('abort', stop); }
+    } finally { context.signal.removeEventListener('abort', stop); await watch.end(); }
   } finally { await runtime.close(); }
-}
-
-async function traced<T>(telemetry: Telemetry, context: ToolExecutionContext, name: string, work: (span: StepSpan) => Promise<T>): Promise<T> {
-  const span = telemetry.step(context.runId, name);
-  try { const result = await work(span); await span.end('ok'); return result; }
-  catch (error) { await span.end('error'); throw error; }
 }
 
 /** Used by the desk's report tool: the stored reference as the artifact store expects it. */

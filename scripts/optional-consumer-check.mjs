@@ -284,12 +284,13 @@ async function main() {
         assert.equal(execution.unknownDefinitionSkipped, true);
         assert.equal(execution.interruptedRetryCursor, true);
       }
-      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); assert.equal(execution.lifecycleFleet, true); assert.equal(execution.lifecycleHumanTransport, true); assert.equal(execution.sagaManifest, true); assert.equal(execution.sagaRuntime, true); assert.equal(execution.loopManifest, true); assert.equal(execution.loopRuntime, true); assert.equal(execution.hostedCoordinator, true); assert.equal(execution.compositeFleet, true); }
+      if (name === 'workflows') { assert.equal(execution.verifierRouter, true); assert.equal(execution.lifecycleManifest, true); assert.equal(execution.lifecycleRuntime, true); assert.equal(execution.lifecycleFleet, true); assert.equal(execution.lifecycleHumanTransport, true); assert.equal(execution.sagaManifest, true); assert.equal(execution.sagaRuntime, true); assert.equal(execution.loopManifest, true); assert.equal(execution.loopRuntime, true); assert.equal(execution.hostedCoordinator, true); assert.equal(execution.compositeFleet, true); assert.equal(execution.workflowTraces, true); }
       if (name === 'managed') { assert.equal(execution.wholeOutputBarrier, true); assert.equal(execution.structuredDisclosure, true); }
       if (name === 'otlp') {
         assert.equal(execution.explicitDestination, true); assert.equal(execution.noConstructionNetwork, true);
         assert.equal(execution.metadataOnly, true); assert.equal(execution.partialAccounting, true);
         assert.equal(execution.traces, true); assert.equal(execution.metrics, true);
+        assert.equal(execution.spanAttributes, true); assert.equal(execution.agentSpans, true);
       }
       if (name === 'budgets') {
         assert.equal(execution.driverFree, true); assert.equal(execution.forgedAccountingRejected, true);

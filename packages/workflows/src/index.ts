@@ -21,3 +21,7 @@ export { createWorkflowMigrationService, pinnedDefinitionHash, type WorkflowMigr
 export { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget, graphOperatorTarget, treeOperatorTarget,
   type WorkflowCommandJournal, type WorkflowCommandJournalOptions, type WorkflowCommandOutcome, type WorkflowCommandResult, type WorkflowOperatorTarget,
   type WorkflowOperatorView, type WorkflowOperatorIndexRecord, type WorkflowOperatorSettledRecord, type WorkflowOperatorTransports, type WorkflowOperatorResult, type WorkflowOperatorControlInput, type WorkflowOperatorStatus, type WorkflowOperatorNodeKind, type WorkflowOperatorStepStatus, type WorkflowOperatorFleetSweepOutcome, type WorkflowOperatorApproval, type WorkflowOperatorTransportOptions, type WorkflowApprovalCredential } from './operator-transports.js';
+export { createWorkflowTraceExport, workflowStepTraceContext, workflowTraceContext, workflowTraceSpans, type WorkflowTraceAttributeName, type WorkflowTraceAttributes,
+  type WorkflowTraceContext, type WorkflowTraceDefinition, type WorkflowTraceExport, type WorkflowTraceExportOptions, type WorkflowTraceExportResult,
+  type WorkflowTraceFlushReport, type WorkflowTraceInput, type WorkflowTraceSink, type WorkflowTraceSnapshot, type WorkflowTraceSource, type WorkflowTraceSpan,
+  type WorkflowTraceUnitOptions } from './traces.js';

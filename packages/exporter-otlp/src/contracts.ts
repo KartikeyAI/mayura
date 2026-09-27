@@ -62,6 +62,20 @@ export interface OtlpHttpJsonSignalExporterOptions {
 export type OtlpHttpJsonTraceExporterOptions = OtlpHttpJsonSignalExporterOptions;
 export type OtlpHttpJsonMetricExporterOptions = OtlpHttpJsonSignalExporterOptions;
 
+/**
+ * The closed span-attribute catalog. Every value is a bounded stable identifier (`[A-Za-z0-9][A-Za-z0-9._:/-]*`, at
+ * most 256 characters: ids, versions, statuses, codes) or a non-negative safe integer (micros, counts). There is no
+ * free-form key and no text value, so prompts, inputs, outputs, arguments and error messages cannot be attached.
+ */
+export type OtlpSpanAttributeName =
+  | 'mayura.workflow.definition.id' | 'mayura.workflow.definition.version' | 'mayura.workflow.definition.digest'
+  | 'mayura.workflow.status' | 'mayura.workflow.events'
+  | 'mayura.workflow.node.id' | 'mayura.workflow.node.kind' | 'mayura.workflow.step.status' | 'mayura.workflow.step.code'
+  | 'mayura.workflow.receipt.execution' | 'mayura.workflow.child.run.id'
+  | 'mayura.agent.id' | 'mayura.run.status' | 'mayura.model.call' | 'mayura.tool.id' | 'mayura.tool.version' | 'mayura.tool.status'
+  | 'mayura.budget.spent_micros' | 'mayura.budget.reserved_micros' | 'mayura.budget.max_micros' | 'mayura.budget.step_cost_micros';
+export type OtlpSpanAttributes = Readonly<Partial<Record<OtlpSpanAttributeName, string | number>>>;
+
 /** Completed metadata-only span. IDs use the OTLP JSON hexadecimal representation. */
 export interface OtlpTraceSpan {
   readonly traceId: string;
@@ -72,7 +86,11 @@ export interface OtlpTraceSpan {
   readonly endTimeUnixNano: string;
   readonly status: 'unset' | 'ok' | 'error';
   readonly runId?: string;
+  readonly attributes?: OtlpSpanAttributes;
 }
+
+/** Where a projected span tree hangs: an existing trace and the span that becomes its parent. */
+export interface OtlpTraceParent { readonly traceId: string; readonly spanId: string }
 
 export type OtlpMetricName = 'mayura.runs' | 'mayura.events' | 'mayura.model.calls' | 'mayura.tool.calls' | 'mayura.cost.micros' | 'mayura.export.dropped';
 export interface OtlpMetricPoint {

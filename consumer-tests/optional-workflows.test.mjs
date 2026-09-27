@@ -4,7 +4,7 @@ import { isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent } from '@mayura/runtime';
-import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow } from '@mayura/workflows';
+import { composeExternalEffectVerifiers, defineExternalEffectVerifier, defineWorkflow, workflowTraceContext, workflowTraceSpans } from '@mayura/workflows';
 import { workflowAsAgent, workflowAsTool } from '@mayura/workflows/ephemeral';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, createWorkflowLifecycleHumanTransport, defineWorkflowLifecycle, lifecycleManifest } from '@mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga, sagaManifest } from '@mayura/workflows/sagas';
@@ -153,7 +153,16 @@ const verification = await composeExternalEffectVerifiers([verifier])({ runId: '
   jobId: 'job', fence: 1, callId: 'run/step:left', toolId: 'consumer.left', toolVersion: '1', maximumCostMicros: 0,
   scope: { principalId: 'consumer', projectId: 'project' } }, { token: 'opaque' });
 assert.deepEqual(verification, { authorityId: 'consumer.provider', attestationId: 'consumer/job', execution: 'succeeded', knownCostMicros: 0 });
-console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true,
+const traceRun = 'c'.repeat(64);
+const traceSpans = workflowTraceSpans({ runId: traceRun, snapshot: { status: 'succeeded', steps: { plan: { kind: 'tool', status: 'succeeded', output: 'PRIVATE' } } }, events: [
+  { sequence: 1, type: 'lifecycle.run.created', data: {}, createdAt: '2026-09-24T00:00:00.000Z' },
+  { sequence: 2, type: 'lifecycle.step.completed', data: { nodeId: 'plan' }, createdAt: '2026-09-24T00:00:01.000Z' },
+  { sequence: 3, type: 'lifecycle.run.completed', data: { status: 'succeeded' }, createdAt: '2026-09-24T00:00:02.000Z' },
+] });
+assert.deepEqual(traceSpans.map(span => [span.name, span.spanId, span.parentSpanId ?? null]), [['workflow.run', workflowTraceContext(traceRun).spanId, null],
+  ['tool:plan', workflowTraceContext(traceRun, 'plan').spanId, workflowTraceContext(traceRun).spanId]]);
+assert(!JSON.stringify(traceSpans).includes('PRIVATE'));
+console.log(JSON.stringify({ status: 'passed', graphEffects: effects, transformedForkJoin: true, requiredChildComposition: true, workflowTraces: true,
   verifierRouter: true, lifecycleManifest: true, lifecycleRuntime: true, lifecycleFleet: true, lifecycleHumanTransport: true,
   sagaManifest: true, sagaRuntime: true, loopManifest: true, loopRuntime: true, hostedCoordinator: true,
   compositeFleet: true, sqlDriversInstalled: false }));

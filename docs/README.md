@@ -10,6 +10,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Bounded helper battery](how-to/helpers.md) — explicit configuration, retries, cancellation, cleanup, pagination, artifact transfer, redacted logging and budget-aware concurrency.
 - [CLI and eight templates](how-to/cli-and-templates.md) — plan-first initialization, static catalog validation and credential-free runnable single-file templates.
 - [Model providers](how-to/model-providers.md) — OpenAI, Anthropic, local and remote OpenAI-compatible providers (Groq, Azure, Gemini and more).
+- [Trace durable workflow runs](how-to/workflow-tracing.md) and [contract](specs/otlp-http-json-traces-metrics.md#workflow-and-agent-trace-projections) — one metadata-only trace per settled run with deterministic ids, restart-safe export and agent runs nested under their steps.
 - [Qualify model providers against live accounts](how-to/live-provider-checks.md) — run `pnpm providers:live-check` against your own provider accounts, with cost caps.
 - [Streaming](how-to/streaming.md) — stream one field of an agent's answer in guarded batches; the final output stays authoritative.
 - [Model routing and failover](how-to/model-routing.md) — try providers in priority order with a circuit breaker and conservative accounting.

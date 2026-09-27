@@ -24,6 +24,24 @@ describe('OTLP HTTP JSON trace and metric exporters', () => {
     expect(exporter.inspect().metrics).toMatchObject({ recordsAttempted: 1, recordsAccepted: 1, recordsDropped: 0 });
   });
 
+  it('encodes catalog span attributes in key order as string and integer values', async () => {
+    let body: any; const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => { body = JSON.parse(init?.body as string); return response(); });
+    const exporter = createOtlpHttpJsonTraceExporter(traceOptions(fetch));
+    await exporter.sink([{ ...trace, attributes: { 'mayura.workflow.node.id': 'plan', 'mayura.budget.spent_micros': 12, 'mayura.workflow.definition.id': 'research.run' } }], { signal: new AbortController().signal });
+    expect(body.resourceSpans[0].scopeSpans[0].spans[0].attributes).toEqual([
+      { key: 'mayura.run.id', value: { stringValue: 'run-1' } }, { key: 'mayura.budget.spent_micros', value: { intValue: '12' } },
+      { key: 'mayura.workflow.definition.id', value: { stringValue: 'research.run' } }, { key: 'mayura.workflow.node.id', value: { stringValue: 'plan' } }]);
+  });
+
+  it.each([
+    { 'mayura.prompt': 'plan' }, { 'mayura.workflow.node.id': 'free text is content' }, { 'mayura.workflow.node.id': '' },
+    { 'mayura.budget.spent_micros': -1 }, { 'mayura.budget.spent_micros': 1.5 }, { 'mayura.workflow.node.id': { nested: 'PRIVATE' } }, { 'mayura.tool.id': true },
+  ])('rejects attributes outside the closed catalog or its value rules before transport (%#)', async attributes => {
+    const fetch = vi.fn<typeof globalThis.fetch>(); const exporter = createOtlpHttpJsonTraceExporter(traceOptions(fetch));
+    await expect(exporter.sink([{ ...trace, attributes } as unknown as OtlpTraceSpan], { signal: new AbortController().signal })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('groups compatible metric points and encodes gauge and cumulative sum data', async () => {
     let body: any; const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => { body = JSON.parse(init?.body as string); return response(); });
     const exporter = createOtlpHttpJsonMetricExporter(metricOptions(fetch));

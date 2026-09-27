@@ -4,6 +4,7 @@ import { createLocalArtifactStore } from '@mayura/artifacts';
 import { createPostgresStore } from '@mayura/storage-postgres';
 import { createSqliteStore } from '@mayura/storage-sqlite';
 import { createWorkflowFleetControl } from '@mayura/workflows';
+import { createWorkflowLifecycleRuntime } from '@mayura/workflows/lifecycle';
 import type { Config } from './config.js';
 import { harlowCreekCorpus } from './library/corpus.js';
 import { localLibrary, type SourceLibrary } from './library/index.js';
@@ -36,9 +37,12 @@ export async function openServices(config: Config, options: { readonly library?:
   // `maxCostMicros` is the ONE budget of each research run, shared by the planner, every researcher and the writer.
   const runtimeOptions = { store, scope: config.scope, permissions: { allow: [...workflows.permissions] }, policyVersion: '1',
     maxCostMicros: config.budget.runMicros };
+  // Traces of settled runs are read back from their durable event logs (see telemetry.ts); this runtime only reads.
+  const traceSource = createWorkflowLifecycleRuntime(runtimeOptions);
+  telemetry.exportWorkflows({ source: traceSource, store, scope: config.scope, definitions: workflows.definitions });
   // The durable fleet hold: operators can stop every worker from advancing runs, for example during an incident.
   const fleet = createWorkflowFleetControl({ store, scope: config.scope });
   return { store, library, artifacts, artifactScope, telemetry, workflows, runtimeOptions, fleet,
-    close: async () => { await telemetry.close(); await store.close(); } };
+    close: async () => { await telemetry.close(); traceSource.close(); await store.close(); } };
 }
 export type Services = Awaited<ReturnType<typeof openServices>>;

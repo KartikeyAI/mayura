@@ -1,5 +1,5 @@
 import type { RunEvent } from '@mayura/core';
-import { createOtlpHttpJsonLogExporter, createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter,
+import { agentRunTraceSpans, createOtlpHttpJsonLogExporter, createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter,
   type OtlpHttpJsonLogExporter, type OtlpLogExporterSnapshot, type OtlpMetricPoint, type OtlpTraceSpan } from '@mayura/exporter-otlp';
 
 const transport: typeof globalThis.fetch = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -23,3 +23,8 @@ await createOtlpHttpJsonMetricExporter({ endpoint: 'https://collector.example/v1
 // @ts-expect-error Trace IDs must remain strings at the public boundary.
 const badSpan: OtlpTraceSpan = { ...span, traceId: 1 };
 void badSpan;
+const attributed: OtlpTraceSpan = { ...span, attributes: { 'mayura.workflow.node.id': 'plan', 'mayura.budget.spent_micros': 5 } };
+// @ts-expect-error Span attributes come from a closed catalog.
+const freeForm: OtlpTraceSpan = { ...span, attributes: { 'mayura.prompt': 'PRIVATE' } };
+const nested: readonly OtlpTraceSpan[] = agentRunTraceSpans([metadata], { parent: { traceId: span.traceId, spanId: span.spanId } });
+void attributed; void freeForm; void nested;
