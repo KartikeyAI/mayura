@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
@@ -12,7 +12,9 @@ const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 // Internal packages (test harnesses, the console source embedded in @mayura/server) are never packed or published.
 const internalPackages = new Set(JSON.parse(await readFile(join(workspace, 'compatibility', 'api-stability.json'), 'utf8')).internalPackages);
-const version = '0.1.0-dev.0';
+// The release version is the workspace version; scripts/version.mjs keeps every package in step with it.
+const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8')); const version = root.version;
+assert(typeof root.repository?.url === 'string' && root.homepage && root.bugs?.url, 'The root package.json must name the repository, homepage and issue tracker.');
 
 function npmCli() {
   const configured = process.env.MAYURA_NPM_CLI;
@@ -66,10 +68,17 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   assert(manifest.private === true && manifest.version === version && manifest.name === `@mayura/${directory.name}`, 'Source package identity is not release-safe.');
   const staging = join(stagingRoot, directory.name);
   await mkdir(staging);
-  for (const name of ['dist', 'src', 'image', 'templates']) if (existsSync(join(source, name))) await cp(join(source, name), join(staging, name), { recursive: true, errorOnExist: true });
+  // Copy what `files` publishes (npm pack applies the patterns); installs, build output and local state inside a
+  // published folder (such as the CLI's starters) stay behind.
+  const roots = new Set(['dist', 'src', 'image', 'templates', ...(manifest.files ?? []).map(pattern => String(pattern).split('/')[0]).filter(name => name && !name.includes('*'))]);
+  const kept = path => { const parts = relative(source, path).split(sep); return !parts.slice(1).some(part => ['node_modules', '.data', 'coverage', 'dist'].includes(part) || part.endsWith('.tsbuildinfo')); };
+  for (const name of [...roots].sort()) if (!['README.md', 'LICENSE', 'NOTICE', 'package.json'].includes(name) && existsSync(join(source, name))) {
+    await cp(join(source, name), join(staging, name), { recursive: true, errorOnExist: true, filter: kept });
+  }
   if (existsSync(join(source, 'README.md'))) await cp(join(source, 'README.md'), join(staging, 'README.md'), { errorOnExist: true });
   const dependencies = Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([name, range]) => [name, String(range).startsWith('workspace:') ? version : range]));
   const releaseManifest = { ...manifest, private: undefined, license: 'Apache-2.0', dependencies,
+    repository: { ...root.repository, directory: `packages/${directory.name}` }, homepage: root.homepage, bugs: root.bugs,
     files: [...new Set([...(manifest.files ?? []), 'LICENSE', 'NOTICE'])],
     publishConfig: { ...(manifest.publishConfig ?? {}), access: 'public', provenance: true } };
   delete releaseManifest.private;
@@ -90,6 +99,8 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   const packedManifest = JSON.parse(files.get('package.json').toString('utf8'));
   assert(packedManifest.name === manifest.name && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
   assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
+  assert.equal(packedManifest.repository?.url, root.repository.url, `${manifest.name} must name the repository for provenance.`);
+  if (manifest.name === '@mayura/cli') assert([...files.keys()].some(path => path.startsWith('starters/research-team/src/')), 'The CLI archive is missing its starters.');
   assert(!Object.values(packedManifest.dependencies ?? {}).some(range => String(range).startsWith('workspace:')));
   if (manifest.name === '@mayura/client-react') assert.deepEqual(packedManifest.peerDependencies, { react: '>=18.3.0 <20' }, 'React peer contract changed.');
   else assert(!packedManifest.peerDependencies, `${manifest.name} gained an unreviewed peer dependency.`);
@@ -97,7 +108,9 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   if (manifest.name === '@mayura/cli') assert.deepEqual(packedManifest.bin, { mayura: './dist/bin.js' }, 'CLI executable mapping changed.');
   else assert(!packedManifest.bin, `${manifest.name} gained release-time executable behavior.`);
   for (const [path, content] of files) {
-    assert(!/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${manifest.name}: ${path}`);
+    // A starter's own tests are part of the project `mayura init` creates, so the CLI ships them.
+    const starterTest = manifest.name === '@mayura/cli' && /^starters\/[a-z][a-z0-9-]*\/test\//u.test(path);
+    assert(starterTest || !/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${manifest.name}: ${path}`);
     assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${manifest.name}: ${path}`);
   }
   reports.push({ name: manifest.name, version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size });

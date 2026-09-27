@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, parse, relative, resolve, sep } from 'node:path';
@@ -94,9 +95,12 @@ function projectName(directory: string): string {
   return /^[a-z0-9][a-z0-9-]{0,63}$/u.test(name) ? name : 'mayura-agent';
 }
 
+/** This CLI's own version: generated projects pin every Mayura package to exactly it. */
+const cliVersion = (): string => (JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string }).version;
+
 function packageManifest(name: string, template: TemplateName): string {
-  const versions: Record<string, string> = {};
-  for (const dependency of dependencies[template]) versions[dependency] = dependency === 'zod' ? '4.6.5' : '0.1.0-dev.0';
+  const versions: Record<string, string> = {}; const mayura = cliVersion();
+  for (const dependency of dependencies[template]) versions[dependency] = dependency === 'zod' ? '4.6.5' : mayura;
   return `${JSON.stringify({ name, version: '0.1.0', private: true, type: 'module', scripts: {
     build: 'tsc -p tsconfig.json', typecheck: 'tsc -p tsconfig.json --noEmit', start: 'node dist/index.js', test: 'node --test',
   }, dependencies: versions, devDependencies: { typescript: '7.0.2', '@types/node': '24.13.6' } }, null, 2)}\n`;

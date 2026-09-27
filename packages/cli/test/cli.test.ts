@@ -13,6 +13,8 @@ const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 
+const cliVersion = (JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+
 describe('@mayura/cli initialization', () => {
   it('writes through links above the target to the real directory, but refuses a target that is itself a link', async () => {
     // Directory junctions need no privilege on Windows; elsewhere a directory symlink. macOS /var and /tmp are such links.
@@ -39,7 +41,7 @@ describe('@mayura/cli initialization', () => {
     await applyProjectPlan(plan); const project = await readProject(join(target, 'mayura.project.json'));
     expect(project).toMatchObject({ format: 'mayura.project.v1', template: 'basic-agent' });
     expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8')).dependencies).toEqual({
-      '@mayura/sdk': '0.1.0-dev.0', '@mayura/testing': '0.1.0-dev.0', zod: '4.6.5',
+      '@mayura/sdk': cliVersion, '@mayura/testing': cliVersion, zod: '4.6.5',
     });
   });
 

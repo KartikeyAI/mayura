@@ -1,56 +1,169 @@
 name: Mayura release
-# Publishes only from a version tag, only after every qualification step passes, and only through the
-# protected `release` environment (configure required reviewers in repository settings).
+# Releases come from main only, and only from a commit that passed the full qualification workflow.
+#   - After every successful qualification of a push to main, `plan` works out the next version from the commits since
+#     the last v* tag (Conventional Commits: feat -> minor, fix/perf -> patch, breaking -> major). No release-worthy
+#     commit, no release.
+#   - The first release, or any explicit version, is started by hand from main (Actions > Mayura release > Run workflow).
+# Nothing is published until the repository variable MAYURA_RELEASE is `enabled`; until then every run is a complete dry
+# run. Publishing also waits for the protected `release` environment (configure required reviewers). See
+# docs/how-to/releasing.md.
 on:
-  push:
-    tags: ['v*']
+  workflow_run:
+    workflows: ['Mayura qualification']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version to release, such as 1.0.0 or 1.0.0-rc.1 (empty: work it out from the commits)'
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
   group: mayura-release
   cancel-in-progress: false
+env:
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 jobs:
-  release:
+  plan:
+    # A green qualification of a push to main in this repository, or a manual run from main.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    environment: release
-    permissions:
-      contents: read
-      id-token: write # npm provenance through OpenID Connect; no long-lived token is stored
-    services:
-      postgres:
-        image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
-        env:
-          POSTGRES_USER: mayura
-          POSTGRES_PASSWORD: mayura_ci_test_only
-          POSTGRES_DB: mayura
-        ports: [5432:5432]
-        options: >-
-          --health-cmd "pg_isready -U mayura"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+      publish: ${{ vars.MAYURA_RELEASE == 'enabled' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0 # tags and commits since the last release
           persist-credentials: false
-          fetch-depth: 0 # previous release tags for the upgrade-compatibility check
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - id: next
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: node scripts/version.mjs next --version "$REQUESTED"
+      - name: Summary
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          REASON: ${{ steps.next.outputs.reason }}
+          PUBLISH: ${{ vars.MAYURA_RELEASE == 'enabled' }}
+        run: |
+          if [ -z "$VERSION" ]; then echo "No release: $REASON" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$PUBLISH" = true ]; then echo "Releasing v$VERSION ($REASON)." >> "$GITHUB_STEP_SUMMARY"
+          else echo "Dry run of v$VERSION ($REASON). Set the repository variable MAYURA_RELEASE=enabled to publish." >> "$GITHUB_STEP_SUMMARY"; fi
+
+  dry-run:
+    needs: plan
+    if: needs.plan.outputs.version != '' && needs.plan.outputs.publish != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.14.1
           registry-url: https://registry.npmjs.org
       - run: npm install --global pnpm@10.17.1 --ignore-scripts
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: node scripts/secret-scan.mjs
-      - run: pnpm check
-      - run: pnpm test:consumer
-      - run: pnpm test:consumer:optional
-      - run: pnpm test:consumer:storage
-      - run: pnpm test:templates
-      - run: pnpm test:starters
-      - run: pnpm build
-      - run: pnpm upgrade:compat
-      - run: pnpm api:report
-      - run: pnpm release:artifacts
-      - run: node scripts/sbom.mjs
-      - run: node scripts/publish-staged.mjs --tag ${{ contains(github.ref_name, '-') && 'next' || 'latest' }} --publish
+      - name: Build and verify the release archives
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/version.mjs set "$VERSION"
+          pnpm build
+          pnpm upgrade:compat
+          pnpm release:artifacts
+          node scripts/sbom.mjs
+      - name: Publish (dry run)
+        run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }}
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/version.mjs notes "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.version != '' && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write # the version commit, the tag and the GitHub Release
+      id-token: write # npm provenance through OpenID Connect
+      packages: write # GitHub Packages, when enabled
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: true # pushes the version commit and tag with this job's token
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build and verify the release archives
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/version.mjs set "$VERSION"
+          pnpm build
+          pnpm upgrade:compat
+          pnpm release:artifacts
+          node scripts/sbom.mjs
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # empty when npm trusted publishing is configured instead
+        run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --publish
+      - name: Publish to GitHub Packages
+        if: vars.MAYURA_GITHUB_PACKAGES == 'enabled'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # GitHub Packages only accepts a scope equal to the owning account, so @mayura/* needs a `mayura` organization.
+          if [ "$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')" != mayura ]; then
+            echo "::error::GitHub Packages needs the @mayura scope to match the repository owner (a 'mayura' organization); this repository belongs to $OWNER."
+            exit 1
+          fi
+          node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --registry https://npm.pkg.github.com --publish
+      - name: Commit the version, tag it and push
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          GIT_NAME: ${{ vars.RELEASE_GIT_NAME || 'github-actions[bot]' }}
+          GIT_EMAIL: ${{ vars.RELEASE_GIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          git config user.name "$GIT_NAME"
+          git config user.email "$GIT_EMAIL"
+          git add -A -- package.json packages compatibility scripts CHANGELOG.md
+          git commit -m "chore(release): v$VERSION [skip ci]"
+          git tag -a "v$VERSION" -m "Mayura $VERSION"
+          git push origin "v$VERSION"
+          # main may have moved on while this ran; replay the version commit on top of it.
+          git push origin HEAD:main || { git fetch origin main && git rebase origin/main && git push origin HEAD:main; }
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          node scripts/version.mjs notes "$VERSION" > release-notes.md
+          staged=$(ls -d .artifacts/release-* | head -n 1)
+          gh release create "v$VERSION" --verify-tag --title "Mayura $VERSION" --notes-file release-notes.md \
+            $([ "$TAG" = next ] && echo --prerelease) \
+            "$staged"/tarballs/*.tgz "$staged"/release-manifest.json $(ls .artifacts/sbom-*/sbom.cdx.json | head -n 1)

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "src/**/*.ts", "templates", "starters/*/*.json", "starters/*/*.md", "starters/*/*.yaml", "starters/*/Dockerfile", "starters/*/dot-*", "starters/*/src", "starters/*/test", "starters/*/web/*.html", "starters/*/web/*.json", "starters/*/web/*.ts", "starters/*/web/src", "README.md"],
+  "files": ["dist", "src/**/*.ts", "templates", "starters/*/*.json", "starters/*/*.md", "starters/*/*.yaml", "starters/*/Dockerfile", "starters/*/dot-*", "starters/*/src/**", "starters/*/test/**", "starters/*/dot-*/**", "starters/*/web/*.html", "starters/*/web/*.json", "starters/*/web/*.ts", "starters/*/web/src/**", "README.md"],
   "bin": { "mayura": "./dist/bin.js" },
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },

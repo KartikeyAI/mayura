@@ -1,6 +1,9 @@
 {
   "name": "mayura-workspace",
   "version": "0.1.0-dev.0",
+  "repository": { "type": "git", "url": "git+https://github.com/KartikeyAI/mayura.git" },
+  "homepage": "https://github.com/KartikeyAI/mayura#readme",
+  "bugs": { "url": "https://github.com/KartikeyAI/mayura/issues" },
   "private": true,
   "license": "Apache-2.0",
   "type": "module",

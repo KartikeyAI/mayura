@@ -76,6 +76,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Production server host](specs/production-server.md) — explicit public binding, HTTPS origin, in-process or proxy TLS, host check, probes, HSTS and durable submission idempotency.
 - [Threat model](threat-model.md) — assets, trust boundaries, threats, controls with evidence, and residual risks.
 - [v1 release plan](v1-release-plan.md) — the working checklist for Mayura v1.
+- [Release Mayura](how-to/releasing.md) — automated releases from main: versions from Conventional Commits, npm with provenance, GitHub Releases and GitHub Packages, and the one-time setup.
 - [Workers and leadership](specs/workers.md) — durable leadership lease and a worker supervisor for hosts and coordinators with fail-safe stop, readiness and drain handover.
 - [Bounded worker draining](specs/worker-draining.md) — graceful `drain` for every workflow runtime, coordinator and host: no new wave or claim, admitted effects settle within a deadline, interrupted work is reported.
 - [Durable operator pause](specs/workflow-operator-pause.md) and [pause guide](how-to/workflow-pause.md) — quiescent pause/resume for durable formats 2–5 with restart persistence, claim fencing, tree-wide root fencing, fleet deferral, an authenticated revision-bound pause command and no wait bypass.
