@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MayuraError, ModelInvocationError, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type Schema } from '@mayura/core';
+import { MayuraError, ModelInvocationError, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Schema } from '@mayura/core';
 import { defineTool } from '@mayura/tools';
 import { createModelRouter, createRuntime, defineAgent, type ModelRouterAttempt } from '../src/index.js';
 
@@ -119,5 +119,46 @@ describe('createModelRouter', () => {
     } finally { await runtime.close(); }
     const denied = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:primary', 'model:backup', 'tool:lookup'] } });
     try { expect((await denied.submit(agent, { input: 'go' }).result()).status).not.toBe('succeeded'); } finally { await denied.close(); }
+  });
+
+  describe('streaming', () => {
+    const streamer = (id: string, script: (request: ModelRequest) => AsyncIterable<ModelStreamEvent>): ModelAdapter =>
+      ({ id, maxCostMicros: 5, capabilities: { tools: true, structuredOutput: true }, async generate() { throw new Error('unused'); }, stream: script });
+    const collect = async (source: AsyncIterable<ModelStreamEvent>) => { const events: ModelStreamEvent[] = []; for await (const event of source) events.push(event); return events; };
+
+    it('fails over while nothing has been released, and serves the backup stream', async () => {
+      const primary = streamer('primary', async function* () { throw new MayuraError('MODEL_FAILED', 'down'); });
+      const backup = streamer('backup', async function* () { yield { type: 'output.delta', text: '{"r":' }; yield { type: 'response', response: final({ r: 1 }, 2) }; });
+      const events = await collect(createModelRouter({ id: 'router.stream', routes: [primary, backup] }).stream!(request()));
+      expect(events).toEqual([{ type: 'output.delta', text: '{"r":' }, { type: 'response', response: { type: 'final', output: { r: 1 }, usage: { costMicros: 5 + 2 }, continuation: { router: 'router.stream', route: 1 } } }]);
+    });
+
+    it('does not splice two answers: a failure after released text ends the call', async () => {
+      const primary = streamer('primary', async function* () { yield { type: 'output.delta', text: 'partial' }; throw new MayuraError('MODEL_FAILED', 'lost'); });
+      let backupCalled = false;
+      const backup = streamer('backup', async function* () { backupCalled = true; yield { type: 'response', response: final('b') }; });
+      await expect(collect(createModelRouter({ id: 'router.stream', routes: [primary, backup] }).stream!(request()))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
+      expect(backupCalled).toBe(false);
+    });
+
+    it('answers through generate on a route that cannot stream', async () => {
+      const plain = adapter('plain', 5, () => final('p'));
+      expect(await collect(createModelRouter({ id: 'router.stream', routes: [plain] }).stream!(request()))).toEqual([{ type: 'response', response: { type: 'final', output: 'p', usage: { costMicros: 1 }, continuation: { router: 'router.stream', route: 0 } } }]);
+    });
+
+    it('streams an agent reply through the runtime after a failover', async () => {
+      const primary = streamer('primary', async function* () { throw new MayuraError('MODEL_FAILED', 'down'); });
+      const text = JSON.stringify({ reply: 'Hello there, the router moved this answer to the backup.' });
+      const backup = streamer('backup', async function* () { for (let index = 0; index < text.length; index += 6) yield { type: 'output.delta', text: text.slice(index, index + 6) };
+        yield { type: 'response', response: final(JSON.parse(text), 1) }; });
+      const agent = defineAgent({ id: 'routed', version: '1', instructions: 'x', input: any, output: any, tools: [],
+        model: createModelRouter({ id: 'router.stream', routes: [primary, backup] }), stream: { field: ['reply'], guards: [], batch: { minChars: 8, maxChars: 16 } } });
+      const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:router.stream'] }, limits: { maxCostMicros: 100 } });
+      try {
+        const handle = runtime.submit(agent, { input: 'hi' }); expect((await handle.result()).status).toBe('succeeded');
+        const released: string[] = []; for await (const event of handle.observe()) if (event.type === 'output.delta') released.push(event.metadata['text'] as string);
+        expect(released.join('')).toBe(JSON.parse(text).reply);
+      } finally { await runtime.close(); }
+    });
   });
 });

@@ -16,6 +16,25 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly output: Schema<InferInput<O>, InferOutput<O>>;
   readonly guards: { readonly input: readonly AgentGuard[]; readonly output: readonly AgentGuard[] };
   readonly hooks: readonly HookDefinition[];
+  readonly stream?: AgentStreamPolicy;
+}
+
+/**
+ * Opt-in streaming of one text field of the final output (the "guarded batches" policy). Without it, output is
+ * buffered: nothing is released until the complete output has passed validation and every output guard.
+ */
+export interface AgentStreamPolicy {
+  /** Path of the string field to stream, for example `['reply']`. */
+  readonly field: readonly string[];
+  /**
+   * Local guards run on each batch before it is released, with up to 512 characters of already released text for
+   * context. A block (or an unavailable guard) stops further release for that model call. Pass `[]` explicitly to
+   * stream without batch checks. Released text cannot be retracted by a later verdict; the complete output still
+   * passes the agent's output guards before the run succeeds.
+   */
+  readonly guards: readonly Guard[];
+  /** Characters per batch: at least `minChars` ending at whitespace (default 24), at most `maxChars` (default 512). */
+  readonly batch?: { readonly minChars?: number; readonly maxChars?: number };
 }
 
 export type AgentOutput<A extends AgentDefinition> = InferOutput<A['output']>;
@@ -29,6 +48,7 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
   readonly output: O;
   readonly guards?: { readonly input?: readonly AgentGuard[]; readonly output?: readonly AgentGuard[] };
   readonly hooks?: readonly HookDefinition[];
+  readonly stream?: AgentStreamPolicy;
 }
 
 const definitions = new WeakSet<object>();
@@ -79,6 +99,18 @@ function agentHooks(options: object): readonly HookDefinition[] {
   } catch { throw new MayuraError('INVALID_CONFIG', 'Agent hooks must be an own data configuration containing genuine hook definitions.'); }
 }
 
+function streamPolicy(value: AgentStreamPolicy): AgentStreamPolicy {
+  try {
+    const field = value.field; const batch = value.batch ?? {};
+    if (!Array.isArray(field) || field.length < 1 || field.length > 8 || field.some(part => typeof part !== 'string' || part.length < 1 || part.length > 128)) throw new Error();
+    const minChars = batch.minChars ?? 24; const maxChars = batch.maxChars ?? 512;
+    if (!Number.isSafeInteger(minChars) || !Number.isSafeInteger(maxChars) || minChars < 1 || maxChars < minChars || maxChars > 4_096) throw new Error();
+    // Batch checks run on every release, so they must be local callbacks, never model-backed managed guards.
+    if (!Array.isArray(value.guards) || value.guards.some(guard => readManagedGuardDefinition(guard))) throw new Error();
+    return Object.freeze({ field: Object.freeze([...field]), guards: snapshotGuards(value.guards) as readonly Guard[], batch: Object.freeze({ minChars, maxChars }) });
+  } catch { throw new MayuraError('INVALID_CONFIG', 'Agent streaming needs a field path (1–8 parts), explicit local batch guards and bounded batch sizes.'); }
+}
+
 /** Define an agent without opening connections, executing tools, or selecting a hidden provider. */
 export function defineAgent<I extends Schema, O extends Schema>(options: AgentOptions<I, O>): AgentDefinition<I, O> {
   if (!isIdentifier(options.id) || !isIdentifier(options.version) || typeof options.instructions !== 'string') {
@@ -116,12 +148,14 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
       capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput }),
       maxCostMicros: model.maxCostMicros,
       generate: model.generate.bind(model),
+      ...(typeof model.stream === 'function' ? { stream: model.stream.bind(model) } : {}),
     }),
     tools: Object.freeze([...options.tools]),
     input: snapshotSchema(options.input),
     output: snapshotSchema(options.output),
     guards: Object.freeze({ input: snapshotGuards(options.guards?.input ?? []), output: snapshotGuards(options.guards?.output ?? []) }),
     hooks: agentHooks(options),
+    ...(options.stream === undefined ? {} : { stream: streamPolicy(options.stream) }),
   });
   definitions.add(definition);
   return definition;

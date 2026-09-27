@@ -462,7 +462,7 @@
       },
       "ClientEvent": {
         "kind": "interface",
-        "declaration": "3ca8754204a6ba42"
+        "declaration": "d321aaa037848ec1"
       },
       "ClientJson": {
         "kind": "type",
@@ -642,7 +642,7 @@
       },
       "HeadlessRunState": {
         "kind": "interface",
-        "declaration": "0035e90cda8a6033"
+        "declaration": "4405190c743a2570"
       },
       "HeadlessRunStore": {
         "kind": "interface",
@@ -650,7 +650,7 @@
       },
       "HeadlessRunStoreOptions": {
         "kind": "interface",
-        "declaration": "67d981c0138c2ae4"
+        "declaration": "69d440d15aa89ebf"
       },
       "HumanRequestView": {
         "kind": "interface",
@@ -1248,7 +1248,7 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "ee4eaa8f539be7db"
+        "declaration": "dbae6243febc6b20"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -1265,6 +1265,10 @@
       "ModelResponse": {
         "kind": "type",
         "declaration": "23ccf57b03702785"
+      },
+      "ModelStreamEvent": {
+        "kind": "type",
+        "declaration": "8854b06d291fc03f"
       },
       "ModelTool": {
         "kind": "interface",
@@ -1300,7 +1304,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "41f6dc71b2a42ed3"
+        "declaration": "ff195f0e76ed7a93"
       },
       "RunHandle": {
         "kind": "interface",
@@ -1352,9 +1356,21 @@
         "kind": "function",
         "declaration": "f7ecaedb51091283"
       },
+      "readServerSentEvents": {
+        "kind": "function",
+        "declaration": "43b66de410c2a766"
+      },
       "registerManagedGuardDefinition": {
         "kind": "function",
         "declaration": "27d9d4a939efa8fe"
+      },
+      "ServerSentEvent": {
+        "kind": "interface",
+        "declaration": "810790c601bfbf19"
+      },
+      "ServerSentEventLimits": {
+        "kind": "interface",
+        "declaration": "78f8e9f9526521ed"
       },
       "snapshotHookOptions": {
         "kind": "function",
@@ -1363,6 +1379,10 @@
       "snapshotLocalGuards": {
         "kind": "function",
         "declaration": "72080a8c0a39adfe"
+      },
+      "streamModelCall": {
+        "kind": "function",
+        "declaration": "7549e5e318f21229"
       }
     },
     "@mayura/exporter-otlp": {
@@ -2080,7 +2100,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "b183b2b1865df7c1"
+        "declaration": "2896cb76f3eeb9f9"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2088,11 +2108,15 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "7cdad1b3e5bbb0ff"
+        "declaration": "baf37d65f35c425c"
       },
       "AgentOutput": {
         "kind": "type",
         "declaration": "f05d8a49080b909a"
+      },
+      "AgentStreamPolicy": {
+        "kind": "interface",
+        "declaration": "3574b968d672eef3"
       },
       "AgentToolOptions": {
         "kind": "interface",
@@ -2202,7 +2226,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "b183b2b1865df7c1"
+        "declaration": "2896cb76f3eeb9f9"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2210,11 +2234,15 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "7cdad1b3e5bbb0ff"
+        "declaration": "baf37d65f35c425c"
       },
       "AgentOutput": {
         "kind": "type",
         "declaration": "f05d8a49080b909a"
+      },
+      "AgentStreamPolicy": {
+        "kind": "interface",
+        "declaration": "3574b968d672eef3"
       },
       "AgentToolOptions": {
         "kind": "interface",
@@ -2490,7 +2518,7 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "ee4eaa8f539be7db"
+        "declaration": "dbae6243febc6b20"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -2523,6 +2551,10 @@
       "ModelRouterRouteStatus": {
         "kind": "interface",
         "declaration": "b6eb7acc46907878"
+      },
+      "ModelStreamEvent": {
+        "kind": "type",
+        "declaration": "8854b06d291fc03f"
       },
       "ModelTool": {
         "kind": "interface",
@@ -2558,7 +2590,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "41f6dc71b2a42ed3"
+        "declaration": "ff195f0e76ed7a93"
       },
       "RunHandle": {
         "kind": "interface",

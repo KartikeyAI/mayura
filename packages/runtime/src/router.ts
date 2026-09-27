@@ -1,4 +1,5 @@
-import { MayuraError, ModelInvocationError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse } from '@mayura/core';
+import { MayuraError, ModelInvocationError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent } from '@mayura/core';
+import { streamModelCall } from '@mayura/core/host';
 import { isIdentifier } from './agent.js';
 import { modelCost, modelFailureCost } from './response.js';
 
@@ -94,52 +95,84 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
     if (circuit.failures >= threshold) circuit.openUntil = now() + cooldownMs;
   };
 
+  type Attempt = (adapter: ModelAdapter, request: ModelRequest) => Promise<ModelResponse>;
+  /**
+   * Try routes in order. Once `committed()` is true (a stream has released text), a failure ends the call instead of
+   * moving to another route.
+   */
+  const route = async (request: ModelRequest, attempt: Attempt, committed: () => boolean): Promise<ModelResponse> => {
+    if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
+    const pin = pinned(request.continuation);
+    const order = pin ? [pin.route, ...routes.map((_, index) => index).filter(index => index !== pin.route)] : routes.map((_, index) => index);
+    let spent = 0; let unknown = false; let attempts = 0;
+    const stop = (): never => { throw unknown ? new MayuraError('MODEL_FAILED', 'The model router could not complete the call.') : new ModelInvocationError(spent); };
+    for (const index of order) {
+      if (attempts >= maxAttempts) break;
+      const adapter = routes[index]!;
+      if (!available(index)) { observe({ route: index, modelId: adapter.id, outcome: 'skipped', reason: 'circuit_open', costMicros: null }); continue; }
+      attempts += 1;
+      const { continuation: _ignored, ...portable } = request;
+      const inner: ModelRequest = pin?.route === index && pin.inner !== undefined ? { ...portable, continuation: pin.inner } : portable;
+      let response: ModelResponse;
+      try { response = await attempt(adapter, Object.freeze(inner)); }
+      catch (error) {
+        if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
+        const known = modelFailureCost(error);
+        if (known === undefined) { unknown = true; spent += adapter.maxCostMicros; } else spent += known;
+        failed(index);
+        const final = (error instanceof MayuraError && noFailover.has(error.code)) || committed();
+        observe({ route: index, modelId: adapter.id, outcome: 'failed',
+          reason: !final && error instanceof MayuraError && error.code === 'CANCELLED' ? 'timeout' : 'failed', costMicros: known ?? null });
+        if (final) return stop();
+        continue;
+      }
+      let cost: number;
+      try { cost = modelCost(response); }
+      catch {
+        unknown = true; spent += adapter.maxCostMicros; failed(index);
+        observe({ route: index, modelId: adapter.id, outcome: 'failed', reason: 'failed', costMicros: null });
+        if (committed()) return stop();
+        continue;
+      }
+      succeeded(index);
+      observe({ route: index, modelId: adapter.id, outcome: 'succeeded', costMicros: cost });
+      const continuation = freezeJson(jsonValue({ router: id, route: index, ...(response.continuation === undefined ? {} : { inner: response.continuation }) }));
+      const usage = { costMicros: spent + cost };
+      return response.type === 'final' ? { type: 'final', output: response.output, usage, continuation } : { type: 'tool_calls', calls: response.calls, usage, continuation };
+    }
+    return stop();
+  };
+
   return Object.freeze({
     id,
     capabilities: Object.freeze({ tools: routes.every(route => route.capabilities.tools), structuredOutput: routes.every(route => route.capabilities.structuredOutput) }),
     maxCostMicros,
-    status: () => Object.freeze(routes.map((route, index) => {
+    status: () => Object.freeze(routes.map((adapter, index) => {
       const circuit = circuits[index]!; const open = circuit.openUntil !== null;
-      return Object.freeze({ route: index, modelId: route.id, consecutiveFailures: circuit.failures, openUntilMs: circuit.openUntil,
+      return Object.freeze({ route: index, modelId: adapter.id, consecutiveFailures: circuit.failures, openUntilMs: circuit.openUntil,
         state: !open ? 'closed' as const : now() < circuit.openUntil! && !circuit.trial ? 'open' as const : 'half_open' as const });
     })),
-    async generate(request: ModelRequest): Promise<ModelResponse> {
-      if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
-      const pin = pinned(request.continuation);
-      const order = pin ? [pin.route, ...routes.map((_, index) => index).filter(index => index !== pin.route)] : routes.map((_, index) => index);
-      let spent = 0; let unknown = false; let attempts = 0;
-      for (const index of order) {
-        if (attempts >= maxAttempts) break;
-        const route = routes[index]!;
-        if (!available(index)) { observe({ route: index, modelId: route.id, outcome: 'skipped', reason: 'circuit_open', costMicros: null }); continue; }
-        attempts += 1;
-        const { continuation: _ignored, ...portable } = request;
-        const inner: ModelRequest = pin?.route === index && pin.inner !== undefined ? { ...portable, continuation: pin.inner } : portable;
-        let response: ModelResponse;
-        try { response = await route.generate(Object.freeze(inner)); }
-        catch (error) {
-          if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
-          const known = modelFailureCost(error);
-          if (known === undefined) { unknown = true; spent += route.maxCostMicros; } else spent += known;
-          if (error instanceof MayuraError && noFailover.has(error.code)) {
-            failed(index); observe({ route: index, modelId: route.id, outcome: 'failed', reason: 'failed', costMicros: known ?? null });
-            throw unknown ? new MayuraError('MODEL_FAILED', 'The model router could not use a route.') : new ModelInvocationError(spent);
-          }
-          failed(index);
-          observe({ route: index, modelId: route.id, outcome: 'failed', reason: error instanceof MayuraError && error.code === 'CANCELLED' ? 'timeout' : 'failed', costMicros: known ?? null });
-          continue;
+    generate: (request: ModelRequest): Promise<ModelResponse> => route(request, (adapter, inner) => adapter.generate(inner), () => false),
+    /**
+     * Streams from the first available route. It can fail over only until the first delta has been released: after
+     * that the reader has seen one provider's text, and switching would splice two answers, so the call fails instead.
+     * A route without streaming answers through `generate`.
+     */
+    stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => {
+      let released = false;
+      const signal = AbortSignal.any([request.signal, consumer]);
+      return route({ ...request, signal }, async (adapter, inner) => {
+        if (!adapter.stream) return adapter.generate(inner);
+        let final: ModelResponse | undefined;
+        for await (const event of adapter.stream(inner)) {
+          if (final !== undefined) throw new MayuraError('MODEL_FAILED', 'The model stream continued after its response.');
+          if (event?.type === 'output.delta' && typeof event.text === 'string') { released = true; onDelta(event.text); }
+          else if (event?.type === 'response') final = event.response;
+          else throw new MayuraError('MODEL_FAILED', 'The model stream produced an invalid event.');
         }
-        let cost: number;
-        try { cost = modelCost(response); }
-        catch { unknown = true; spent += route.maxCostMicros; failed(index); observe({ route: index, modelId: route.id, outcome: 'failed', reason: 'failed', costMicros: null }); continue; }
-        succeeded(index);
-        observe({ route: index, modelId: route.id, outcome: 'succeeded', costMicros: cost });
-        const continuation = freezeJson(jsonValue({ router: id, route: index, ...(response.continuation === undefined ? {} : { inner: response.continuation }) }));
-        const usage = { costMicros: spent + cost };
-        return response.type === 'final' ? { type: 'final', output: response.output, usage, continuation } : { type: 'tool_calls', calls: response.calls, usage, continuation };
-      }
-      if (unknown) throw new MayuraError('MODEL_FAILED', 'Every model route failed.');
-      throw new ModelInvocationError(spent);
-    },
+        if (final === undefined) throw new MayuraError('MODEL_FAILED', 'The model stream ended without a response.');
+        return final;
+      }, () => released);
+    }),
   });
 }

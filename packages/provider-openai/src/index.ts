@@ -1,4 +1,5 @@
-import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelToolCall } from '@mayura/core';
+import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
+import { readServerSentEvents, streamModelCall } from '@mayura/core/host';
 
 export interface OpenAIResponsesOptions {
   readonly apiKey: string;
@@ -128,14 +129,13 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'Provider timeout exceeds the supported timer range.');
   const transport = options.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
-  return Object.freeze({
-    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
-    async generate(request: ModelRequest): Promise<ModelResponse> {
+  /** One Responses call. With `onDelta` it streams, reporting final-output text as it arrives; the parsing is shared. */
+  const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       let knownCost: number | undefined;
       try {
-        const signal = AbortSignal.any([request.signal, controller.signal]);
+        const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
         const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
@@ -156,7 +156,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
           return { type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: strictSchema(tool.inputJsonSchema), strict: true };
         });
         const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input, tools,
-          store: false, stream: false, include: ['reasoning.encrypted_content'], parallel_tool_calls: true,
+          store: false, stream: onDelta !== undefined, include: ['reasoning.encrypted_content'], parallel_tool_calls: true,
           max_output_tokens: request.maxOutputTokens,
           text: { format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } },
         }, { maxBytes: maxRequestBytes }));
@@ -164,7 +164,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
           method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body, signal, redirect: 'error',
         }), signal);
-        const payload = await responseBody(response, maxResponseBytes, signal);
+        const payload = onDelta ? await completedStream(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
         const usage = object(payload['usage']);
         const inputTokens = integer(usage['input_tokens']); const outputTokens = integer(usage['output_tokens']);
         const numerator = BigInt(inputTokens) * BigInt(priceInput) + BigInt(outputTokens) * BigInt(priceOutput);
@@ -201,11 +201,32 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
       } catch (error) {
         // HTTP status/body, credentials, model output and arbitrary transport exceptions are private.
         if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
-        if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
+        if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
         if (error instanceof ProviderFailure) throw error;
         return failed();
       } finally { clearTimeout(timer); }
-    },
+  };
+  /**
+   * Read a Responses event stream: output text deltas are reported as they arrive (function-call argument deltas and
+   * reasoning are not), and the `response.completed` event carries the same complete response a non-streamed call
+   * returns, which the shared code then parses and accounts.
+   */
+  const completedStream = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
+    let completed: JsonObject | undefined;
+    for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
+      if (completed) continue; // nothing after completion is reported
+      const data = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
+      const type = data['type'];
+      if (type === 'response.output_text.delta') { if (typeof data['delta'] !== 'string') return failed(); onDelta(data['delta']); }
+      else if (type === 'response.completed') completed = object(data['response']);
+      else if (type === 'response.failed' || type === 'response.incomplete' || type === 'error') return failed();
+    }
+    return completed ?? failed();
+  };
+  return Object.freeze({
+    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
+    stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });
 }
 

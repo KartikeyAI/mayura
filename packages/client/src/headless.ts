@@ -6,8 +6,18 @@ export interface HeadlessRunState {
   readonly events: readonly ClientEvent[]; readonly lastSequence: number; readonly hasGap: boolean;
   readonly activity: { readonly models: number | null; readonly tools: number | null; readonly hooks: number | null };
   readonly errorCode: string | null;
+  /**
+   * Text streamed so far for the latest model call of an agent that streams its output, or null. Provisional: the
+   * run's final output is authoritative. `withheld` means a batch guard stopped the stream; `complete` is false when
+   * an event gap or the size bound means some text is missing.
+   */
+  readonly streamedOutput: { readonly modelCall: number; readonly text: string; readonly withheld: boolean; readonly complete: boolean } | null;
 }
-export interface HeadlessRunStoreOptions { readonly run: RemoteRun; readonly maxEvents?: number; readonly maxSubscribers?: number }
+export interface HeadlessRunStoreOptions {
+  readonly run: RemoteRun; readonly maxEvents?: number; readonly maxSubscribers?: number;
+  /** Most streamed characters kept (default 65,536). */
+  readonly maxStreamedChars?: number;
+}
 export interface HeadlessRunStore {
   getSnapshot(): HeadlessRunState;
   subscribe(listener: () => void): () => void;
@@ -34,7 +44,16 @@ export interface RunActivityProjection {
 
 const runStatuses = new Set(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap']);
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld']);
+type StreamedOutput = HeadlessRunState['streamedOutput'];
+/** Append one streamed event to the provisional output; a new model call starts over. */
+function streamed(current: StreamedOutput, item: ClientEvent, gap: boolean, maxChars: number): StreamedOutput {
+  const modelCall = item.metadata['modelCall'] as number;
+  const base = current && current.modelCall === modelCall ? current : { modelCall, text: '', withheld: false, complete: true };
+  if (item.type === 'output.withheld') return Object.freeze({ ...base, withheld: true });
+  const text = base.text + String(item.metadata['text']);
+  return Object.freeze({ modelCall, withheld: base.withheld, text: text.slice(0, maxChars), complete: base.complete && !gap && text.length <= maxChars });
+}
 const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const remoteErrorCodes = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT',
   'INVALID_OUTPUT', 'INVALID_REQUEST', 'INVALID_CURSOR', 'INVALID_IDEMPOTENCY_KEY', 'INVALID_STREAM', 'OBSERVATION_FAILED', 'STREAM_LIMIT', 'TRUNCATED_STREAM',
@@ -75,6 +94,12 @@ function event(value: ClientEvent, id: string, after: number): ClientEvent {
       || !('value' in metadata[key]!) || !['string', 'number', 'boolean'].includes(typeof metadata[key]!.value)
       || (typeof metadata[key]!.value === 'number' && !Number.isFinite(metadata[key]!.value)))) throw new ClientError('INVALID_VIEW_INPUT');
   if (type === 'events.gap' && (metadata['from']?.value !== after + 1 || metadata['to']?.value !== sequence)) throw new ClientError('INVALID_VIEW_INPUT');
+  if (type === 'output.delta' || type === 'output.withheld') {
+    const required = type === 'output.delta' ? ['step', 'modelCall', 'index', 'text'] : ['step', 'modelCall'];
+    if (keys.length !== required.length || required.some(key => !metadata[key])
+      || ['step', 'modelCall', ...(type === 'output.delta' ? ['index'] : [])].some(key => !Number.isSafeInteger(metadata[key]!.value) || (metadata[key]!.value as number) < 0)
+      || (type === 'output.delta' && (typeof metadata['text']!.value !== 'string' || (metadata['text']!.value as string).length > 4_096))) throw new ClientError('INVALID_VIEW_INPUT');
+  }
   return value;
 }
 function frozen(state: Omit<HeadlessRunState, 'activity' | 'events'> & { readonly activity: HeadlessRunState['activity']; readonly events: readonly ClientEvent[] }): HeadlessRunState {
@@ -85,12 +110,13 @@ function frozen(state: Omit<HeadlessRunState, 'activity' | 'events'> & { readonl
 export function createHeadlessRunStore(options: HeadlessRunStoreOptions): HeadlessRunStore {
   if (!options || !options.run || typeof options.run.inspect !== 'function' || typeof options.run.events !== 'function' || typeof options.run.cancel !== 'function'
     || typeof options.run.id !== 'string') throw new ClientError('INVALID_VIEW_CONFIG');
-  const maxEvents = options.maxEvents ?? 256; const maxSubscribers = options.maxSubscribers ?? 64;
+  const maxEvents = options.maxEvents ?? 256; const maxSubscribers = options.maxSubscribers ?? 64; const maxStreamedChars = options.maxStreamedChars ?? 65_536;
+  if (!Number.isSafeInteger(maxStreamedChars) || maxStreamedChars < 1 || maxStreamedChars > 1_048_576) throw new ClientError('INVALID_VIEW_CONFIG');
   if (!Number.isSafeInteger(maxEvents) || maxEvents < 1 || maxEvents > 1_024 || !Number.isSafeInteger(maxSubscribers) || maxSubscribers < 1 || maxSubscribers > 256) throw new ClientError('INVALID_VIEW_CONFIG');
   const run = options.run; const subscribers = new Set<() => void>(); const controllers = new Set<AbortController>();
   let observing = false; let cancelling = false; let disposed = false; let refreshGeneration = 0;
   let state = frozen({ revision: 0, connection: 'idle', snapshot: null, events: [], lastSequence: 0, hasGap: false,
-    activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null });
+    activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null, streamedOutput: null });
   const publish = (change: Partial<Omit<HeadlessRunState, 'revision'>>): HeadlessRunState => {
     if (disposed && change.connection !== 'disposed') return state;
     state = frozen({ ...state, ...change, revision: state.revision + 1 });
@@ -131,7 +157,9 @@ export function createHeadlessRunStore(options: HeadlessRunStoreOptions): Headle
             const field = item.type.startsWith('model.') ? 'models' : item.type.startsWith('tool.') ? 'tools' : item.type.startsWith('hook.') ? 'hooks' : null;
             if (field) activity[field] = Math.max(0, (activity[field] ?? 0) + (item.type.endsWith('.started') ? 1 : -1));
           }
-          publish({ events: [...state.events, item].slice(-maxEvents), lastSequence: item.sequence, hasGap: gap, activity });
+          const output = item.type === 'output.delta' || item.type === 'output.withheld' ? { streamedOutput: streamed(state.streamedOutput, item, gap, maxStreamedChars) }
+            : item.type === 'events.gap' && state.streamedOutput ? { streamedOutput: Object.freeze({ ...state.streamedOutput, complete: false }) } : {};
+          publish({ events: [...state.events, item].slice(-maxEvents), lastSequence: item.sequence, hasGap: gap, activity, ...output });
         }
         const current = snapshot(await run.inspect({ signal: control.signal }), run.id);
         return publish({ snapshot: current, connection: 'stopped', errorCode: null,
@@ -216,6 +244,8 @@ export function createRunActivityProjection(state: HeadlessRunState): RunActivit
     observedRunId ??= item.runId;
     if ((prior === 0 && item.sequence !== 1) || (prior !== 0 && item.sequence !== prior + 1)) complete = false;
     prior = item.sequence; if (item.type === 'events.gap') { complete = false; continue; }
+    // Streamed output is text, not activity; `streamedOutput` carries it.
+    if (item.type === 'output.delta' || item.type === 'output.withheld') continue;
     const identity = keyFor(item); if (!identity) throw new ClientError('INVALID_VIEW_INPUT'); const started = item.type.endsWith('.started');
     if (item.type === 'run.completed') terminalSeen = true;
     const existing = items.get(identity.key);

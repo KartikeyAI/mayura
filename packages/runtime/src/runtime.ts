@@ -9,6 +9,7 @@ import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
 import { modelCost, modelFailureCost, modelResponse } from './response.js';
+import { createBatcher, createFieldExtractor } from './stream.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
 import { OperationPermits } from './permits.js';
 import { evaluateManagedGuard } from './managed-guards.js';
@@ -604,6 +605,48 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       if (inputFailure) return inputFailure;
       const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
       let continuation: JsonValue | undefined;
+      /**
+       * Consume a streamed model call. Only the configured string field of the final output is released, in batches,
+       * each after the batch guards allow it; the returned complete response is then handled exactly like `generate`.
+       * Batch guards run directly rather than through operation permits: this code already holds the model call's
+       * permit, and a nested acquisition could wait on itself.
+       */
+      const streamModel = async (request: ModelRequest, step: number, modelCall: number): Promise<unknown> => {
+        const policy = agent.stream!; const extractor = createFieldExtractor(policy.field);
+        const batcher = createBatcher(policy.batch?.minChars, policy.batch?.maxChars);
+        let released = ''; let withheld = false; let index = 0; let response: unknown; let received = 0;
+        const release = async (batches: readonly string[]): Promise<void> => {
+          for (const batch of batches) {
+            if (withheld || batch.length === 0) return;
+            const window = released.slice(-512) + batch;
+            const verdicts = await cancellable(() => Promise.all(policy.guards.map(async check => {
+              try { const verdict = await check.check(window, Object.freeze({ runId: id, callId: `model.${modelCall}.stream`, scope, signal: controller.signal, boundary: 'output' as const })); return verdict?.decision; }
+              catch { return 'unavailable'; }
+            })), controller.signal);
+            checkCancelled();
+            if (verdicts.some(decision => decision !== 'allow')) {
+              withheld = true; events.emit('output.withheld', { step, modelCall });
+              await observe(Object.freeze({ stage: 'onViolation', source: 'guard', boundary: 'output', code: 'GUARD_BLOCKED', callId: `model.${modelCall}.stream` }), step);
+              return;
+            }
+            released += batch; events.emit('output.delta', { step, modelCall, index: index++, text: batch });
+          }
+        };
+        for await (const event of agent.model.stream!(request)) {
+          checkCancelled();
+          if (response !== undefined) throw new MayuraError('MODEL_FAILED', 'The model stream continued after its response.');
+          if (event?.type === 'output.delta' && typeof event.text === 'string') {
+            received += event.text.length;
+            if (received > limits.maxOutputBytes) throw new MayuraError('MODEL_FAILED', 'The model stream exceeded the output bound.');
+            if (!withheld && !extractor.done) await release(batcher.push(extractor.feed(event.text)));
+          } else if (event?.type === 'response') response = event.response;
+          else throw new MayuraError('MODEL_FAILED', 'The model stream produced an invalid event.');
+        }
+        if (response === undefined) throw new MayuraError('MODEL_FAILED', 'The model stream ended without a response.');
+        // The tail is released only for a final answer; a tool-call response releases nothing further.
+        if ((response as { type?: unknown }).type === 'final' && !withheld) await release(batcher.flush());
+        return response;
+      };
       type StepResult = { readonly done: false } | { readonly done: true; readonly outcome: Outcome<InferOutput<O>> };
       const runStep = async (step: number): Promise<StepResult> => {
         const stepFailure = await control(Object.freeze({ stage: 'beforeStep', step }), step);
@@ -631,7 +674,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             const reservation = consumeCall(state, primaryBundle.entries[0]!, 'model');
             events.emit('model.started', { step, modelCall: state.modelCalls });
             let raw;
-            try { raw = await agent.model.generate(Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens })); }
+            const modelRequest = Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens });
+            try { raw = agent.stream && agent.model.stream ? await streamModel(modelRequest, step, state.modelCalls) : await agent.model.generate(modelRequest); }
             catch (error) {
               const cost = modelFailureCost(error);
               if (cost !== undefined) reservation.settle(cost);

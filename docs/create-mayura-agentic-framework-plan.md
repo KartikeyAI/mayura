@@ -345,6 +345,8 @@ Raw provider events, tool argument fragments, private model reasoning, protected
 
 Track candidate sequence, public sequence, and release watermark. Never release unchecked content on timeout, disconnect, cancellation, or buffer overflow. Apply backpressure or terminate with a safe outcome. A later block can stop future content but cannot retract earlier delivered content. Presentation smoothing/batching is separate from security checks.
 
+Implementation checkpoint (2026-09-27): `guarded-batches` is implemented for one declared string field of an agent's output (`defineAgent({ stream: { field, guards, batch } })`); `buffered` stays the default. The runtime follows the provider's streamed JSON incrementally, releases only the decoded field, and passes each batch with up to 512 characters of released context through explicit local batch guards; a block or failing guard withholds the rest of that model call. The complete response is validated and whole-output guarded as before. Tool-argument fragments and reasoning are never published, and observers keep only delta positions and lengths. OpenAI Responses and Anthropic Messages adapters stream; the router fails over only before the first release. Streamed structured objects (partial views of whole objects) and managed (model-backed) batch guards remain future work.
+
 ## 11. WorkStream: durable waits, signals, and observation
 
 WorkStream is the shared event and waiting model for agents, tools, workflows, workers, and clients. It supports waiting for a run or child to finish, a step to start, an execution to reach a checkpoint, human input, an external signal, or a deadline. Progress observation and durable control are different contracts.

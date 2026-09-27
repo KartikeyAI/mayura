@@ -10,8 +10,10 @@ import {
   type ModelMessage,
   type ModelRequest,
   type ModelResponse,
+  type ModelStreamEvent,
   type ModelToolCall,
 } from '@mayura/core';
+import { readServerSentEvents, streamModelCall } from '@mayura/core/host';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -178,16 +180,13 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
   const transport = options.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
 
-  return Object.freeze({
-    id: 'anthropic.messages',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true }),
-    maxCostMicros,
-    async generate(request: ModelRequest): Promise<ModelResponse> {
+  /** One Messages call. With `onDelta` it streams, reporting text as it arrives; the message is then parsed as usual. */
+  const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       let knownCost: number | undefined;
       try {
-        const signal = AbortSignal.any([request.signal, controller.signal]);
+        const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
         if (request.continuation !== undefined) return failed();
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
@@ -203,7 +202,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           max_tokens: request.maxOutputTokens,
           system: request.instructions,
           messages: messagesForAnthropic(request.messages, aliases),
-          stream: false,
+          stream: onDelta !== undefined,
           output_config: { format: { type: 'json_schema', schema: outputSchema } },
         };
         if (tools.length > 0) {
@@ -218,7 +217,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           signal,
           redirect: 'error',
         }), signal);
-        const payload = await responseBody(response, maxResponseBytes, signal);
+        const payload = onDelta ? await assembledMessage(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
         const usage = object(payload['usage']);
         const inputTokens = integer(usage['input_tokens']);
         const cacheCreationTokens = integer(usage['cache_creation_input_tokens'], 0);
@@ -256,12 +255,59 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         return { type: 'final', output: jsonValue(JSON.parse(text.join('')), { maxBytes: maxResponseBytes }), usage: accounting };
       } catch (error) {
         if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
-        if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
+        if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
         if (error instanceof ProviderFailure) throw error;
         return failed();
       } finally {
         clearTimeout(timer);
       }
-    },
+  };
+  /**
+   * Rebuild the message a non-streamed call returns from a Messages event stream. Text deltas are reported as they
+   * arrive; tool input fragments are only assembled. Usage combines `message_start` with the final `message_delta`.
+   */
+  const assembledMessage = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
+    let message: JsonObject | undefined; let stopped = false; let stopReason: JsonValue = null; let usage: JsonObject = {};
+    const list: ({ type: 'text'; text: string } | { type: 'tool_use'; id: JsonValue; name: JsonValue; json: string })[] = [];
+    for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
+      if (stopped) return failed();
+      const data = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
+      const type = data['type'];
+      if (type === 'ping') continue;
+      if (type === 'error') return failed();
+      if (type === 'message_start') {
+        if (message) return failed();
+        message = object(data['message']); usage = { ...object(message['usage']) }; continue;
+      }
+      if (!message) return failed();
+      if (type === 'content_block_start') {
+        const index = integer(data['index']); const block = object(data['content_block']);
+        if (index !== list.length || list.length >= 256) return failed();
+        if (block['type'] === 'text') list.push({ type: 'text', text: typeof block['text'] === 'string' ? block['text'] : '' });
+        else if (block['type'] === 'tool_use') list.push({ type: 'tool_use', id: block['id'] ?? null, name: block['name'] ?? null, json: '' });
+        else return failed();
+      } else if (type === 'content_block_delta') {
+        const block = list[integer(data['index'])]; const delta = object(data['delta']);
+        if (!block) return failed();
+        if (delta['type'] === 'text_delta' && block.type === 'text' && typeof delta['text'] === 'string') { block.text += delta['text']; onDelta(delta['text']); }
+        else if (delta['type'] === 'input_json_delta' && block.type === 'tool_use' && typeof delta['partial_json'] === 'string') block.json += delta['partial_json'];
+        else return failed();
+      } else if (type === 'message_delta') {
+        const delta = object(data['delta']); stopReason = delta['stop_reason'] ?? null;
+        if (data['usage'] !== undefined) usage = { ...usage, ...object(data['usage']) };
+      } else if (type === 'message_stop') stopped = true;
+      // content_block_stop and unknown informational events carry nothing we use.
+    }
+    if (!message || !stopped) return failed();
+    const content = list.map(block => block.type === 'text' ? { type: 'text', text: block.text }
+      : { type: 'tool_use', id: block.id, name: block.name, input: jsonValue(JSON.parse(block.json || '{}'), { maxBytes: maxResponseBytes }) });
+    return { ...message, content, stop_reason: stopReason, usage } as JsonObject;
+  };
+  return Object.freeze({
+    id: 'anthropic.messages',
+    capabilities: Object.freeze({ tools: true, structuredOutput: true }),
+    maxCostMicros,
+    generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
+    stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });
 }

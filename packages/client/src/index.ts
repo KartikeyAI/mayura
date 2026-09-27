@@ -21,7 +21,7 @@ export interface ClientEvent {
   readonly runId: string; readonly sequence: number; readonly timestamp: string;
   readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
-    | 'run.completed' | 'events.gap';
+    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RemoteRun {
@@ -167,7 +167,16 @@ export function escapeHtmlText(value: string, maxBytes = 1_048_576): string {
 }
 const statuses: readonly string[] = ['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
 const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap'];
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld'];
+/** Streamed output is released text with an exact position; nothing else rides along. */
+function outputMetadata(metadata: Record<string, unknown>, delta: boolean): void {
+  const required = delta ? ['step', 'modelCall', 'index', 'text'] : ['step', 'modelCall'];
+  if (Object.keys(metadata).length !== required.length || required.some(key => !Object.hasOwn(metadata, key))) throw new ClientError('INVALID_STREAM');
+  for (const key of ['step', 'modelCall', ...(delta ? ['index'] : [])]) {
+    if (typeof metadata[key] !== 'number' || !Number.isSafeInteger(metadata[key]) || (metadata[key] as number) < 0) throw new ClientError('INVALID_STREAM');
+  }
+  if (delta && (typeof metadata['text'] !== 'string' || (metadata['text'] as string).length > 4_096)) throw new ClientError('INVALID_STREAM');
+}
 const hookFields = ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt'] as const;
 const hookStages: readonly string[] = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease',
   'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
@@ -472,6 +481,7 @@ export function createClient(options: ClientOptions): MayuraClient {
               const metadata = record(raw['metadata']);
               if (Object.keys(metadata).length > 64 || Object.values(metadata).some(value => !['string', 'number', 'boolean'].includes(typeof value))) throw new ClientError('INVALID_STREAM');
               if (event === 'hook.started' || event === 'hook.completed') hookMetadata(metadata, event === 'hook.completed');
+              if (event === 'output.delta' || event === 'output.withheld') outputMetadata(metadata, event === 'output.delta');
               if (event === 'events.gap') {
                 if (metadata['from'] !== cursor + 1 || metadata['to'] !== sequence
                   || !Number.isSafeInteger(metadata['from']) || !Number.isSafeInteger(metadata['to']) || (metadata['to'] as number) < (metadata['from'] as number)) throw new ClientError('INVALID_STREAM');

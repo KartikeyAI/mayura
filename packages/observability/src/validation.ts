@@ -51,10 +51,21 @@ function hook(metadata: JsonObject, completed: boolean): void {
   if (completed && !['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'].includes(metadata['status'] as string)) throw new Error();
 }
 
+/**
+ * Streamed output is content, and observation is metadata-only: an `output.delta` event keeps its position and the
+ * number of characters released, never the text. The projection happens before any size check or retention.
+ */
+function contentFree(value: unknown): unknown {
+  const event = value as { type?: unknown; metadata?: unknown } | null;
+  if (!event || typeof event !== 'object' || event.type !== 'output.delta' || !event.metadata || typeof event.metadata !== 'object') return value;
+  const { text, ...rest } = event.metadata as Record<string, unknown>;
+  return { ...(event as object), metadata: { ...rest, characters: typeof text === 'string' ? text.length : -1 } };
+}
+
 /** Strict metadata allowlists are the export boundary; rejected input is never retained. */
 export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent {
   try {
-    const event = object(jsonValue(value, { maxBytes: 4_096, maxDepth: 4, maxNodes: 128 }));
+    const event = object(jsonValue(contentFree(value), { maxBytes: 4_096, maxDepth: 4, maxNodes: 128 }));
     keys(event, ['runId', 'sequence', 'timestamp', 'type', 'metadata']);
     const runId = stableId(event['runId']);
     if (expectedRunId !== undefined && runId !== expectedRunId) throw new Error();
@@ -106,6 +117,11 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
       case 'run.completed':
         keys(metadata, ['status', 'spentMicros', 'reservedMicros', 'calls']);
         status(metadata['status']); cost(metadata['spentMicros']); integer(metadata['reservedMicros']); integer(metadata['calls']); break;
+      case 'output.delta':
+        keys(metadata, ['step', 'modelCall', 'index', 'characters']); integer(metadata['step']); integer(metadata['modelCall'], true);
+        integer(metadata['index']); integer(metadata['characters']); break;
+      case 'output.withheld':
+        keys(metadata, ['step', 'modelCall']); integer(metadata['step']); integer(metadata['modelCall'], true); break;
       case 'events.gap':
         keys(metadata, ['from', 'to']);
         if (integer(metadata['from'], true) > integer(metadata['to'], true) || metadata['to'] !== sequence) throw new Error(); break;

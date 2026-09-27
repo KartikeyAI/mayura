@@ -122,7 +122,7 @@ describe('headless run activity projection', () => {
 
   it('rejects mutable forged state', () => {
     expect(() => createRunActivityProjection({ revision: 0, connection: 'idle', snapshot: null, events: [], lastSequence: 0, hasGap: false,
-      activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null })).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
+      activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null, streamedOutput: null })).toThrow(expect.objectContaining({ code: 'INVALID_VIEW_INPUT' }));
   });
 });
 

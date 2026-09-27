@@ -30,6 +30,17 @@ The adapter accepts only `tool_use` as a tool-call terminal reason and `end_turn
 
 Compatible servers vary. Mayura requires the selected server/model to support Chat Completions tools, strict JSON-Schema response formatting and usage fields; unsupported or partial dialects fail closed. No local server process, model download, GPU runtime or model quality is bundled or qualified.
 
+## Streaming
+
+`ModelAdapter.stream?(request)` yields `{ type: 'output.delta', text }` fragments of the final output's raw text,
+then exactly one `{ type: 'response', response }`. The runtime uses it only for agents with a `stream` policy, and
+validates and accounts the response exactly as a `generate` result. Adapters never emit tool-argument fragments or
+reasoning as deltas; events after the response, a missing response or an unknown event fail the call. The Responses
+adapter sends `stream: true` and parses the `response.completed` event's embedded response with the buffered code;
+the Messages adapter rebuilds the message from `message_start`, content-block and `message_delta` events. Both read
+the stream through the bounded `readServerSentEvents` decoder in `@mayura/core/host` and present it with
+`streamModelCall`, which aborts the request when the consumer stops reading. See [Stream an agent's answer](../how-to/streaming.md).
+
 ## Provider router
 
 `createModelRouter` is a trusted `ModelAdapter` over 1–8 route adapters in priority order. It is the only place Mayura
@@ -39,7 +50,7 @@ cancellation and `INVALID_CONFIG`/`PERMISSION_DENIED`/`INVALID_INPUT` stop routi
 sum of the largest `maxAttempts` route bounds, and reported usage adds each failed attempt's confirmed cost or, when
 unknown, its full bound. The router's continuation is `{ router, route, inner? }`: the next call starts on that route
 with its own `inner` state, and any other route receives the request without continuation. Circuit state is
-per-process. See [Route between model providers](../how-to/model-routing.md).
+per-process. `stream` fails over only until the first delta has been released; a later failure ends the call. See [Route between model providers](../how-to/model-routing.md).
 
 ## Qualification
 

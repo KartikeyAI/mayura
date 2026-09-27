@@ -36,7 +36,7 @@ export interface RunEvent {
   readonly timestamp: string;
   readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
-    | 'run.completed' | 'events.gap';
+    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RunHandle<T> {
@@ -84,9 +84,19 @@ export type ModelResponse =
   | { readonly type: 'final'; readonly output: JsonValue; readonly usage: ModelUsage; readonly continuation?: JsonValue }
   | { readonly type: 'tool_calls'; readonly calls: readonly ModelToolCall[]; readonly usage: ModelUsage; readonly continuation?: JsonValue };
 /** Model adapters are trusted code; declared bounds are enforced/accounted, not a provider billing guarantee. */
+/**
+ * One event of a streamed model call: fragments of the final output's raw text as the provider produces them, then
+ * exactly one complete response. The complete response is validated and accounted exactly as `generate` would return
+ * it; fragments are provisional and never authoritative. Tool-call argument fragments and reasoning are never emitted.
+ */
+export type ModelStreamEvent =
+  | { readonly type: 'output.delta'; readonly text: string }
+  | { readonly type: 'response'; readonly response: ModelResponse };
 export interface ModelAdapter {
   readonly id: string;
   readonly capabilities: { readonly tools: boolean; readonly structuredOutput: boolean };
   readonly maxCostMicros: number;
   generate(request: ModelRequest): Promise<ModelResponse>;
+  /** Optional streamed form of `generate`, used only for agents that opt into streaming. */
+  stream?(request: ModelRequest): AsyncIterable<ModelStreamEvent>;
 }
