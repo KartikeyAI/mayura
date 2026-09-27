@@ -95,7 +95,7 @@ class FixtureProcess {
 describe('real process termination and SQLite workflow recovery', () => {
   let directory: string;
   let children: FixtureProcess[];
-  beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), tempPrefix)); children = []; });
+  beforeEach(async () => { directory = await mkdtemp(join(await realpath(tmpdir()), tempPrefix)); children = []; });
   afterEach(async () => {
     await Promise.all(children.map((child) => child.kill()));
     // Resolve before recursive cleanup; never delete an environment variable or an unverified computed target.
