@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -96,7 +96,14 @@ for (const [name, parent] of externalRoots) {
   // pnpm materializes duplicate declaration files instead of encoding them as
   // hard links, which npm currently drops while extracting local archives on Windows.
   const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${manifest.version}.tgz`);
-  await run([pnpm, 'pack', '--out', destination], directory);
+  if (name === compilerPlatform && process.platform !== 'win32') {
+    // pnpm pack writes every file as 0644, which strips the native compiler's execute bit on Linux and macOS;
+    // npm pack keeps file modes. (On Windows there is no execute bit, and pnpm's layout is needed there.)
+    const staging = await mkdtemp(join(output, 'npm-pack-'));
+    await run([npm, 'pack', directory, '--ignore-scripts', '--offline', '--pack-destination', staging], workspace);
+    const [archive] = await readdir(staging); assert(archive?.endsWith('.tgz'), `npm pack produced no archive for ${name}.`);
+    await rename(join(staging, archive), destination);
+  } else await run([pnpm, 'pack', '--out', destination], directory);
   packages.set(name, { archive: pathToFileURL(destination).href, manifest });
 }
 

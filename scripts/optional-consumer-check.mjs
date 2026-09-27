@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { builtinModules, createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -164,7 +164,11 @@ async function main() {
     const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
     assert.equal(original.version, '0.32.0'); assert.equal(original.license, 'MIT');
     for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(original.scripts?.[script], undefined, `${name} has an unreviewed installation script.`);
-    const packed = JSON.parse((await run([npm, 'pack', '--ignore-scripts', '--pack-destination', tarballs, '--json'], directory)).stdout);
+    // npm 10 runs a directory's own prepack even with --ignore-scripts, so pack a staged copy without lifecycle scripts.
+    const staged = await mkdtemp(join(output, 'stage-')); await cp(directory, staged, { recursive: true, dereference: true });
+    const stagedManifest = JSON.parse(await readFile(join(staged, 'package.json'), 'utf8')); delete stagedManifest.scripts;
+    await writeFile(join(staged, 'package.json'), `${JSON.stringify(stagedManifest, null, 2)}\n`);
+    const packed = JSON.parse((await run([npm, 'pack', staged, '--ignore-scripts', '--offline', '--pack-destination', tarballs, '--json'], workspace)).stdout);
     assert.equal(packed.length, 1); const destination = join(tarballs, packed[0].filename);
     const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
     assert.equal(manifest.name, name); assert.equal(manifest.version, original.version); assert.equal(manifest.license, 'MIT');

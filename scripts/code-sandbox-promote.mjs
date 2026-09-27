@@ -9,7 +9,7 @@ import { issueDockerImagePromotion, verifyDockerImagePromotion } from '../packag
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const dockerPath = process.env.MAYURA_DOCKER_CLI ?? 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe';
+const dockerPath = process.env.MAYURA_DOCKER_CLI ?? (process.platform === 'win32' ? 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe' : '/usr/bin/docker');
 const scoutPath = process.env.MAYURA_SCOUT_CLI ?? 'C:\\Program Files\\Docker\\Docker\\resources\\cli-plugins\\docker-scout.exe';
 const dockerConfigInput = process.env.MAYURA_DOCKER_CONFIG;
 const image = process.env.MAYURA_CODE_SANDBOX_IMAGE;

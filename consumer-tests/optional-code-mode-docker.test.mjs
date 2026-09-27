@@ -13,7 +13,7 @@ const promotion = issueDockerImagePromotion({ sarif: JSON.stringify({ version: '
   builderId: 'packed-test', scannerId: 'packed-scanner', scannerVersion: '1', completedAt: new Date(now - 2_000).toISOString(),
   issuedAt: new Date(now - 1_000).toISOString(), expiresAt: new Date(now + 60_000).toISOString(),
   privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() });
-const promoted = createPromotedDockerQuickJsSandboxAdapter({ dockerPath: 'C:\\docker.exe', image, provenance, promotion });
+const promoted = createPromotedDockerQuickJsSandboxAdapter({ dockerPath: (process.platform === 'win32' ? 'C:\\docker.exe' : '/usr/bin/docker'), image, provenance, promotion });
 const signedPromotionRequired = promoted.id === 'mayura.quickjs-docker';
 console.log(JSON.stringify({ status: immutableImageRequired && signedPromotionRequired ? 'passed' : 'failed', immutableImageRequired,
   provenanceRequired: true, signedPromotionRequired, sarifIssuanceRequired: promotion.statement.scan.reportDigest.startsWith('sha256:'), noDockerDependency: true }));

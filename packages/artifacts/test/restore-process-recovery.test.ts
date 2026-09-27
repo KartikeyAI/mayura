@@ -38,7 +38,7 @@ afterEach(async () => {
 
 describe('artifact restore process recovery', () => {
   it('resumes an exact partial restore after the restoring process is killed', async () => {
-    const workspace = await root(); const sourceDirectory = await root(); const destinationDirectory = await root();
+    const workspace = await root(); const sourceDirectory = await root();
     const source = createLocalArtifactStore({ rootDirectory: sourceDirectory, maxArtifactBytes: 1_048_576 });
     const references: ArtifactReference[] = [];
     for (let index = 0; index < 32; index++) {
@@ -48,34 +48,47 @@ describe('artifact restore process recovery', () => {
     }
     const archive = await source.backup({ scope, references, authoritativeSetComplete: true, maxTotalBytes: 32 * 1_024 * 1_024 });
     const archivePath = join(workspace, 'restore.backup'); await writeFile(archivePath, archive);
-    const destination = createLocalArtifactStore({ rootDirectory: destinationDirectory, maxArtifactBytes: 1_048_576 });
-    await destination.planReconciliation({ scope, retainedReferences: [], authoritativeSetComplete: true,
-      olderThan: Date.now(), maxExamined: 1, maxDeletes: 1 });
     const fixture = fileURLToPath(new URL('./fixtures/restore-child.mjs', import.meta.url));
-    const child = fork(fixture, [destinationDirectory, archivePath], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
-    const exited = new Promise<void>((done, reject) => { child.once('error', reject); child.once('exit', () => done()); });
-    try {
-      await waitForMessage(child, 'started');
-      const published = await bounded((async () => {
-        while (child.exitCode === null) {
-          const count = await objectCount(destinationDirectory); if (count > 0) return count;
-          await new Promise((resolveDelay) => setTimeout(resolveDelay, 1));
-        }
-        throw new Error('Restore completed before a kill boundary was observed.');
-      })(), 'first restored object');
-      expect(published).toBeLessThan(references.length);
-      if (child.pid !== undefined) process.kill(child.pid, 'SIGKILL'); await bounded(exited, 'restore child exit');
-      const retained = await objectCount(destinationDirectory);
-      expect(retained).toBeGreaterThan(0); expect(retained).toBeLessThan(references.length);
-      await expect(destination.restore(archive, scope, {
-        maxArchiveBytes: 48 * 1_024 * 1_024, maxTotalBytes: 32 * 1_024 * 1_024, maxArtifacts: 32,
-      })).resolves.toEqual({ artifacts: 32, restored: 32 - retained, existing: retained, contentBytes: 32 * 1_024 * 1_024 });
-      const audit = await destination.audit(references, scope, { maxTotalBytes: 32 * 1_024 * 1_024 });
-      expect(audit.observations.every((entry) => entry.status === 'ok')).toBe(true);
-      await destination.reconcileStaging({ olderThan: Date.now(), maxDeletes: 32 });
-      expect(await readdir(join(destinationDirectory, 'staging'))).toEqual([]);
-    } finally {
-      if (child.exitCode === null && child.pid !== undefined) process.kill(child.pid, 'SIGKILL'); await bounded(exited, 'restore child cleanup').catch(() => undefined);
+    const kill = (child: ChildProcess): void => {
+      if (child.exitCode !== null || child.pid === undefined) return;
+      try { process.kill(child.pid, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    };
+    // The kill point is timing-dependent: on a fast machine the child can finish between observation and SIGKILL.
+    // Such an attempt proves nothing, so it is retried with a fresh destination; one real mid-restore kill is required.
+    let killedMidRestore = false;
+    for (let attempt = 0; attempt < 5 && !killedMidRestore; attempt++) {
+      const destinationDirectory = await root();
+      const destination = createLocalArtifactStore({ rootDirectory: destinationDirectory, maxArtifactBytes: 1_048_576 });
+      await destination.planReconciliation({ scope, retainedReferences: [], authoritativeSetComplete: true,
+        olderThan: Date.now(), maxExamined: 1, maxDeletes: 1 });
+      const child = fork(fixture, [destinationDirectory, archivePath], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+      const exited = new Promise<void>((done, reject) => { child.once('error', reject); child.once('exit', () => done()); });
+      try {
+        await waitForMessage(child, 'started');
+        const published = await bounded((async () => {
+          while (child.exitCode === null) {
+            const count = await objectCount(destinationDirectory); if (count > 0) return count;
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, 1));
+          }
+          return null;
+        })(), 'first restored object');
+        if (published === null) continue;
+        kill(child); await bounded(exited, 'restore child exit');
+        const retained = await objectCount(destinationDirectory);
+        if (retained >= references.length) continue;
+        killedMidRestore = true;
+        expect(retained).toBeGreaterThan(0);
+        await expect(destination.restore(archive, scope, {
+          maxArchiveBytes: 48 * 1_024 * 1_024, maxTotalBytes: 32 * 1_024 * 1_024, maxArtifacts: 32,
+        })).resolves.toEqual({ artifacts: 32, restored: 32 - retained, existing: retained, contentBytes: 32 * 1_024 * 1_024 });
+        const audit = await destination.audit(references, scope, { maxTotalBytes: 32 * 1_024 * 1_024 });
+        expect(audit.observations.every((entry) => entry.status === 'ok')).toBe(true);
+        await destination.reconcileStaging({ olderThan: Date.now(), maxDeletes: 32 });
+        expect(await readdir(join(destinationDirectory, 'staging'))).toEqual([]);
+      } finally {
+        kill(child); await bounded(exited, 'restore child cleanup').catch(() => undefined);
+      }
     }
+    expect(killedMidRestore, 'no attempt was killed before the restore finished').toBe(true);
   }, 30_000);
 });

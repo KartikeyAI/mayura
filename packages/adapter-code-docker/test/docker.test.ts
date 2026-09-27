@@ -2,6 +2,8 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createDockerQuickJsSandboxAdapter, createPromotedDockerQuickJsSandboxAdapter, serializeDockerImagePromotion,
   issueDockerImagePromotion, verifyDockerImagePromotion, type DockerImagePromotionStatement } from '../src/index.js';
+// Any absolute path on the current platform: these tests never execute Docker.
+const dockerPath = (process.platform === 'win32' ? 'C:\\docker.exe' : '/usr/bin/docker');
 
 const image = `sha256:${'a'.repeat(64)}`; const provenance = `sha256:${'b'.repeat(64)}`;
 function signedPromotion(overrides: Partial<DockerImagePromotionStatement> = {}) {
@@ -20,15 +22,15 @@ function signedPromotion(overrides: Partial<DockerImagePromotionStatement> = {})
 describe('Docker QuickJS adapter configuration', () => {
   it('requires an absolute CLI and immutable image content ID', () => {
     expect(() => createDockerQuickJsSandboxAdapter({ dockerPath: 'docker', image, provenance })).toThrow(TypeError);
-    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath: 'C:\\docker.exe', image: 'node:latest', provenance })).toThrow(TypeError);
-    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath: 'C:\\docker.exe', image: `sha256:${'A'.repeat(64)}`, provenance })).toThrow(TypeError);
-    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath: 'C:\\docker.exe', image: `sha256:${'a'.repeat(64)}`, provenance: 'sha256:bad' })).toThrow(TypeError);
+    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath, image: 'node:latest', provenance })).toThrow(TypeError);
+    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath, image: `sha256:${'A'.repeat(64)}`, provenance })).toThrow(TypeError);
+    expect(() => createDockerQuickJsSandboxAdapter({ dockerPath, image: `sha256:${'a'.repeat(64)}`, provenance: 'sha256:bad' })).toThrow(TypeError);
   });
 
   it('verifies a fresh clean Ed25519 promotion for the exact subject', () => {
     const proof = signedPromotion();
     expect(verifyDockerImagePromotion(proof, { image, provenance }, 30_000)).toEqual(proof.statement);
-    expect(() => createPromotedDockerQuickJsSandboxAdapter({ dockerPath: 'C:\\docker.exe', image, provenance,
+    expect(() => createPromotedDockerQuickJsSandboxAdapter({ dockerPath, image, provenance,
       promotion: signedPromotion({ issuedAt: new Date(Date.now() - 1_000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
         scan: { ...proof.statement.scan, completedAt: new Date(Date.now() - 2_000).toISOString() } }) })).not.toThrow();
   });

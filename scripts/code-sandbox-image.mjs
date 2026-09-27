@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const dockerPath = process.env.MAYURA_DOCKER_CLI ?? 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe';
+const dockerPath = process.env.MAYURA_DOCKER_CLI ?? (process.platform === 'win32' ? 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe' : '/usr/bin/docker');
 assert(isAbsolute(dockerPath) && existsSync(dockerPath), 'MAYURA_DOCKER_CLI must name the absolute trusted Docker CLI.');
 assert(existsSync(join(workspace, 'packages', 'adapter-code-quickjs', 'dist', 'worker.js')), 'Build the workspace before building the image.');
 

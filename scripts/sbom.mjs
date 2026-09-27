@@ -4,14 +4,22 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const pnpm = [dirname(process.execPath), ...(process.env.PATH ?? '').split(delimiter)].flatMap(directory =>
-  ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'].map(suffix => join(directory, 'node_modules', suffix))).find(existsSync);
+// Global installs live in <bin>/node_modules on Windows but <prefix>/lib/node_modules on Linux and macOS; a PATH
+// shim resolves to the real entry point. MAYURA_PNPM_CLI overrides the search.
+const pnpm = (() => {
+  if (process.env.MAYURA_PNPM_CLI) return existsSync(process.env.MAYURA_PNPM_CLI) ? process.env.MAYURA_PNPM_CLI : undefined;
+  const directories = [...new Set([dirname(process.execPath), ...(process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean)])];
+  const candidates = ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'].flatMap(suffix => directories.flatMap(directory =>
+    [join(directory, 'node_modules', suffix), resolve(directory, '..', 'lib', 'node_modules', suffix)]));
+  for (const directory of directories) { try { const shim = realpathSync(join(directory, 'pnpm')); if (/\.(?:c?js|mjs)$/.test(shim)) candidates.push(shim); } catch { /* next entry */ } }
+  return candidates.find(existsSync);
+})();
 assert(pnpm, 'Could not locate the local pnpm CLI.');
 const projects = JSON.parse(execFileSync(process.execPath, [pnpm, 'ls', '-r', '--prod', '--json', '--depth', 'Infinity'],
   { cwd: workspace, encoding: 'utf8', maxBuffer: 128 * 1_048_576 }));
