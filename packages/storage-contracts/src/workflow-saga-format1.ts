@@ -19,7 +19,7 @@ export interface WorkflowSagaStepState {
   status: WorkflowSagaStepStatus; forwardRunId: string | null; compensationRunId: string | null;
   output: JsonValue; forwardSpentMicros: number; compensationSpentMicros: number;
 }
-export type WorkflowSagaStatus = 'running' | 'waiting' | 'compensating' | 'succeeded' | 'failed'
+export type WorkflowSagaStatus = 'running' | 'waiting' | 'paused' | 'compensating' | 'succeeded' | 'failed'
   | 'compensated' | 'compensation_failed' | 'cancelled';
 export interface WorkflowSagaState {
   readonly format: 1; readonly definition: string; readonly policy: string; readonly input: JsonValue;
@@ -30,7 +30,7 @@ export interface WorkflowSagaState {
 const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/; const hashPattern = /^[a-f0-9]{64}$/;
 const forbidden = new Set(['constructor', 'prototype', '__proto__']);
 const stepStatuses = new Set<WorkflowSagaStepStatus>(['pending', 'forward_waiting', 'succeeded', 'failed', 'compensation_waiting', 'compensated', 'compensation_failed', 'skipped']);
-const statuses = new Set<WorkflowSagaStatus>(['running', 'waiting', 'compensating', 'succeeded', 'failed', 'compensated', 'compensation_failed', 'cancelled']);
+const statuses = new Set<WorkflowSagaStatus>(['running', 'waiting', 'paused', 'compensating', 'succeeded', 'failed', 'compensated', 'compensation_failed', 'cancelled']);
 function invalid(): never { throw new StorageError('INVALID_INPUT', 'Invalid bounded workflow saga metadata.'); }
 function corrupt(): never { throw new StorageError('CONFLICT', 'Stored workflow saga state failed integrity validation.'); }
 function object(value: JsonValue | undefined): JsonObject { if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid(); return value; }
@@ -138,7 +138,10 @@ export function assertWorkflowSagaStateMatchesManifest(state: WorkflowSagaState,
       if (step.compensation === null && ['compensation_waiting', 'compensated', 'compensation_failed'].includes(String(current['status']))) invalid();
     }
     const ordered = definition.steps.map(step => object(steps[step.id]));
-    const status = value['status'] as WorkflowSagaStatus; const cursor = integer(value['cursor']);
+    const cursor = integer(value['cursor']);
+    // A paused saga keeps the shape of the phase it paused in: forward (running) or compensation (compensating).
+    const compensationPhase = ordered.some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(String(step['status'])));
+    const status = value['status'] === 'paused' ? (compensationPhase ? 'compensating' : 'running') : value['status'] as WorkflowSagaStatus;
     if (status === 'running' || status === 'waiting') {
       if (cursor > ordered.length || (cursor === ordered.length
         ? status !== 'running' || ordered.some(step => step['status'] !== 'succeeded')

@@ -2,10 +2,12 @@ import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, vali
 import { invokeTool } from '@mayura/tools';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import {
-  StorageError, workflowTreePolicy, workflowTreeState,
+  StorageError, initialWorkflowTreeRootState, workflowTreePolicy, workflowTreeState,
   type Claim, type StoredRecord, type WorkflowTreeAggregateStore, type WorkflowTreeRootSnapshot as StoredTreeSnapshot, type WorkflowTreeStore,
 } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type WorkflowNode } from './definition.js';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { assertWorkflowTree, treeManifest, type AnyWorkflowTree, type WorkflowTreeDefinition } from './children-definition.js';
 import type { VerifiedHuman } from './runtime.js';
 
@@ -34,6 +36,11 @@ export interface WorkflowTreeRuntime {
   pause(id:string):Promise<WorkflowTreeSnapshot>;
   /** Resume scheduling only; unresolved approvals and child waits remain unresolved. */
   resume(id:string):Promise<WorkflowTreeSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused tree. Root steps with a prepared job and child steps with an
+   * admitted child keep their exact definition; everything else follows the plan. The tree stays paused.
+   */
+  migrate(migration:WorkflowMigration<AnyWorkflowTree,AnyWorkflowTree>,command:MigrationCommand):Promise<WorkflowMigrationResult<WorkflowTreeSnapshot>>;
   recoverExpired(id:string):Promise<WorkflowTreeSnapshot>;
   events(id:string,after?:number):ReturnType<WorkflowTreeAggregateStore['events']>;
   close():Promise<void>;
@@ -55,7 +62,7 @@ function storageFailure(error:unknown):never{if(error instanceof StorageError&&[
 export function createWorkflowTreeRuntime(options:WorkflowTreeRuntimeOptions):WorkflowTreeRuntime{
   let api:WorkflowTreeStore;try{if(!options.store?.workflowTrees||methods.some(method=>typeof options.store.workflowTrees[method]!=='function'))throw new Error();api=Object.freeze(Object.fromEntries(methods.map(method=>[method,options.store.workflowTrees[method].bind(options.store.workflowTrees)]))) as unknown as WorkflowTreeStore;}catch{throw new MayuraError('UNSUPPORTED_PROFILE','This adapter does not provide the optional workflow-tree capability.');}
   // Optional pause controls: custom adapters without them keep working until pause is requested.
-  const trees=options.store.workflowTrees;const controls={pauseRoot:typeof trees.pauseRoot==='function'?trees.pauseRoot.bind(trees):undefined,resumeRoot:typeof trees.resumeRoot==='function'?trees.resumeRoot.bind(trees):undefined};
+  const trees=options.store.workflowTrees;const controls={pauseRoot:typeof trees.pauseRoot==='function'?trees.pauseRoot.bind(trees):undefined,resumeRoot:typeof trees.resumeRoot==='function'?trees.resumeRoot.bind(trees):undefined,migrateRoot:typeof trees.migrateRoot==='function'?trees.migrateRoot.bind(trees):undefined};
   const authority=workflowTreePolicy({scope:options.scope,permissions:options.permissions?.allow,policyVersion:options.policyVersion,maxCostMicros:options.maxCostMicros,maxCalls:options.maxCalls,maxOutputBytes:options.maxOutputBytes??65_536,approvalTtlMs:options.approvalTtlMs??3_600_000});
   if(typeof options.workerId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(options.workerId))throw new MayuraError('INVALID_CONFIG','A bounded workflow-tree worker identity is required.');const leaseMs=options.leaseMs??3_000;const timeoutMs=options.storageTimeoutMs??10_000;const maxConcurrentJobs=options.maxConcurrentJobs??4;const maxConcurrentRuns=options.maxConcurrentRuns??16;for(const [name,value] of Object.entries({leaseMs,timeoutMs,maxConcurrentJobs,maxConcurrentRuns}))assertPositiveInteger(value,name);if(leaseMs<1_000||leaseMs>300_000||timeoutMs>30_000||maxConcurrentJobs>32||maxConcurrentRuns>128)throw new MayuraError('INVALID_CONFIG','Workflow-tree worker limits exceed supported bounds.');
   const scopeKey=digest('mayura:scope:v1',authority.scope);const policyHash=digest('mayura:workflow-tree-policy:v1',authority);let initialized:Promise<void>|undefined;let closed=false;let closing:Promise<void>|undefined;let slots=0;const active=new Map<string,AbortController>();const runs=new Map<string,{definition:AnyWorkflowTree;operation:Promise<WorkflowTreeSnapshot>}>();const pendingExecutions=new Set<Promise<void>>();const gate=createWorkflowDrainGate();
@@ -122,6 +129,37 @@ export function createWorkflowTreeRuntime(options:WorkflowTreeRuntimeOptions):Wo
         try{return publicSnapshot(await call(()=>controls.resumeRoot!({...access(id),expectedVersion:root.record.version})));}
         catch(error){if(!(error instanceof StorageError&&error.code==='CONFLICT'))throw error;}}
       throw new MayuraError('CONFLICT','Workflow-tree resume contention exceeded its bounded retry limit.');
+    },
+    async migrate(migration,command){
+      open();assertWorkflowMigration(migration);supported(migration.from);supported(migration.to);
+      const {id,actorId,commandId,dryRun=false}=migrationCommand(command);
+      const root=await inspectStored(id);matchRoot(migration.from,root);const state=workflowTreeState(root.record);
+      const nodes=(definition:AnyWorkflowTree)=>treeManifest(definition).graph.map(node=>({id:node.id,kind:node.kind,dependsOn:node.dependsOn,fingerprint:nodeFingerprint(node as unknown as Record<string,unknown>)}));
+      const fromNodes=nodes(migration.from);const toNodes=nodes(migration.to);
+      const preconditions:MigrationBlocker[]=[];
+      if(state.status!=='paused')preconditions.push({node:'*',reason:`The tree is ${state.status}; pause it before migrating.`});
+      if(runs.has(id))preconditions.push({node:'*',reason:'This worker is still driving the tree; wait for its driver to stop.'});
+      // A prepared job or an admitted child is durable history keyed by node: it must survive unchanged under its own id.
+      for(const [nodeId,step] of Object.entries(state.steps))if(step.candidateHash!==null||step.child!==null){
+        const before=fromNodes.find(node=>node.id===nodeId);const after=toNodes.find(node=>node.id===nodeId);
+        if(!after||before?.fingerprint!==after.fingerprint||Object.values(migration.renames).includes(nodeId))preconditions.push({node:nodeId,reason:`Step "${nodeId}" has execution history; it must be kept unchanged.`});
+      }
+      // An admitted child that has not joined is still in flight from the root's point of view.
+      const status=(step:typeof state.steps[string]):string=>step.child!==null&&step.child.joinedVersion===null?'running':step.status;
+      const plan=planWorkflowMigration({migration,format:'tree-v4',runId:id,fromDigest:migration.from.digest,toDigest:migration.to.digest,from:fromNodes,to:toNodes,
+        steps:Object.entries(state.steps).map(([step,value])=>({id:step,status:status(value)})),preconditions});
+      if(dryRun)return freezeJson(jsonValue({plan})) as unknown as WorkflowMigrationResult<WorkflowTreeSnapshot>;
+      assertMigrationAllowed(plan);
+      if(!controls.migrateRoot)throw new MayuraError('UNSUPPORTED_PROFILE','This adapter cannot migrate in-flight workflow trees.');
+      const manifest=treeManifest(migration.to);
+      const fresh=initialWorkflowTreeRootState(manifest,state.input,id,migration.to.digest,state.policy,authority);
+      const carried:Record<string,unknown>={};
+      for(const entry of plan.entries)if(entry.target)carried[entry.target]=entry.action==='keep'||entry.action==='accept'?state.steps[entry.source!]:fresh.steps[entry.target];
+      const steps=Object.fromEntries(manifest.graph.map(node=>[node.id,carried[node.id]]));
+      const next={...state,definition:migration.to.digest,steps,reservedMicros:Object.values(steps).reduce<number>((sum,step)=>sum+(step as {costReserved:number}).costReserved,0)};
+      const migrated=await call(()=>controls.migrateRoot!({...access(id),expectedVersion:root.record.version,commandId,manifest,resources:{},state:jsonValue(next) as never,migrationId:migration.id,actorId}));
+      matchRoot(migration.to,migrated);
+      return freezeJson(jsonValue({plan,snapshot:publicSnapshot(migrated)})) as unknown as WorkflowMigrationResult<WorkflowTreeSnapshot>;
     },
     async recoverExpired(id){await inspectStored(id);return publicSnapshot((await call(()=>api.recoverExpired({...access(id),limit:128}))).root);},
     async events(id,after=0){open();access(id);if(!Number.isSafeInteger(after)||after<0)throw new MayuraError('INVALID_INPUT','A non-negative event cursor is required.');await inspectStored(id);return call(()=>options.store.events(scopeKey,id,after));},

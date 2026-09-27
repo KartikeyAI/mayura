@@ -26,6 +26,8 @@ interface Journal { id: string; digest: string; version: number; operation: stri
 interface Owner {
   format: 1 | 2; manifest: Manifest; policy: WorkflowPolicyManifest; resources: WorkflowResourcePlan;
   clockFloor: number; commands: Journal[];
+  /** Definition digests this run was migrated from, oldest first. Job history pinned to them stays valid. */
+  lineage?: string[];
 }
 interface OwnerRow {
   scope: string; aggregate_id: string; profile: number; aggregate_version: number | string;
@@ -87,7 +89,10 @@ export class ScheduledWorkflowDatabase {
   private decode(row: OwnerRow, aggregate: AggregateRow): Owner {
     try {
       if (![1,2].includes(Number(row.profile)) || row.scope !== aggregate.scope || row.aggregate_id !== aggregate.id || storedInteger(row.aggregate_version) !== storedInteger(aggregate.version)) failed();
-      const raw = object(JSON.parse(row.data)); fields(raw,['format','manifest','policy','resources','clockFloor','commands']);
+      const raw = object(JSON.parse(row.data));
+      fields(raw,Object.hasOwn(raw,'lineage') ? ['format','manifest','policy','resources','clockFloor','commands','lineage'] : ['format','manifest','policy','resources','clockFloor','commands']);
+      const lineage = raw['lineage'] === undefined ? undefined : raw['lineage'];
+      if (lineage !== undefined && (!Array.isArray(lineage) || lineage.length < 1 || lineage.length > 64 || lineage.some(item => typeof item !== 'string' || !/^[a-f0-9]{64}$/.test(item)))) failed();
       if (raw['format'] !== Number(row.profile)) failed(); integer(raw['clockFloor']);
       const manifest = raw['format'] === 2 ? workflowGraphManifest(raw['manifest']) : workflowManifest(raw['manifest']);
       const policy = workflowPolicy(raw['policy']);
@@ -103,7 +108,8 @@ export class ScheduledWorkflowDatabase {
         hash(command['digest']); identifier(command['operation'],'Stored operation'); integer(command['version'],1,storedInteger(aggregate.version));
         if ((command['version'] as number) <= lastVersion) failed(); lastVersion = command['version'] as number;
       }
-      return { format: raw['format'] as 1 | 2, manifest, policy, resources, clockFloor: raw['clockFloor'] as number, commands: raw['commands'] as unknown as Journal[] };
+      return { format: raw['format'] as 1 | 2, manifest, policy, resources, clockFloor: raw['clockFloor'] as number, commands: raw['commands'] as unknown as Journal[],
+        ...(lineage === undefined ? {} : { lineage: lineage as string[] }) };
     } catch { return failed(); }
   }
   private checkedState(row: AggregateRow, owner: Owner): State {
@@ -138,7 +144,7 @@ export class ScheduledWorkflowDatabase {
       const job = await local.execute('read',{scope,jobId:link.job_id}) as JobRecord | undefined;
       const node = owner.manifest.graph.find(node => node.id === link.node_id); const step = state.steps[link.node_id];
       if (!job || !node || node.kind !== 'tool' || !step || job.nodeId !== node.id || job.runId !== id
-        || job.definitionHash !== row.definition_hash || job.candidateHash !== step.candidateHash
+        || (job.definitionHash !== row.definition_hash && !owner.lineage?.includes(job.definitionHash)) || job.candidateHash !== step.candidateHash
         || job.intent['toolId'] !== node.tool || job.intent['callId'] !== `${id}/${step.callId}`
         || job.intent['policyHash'] !== policyHash || !same(job.resourceKeys,owner.resources[node.id])) failed();
       if (job.state === 'succeeded' && (step.status !== 'succeeded' || !same(step.output,job.output) || !same(step.receipt,job.receipt))) failed();
@@ -301,6 +307,69 @@ export class ScheduledWorkflowDatabase {
     await tx.query(`UPDATE ${this.table('owners')} SET aggregate_version = ?, data = ? WHERE scope = ? AND aggregate_id = ?`,[run.row.version,run.ownerRow.data,run.row.scope,run.row.id]);
     await checkCompletion(tx,this.backend,run.row,run.ownerRow.policy_hash,run.state.status,true);
     run.events.length = 0;
+  }
+  /**
+   * Apply a reviewed migration to a locked, paused run. Everything is re-verified here: the caller's plan is advisory.
+   * Steps with scheduler history and non-pending waits must be unchanged; other steps may only be carried unchanged
+   * or re-enter as fresh pending steps. No other run may depend on this run's identity.
+   */
+  private async migrateRun(tx: SchedulerSession, run: LockedRun, input: JsonObject): Promise<void> {
+    const refuse = (message: string): never => { throw new StorageError('CONFLICT', `Migration refused: ${message}`); };
+    if (run.state.status !== 'paused') refuse('the run must be paused.');
+    if (run.jobs.some(job => job.state === 'leased' || job.state === 'started')) refuse('a job is leased or started.');
+    const dependents = await tx.query<{ aggregate_id: string }>(`SELECT aggregate_id FROM ${this.table('wait_targets')} WHERE scope = ? AND run_id = ? LIMIT 1`,[run.row.scope,run.row.id]);
+    if (dependents.length) refuse('another workflow waits on this run.');
+    // Execution waits are optional storage; probe the table without failing the transaction when it was never created.
+    const waitTable = `${this.backend.prefix}mayura_execution_wait_targets`;
+    const present = this.backend.dialect === 'postgres'
+      ? (await tx.query<{ found: string | null }>('SELECT to_regclass(?)::text AS found',[waitTable]))[0]?.found
+      : (await tx.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",[waitTable]))[0]?.name;
+    if (present && (await tx.query(`SELECT run_id FROM ${waitTable} WHERE scope = ? AND run_id = ? LIMIT 1`,[run.row.scope,run.row.id])).length) refuse('an execution wait targets this run.');
+    const manifest = input['manifest'] as unknown as Manifest; const resources = input['resources'] as unknown as WorkflowResourcePlan;
+    if (graphManifest(manifest) !== graphManifest(run.owner.manifest)) refuse('the workflow format cannot change.');
+    const hashes = this.hashEnrollment(manifest,run.owner.policy,resources);
+    if (hashes.definition === run.ownerRow.definition_hash) refuse('the definition is unchanged.');
+    const previous = run.state; const next = input['state'] as unknown as State;
+    const checked = graphManifest(manifest) ? workflowGraphState({ id: run.row.id, state: next as unknown as JsonObject }) : workflowState({ id: run.row.id, state: next as unknown as JsonObject });
+    if (checked.definition !== hashes.definition || checked.policy !== previous.policy || checked.maxCostMicros !== previous.maxCostMicros || checked.status !== 'paused'
+      || !same(checked.input,previous.input) || checked.spentMicros !== previous.spentMicros || checked.output !== null) refuse('only steps and the definition may change.');
+    const oldNodes = new Map(run.owner.manifest.graph.map(node => [node.id,node])); const newNodes = new Map(manifest.graph.map(node => [node.id,node]));
+    for (const [id,step] of Object.entries(checked.steps)) {
+      const before = previous.steps[id]; const jobbed = run.jobs.some(job => job.nodeId === id);
+      if (before && same(step,before)) {
+        // Carried unchanged: a step with history must also keep its exact node definition and resources.
+        if ((jobbed || !['pending','skipped'].includes(before.status)) && (!same(oldNodes.get(id),newNodes.get(id)) || !same(run.owner.resources[id] ?? null,resources[id] ?? null))) {
+          if (jobbed || before.status === 'waiting' && before.kind === 'wait') refuse(`step "${id}" has execution history and its definition changed.`);
+        }
+        continue;
+      }
+      if (jobbed) refuse(`step "${id}" has scheduler history and cannot change.`);
+      if (before && !['pending','waiting','approved'].includes(before.status)) refuse(`settled step "${id}" can only be carried unchanged.`);
+      if (step.status !== 'pending' || step.receipt !== null || step.approval !== null || step.candidateHash !== null || step.costReserved !== 0) refuse(`step "${id}" must re-enter as a fresh pending step.`);
+    }
+    for (const [id,before] of Object.entries(previous.steps)) {
+      if (Object.hasOwn(checked.steps,id)) continue;
+      if (run.jobs.some(job => job.nodeId === id && !['cancelled'].includes(job.state)) || before.status === 'dispatching' || before.status === 'unknown') refuse(`step "${id}" has execution history and cannot be removed.`);
+    }
+    // Waits: started wait nodes keep identical targets; the target rows are re-projected from the new manifest.
+    const waits = graphManifest(manifest) ? workflowGraphTargets(manifest,checked.input) : {};
+    for (const [nodeId,targets] of Object.entries(run.waits)) {
+      const step = previous.steps[nodeId];
+      if (step && step.status !== 'pending' && !same(waits[nodeId] ?? null,targets)) refuse(`wait "${nodeId}" already started and its targets changed.`);
+    }
+    await tx.query(`DELETE FROM ${this.table('wait_targets')} WHERE scope = ? AND aggregate_id = ?`,[run.row.scope,run.row.id]);
+    for (const [nodeId,targets] of Object.entries(waits)) for (const [ordinal,target] of targets.entries()) {
+      await this.checkTargetIdentity(tx,run.row.scope,run.row.id,run.ownerRow.policy_hash,target);
+      await tx.query(`INSERT INTO ${this.table('wait_targets')} (scope,aggregate_id,node_id,ordinal,run_id,definition_hash,policy_hash) VALUES (?,?,?,?,?,?,?)`,
+        [run.row.scope,run.row.id,nodeId,ordinal,target.runId,target.definitionHash,target.policyHash]);
+    }
+    const lineage = [...(run.owner.lineage ?? []), run.ownerRow.definition_hash];
+    if (lineage.length > 64) limited();
+    run.owner = { ...run.owner, manifest, resources, lineage };
+    run.state = checked; run.waits = waits; run.targetFacts = new Map();
+    await tx.query(`UPDATE ${this.backend.prefix}mayura_aggregates SET definition_hash = ? WHERE scope = ? AND id = ?`,[hashes.definition,run.row.scope,run.row.id]);
+    await tx.query(`UPDATE ${this.table('owners')} SET definition_hash = ?, resource_hash = ? WHERE scope = ? AND aggregate_id = ?`,[hashes.definition,hashes.resources,run.row.scope,run.row.id]);
+    run.row = { ...run.row, definition_hash: hashes.definition }; run.ownerRow = { ...run.ownerRow, definition_hash: hashes.definition, resource_hash: hashes.resources };
   }
   private node(run: LockedRun,id: string): ToolNode {
     const node = run.owner.manifest.graph.find(node => node.id === id); if (!node || node.kind !== 'tool') conflict(); return node;
@@ -480,7 +549,7 @@ export class ScheduledWorkflowDatabase {
           // Do not use SKIP LOCKED: a selected parent is either validated or fails this entire page.
           const run = await this.load(tx,command.scope,id,command.policyHash,false,2);
           if (!run) failed();
-          if (run.state.status !== 'running' && run.state.status !== 'waiting') return undefined;
+          if (run.state.status !== 'running' && run.state.status !== 'waiting' && run.state.status !== 'paused') return undefined;
           return { reference:{kind:'scheduled-workflow' as const,runId:id,definitionHash:run.row.definition_hash,policyHash:command.policyHash},
             version:storedInteger(run.row.version),status:run.state.status };
         });
@@ -693,6 +762,10 @@ export class ScheduledWorkflowDatabase {
       } else if (method === 'resume') {
         if (run.state.status !== 'paused') conflict();
         run.state.status = 'running'; this.advance(run);
+      } else if (method === 'migrate') {
+        await this.migrateRun(tx,run,input);
+        await this.save(tx,run,method,input,{type:'run.migrated',data:{migrationId:input['migrationId']!,from:run.owner.lineage!.at(-1)!,to:run.ownerRow.definition_hash,actorId:input['actorId']!,commandId:input['commandId']!}});
+        return this.snapshot(run);
       } else if (method === 'advance') this.advance(run);
       else if (method === 'finalize') {
         if (terminalRuns.has(run.state.status) || run.state.status === 'paused' || Object.values(run.state.steps).some(step => step.status !== 'succeeded') || run.state.reservedMicros !== 0) conflict();

@@ -4,3 +4,4 @@ export { assertWorkflowLoop, defineWorkflowLoop, loopManifest, type AnyWorkflowL
 export { createWorkflowLoopRuntime, type WorkflowLoopRuntime, type WorkflowLoopRuntimeOptions,
   type WorkflowLoopSnapshot } from './loop-runtime.js';
 export type { WorkflowLoopBinding, WorkflowLoopManifest, WorkflowLoopStatus } from '@mayura/storage-contracts';
+export { defineWorkflowMigration, type WorkflowMigration, type WorkflowMigrationResult, type MigrationPlan, type MigrationCommand } from './migration.js';

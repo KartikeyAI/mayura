@@ -21,3 +21,4 @@ export type {
   WorkflowSagaStatus,
   WorkflowSagaStepStatus,
 } from '@mayura/storage-contracts';
+export { defineWorkflowMigration, type WorkflowMigration, type WorkflowMigrationResult, type MigrationPlan, type MigrationCommand } from './migration.js';

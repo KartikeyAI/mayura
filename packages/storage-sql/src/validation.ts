@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
-import { StorageError, type CreateRecord, type StoredEventInput, type UpdateRecord } from './contracts.js';
+import { StorageError, type CreateRecord, type MigrateRecord, type StoredEventInput, type UpdateRecord } from './contracts.js';
 
 export const EVENT_PAGE_SIZE = 1_000;
 const MAX_STATE_BYTES = 1_048_576;
@@ -47,6 +47,12 @@ export function createCommand(input: CreateRecord): CreateRecord {
     definitionHash: identifier(input.definitionHash, 'Definition hash'),
     state: object(input.state, MAX_STATE_BYTES), events: eventInputs(input.events),
   };
+}
+
+export function migrateCommand(input: MigrateRecord): MigrateRecord {
+  const base = updateCommand(input);
+  if (input.expectedDefinitionHash === input.definitionHash) throw new StorageError('INVALID_INPUT', 'A migration must change the definition hash.');
+  return { ...base, expectedDefinitionHash: identifier(input.expectedDefinitionHash, 'Expected definition hash'), definitionHash: identifier(input.definitionHash, 'Definition hash') };
 }
 
 export function updateCommand(input: UpdateRecord): UpdateRecord {

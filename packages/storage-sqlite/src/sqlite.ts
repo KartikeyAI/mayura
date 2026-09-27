@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
-import { StorageError, type CreateRecord, type UpdateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
-import { createCommand, updateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade, workflowGraphDiscoveryFacade, durableBudgetFacade, workflowTreeFacade, workflowTreeDiscoveryFacade, memoryIndexFacade } from '@mayura/storage-sql/host';
+import { StorageError, type CreateRecord, type UpdateRecord, type MigrateRecord, type StoredRecord, type StoredEvent, type StorageErrorCode, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
+import { createCommand, updateCommand, migrateCommand, identifier, cursor, schedulerFacade, scheduledFacade, workflowGraphFacade, executionWaitFacade, workflowGraphDiscoveryFacade, durableBudgetFacade, workflowTreeFacade, workflowTreeDiscoveryFacade, memoryIndexFacade } from '@mayura/storage-sql/host';
 
 export interface SqliteStoreOptions { readonly filename: string }
 interface Pending { resolve(value: unknown): void; reject(error: Error): void }
@@ -59,6 +59,7 @@ export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDis
     create: async (command: CreateRecord) => request<{ record: StoredRecord; created: boolean }>('create', [createCommand(command)]),
     read: async (scope, id) => request<StoredRecord | undefined>('read', [identifier(scope, 'Scope'), identifier(id, 'Record ID')]),
     update: async (command: UpdateRecord) => request<StoredRecord>('update', [updateCommand(command)]),
+    migrate: async (command: MigrateRecord) => request<StoredRecord>('migrate', [migrateCommand(command)]),
     events: async (scope, id, after = 0) => request<StoredEvent[]>('events', [identifier(scope, 'Scope'), identifier(id, 'Record ID'), cursor(after)]),
     close: () => {
       if (!closePromise) {

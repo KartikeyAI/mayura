@@ -10,6 +10,9 @@ import { digest, resolveBinding } from './definition.js';
 import { assertWorkflowLifecycle, lifecycleManifest, type AnyWorkflowLifecycle,
   type WorkflowLifecycleNode } from './lifecycle-definition.js';
 import type { VerifiedHuman } from './runtime.js';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
+export type { WorkflowMigrationResult } from './migration.js';
 
 export interface WorkflowLifecycleSnapshot {
   readonly id: string;
@@ -68,6 +71,11 @@ export interface WorkflowLifecycleRuntime {
     readonly requestDigest: string; readonly commandId: string; readonly actor: WorkflowLifecycleVerifiedActor; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
   pause(id: string): Promise<WorkflowLifecycleSnapshot>;
   resume(id: string): Promise<WorkflowLifecycleSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused run from `migration.from` to `migration.to`. The run stays
+   * paused afterwards; resume it once the result is reviewed. Waiting human requests are re-issued with new digests.
+   */
+  migrate(migration: WorkflowMigration<AnyWorkflowLifecycle, AnyWorkflowLifecycle>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowLifecycleSnapshot>>;
   cancel(id: string): Promise<WorkflowLifecycleSnapshot>;
   recoverAbandoned(id: string): Promise<WorkflowLifecycleSnapshot>;
   close(): void;
@@ -386,6 +394,21 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     } finally { active.delete(activeKey); }
   }
 
+  /** The exact request a waiting human step shows, bound to the definition digest that issued it. */
+  const humanEvidence = (definition: AnyWorkflowLifecycle, node: Extract<WorkflowLifecycleNode, { kind: 'human' }>, id: string, state: State):
+    { readonly requestDigest: string; readonly deadlineAtMs: number | null; readonly context: JsonValue | null; readonly subjectDigest: string | null } => {
+    let context: JsonValue | null = null; let subjectDigest: string | null = null; let deadlineAtMs: number | null = null;
+    try {
+      if (node.request.context) context = resolveBinding(node.request.context, state.input, outputs(state));
+      if (node.request.subjectDigest) subjectDigest = exactDigest(resolveBinding(node.request.subjectDigest, state.input, outputs(state)));
+      if (node.request.deadlineAtMs) deadlineAtMs = exactTimestamp(resolveBinding(node.request.deadlineAtMs, state.input, outputs(state)));
+    } catch { throw new MayuraError('CONFLICT', 'Persisted human request bindings no longer resolve.'); }
+    const requestDigest = digest('mayura:human-request:v1', { format: 1, runId: id, nodeId: node.id,
+      definitionHash: definition.digest, kind: node.request.kind, schemaId: node.request.schemaId,
+      schemaDigest: node.request.schemaDigest, prompt: node.request.prompt, context, subjectDigest, deadlineAtMs });
+    return { requestDigest, deadlineAtMs, context, subjectDigest };
+  };
+
   const verifyDefinition = (definition: AnyWorkflowLifecycle, record: StoredRecord, state: State): void => {
     assertWorkflowLifecycle(definition);
     if (record.definitionHash !== definition.digest || state.definition !== definition.digest || state.policy !== policy
@@ -453,15 +476,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const step = state.steps[nodeId];
       if (!node || node.kind !== 'human' || !step || step.kind !== 'human') throw new MayuraError('NOT_FOUND', 'Lifecycle human request was not found.');
       if (step.status === 'pending' || step.status === 'skipped') return undefined;
-      let context: JsonValue | null = null; let subjectDigest: string | null = null; let deadlineAtMs: number | null = null;
-      try {
-        if (node.request.context) context = resolveBinding(node.request.context, state.input, outputs(state));
-        if (node.request.subjectDigest) subjectDigest = exactDigest(resolveBinding(node.request.subjectDigest, state.input, outputs(state)));
-        if (node.request.deadlineAtMs) deadlineAtMs = exactTimestamp(resolveBinding(node.request.deadlineAtMs, state.input, outputs(state)));
-      } catch { throw new MayuraError('CONFLICT', 'Persisted human request bindings no longer resolve.'); }
-      const requestDigest = digest('mayura:human-request:v1', { format: 1, runId: id, nodeId,
-        definitionHash: definition.digest, kind: node.request.kind, schemaId: node.request.schemaId,
-        schemaDigest: node.request.schemaDigest, prompt: node.request.prompt, context, subjectDigest, deadlineAtMs });
+      const { requestDigest, deadlineAtMs, context, subjectDigest } = humanEvidence(definition, node, id, state);
       if (step.requestDigest !== requestDigest || step.deadlineAtMs !== deadlineAtMs) throw new MayuraError('CONFLICT', 'Persisted human request evidence does not match its definition.');
       return freezeJson(jsonValue({ runId: id, nodeId, status: step.status, kind: node.request.kind,
         schemaId: node.request.schemaId, schemaDigest: node.request.schemaDigest, prompt: node.request.prompt,
@@ -537,6 +552,42 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       }
       state.status = 'paused'; return true;
     }, 'lifecycle.run.paused')),
+    migrate: async (migration, command) => {
+      ensureOpen(); assertWorkflowMigration(migration); assertWorkflowLifecycle(migration.from); assertWorkflowLifecycle(migration.to);
+      const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
+      const record = await load(id); const state = stateFrom(record); verifyDefinition(migration.from, record, state);
+      const nodes = (definition: AnyWorkflowLifecycle) => lifecycleManifest(definition).graph.map(node =>
+        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>) }));
+      const preconditions: MigrationBlocker[] = [];
+      if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });
+      const plan = planWorkflowMigration({ migration, format: 'lifecycle-v1', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,
+        from: nodes(migration.from), to: nodes(migration.to), steps: Object.entries(state.steps).map(([step, value]) => ({ id: step, status: value.status })), preconditions });
+      if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<WorkflowLifecycleSnapshot>;
+      assertMigrationAllowed(plan);
+      const fresh = initialWorkflowLifecycleState(lifecycleManifest(migration.to), state.input, migration.to.digest, policy, maxCostMicros);
+      const steps: Record<string, WorkflowLifecycleStep> = {};
+      for (const entry of plan.entries) {
+        if (!entry.target) continue;
+        steps[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
+      }
+      const next: State = { ...state, definition: migration.to.digest,
+        steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, steps[node.id]!])) };
+      // Released holds: only carried tool steps keep reserved cost.
+      next.reservedMicros = Object.values(next.steps).reduce((sum, step) => sum + (step.kind === 'tool' ? step.costReserved : 0), 0);
+      for (const node of migration.to.nodes) {
+        const step = next.steps[node.id]!;
+        if (node.kind === 'human' && step.kind === 'human' && step.status === 'waiting') {
+          const evidence = humanEvidence(migration.to, node, id, next); step.requestDigest = evidence.requestDigest; step.deadlineAtMs = evidence.deadlineAtMs;
+        }
+      }
+      try { assertWorkflowLifecycleStateMatchesManifest(workflowLifecycleState({ id, state: jsonValue(next) as JsonObject }), lifecycleManifest(migration.to)); }
+      catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated state does not satisfy the new definition.'); }
+      if (typeof store.migrate !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This store cannot migrate in-flight workflow runs.');
+      const migrated = await storageCall(() => store.migrate!({ scope: scopeKey, id, expectedVersion: record.version, expectedDefinitionHash: migration.from.digest,
+        definitionHash: migration.to.digest, state: jsonValue(next) as JsonObject, events: [migrationEvent(plan, actorId, commandId) as { type: string; data: JsonObject }] }));
+      verifyDefinition(migration.to, migrated, stateFrom(migrated));
+      return freezeJson(jsonValue({ plan, snapshot: publicSnapshot(migrated) })) as unknown as WorkflowMigrationResult<WorkflowLifecycleSnapshot>;
+    },
     resume: async id => publicSnapshot(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused lifecycle workflow can be resumed.');
       state.status = Object.values(state.steps).some(step => step.status === 'waiting') ? 'waiting' : 'running'; return true;

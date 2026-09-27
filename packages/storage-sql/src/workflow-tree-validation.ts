@@ -43,6 +43,9 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
     case 'cancelRoot':fields(raw,['scope','rootId','rootPolicyHash','expectedVersion','commandId']);root(raw);integer(raw['expectedVersion'],1);identifier(raw['commandId'],'Command');break;
     case 'recoverExpired':fields(raw,['scope','rootId','rootPolicyHash','limit']);root(raw);integer(raw['limit'],1,128);break;
     case 'pauseRoot':case 'resumeRoot':fields(raw,['scope','rootId','rootPolicyHash','expectedVersion']);root(raw);integer(raw['expectedVersion'],1);break;
+    case 'migrateRoot':{fields(raw,['scope','rootId','rootPolicyHash','expectedVersion','commandId','manifest','resources','state','migrationId','actorId']);root(raw);integer(raw['expectedVersion'],1);identifier(raw['commandId'],'Command');
+      const manifest=workflowTreeManifest(raw['manifest']);raw['manifest']=manifest as unknown as JsonValue;raw['resources']=workflowTreeRootResources(raw['resources'],manifest) as unknown as JsonValue;
+      try{raw['state']=jsonValue(raw['state'],{maxBytes:8_388_608});}catch{invalid();}object(raw['state']);identifier(raw['migrationId'],'Migration');identifier(raw['actorId'],'Actor');break;}
     default:invalid();
   }
   return raw;
@@ -98,6 +101,7 @@ export function workflowTreeResult(method:WorkflowTreeMethod,value:unknown,comma
       if(snapshot.manifestHash!==digest('mayura:workflow-tree:v1',command['manifest'])||snapshot.resourceHash!==digest('mayura:workflow-tree-resources:v1',command['resources']))unavailable();return immutable(raw);
     }
     if(method==='inspect'||method==='joinChild'||method==='finalizeRoot'||method==='pauseRoot'||method==='resumeRoot')return immutable(rootSnapshot(value,command));
+    if(method==='migrateRoot'){const snapshot=rootSnapshot(value,command);if(snapshot.manifestHash!==digest('mayura:workflow-tree:v1',command['manifest']))unavailable();return immutable(snapshot);}
     if(method==='requestRootApproval'||method==='approveRootTool')return immutable(rootSnapshot(value,command));
     if(method==='inspectChild'||method==='requestChildApproval'||method==='approveChildTool'||method==='finalizeChild')return immutable(memberResult(value,command));
     if(method==='admitChild'){
@@ -157,6 +161,6 @@ export function workflowTreeFacade(request:(method:WorkflowTreeMethod,input:Json
     prepareChildTool:value=>call('prepareChildTool',value),claimPreparedChildTool:value=>call('claimPreparedChildTool',value),renewClaimedChildTool:value=>call('renewClaimedChildTool',value),startClaimedChildTool:value=>call('startClaimedChildTool',value),
     recordChildToolReceipt:value=>call('recordChildToolReceipt',value),completeChildTool:value=>call('completeChildTool',value),finalizeChild:value=>call('finalizeChild',value),joinChild:value=>call('joinChild',value),finalizeRoot:value=>call('finalizeRoot',value),
     cancelChild:value=>call('cancelChild',value),cancelRoot:value=>call('cancelRoot',value),recoverExpired:value=>call('recoverExpired',value),
-    pauseRoot:value=>call('pauseRoot',value),resumeRoot:value=>call('resumeRoot',value),
+    pauseRoot:value=>call('pauseRoot',value),resumeRoot:value=>call('resumeRoot',value),migrateRoot:value=>call('migrateRoot',value),
   } satisfies Required<WorkflowTreeStore>);
 }

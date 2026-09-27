@@ -31,6 +31,15 @@ export interface UpdateRecord {
 }
 
 /**
+ * Reviewed in-place definition migration: compare-and-set on both the version and the pinned definition digest, then
+ * rewrite the digest, state and events atomically. Only workflow migration code may call it.
+ */
+export interface MigrateRecord extends UpdateRecord {
+  readonly expectedDefinitionHash: string;
+  readonly definitionHash: string;
+}
+
+/**
  * Trusted persistence building block, not an authorization or effect-dispatch engine.
  * Call initialize before access. Event reads return at most 1,000 ordered events;
  * continue from the last sequence until a short page is returned.
@@ -40,6 +49,8 @@ export interface AggregateStore {
   create(command: CreateRecord): Promise<{ record: StoredRecord; created: boolean }>;
   read(scope: string, id: string): Promise<StoredRecord | undefined>;
   update(command: UpdateRecord): Promise<StoredRecord>;
+  /** Optional: stores without it cannot migrate in-flight workflow runs (migration then fails with UNSUPPORTED). */
+  migrate?(command: MigrateRecord): Promise<StoredRecord>;
   events(scope: string, id: string, after?: number): Promise<StoredEvent[]>;
   close(): Promise<void>;
 }

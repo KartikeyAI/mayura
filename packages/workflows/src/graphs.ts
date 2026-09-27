@@ -5,6 +5,7 @@ import type { WorkflowSnapshot } from './runtime.js';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 export type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import type { AnyWorkflowGraph, WorkflowGraphDefinition } from './graph-definition.js';
+import type { MigrationCommand, WorkflowMigration, WorkflowMigrationResult } from './migration.js';
 
 export { defineWorkflowGraph, type WorkflowGraphDefinition, type WorkflowGraphOptions,
   type WorkflowGraphNode, type WorkflowGraphTargetBinding, type WorkflowGraphOutput } from './graph-definition.js';
@@ -36,6 +37,11 @@ export interface WorkflowGraphRuntime {
   pause(id: string): Promise<WorkflowGraphSnapshot>;
   /** Resume scheduling only; unresolved waits and approvals remain unresolved. */
   resume(id: string): Promise<WorkflowGraphSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused graph run. Both definitions must be registered with this
+   * worker; storage re-verifies wait targets and scheduler history inside its transaction. The run stays paused.
+   */
+  migrate(migration: WorkflowMigration<AnyWorkflowGraph, AnyWorkflowGraph>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowGraphSnapshot>>;
   recoverExpired(id: string): Promise<WorkflowGraphSnapshot>;
   /** Stop this finite driver without cancelling durable waits or closing caller-owned storage. */
   close(): Promise<void>;
@@ -47,3 +53,4 @@ export interface WorkflowGraphRuntime {
 export function createWorkflowGraphRuntime(options: WorkflowGraphRuntimeOptions): WorkflowGraphRuntime {
   return createScheduledDriver(options, 'scheduled-v2') as WorkflowGraphRuntime;
 }
+export { defineWorkflowMigration, type WorkflowMigration, type WorkflowMigrationResult, type MigrationPlan, type MigrationCommand } from './migration.js';

@@ -1,7 +1,7 @@
 import { Pool, type PoolClient } from 'pg';
-import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
+import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type MigrateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
 import {
-  createCommand, updateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
+  createCommand, updateCommand, migrateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerBackend, type SchedulerSession, schedulerFacade,
   ScheduledWorkflowDatabase, scheduledFacade, workflowGraphFacade, initializeOwnership, ownedRun, writerRequired,
   ExecutionWaitDatabase, executionWaitFacade,
@@ -184,6 +184,24 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
         await append(client, input.scope, input.id, sequence, input.events);
         const row = updated.rows[0];
         if (!row) throw new StorageError('STORAGE_UNAVAILABLE', 'Updated record is unavailable.');
+        return record(row);
+      });
+    },
+    migrate: async (raw: MigrateRecord) => {
+      available();
+      const input = migrateCommand(raw);
+      return transaction(async (client) => {
+        const selected = await client.query<Row>(`SELECT * FROM ${aggregates} WHERE scope = $1 AND id = $2 FOR UPDATE`, [input.scope, input.id]);
+        const current = selected.rows[0];
+        if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+        if (await ownedRun(session(client),backend,input.scope,input.id)) writerRequired();
+        const version = integer(current.version); const sequence = integer(current.event_sequence);
+        if (version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'Record version or definition has changed.');
+        const updated = await client.query<Row>(`UPDATE ${aggregates} SET state = $1, definition_hash = $2, version = $3, event_sequence = $4 WHERE scope = $5 AND id = $6 RETURNING *`,
+          [JSON.stringify(input.state), input.definitionHash, nextCounter(version, 1), nextCounter(sequence, input.events.length), input.scope, input.id]);
+        await append(client, input.scope, input.id, sequence, input.events);
+        const row = updated.rows[0];
+        if (!row) throw new StorageError('STORAGE_UNAVAILABLE', 'Migrated record is unavailable.');
         return record(row);
       });
     },

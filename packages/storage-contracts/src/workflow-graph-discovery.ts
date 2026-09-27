@@ -14,7 +14,8 @@ export interface WorkflowGraphDiscoveryCursor {
 export interface WorkflowGraphDiscoveryCandidate {
   readonly reference: ExecutionRef;
   readonly version: number;
-  readonly status: 'running' | 'waiting';
+  /** Paused runs are listed so operators and version inventories see them; coordinators skip them. */
+  readonly status: 'running' | 'waiting' | 'paused';
 }
 export interface WorkflowGraphDiscoveryPage {
   readonly candidates: readonly WorkflowGraphDiscoveryCandidate[];
@@ -90,7 +91,7 @@ export function workflowGraphDiscoveryPage(raw: unknown, context: WorkflowGraphD
     for (const rawCandidate of value['candidates']) {
       const candidate = object(rawCandidate); fields(candidate, ['reference', 'version', 'status']);
       const reference = executionRef(candidate['reference']); integer(candidate['version'], 1);
-      if (!['running', 'waiting'].includes(candidate['status'] as string)
+      if (!['running', 'waiting', 'paused'].includes(candidate['status'] as string)
         || reference.policyHash !== policy || reference.runId <= lastId) invalid();
       lastId = reference.runId;
     }

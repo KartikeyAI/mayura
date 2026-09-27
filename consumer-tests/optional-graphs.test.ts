@@ -18,7 +18,7 @@ async function verify(store: WorkflowGraphDiscoveryAggregateStore, legacyStore: 
   const discovery = createWorkflowGraphDiscovery(discoveryOptions); const page = await discovery.scan({ limit: 2 });
   if (page.nextCursor) await discovery.scan({ cursor: page.nextCursor });
   if (page.candidates[0]) {
-    const candidateStatus: 'running' | 'waiting' = page.candidates[0].status; void candidateStatus;
+    const candidateStatus: 'running' | 'waiting' | 'paused' = page.candidates[0].status; void candidateStatus;
     // @ts-expect-error Discovery metadata cannot expose workflow payloads.
     void page.candidates[0].output;
     // @ts-expect-error Observed metadata is immutable.
@@ -43,7 +43,7 @@ async function verify(store: WorkflowGraphDiscoveryAggregateStore, legacyStore: 
   }
   for (const outcome of report.outcomes) {
     if (outcome.kind === 'observed') { const version: number = outcome.version; void version; }
-    else if (outcome.kind === 'skipped') { const reason: 'unregistered_definition' = outcome.reason; void reason; }
+    else if (outcome.kind === 'skipped') { const reason: 'unregistered_definition' | 'paused' = outcome.reason; void reason; }
     else if (outcome.kind === 'failed') { const code: string = outcome.code; void code; }
     // @ts-expect-error Reports contain no workflow payloads.
     void outcome.output;

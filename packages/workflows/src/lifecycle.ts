@@ -51,3 +51,5 @@ export type {
   WorkflowLifecycleManifestNode,
   WorkflowLifecycleTimerNodeManifest,
 } from '@mayura/storage-contracts';
+export { defineWorkflowMigration, type WorkflowMigration, type MigrationPlan, type MigrationCommand } from './migration.js';
+export type { WorkflowMigrationResult } from './lifecycle-runtime.js';

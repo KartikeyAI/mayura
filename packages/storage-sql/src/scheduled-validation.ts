@@ -4,9 +4,9 @@ import { claim, evidenceSource, fields, hash, immutable, integer, invalid, objec
 import { identifier } from './validation.js';
 
 export type ScheduledMethod = keyof ScheduledWorkflowStore | 'pause' | 'resume';
-const writes = new Set<ScheduledMethod>(['attach','requestApproval','approve','prepare','start','complete','abandon','failNode','advance','finalize','cancel','recover','pause','resume']);
+const writes = new Set<ScheduledMethod>(['attach','requestApproval','approve','prepare','start','complete','abandon','failNode','advance','finalize','cancel','recover','pause','resume','migrate']);
 export function scheduledCommand(method: ScheduledMethod, value: unknown, profile: 1 | 2 = 1): JsonObject {
-  if ((profile === 2 && method === 'attach') || (profile === 1 && (method === 'pause' || method === 'resume'))) invalid();
+  if (profile === 2 && method === 'attach') invalid();
   const raw = object(value);
   if (method === 'initialize') { fields(raw, []); return raw; }
   const common = method === 'submit' ? [] : ['scope','id','policyHash'];
@@ -43,6 +43,14 @@ export function scheduledCommand(method: ScheduledMethod, value: unknown, profil
     case 'abandon': fields(raw, [...common,'claim','outcome']); claim(raw['claim']); if (!['failed','blocked'].includes(raw['outcome'] as string)) invalid(); break;
     case 'failNode': fields(raw, [...common,'nodeId','outcome']); node(); if (!['failed','blocked'].includes(raw['outcome'] as string)) invalid(); break;
     case 'advance': case 'cancel': case 'recover': case 'pause': case 'resume': fields(raw, common); break;
+    case 'migrate': {
+      fields(raw, [...common,'manifest','resources','state','migrationId','actorId']);
+      if (profile === 2) { const manifest = workflowGraphManifest(raw['manifest']); raw['manifest'] = manifest as unknown as JsonValue; raw['resources'] = workflowGraphResources(raw['resources'], manifest) as unknown as JsonValue; }
+      else { const manifest = workflowManifest(raw['manifest']); raw['manifest'] = manifest as unknown as JsonValue; raw['resources'] = workflowResources(raw['resources'], manifest) as unknown as JsonValue; }
+      try { raw['state'] = jsonValue(raw['state'], { maxBytes: 8_388_608 }); } catch { invalid(); }
+      if (!raw['state'] || typeof raw['state'] !== 'object' || Array.isArray(raw['state'])) invalid();
+      identifier(raw['migrationId'], 'Migration'); identifier(raw['actorId'], 'Actor'); break;
+    }
     case 'finalize': fields(raw, [...common,'validation', ...(raw['validation'] === 'passed' ? ['output'] : [])]);
       if (!['passed','failed'].includes(raw['validation'] as string)) invalid();
       if (raw['validation'] === 'passed') { try { raw['output'] = jsonValue(raw['output'], { maxBytes: 65_536 }); } catch { invalid(); } } break;
@@ -61,6 +69,7 @@ export function scheduledFacade(request: (method: ScheduledMethod, input: JsonOb
     claim: value => call('claim',value), renew: value => call('renew',value), start: value => call('start',value), recordReceipt: value => call('recordReceipt',value),
     complete: value => call('complete',value), abandon: value => call('abandon',value), failNode: value => call('failNode',value),
     advance: value => call('advance',value), finalize: value => call('finalize',value), cancel: value => call('cancel',value), recover: value => call('recover',value),
+    pause: value => call('pause',value), resume: value => call('resume',value), migrate: value => call('migrate',value),
   } satisfies ScheduledWorkflowStore);
 }
 
@@ -75,6 +84,6 @@ export function workflowGraphFacade(request: (method: keyof WorkflowGraphStore, 
     claim: value => call('claim', value), renew: value => call('renew', value), start: value => call('start', value), recordReceipt: value => call('recordReceipt', value),
     complete: value => call('complete', value), abandon: value => call('abandon', value), failNode: value => call('failNode', value),
     advance: value => call('advance', value), finalize: value => call('finalize', value), cancel: value => call('cancel', value), recover: value => call('recover', value),
-    pause: value => call('pause', value), resume: value => call('resume', value),
+    pause: value => call('pause', value), resume: value => call('resume', value), migrate: value => call('migrate', value),
   } satisfies Required<WorkflowGraphStore>);
 }

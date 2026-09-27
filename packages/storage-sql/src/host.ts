@@ -18,4 +18,4 @@ export { workflowTreeDiscoveryFacade } from './workflow-tree-discovery-validatio
 export { durableBudgetFacade } from './durable-budget-validation.js';
 export { workflowTreeCommand, workflowTreeFacade } from './workflow-tree-validation.js';
 export { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
-export { createCommand, updateCommand, identifier, cursor, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';
+export { createCommand, updateCommand, migrateCommand, identifier, cursor, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';

@@ -6,7 +6,7 @@ import {
   type Claim, type EvidenceDisposition, type JobRecord, type StoredEventInput, type StoredRecord, type WorkflowManifest, type WorkflowResourcePlan, type WorkflowTreeManifest, type WorkflowTreePolicyManifest,
   type WorkflowTreeBudgetSnapshot, type WorkflowTreeCancellationResult, type WorkflowTreeChildAdmission, type WorkflowTreeChildCancellationResult, type WorkflowTreeClaimedTool, type WorkflowTreeCompletedTool,
   type WorkflowTreeMemberResult, type WorkflowTreePreparedTool, type WorkflowTreeReceiptResult, type WorkflowTreeRecoveryResult, type WorkflowTreeRenewedTool, type WorkflowTreeRootSnapshot, type WorkflowTreeRootSubmission, type WorkflowTreeStartedTool,
-  type WorkflowTreeRootClaimedTool, type WorkflowTreeRootCompletedTool, type WorkflowTreeRootPreparedTool, type WorkflowTreeRootReceiptResult, type WorkflowTreeRootRenewedTool, type WorkflowTreeRootStartedTool,
+  type WorkflowTreeMigrateRoot, type WorkflowTreeRootClaimedTool, type WorkflowTreeRootCompletedTool, type WorkflowTreeRootPreparedTool, type WorkflowTreeRootReceiptResult, type WorkflowTreeRootRenewedTool, type WorkflowTreeRootStartedTool,
   workflowTreeDiscoveryCommand,workflowTreeDiscoveryPage,type WorkflowTreeDiscoveryCandidate,type WorkflowTreeDiscoveryScan,type WorkflowTreeDiscoveryStore,type WorkflowTreeMethod,
 } from '@mayura/storage-contracts';
 import type { ExecutionReceipt } from '@mayura/core';
@@ -34,7 +34,7 @@ export class WorkflowTreeDatabase {
   private discoveryInitialized=false;
   private readonly budgets:WorkflowTreeBudgetDatabase;
   constructor(private readonly backend:SchedulerBackend,private readonly scheduler:SchedulerDatabase){this.budgets=new WorkflowTreeBudgetDatabase(backend);}
-  async execute(method:WorkflowTreeMethod,input:unknown):Promise<unknown>{const value=input as never;switch(method){case'initialize':return this.initialize();case'submit':return this.submit(value);case'inspect':{const command=input as {scope:string;rootId:string;rootPolicyHash:string};return this.inspect(command.scope,command.rootId,command.rootPolicyHash);}case'requestRootApproval':return this.requestRootApproval(value);case'approveRootTool':return this.approveRootTool(value);case'prepareRootTool':return this.prepareRootTool(value);case'claimPreparedRootTool':return this.claimPreparedRootTool(value);case'renewClaimedRootTool':return this.renewClaimedRootTool(value);case'startClaimedRootTool':return this.startClaimedRootTool(value);case'recordRootToolReceipt':return this.recordRootToolReceipt(value);case'completeRootTool':return this.completeRootTool(value);case'inspectChild':return this.inspectChild(value);case'admitChild':return this.admitChild(value);case'requestChildApproval':return this.requestChildApproval(value);case'approveChildTool':return this.approveChildTool(value);case'prepareChildTool':return this.prepareChildTool(value);case'claimPreparedChildTool':return this.claimPreparedChildTool(value);case'renewClaimedChildTool':return this.renewClaimedChildTool(value);case'startClaimedChildTool':return this.startClaimedChildTool(value);case'recordChildToolReceipt':return this.recordChildToolReceipt(value);case'completeChildTool':return this.completeChildTool(value);case'finalizeChild':return this.finalizeChild(value);case'joinChild':return this.joinChild(value);case'finalizeRoot':return this.finalizeRoot(value);case'cancelChild':return this.cancelChild(value);case'cancelRoot':return this.cancelRoot(value);case'recoverExpired':return this.recoverExpired(value);case'pauseRoot':return this.pauseRoot(value);case'resumeRoot':return this.resumeRoot(value);}}
+  async execute(method:WorkflowTreeMethod,input:unknown):Promise<unknown>{const value=input as never;switch(method){case'initialize':return this.initialize();case'submit':return this.submit(value);case'inspect':{const command=input as {scope:string;rootId:string;rootPolicyHash:string};return this.inspect(command.scope,command.rootId,command.rootPolicyHash);}case'requestRootApproval':return this.requestRootApproval(value);case'approveRootTool':return this.approveRootTool(value);case'prepareRootTool':return this.prepareRootTool(value);case'claimPreparedRootTool':return this.claimPreparedRootTool(value);case'renewClaimedRootTool':return this.renewClaimedRootTool(value);case'startClaimedRootTool':return this.startClaimedRootTool(value);case'recordRootToolReceipt':return this.recordRootToolReceipt(value);case'completeRootTool':return this.completeRootTool(value);case'inspectChild':return this.inspectChild(value);case'admitChild':return this.admitChild(value);case'requestChildApproval':return this.requestChildApproval(value);case'approveChildTool':return this.approveChildTool(value);case'prepareChildTool':return this.prepareChildTool(value);case'claimPreparedChildTool':return this.claimPreparedChildTool(value);case'renewClaimedChildTool':return this.renewClaimedChildTool(value);case'startClaimedChildTool':return this.startClaimedChildTool(value);case'recordChildToolReceipt':return this.recordChildToolReceipt(value);case'completeChildTool':return this.completeChildTool(value);case'finalizeChild':return this.finalizeChild(value);case'joinChild':return this.joinChild(value);case'finalizeRoot':return this.finalizeRoot(value);case'cancelChild':return this.cancelChild(value);case'cancelRoot':return this.cancelRoot(value);case'recoverExpired':return this.recoverExpired(value);case'pauseRoot':return this.pauseRoot(value);case'resumeRoot':return this.resumeRoot(value);case'migrateRoot':return this.migrateRoot(value);}}
   private table():string{return `${this.backend.prefix}mayura_workflow_tree_members`;}
   private owners():string{return `${this.backend.prefix}mayura_workflow_owners`;}
   private hashes(manifest:WorkflowTreeManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan){return{
@@ -65,7 +65,7 @@ export class WorkflowTreeDatabase {
   /** Finite metadata hints only; each selected root is independently integrity checked. */
   async discover(method:keyof WorkflowTreeDiscoveryStore,value:unknown):Promise<unknown>{
     const input=workflowTreeDiscoveryCommand(method,value);if(method==='initialize')return this.initializeDiscovery();if(!this.discoveryInitialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree discovery before use.');const command=input as unknown as WorkflowTreeDiscoveryScan;
-    try{const afterId=command.cursor?.afterId??'';const collation=this.backend.dialect==='postgres'?'"C"':'BINARY';const rows=await this.backend.transaction(tx=>tx.query<{aggregate_id:string}>(`SELECT aggregate_id FROM ${this.owners()} WHERE scope = ? AND policy_hash = ? AND profile = 3 AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,[command.scope,command.policyHash,afterId,command.limit]));if(rows.length>command.limit)failed();const candidates:WorkflowTreeDiscoveryCandidate[]=[];let previous=afterId;for(const row of rows){const id=row.aggregate_id;if(!/^[a-f0-9]{64}$/.test(id)||id<=previous)failed();previous=id;const candidate=await this.backend.transaction(async tx=>{const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?`,[command.scope,id]))[0];if(!member)failed();if(member.root_id!==id||member.parent_id!==null||member.node_id!==null||member.account_id!=='root')return undefined;const root=await this.locked(tx,command.scope,id,command.policyHash);if(!root)failed();const state=workflowTreeState(root.record);if(state.status!=='running'&&state.status!=='waiting')return undefined;return{rootId:id,definitionHash:root.record.definitionHash,policyHash:command.policyHash,version:root.record.version,status:state.status} as const;});if(candidate)candidates.push(candidate);}return workflowTreeDiscoveryPage({candidates,examined:rows.length,nextCursor:rows.length===command.limit?{format:1,scope:command.scope,policyHash:command.policyHash,afterId:previous}:null},command);}catch{return failed();}
+    try{const afterId=command.cursor?.afterId??'';const collation=this.backend.dialect==='postgres'?'"C"':'BINARY';const rows=await this.backend.transaction(tx=>tx.query<{aggregate_id:string}>(`SELECT aggregate_id FROM ${this.owners()} WHERE scope = ? AND policy_hash = ? AND profile = 3 AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,[command.scope,command.policyHash,afterId,command.limit]));if(rows.length>command.limit)failed();const candidates:WorkflowTreeDiscoveryCandidate[]=[];let previous=afterId;for(const row of rows){const id=row.aggregate_id;if(!/^[a-f0-9]{64}$/.test(id)||id<=previous)failed();previous=id;const candidate=await this.backend.transaction(async tx=>{const member=(await tx.query<MemberRow>(`SELECT * FROM ${this.table()} WHERE scope = ? AND aggregate_id = ?`,[command.scope,id]))[0];if(!member)failed();if(member.root_id!==id||member.parent_id!==null||member.node_id!==null||member.account_id!=='root')return undefined;const root=await this.locked(tx,command.scope,id,command.policyHash);if(!root)failed();const state=workflowTreeState(root.record);if(state.status!=='running'&&state.status!=='waiting'&&state.status!=='paused')return undefined;return{rootId:id,definitionHash:root.record.definitionHash,policyHash:command.policyHash,version:root.record.version,status:state.status} as const;});if(candidate)candidates.push(candidate);}return workflowTreeDiscoveryPage({candidates,examined:rows.length,nextCursor:rows.length===command.limit?{format:1,scope:command.scope,policyHash:command.policyHash,afterId:previous}:null},command);}catch{return failed();}
   }
   private command(raw:WorkflowTreeRootSubmission){
     const manifest=workflowTreeManifest(raw.manifest);const policy=workflowTreePolicy(raw.policy);const resources=workflowTreeRootResources(raw.resources,manifest);
@@ -373,6 +373,55 @@ export class WorkflowTreeDatabase {
       if(state.status!=='paused'||root.record.version!==raw.expectedVersion)conflict();
       const status=Object.values(state.steps).some(step=>step.status==='waiting')?'waiting':'running';
       return this.writeRootStatus(tx,scope,rootId,raw.rootPolicyHash,state,status,'run.resumed');
+    });
+  }
+  /**
+   * Apply a reviewed migration to a paused, quiescent root. Everything is re-verified under the root lock: the caller's
+   * plan is advisory. Steps with a scheduler job or an admitted child keep their exact node; the unchanged policy must
+   * still fund every declared tool; other steps may only be carried unchanged or re-enter as fresh pending steps.
+   */
+  async migrateRoot(raw:WorkflowTreeMigrateRoot):Promise<WorkflowTreeRootSnapshot>{
+    if(!this.initialized)throw new StorageError('STORE_NOT_INITIALIZED','Initialize workflow-tree storage first.');const scope=identifier(raw.scope,'Scope');const rootId=identifier(raw.rootId,'Root');
+    if(![rootId,raw.rootPolicyHash].every(value=>/^[a-f0-9]{64}$/.test(value))||!Number.isSafeInteger(raw.expectedVersion)||raw.expectedVersion<1)throw new StorageError('INVALID_INPUT','Root migration requires exact bounded identities.');
+    const refuse=(message:string):never=>{throw new StorageError('CONFLICT',`Migration refused: ${message}`);};
+    return this.backend.transaction(async tx=>{
+      const root=await this.locked(tx,scope,rootId,raw.rootPolicyHash);if(!root)throw new StorageError('NOT_FOUND','Workflow-tree root was not found.');
+      if(root.record.version!==raw.expectedVersion)conflict();
+      const previous=workflowTreeState(root.record);if(previous.status!=='paused')refuse('the tree must be paused.');
+      const owner=await this.rootOwner(tx,scope,rootId);
+      // The same funding rule as submission, against the unchanged root policy.
+      const checked=this.command({manifest:raw.manifest,policy:owner.policy,resources:raw.resources,input:previous.input,idempotencyKey:'migration'});
+      const {manifest,resources,hashes}=checked;if(hashes.definition===root.manifestHash)refuse('the definition is unchanged.');
+      const links=await tx.query<TreeJobRow>(`SELECT * FROM ${this.backend.prefix}mayura_workflow_tree_jobs WHERE scope = ? AND root_id = ? ORDER BY job_id${lockSql(this.backend)}`,[scope,rootId]);
+      for(const link of links){const job=await this.scheduler.inSession(tx,link.aggregate_id,[],link.job_id).execute('read',{scope,jobId:link.job_id}) as JobRecord|undefined;if(!job||job.runId!==link.aggregate_id||job.nodeId!==link.node_id)failed();if(job.state==='leased'||job.state==='started')refuse('a root or child job is leased or started.');}
+      const jobbed=new Set(links.filter(link=>link.aggregate_id===rootId).map(link=>link.node_id));
+      let next:ReturnType<typeof workflowTreeState>;
+      try{next=workflowTreeState({id:rootId,state:raw.state});assertWorkflowTreeRootState(next,manifest,owner.policy,resources);}catch{return refuse('the migrated state does not satisfy the new definition.');}
+      if(next.rootId!==rootId||next.accountId!=='root'||next.definition!==hashes.definition||next.policy!==previous.policy||next.status!=='paused'||!same(next.input,previous.input)
+        ||next.maxCostMicros!==previous.maxCostMicros||next.maxCalls!==previous.maxCalls||next.spentMicros!==previous.spentMicros||next.budgetVersion!==previous.budgetVersion||next.output!==null)refuse('only steps and the definition may change.');
+      const oldNodes=new Map(owner.manifest.graph.map(node=>[node.id,node]));const newNodes=new Map(manifest.graph.map(node=>[node.id,node]));
+      for(const [id,step] of Object.entries(next.steps)){
+        const before=previous.steps[id];const history=jobbed.has(id)||(before?.child??null)!==null;
+        if(before&&same(step,before)){
+          if(history&&(!same(oldNodes.get(id),newNodes.get(id))||!same(owner.resources[id]??null,resources[id]??null)))refuse(`step "${id}" has execution history and its definition changed.`);
+          continue;
+        }
+        if(history)refuse(`step "${id}" has execution history and cannot change.`);
+        if(before&&!['pending','waiting','approved'].includes(before.status))refuse(`settled step "${id}" can only be carried unchanged.`);
+        if(step.status!=='pending'||step.receipt!==null||step.approval!==null||step.candidateHash!==null||step.costReserved!==0||step.child!==null||step.output!==null)refuse(`step "${id}" must re-enter as a fresh pending step.`);
+      }
+      for(const [id,before] of Object.entries(previous.steps)){
+        if(Object.hasOwn(next.steps,id))continue;
+        if(jobbed.has(id)||before.child!==null||['dispatching','unknown'].includes(before.status))refuse(`step "${id}" has execution history and cannot be removed.`);
+      }
+      const row=await loadAggregate(tx,this.backend,scope,rootId);if(!row)failed();
+      await tx.query(`UPDATE ${this.backend.prefix}mayura_aggregates SET definition_hash = ? WHERE scope = ? AND id = ?`,[hashes.definition,scope,rootId]);
+      const updated=await writeAggregate(tx,this.backend,{...row,definition_hash:hashes.definition},next as unknown as JsonObject,
+        [{type:'run.migrated',data:{migrationId:raw.migrationId,from:root.manifestHash,to:hashes.definition,actorId:raw.actorId,commandId:raw.commandId}}],await storageClock(tx,this.backend));
+      const data:RootOwner={format:4,rootId,manifest,policy:owner.policy,resources};
+      await tx.query(`UPDATE ${this.owners()} SET aggregate_version = ?, definition_hash = ?, resource_hash = ?, data = ? WHERE scope = ? AND aggregate_id = ?`,[updated.version,hashes.definition,hashes.resources,JSON.stringify(data),scope,rootId]);
+      await tx.query(`UPDATE ${this.table()} SET definition_hash = ?, resource_hash = ? WHERE scope = ? AND aggregate_id = ?`,[hashes.definition,hashes.resources,scope,rootId]);
+      const current=await this.locked(tx,scope,rootId,raw.rootPolicyHash);if(!current)failed();return current;
     });
   }
   private async writeRootStatus(tx:SchedulerSession,scope:string,rootId:string,policyHash:string,state:ReturnType<typeof workflowTreeState>,status:'paused'|'running'|'waiting',type:string):Promise<WorkflowTreeRootSnapshot>{

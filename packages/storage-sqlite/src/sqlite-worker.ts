@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { storageError, StorageError, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type MemoryIndexMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore } from '@mayura/storage-contracts';
+import { storageError, StorageError, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type MemoryIndexMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore } from '@mayura/storage-contracts';
 import { SqliteDatabase } from './sqlite-database.js';
 import { identifier, cursor, type SchedulerMethod, type ScheduledMethod } from '@mayura/storage-sql/host';
 
@@ -37,6 +37,7 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
         case 'workflowTreeDiscovery': result = await database.workflowTreeDiscoveryCommand(request.args[0] as keyof WorkflowTreeDiscoveryStore,request.args[1]); break;
         case 'create': result = database.create(request.args[0] as CreateRecord); break;
         case 'update': result = database.update(request.args[0] as UpdateRecord); break;
+        case 'migrate': result = database.migrate(request.args[0] as MigrateRecord); break;
         case 'read': result = database.read(identifier(request.args[0], 'Scope'), identifier(request.args[1], 'Record ID')); break;
         case 'events': result = database.events(identifier(request.args[0], 'Scope'), identifier(request.args[1], 'Record ID'), cursor(request.args[2] as number)); break;
         default: throw new StorageError('INVALID_INPUT', 'Unknown storage command.');

@@ -6,6 +6,8 @@ import { digest, resolveBinding } from './definition.js';
 import { createWorkflowLifecycleRuntime, type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions,
   type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowLoop, loopManifest, type AnyWorkflowLoop } from './loop-definition.js';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 
 export interface WorkflowLoopRuntimeOptions extends WorkflowLifecycleRuntimeOptions {}
 export interface WorkflowLoopSnapshot {
@@ -19,6 +21,14 @@ export interface WorkflowLoopRuntime {
   inspect(id: string): Promise<WorkflowLoopSnapshot>;
   events(id: string, after?: number): ReturnType<WorkflowLoopRuntimeOptions['store']['events']>;
   runUntilSettled(definition: AnyWorkflowLoop, id: string): Promise<WorkflowLoopSnapshot>;
+  /** Quiescent operator pause: no further iteration is started or driven; an active child keeps its own state. */
+  pause(id: string): Promise<WorkflowLoopSnapshot>;
+  resume(id: string): Promise<WorkflowLoopSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused loop. Control settings apply from the next iteration; an
+   * active iteration child keeps its link only if it already runs the target body definition (migrate it first).
+   */
+  migrate(migration: WorkflowMigration<AnyWorkflowLoop, AnyWorkflowLoop>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowLoopSnapshot>>;
   cancel(id: string): Promise<WorkflowLoopSnapshot>; close(): void;
   /** Let admitted iteration effects settle within the deadline, then close. */
   drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
@@ -108,7 +118,9 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       state: jsonValue(state) as JsonObject, events: [{ type, data }] }));
   const mutate = async (id: string, transition: (state: WorkflowLoopState) => boolean, type: string, data: JsonObject = {}) => {
     for (let attempt = 0; attempt < 32; attempt++) {
-      const record = await load(id); const state = decoded(record); if (!transition(state)) return record;
+      const record = await load(id); const state = decoded(record); const paused = state.status === 'paused'; if (!transition(state)) return record;
+      // Progress recorded while paused never un-pauses the loop; only a terminal outcome or an explicit resume does.
+      if (paused && !terminal.has(state.status) && type !== 'loop.run.resumed') state.status = 'paused';
       try { return await save(record, state, type, data); }
       catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
     }
@@ -124,7 +136,7 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
     assertWorkflowLoop(definition);
     for (let wave = 0; wave < definition.maxIterations * 2 + 4; wave++) {
       let record = await load(id); let state = decoded(record); verify(definition, record, state);
-      if (terminal.has(state.status)) return view(record);
+      if (terminal.has(state.status) || state.status === 'paused') return view(record);
       if (state.childRunId === null && state.iteration > 0) {
         let again: boolean;
         try { const condition = loopValue(definition.continueWhen, state.input, state.current);
@@ -194,6 +206,48 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
     inspect: async id => view(await load(id)),
     events: (id, after = 0) => { ensureOpen(); return storage(() => store.events(scopeKey, id, after)); },
     runUntilSettled: run,
+    pause: async id => view(await mutate(id, state => {
+      if (state.status === 'paused') return false;
+      if (terminal.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal loop cannot be paused.');
+      state.status = 'paused'; return true;
+    }, 'loop.run.paused')),
+    resume: async id => view(await mutate(id, state => {
+      if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused loop can be resumed.');
+      state.status = 'running'; return true;
+    }, 'loop.run.resumed')),
+    migrate: async (migration, command) => {
+      ensureOpen(); assertWorkflowMigration(migration); assertWorkflowLoop(migration.from); assertWorkflowLoop(migration.to);
+      const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
+      const record = await load(id); const state = decoded(record); verify(migration.from, record, state);
+      const toManifest = loopManifest(migration.to);
+      const preconditions: MigrationBlocker[] = [];
+      if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The loop is ${state.status}; pause it before migrating.` });
+      if (toManifest.maxIterations < state.iteration) preconditions.push({ node: 'control', reason: `The loop already ran ${state.iteration} iterations; the new maxIterations is ${toManifest.maxIterations}.` });
+      let activeBody: string | undefined;
+      if (state.childRunId !== null) {
+        const child = await storage(() => store.read(scopeKey, state.childRunId!));
+        if (!child) throw new MayuraError('CONFLICT', 'The active loop iteration child is missing.');
+        activeBody = child.definitionHash;
+      }
+      const nodes = (definition: AnyWorkflowLoop, effective: boolean) => {
+        const { body, ...control } = loopManifest(definition);
+        return [{ id: 'body', kind: 'loop-body', dependsOn: [], fingerprint: nodeFingerprint({ body: effective && activeBody ? activeBody : body.definitionHash }) },
+          { id: 'control', kind: 'loop-control', dependsOn: [], fingerprint: nodeFingerprint({ ...control, bodyBounds: { maxCostMicros: body.maxCostMicros, maxCalls: body.maxCalls } }) }];
+      };
+      const plan = planWorkflowMigration({ migration, format: 'loop-v1', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,
+        from: nodes(migration.from, true), to: nodes(migration.to, false),
+        steps: [{ id: 'body', status: state.childRunId !== null ? 'running' : 'pending' }, { id: 'control', status: 'pending' }], preconditions });
+      if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<WorkflowLoopSnapshot>;
+      assertMigrationAllowed(plan);
+      const next: WorkflowLoopState = { ...state, definition: migration.to.digest, maxIterations: toManifest.maxIterations };
+      try { assertWorkflowLoopStateMatchesManifest(workflowLoopState({ id, state: jsonValue(next) as JsonObject }), toManifest); }
+      catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated loop state does not satisfy the new definition.'); }
+      if (typeof store.migrate !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This store cannot migrate in-flight workflow runs.');
+      const migrated = await storage(() => store.migrate!({ scope: scopeKey, id, expectedVersion: record.version, expectedDefinitionHash: migration.from.digest,
+        definitionHash: migration.to.digest, state: jsonValue(next) as JsonObject, events: [migrationEvent(plan, actorId, commandId) as { type: string; data: JsonObject }] }));
+      verify(migration.to, migrated, decoded(migrated));
+      return freezeJson(jsonValue({ plan, snapshot: view(migrated) })) as unknown as WorkflowMigrationResult<WorkflowLoopSnapshot>;
+    },
     cancel: async id => { let record = await load(id); const state = decoded(record); if (terminal.has(state.status)) return view(record);
       const child = state.childRunId ? await lifecycle.cancel(state.childRunId) : undefined;
       record = await mutate(id, current => { if (terminal.has(current.status)) return false;

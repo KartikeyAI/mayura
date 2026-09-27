@@ -9,3 +9,4 @@ export { createWorkflowTreeRuntime, type WorkflowTreeChildSnapshot, type Workflo
 export { createWorkflowTreeDiscovery,type WorkflowTreeDiscovery,type WorkflowTreeDiscoveryOptions } from './children-discovery.js';
 export type { WorkflowTreeDiscoveryCandidate,WorkflowTreeDiscoveryCursor,WorkflowTreeDiscoveryPage } from './children-discovery.js';
 export { createWorkflowTreeCoordinator,type WorkflowTreeCoordinator,type WorkflowTreeCoordinatorOptions,type WorkflowTreeCandidateOutcome,type WorkflowTreePageReport } from './children-coordinator.js';
+export { defineWorkflowMigration, type WorkflowMigration, type WorkflowMigrationResult, type MigrationPlan, type MigrationCommand } from './migration.js';

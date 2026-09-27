@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
-import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore, type MemoryIndexMethod } from '@mayura/storage-contracts';
+import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore, type MemoryIndexMethod } from '@mayura/storage-contracts';
 import {
-  createCommand, updateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
+  createCommand, updateCommand, migrateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerSession, type SchedulerBackend, type SchedulerMethod,
   ScheduledWorkflowDatabase, type ScheduledMethod, writerRequired, ExecutionWaitDatabase, DurableBudgetDatabase, WorkflowTreeDatabase, MemoryIndexDatabase,
 } from '@mayura/storage-sql/host';
@@ -136,6 +136,22 @@ export class SqliteDatabase {
       this.append(input.scope, input.id, current.event_sequence, input.events);
       const updated = this.row(input.scope, input.id);
       if (!updated) throw new StorageError('STORAGE_UNAVAILABLE', 'Updated record is unavailable.');
+      return record(updated);
+    }).immediate();
+  }
+
+  migrate(raw: MigrateRecord): StoredRecord {
+    const input = migrateCommand(raw);
+    return this.db.transaction(() => {
+      const current = this.row(input.scope, input.id);
+      if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+      if (this.db.prepare('SELECT aggregate_id FROM mayura_workflow_owners WHERE scope = ? AND aggregate_id = ?').get(input.scope,input.id)) writerRequired();
+      if (current.version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'Record version or definition has changed.');
+      this.db.prepare('UPDATE mayura_aggregates SET state = ?, definition_hash = ?, version = ?, event_sequence = ? WHERE scope = ? AND id = ?')
+        .run(JSON.stringify(input.state), input.definitionHash, nextCounter(current.version, 1), nextCounter(current.event_sequence, input.events.length), input.scope, input.id);
+      this.append(input.scope, input.id, current.event_sequence, input.events);
+      const updated = this.row(input.scope, input.id);
+      if (!updated) throw new StorageError('STORAGE_UNAVAILABLE', 'Migrated record is unavailable.');
       return record(updated);
     }).immediate();
   }

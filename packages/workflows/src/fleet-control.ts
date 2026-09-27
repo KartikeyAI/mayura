@@ -3,6 +3,7 @@ import { StorageError, type AggregateStore, type StoredRecord } from '@mayura/st
 import { digest } from './definition.js';
 import type { WorkflowGraphDiscovery } from './graph-discovery.js';
 import type { WorkflowLifecycleFleetRuntime } from './lifecycle-fleet.js';
+import type { WorkflowCompositeFleetRuntime } from './composite-fleet.js';
 
 /** Minimal durable hold reader that hosts and coordinators consult before driving a page. */
 export interface WorkflowFleetHoldReader { isHeld(): Promise<boolean> }
@@ -277,22 +278,49 @@ export function lifecycleFleetTarget(runtime: WorkflowLifecycleFleetRuntime, nam
 /** Format-3 graphs and format-4 trees share discovery-plus-runtime adapters. */
 export function graphFleetTarget(discovery: WorkflowGraphDiscovery, runtime: {
   inspect(id: string): Promise<{ readonly status: string }>; pause(id: string): Promise<{ readonly status: string }>; resume(id: string): Promise<{ readonly status: string }>;
-}, name = 'graphs'): WorkflowFleetTarget {
+}, name = 'graphs', options: { readonly includePaused?: boolean } = {}): WorkflowFleetTarget {
   return Object.freeze({ name,
     discover: async (cursor: JsonValue | null, limit: number) => {
-      const page = await discovery.scan({ cursor: cursor as never, limit });
-      return { runIds: page.candidates.map(candidate => candidate.reference.runId), nextCursor: page.nextCursor as unknown as JsonValue | null };
+      // Discovery pages hold at most 32 candidates; sweeps and inventories may ask for more.
+      const page = await discovery.scan({ cursor: cursor as never, limit: Math.min(limit, 32) });
+      return { runIds: page.candidates.filter(candidate => options.includePaused === true || candidate.status !== 'paused').map(candidate => candidate.reference.runId),
+        nextCursor: page.nextCursor as unknown as JsonValue | null };
     },
     inspect: (runId: string) => runtime.inspect(runId), pause: (runId: string) => runtime.pause(runId), resume: (runId: string) => runtime.resume(runId) });
 }
 export function treeFleetTarget(discovery: { scan(command?: { readonly cursor?: never; readonly limit?: number }): Promise<{
-  readonly candidates: readonly { readonly rootId: string }[]; readonly nextCursor: unknown }> }, runtime: {
+  readonly candidates: readonly { readonly rootId: string; readonly status: string }[]; readonly nextCursor: unknown }> }, runtime: {
   inspect(id: string): Promise<{ readonly status: string }>; pause(id: string): Promise<{ readonly status: string }>; resume(id: string): Promise<{ readonly status: string }>;
-}, name = 'trees'): WorkflowFleetTarget {
+}, name = 'trees', options: { readonly includePaused?: boolean } = {}): WorkflowFleetTarget {
   return Object.freeze({ name,
     discover: async (cursor: JsonValue | null, limit: number) => {
-      const page = await discovery.scan({ cursor: cursor as never, limit });
-      return { runIds: page.candidates.map(candidate => candidate.rootId), nextCursor: page.nextCursor as JsonValue | null };
+      const page = await discovery.scan({ cursor: cursor as never, limit: Math.min(limit, 32) });
+      return { runIds: page.candidates.filter(candidate => options.includePaused === true || candidate.status !== 'paused').map(candidate => candidate.rootId),
+        nextCursor: page.nextCursor as JsonValue | null };
     },
     inspect: (runId: string) => runtime.inspect(runId), pause: (runId: string) => runtime.pause(runId), resume: (runId: string) => runtime.resume(runId) });
+}
+
+/** Saga and loop runs from the composite fleet index; both formats support quiescent operator pause. */
+export function compositeFleetTarget(runtime: WorkflowCompositeFleetRuntime, name = 'composites', options: { readonly includePaused?: boolean } = {}): WorkflowFleetTarget {
+  const kinds = new Map<string, 'saga' | 'loop'>();
+  const kind = async (runId: string): Promise<'saga' | 'loop'> => {
+    const known = kinds.get(runId) ?? await runtime.kindOf(runId);
+    if (!known) throw new MayuraError('NOT_FOUND', 'The run is not in this composite fleet index.');
+    kinds.set(runId, known); return known;
+  };
+  return Object.freeze({ name,
+    discover: async (cursor: JsonValue | null, limit: number) => {
+      const page = await runtime.scan({ cursor: cursor as never, limit: Math.min(limit, 128) });
+      const runIds: string[] = [];
+      for (const candidate of page.candidates) {
+        kinds.set(candidate.runId, candidate.kind);
+        if (options.includePaused !== true && (await (candidate.kind === 'loop' ? runtime.loops : runtime.sagas).inspect(candidate.runId)).status === 'paused') continue;
+        runIds.push(candidate.runId);
+      }
+      return { runIds, nextCursor: page.nextCursor as unknown as JsonValue | null };
+    },
+    inspect: async (runId: string) => (await kind(runId)) === 'loop' ? runtime.loops.inspect(runId) : runtime.sagas.inspect(runId),
+    pause: async (runId: string) => (await kind(runId)) === 'loop' ? runtime.loops.pause(runId) : runtime.sagas.pause(runId),
+    resume: async (runId: string) => (await kind(runId)) === 'loop' ? runtime.loops.resume(runId) : runtime.sagas.resume(runId) });
 }

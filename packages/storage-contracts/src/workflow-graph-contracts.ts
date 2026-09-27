@@ -1,6 +1,6 @@
 import type { JsonValue } from '@mayura/core';
 import type { ExecutionRef, ExecutionWaitAggregateStore } from './execution-wait-contracts.js';
-import type { ScheduledEnrollment, ScheduledWorkflowSnapshot, ScheduledWorkflowStore, WorkflowBinding, WorkflowManifestNode } from './scheduled-workflow-contracts.js';
+import type { ScheduledEnrollment, ScheduledMigrate, ScheduledWorkflowSnapshot, ScheduledWorkflowStore, WorkflowBinding, WorkflowManifestNode } from './scheduled-workflow-contracts.js';
 import type { WorkflowFormat2State, WorkflowFormat2Step } from './workflow-format2.js';
 
 /** References are fixed before parent creation; step outputs cannot introduce future back-edges. */
@@ -28,7 +28,7 @@ type GraphResponse<T> = T extends ScheduledWorkflowSnapshot ? WorkflowGraphStore
   : T extends { readonly snapshot: ScheduledWorkflowSnapshot } ? Omit<T, 'snapshot'> & { readonly snapshot: WorkflowGraphStoreSnapshot }
   : T;
 type GraphControlStore = {
-  [K in Exclude<keyof ScheduledWorkflowStore, 'submit' | 'attach'>]:
+  [K in Exclude<keyof ScheduledWorkflowStore, 'submit' | 'attach' | 'pause' | 'resume' | 'migrate'>]:
     (...args: Parameters<ScheduledWorkflowStore[K]>) => Promise<GraphResponse<Awaited<ReturnType<ScheduledWorkflowStore[K]>>>>;
 };
 /** New optional capability: never widens or silently changes custom scheduled-v1 adapters. */
@@ -38,5 +38,7 @@ export interface WorkflowGraphStore extends GraphControlStore {
   pause?(command: Parameters<ScheduledWorkflowStore['cancel']>[0]): Promise<WorkflowGraphStoreSnapshot>;
   /** Optional scheduling-only resume; unresolved waits and approvals remain unresolved. */
   resume?(command: Parameters<ScheduledWorkflowStore['cancel']>[0]): Promise<WorkflowGraphStoreSnapshot>;
+  /** Optional reviewed in-place migration of a paused graph run; see `ScheduledWorkflowStore.migrate`. */
+  migrate?(command: ScheduledMigrate): Promise<WorkflowGraphStoreSnapshot>;
 }
 export interface WorkflowGraphAggregateStore extends ExecutionWaitAggregateStore { readonly workflowGraphs: WorkflowGraphStore }

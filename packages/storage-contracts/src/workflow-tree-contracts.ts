@@ -60,6 +60,10 @@ export interface WorkflowTreeCancellationResult {readonly root:WorkflowTreeRootS
 export interface WorkflowTreeChildCancellationResult {readonly root:WorkflowTreeRootSnapshot;readonly member:StoredRecord;readonly jobs:readonly JobRecord[]}
 export interface WorkflowTreeRecoveryResult {readonly root:WorkflowTreeRootSnapshot;readonly members:readonly StoredRecord[];readonly jobs:readonly JobRecord[]}
 
+export interface WorkflowTreeMigrateRoot {
+  readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number;readonly commandId:string;
+  readonly manifest:WorkflowTreeManifest;readonly resources:WorkflowResourcePlan;readonly state:JsonObject;readonly migrationId:string;readonly actorId:string;
+}
 /** Explicit optional format-4 persistence capability. Every mutation is finite and root-fenced. */
 export interface WorkflowTreeStore {
   initialize():Promise<void>;
@@ -92,6 +96,11 @@ export interface WorkflowTreeStore {
   pauseRoot?(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number}):Promise<WorkflowTreeRootSnapshot>;
   /** Optional scheduling-only resume; unresolved approvals and child waits remain unresolved. */
   resumeRoot?(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly expectedVersion:number}):Promise<WorkflowTreeRootSnapshot>;
+  /**
+   * Optional reviewed migration of a paused root to a new tree definition under the same policy. `state` is the complete
+   * migrated root state; storage re-verifies it: steps with jobs or admitted children must be carried unchanged.
+   */
+  migrateRoot?(command:WorkflowTreeMigrateRoot):Promise<WorkflowTreeRootSnapshot>;
   recoverExpired(command:{readonly scope:string;readonly rootId:string;readonly rootPolicyHash:string;readonly limit:number}):Promise<WorkflowTreeRecoveryResult>;
 }
 export interface WorkflowTreeAggregateStore extends AggregateStore {readonly workflowTrees:WorkflowTreeStore}

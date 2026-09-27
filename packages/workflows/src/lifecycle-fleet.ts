@@ -195,6 +195,12 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     runUntilSettled: async (definition: AnyWorkflowLifecycle, id: string) => {
       const snapshot = await runtime.runUntilSettled(definition, id); await write(snapshot, definition.digest); return snapshot;
     },
+    migrate: async (migration: Parameters<WorkflowLifecycleRuntime['migrate']>[0], command: Parameters<WorkflowLifecycleRuntime['migrate']>[1]) => {
+      const result = await runtime.migrate(migration, command);
+      // The index entry follows the run to its new definition, so hosts dispatch it with the new version.
+      if (result.snapshot) await write(result.snapshot, migration.to.digest);
+      return result;
+    },
     approve: async (command: Parameters<WorkflowLifecycleRuntime['approve']>[0]) => {
       const snapshot = await runtime.approve(command); await write(snapshot); return snapshot;
     },

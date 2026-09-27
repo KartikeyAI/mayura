@@ -27,6 +27,12 @@ export interface WorkflowCompositeFleetRuntime {
   submitSaga<D extends AnyWorkflowSaga>(definition: D, command: { readonly input: InferInput<D['input']>; readonly idempotencyKey: string }): Promise<WorkflowSagaSnapshot>;
   submitLoop<D extends AnyWorkflowLoop>(definition: D, command: { readonly input: InferInput<D['input']>; readonly idempotencyKey: string }): Promise<WorkflowLoopSnapshot>;
   scan(command?: { readonly cursor?: WorkflowCompositeCursor | null; readonly limit?: number; readonly maxShardReads?: number }): Promise<WorkflowCompositePage>;
+  /** The indexed kind of a run, or undefined when this fleet does not index it. */
+  kindOf(runId: string): Promise<WorkflowCompositeKind | undefined>;
+  /** Migrate a paused saga and move its index entry to the new definition. */
+  migrateSaga(migration: Parameters<WorkflowSagaRuntime['migrate']>[0], command: Parameters<WorkflowSagaRuntime['migrate']>[1]): ReturnType<WorkflowSagaRuntime['migrate']>;
+  /** Migrate a paused loop and move its index entry to the new definition. */
+  migrateLoop(migration: Parameters<WorkflowLoopRuntime['migrate']>[0], command: Parameters<WorkflowLoopRuntime['migrate']>[1]): ReturnType<WorkflowLoopRuntime['migrate']>;
   runPage(catalog: { readonly sagas?: readonly AnyWorkflowSaga[]; readonly loops?: readonly AnyWorkflowLoop[] },
     command?: { readonly cursor?: WorkflowCompositeCursor | null; readonly limit?: number; readonly maxShardReads?: number }): Promise<WorkflowCompositeReport>;
   close(): void;
@@ -78,13 +84,15 @@ export function createWorkflowCompositeFleetRuntime(options: WorkflowCompositeFl
       state: { format: 1, shard, entries: [] }, events: [{ type: 'composite-index.created', data: { shard } }] });
       return { record: created.record, state: decode(created.record, scope, shard, maximum) }; }
     catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'Composite workflow index could not be initialized.'); } };
-  const write = async (entry: Entry, terminal: boolean): Promise<void> => { const shard = entry.runId.slice(0, 2);
+  /** `migratedFrom` lets a reviewed migration move an entry to its new definition; any other identity change is refused. */
+  const write = async (entry: Entry, terminal: boolean, migratedFrom?: string): Promise<void> => { const shard = entry.runId.slice(0, 2);
     for (let attempt = 0; attempt < retries; attempt++) { const found = await read(shard); if (terminal && !found) return;
       const current = found ?? await ensure(shard); const index = current.state.entries.findIndex(value => value.runId === entry.runId);
       if (terminal) { if (index < 0) return; current.state.entries.splice(index, 1); }
       else if (index < 0) { if (current.state.entries.length >= maximum) throw new MayuraError('LIMIT_EXCEEDED', 'Composite workflow index shard is full.');
         current.state.entries.push(entry); current.state.entries.sort((a, b) => a.runId.localeCompare(b.runId)); }
-      else { const previous = current.state.entries[index]!; if (previous.kind !== entry.kind || previous.definitionHash !== entry.definitionHash) throw new MayuraError('CONFLICT', 'Composite index identity changed.');
+      else { const previous = current.state.entries[index]!;
+        if (previous.kind !== entry.kind || (previous.definitionHash !== entry.definitionHash && previous.definitionHash !== migratedFrom)) throw new MayuraError('CONFLICT', 'Composite index identity changed.');
         if (previous.version > entry.version) return; if (previous.version === entry.version) return; current.state.entries[index] = entry; }
       try { await store.update({ scope, id: current.record.id, expectedVersion: current.record.version,
         state: jsonValue(current.state) as JsonObject, events: [{ type: terminal ? 'composite-index.removed' : 'composite-index.updated',
@@ -114,6 +122,16 @@ export function createWorkflowCompositeFleetRuntime(options: WorkflowCompositeFl
       await write({ kind: 'saga', runId: result.id, definitionHash: definition.digest, version: result.version }, sagaTerminal.has(result.status)); return result; },
     submitLoop: async (definition, command) => { const result = await loops.submit(definition, command);
       await write({ kind: 'loop', runId: result.id, definitionHash: definition.digest, version: result.version }, loopTerminal.has(result.status)); return result; },
+    kindOf: async runId => {
+      if (typeof runId !== 'string' || !hashes.test(runId)) throw new MayuraError('INVALID_INPUT', 'An exact run id is required.');
+      return (await read(runId.slice(0, 2)))?.state.entries.find(entry => entry.runId === runId)?.kind;
+    },
+    migrateSaga: async (migration, command) => { const result = await sagas.migrate(migration, command);
+      if (result.snapshot) await write({ kind: 'saga', runId: result.snapshot.id, definitionHash: migration.to.digest, version: result.snapshot.version }, sagaTerminal.has(result.snapshot.status), migration.from.digest);
+      return result; },
+    migrateLoop: async (migration, command) => { const result = await loops.migrate(migration, command);
+      if (result.snapshot) await write({ kind: 'loop', runId: result.snapshot.id, definitionHash: migration.to.digest, version: result.snapshot.version }, loopTerminal.has(result.snapshot.status), migration.from.digest);
+      return result; },
     scan,
     runPage: async (catalog, command = {}) => { const sagaCatalog = new Map<string, AnyWorkflowSaga>(); const loopCatalog = new Map<string, AnyWorkflowLoop>();
       for (const definition of catalog.sagas ?? []) { assertWorkflowSaga(definition); if (sagaCatalog.has(definition.digest)) throw new MayuraError('INVALID_INPUT', 'Duplicate saga definition.'); sagaCatalog.set(definition.digest, definition); }

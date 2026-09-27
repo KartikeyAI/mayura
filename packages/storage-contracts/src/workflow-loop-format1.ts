@@ -14,7 +14,7 @@ export interface WorkflowLoopManifest {
   readonly continueWhen: WorkflowLoopBinding; readonly result: WorkflowLoopBinding;
   readonly maxCostMicros: number; readonly maxCalls: number;
 }
-export type WorkflowLoopStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'limit_exceeded' | 'cancelled';
+export type WorkflowLoopStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'limit_exceeded' | 'cancelled';
 export interface WorkflowLoopState {
   readonly format: 1; readonly definition: string; readonly policy: string; readonly input: JsonValue;
   status: WorkflowLoopStatus; iteration: number; childRunId: string | null; current: JsonValue;
@@ -24,7 +24,7 @@ export interface WorkflowLoopState {
 
 const idPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/; const hashPattern = /^[a-f0-9]{64}$/;
 const forbidden = new Set(['constructor', 'prototype', '__proto__']);
-const statuses = new Set<WorkflowLoopStatus>(['running', 'waiting', 'succeeded', 'failed', 'limit_exceeded', 'cancelled']);
+const statuses = new Set<WorkflowLoopStatus>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'limit_exceeded', 'cancelled']);
 function invalid(): never { throw new StorageError('INVALID_INPUT', 'Invalid bounded workflow loop metadata.'); }
 function corrupt(): never { throw new StorageError('CONFLICT', 'Stored workflow loop state failed integrity validation.'); }
 function object(value: JsonValue | undefined): JsonObject { if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid(); return value; }

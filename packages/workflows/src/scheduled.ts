@@ -1,4 +1,4 @@
-import { Budget, MayuraError, assertPositiveInteger, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
+import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import {
@@ -7,7 +7,10 @@ import {
   type Claim, type ScheduledWrite, type ScheduledWorkflowAggregateStore,
   type ScheduledWorkflowStore, type WorkflowResourcePlan, type ExecutionRef, type StoredRecord,
   type WorkflowGraphAggregateStore, type WorkflowGraphStore, type WorkflowFormat2State, type WorkflowGraphFormat3State,
+  type ScheduledMigrate, initialWorkflowState, initialWorkflowGraphState, type WorkflowManifest, type WorkflowGraphManifest,
 } from '@mayura/storage-contracts';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowDefinition } from './definition.js';
 import { assertWorkflowGraph, graphManifest, type AnyWorkflowGraph } from './graph-definition.js';
 import type { WorkflowGraphRuntimeOptions } from './graphs.js';
@@ -66,6 +69,14 @@ export interface ScheduledWorkflowRuntime {
   reconcile(definition: AnyWorkflow, command: ReconcileExternalEffectCommand): Promise<WorkflowSnapshot>;
   approve(command: { readonly id: string; readonly nodeId: string; readonly digest: string; readonly credential: unknown }): Promise<WorkflowSnapshot>;
   cancel(id: string): Promise<WorkflowSnapshot>;
+  /** Persist a quiescent operator pause; claimed or in-flight effects must settle or be recovered first. */
+  pause(id: string): Promise<WorkflowSnapshot>;
+  resume(id: string): Promise<WorkflowSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused run to a new definition version. Storage re-verifies the
+   * migrated state inside its transaction; steps with scheduler history must be unchanged. The run stays paused.
+   */
+  migrate(migration: WorkflowMigration<AnyWorkflow, AnyWorkflow>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowSnapshot>>;
   recoverExpired(id: string): Promise<WorkflowSnapshot>;
   /** Stops this worker, not the shared workflow. Keeps caller-owned storage available for late evidence. */
   close(): Promise<void>;
@@ -85,7 +96,7 @@ export function createScheduledWorkflowRuntime(options: ScheduledWorkflowRuntime
 
 type DriverDefinition = AnyWorkflow | AnyWorkflowGraph;
 type DriverStoreControls = {
-  [K in Exclude<keyof ScheduledWorkflowStore, 'submit' | 'attach'>]:
+  [K in Exclude<keyof ScheduledWorkflowStore, 'submit' | 'attach' | 'pause' | 'resume' | 'migrate'>]:
     (...args: Parameters<ScheduledWorkflowStore[K]>) => Promise<Awaited<ReturnType<ScheduledWorkflowStore[K]>> | Awaited<ReturnType<WorkflowGraphStore[K]>>>;
 };
 interface ScheduledDriverRuntime {
@@ -99,8 +110,9 @@ interface ScheduledDriverRuntime {
   reconcile(definition: DriverDefinition, command: ReconcileExternalEffectCommand): Promise<ScheduledPublicSnapshot>;
   approve(command: Parameters<ScheduledWorkflowRuntime['approve']>[0]): Promise<ScheduledPublicSnapshot>;
   cancel(id: string): Promise<ScheduledPublicSnapshot>;
-  readonly pause?: (id: string) => Promise<ScheduledPublicSnapshot>;
-  readonly resume?: (id: string) => Promise<ScheduledPublicSnapshot>;
+  pause(id: string): Promise<ScheduledPublicSnapshot>;
+  resume(id: string): Promise<ScheduledPublicSnapshot>;
+  migrate(migration: WorkflowMigration<DriverDefinition, DriverDefinition>, command: MigrationCommand): Promise<WorkflowMigrationResult<ScheduledPublicSnapshot>>;
   recoverExpired(id: string): Promise<ScheduledPublicSnapshot>;
   close(): Promise<void>;
   drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
@@ -115,19 +127,21 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
   let api: DriverStoreControls;
   let read: ScheduledWorkflowAggregateStore['read'];
   let events: ScheduledWorkflowAggregateStore['events'];
-  // Optional graph-only controls: custom adapters without them keep working until pause is requested.
-  let controls: Pick<WorkflowGraphStore, 'pause' | 'resume'> = {};
+  // Optional controls: custom adapters without them keep working until pause or migration is requested.
+  let controls: {
+    readonly pause?: (command: ScheduledWrite) => Promise<ScheduledStoredSnapshot>;
+    readonly resume?: (command: ScheduledWrite) => Promise<ScheduledStoredSnapshot>;
+    readonly migrate?: (command: ScheduledMigrate) => Promise<ScheduledStoredSnapshot>;
+  } = {};
   try {
     const source = profile === 'scheduled-v1' ? store?.workflows : (store as WorkflowGraphAggregateStore)?.workflowGraphs;
     const required = methods.filter(method => profile === 'scheduled-v1' || method !== 'attach');
     if (!source || required.some(method => typeof (source as ScheduledWorkflowStore)[method] !== 'function')) throw new Error();
     api = Object.freeze(Object.fromEntries(required.map(method => [method, (source as ScheduledWorkflowStore)[method].bind(source)]))) as unknown as DriverStoreControls;
     read = store.read.bind(store); events = store.events.bind(store);
-    if (profile === 'scheduled-v2') {
-      const graphs = source as WorkflowGraphStore;
-      controls = Object.freeze({ ...(typeof graphs.pause === 'function' ? { pause: graphs.pause.bind(graphs) } : {}),
-        ...(typeof graphs.resume === 'function' ? { resume: graphs.resume.bind(graphs) } : {}) });
-    }
+    const optional = source as unknown as Record<'pause' | 'resume' | 'migrate', ((command: never) => Promise<ScheduledStoredSnapshot>) | undefined>;
+    controls = Object.freeze(Object.fromEntries((['pause', 'resume', 'migrate'] as const)
+      .filter(method => typeof optional[method] === 'function').map(method => [method, optional[method]!.bind(source)]))) as typeof controls;
   } catch { throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide atomic scheduled workflow storage.'); }
   let policy: ReturnType<typeof workflowPolicy>;
   try {
@@ -593,10 +607,9 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       for (const job of result.jobs) active.get(job.jobId)?.abort();
       return snapshot(result.record);
     },
-    ...(profile === 'scheduled-v2' ? {
-      async pause(id: string) {
+    async pause(id: string) {
         open(); const pause = controls.pause;
-        if (typeof pause !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable graph pause.');
+        if (typeof pause !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable workflow pause.');
         // Inadmissible states return the observed snapshot unchanged; throwing inside a storage write would hide the conflict.
         const result = await write(id, (command, current) => {
           const status = stateFrom(current.record).status;
@@ -604,22 +617,74 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
           return status !== 'paused' && !terminal.has(status) && quiescent ? pause(command) : Promise.resolve(current);
         });
         const status = stateFrom(result.record).status;
-        if (terminal.has(status)) throw new MayuraError('CONFLICT', 'A terminal workflow graph cannot be paused.');
-        if (status !== 'paused') throw new MayuraError('CONFLICT', 'A workflow graph with a claimed or in-flight effect cannot enter the quiescent paused state.');
+        if (terminal.has(status)) throw new MayuraError('CONFLICT', 'A terminal workflow cannot be paused.');
+        if (status !== 'paused') throw new MayuraError('CONFLICT', 'A workflow with a claimed or in-flight effect cannot enter the quiescent paused state.');
         return snapshot(result.record);
       },
       async resume(id: string) {
         open(); const resume = controls.resume;
-        if (typeof resume !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable graph pause.');
+        if (typeof resume !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter does not provide durable workflow pause.');
         let applied = false;
         const result = await write(id, (command, current) => {
           applied = stateFrom(current.record).status === 'paused';
           return applied ? resume(command) : Promise.resolve(current);
         });
-        if (!applied) throw new MayuraError('CONFLICT', 'Only a paused workflow graph can be resumed.');
+        if (!applied) throw new MayuraError('CONFLICT', 'Only a paused workflow can be resumed.');
         return snapshot(result.record);
       },
-    } : {}),
+    async migrate(migration, command) {
+      open(); assertWorkflowMigration(migration); assertDefinition(migration.from); assertDefinition(migration.to);
+      const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
+      const from = enrollment(migration.from); const to = enrollment(migration.to);
+      const current = await load(id); matches(migration.from, current);
+      const state = stateFrom(current.record);
+      // Resources are part of what a node does: a changed resource identity is a changed node.
+      const nodes = (registered: typeof from) => (registered.manifest as WorkflowManifest | WorkflowGraphManifest).graph.map(node => ({ id: node.id, kind: node.kind,
+        dependsOn: node.dependsOn, fingerprint: nodeFingerprint({ ...node, resources: registered.resources[node.id] ?? null } as unknown as Record<string, unknown>) }));
+      const fromNodes = nodes(from); const toNodes = nodes(to);
+      const preconditions: MigrationBlocker[] = [];
+      if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });
+      if (drivers.has(id)) preconditions.push({ node: '*', reason: 'This worker is still driving the run; wait for its driver to stop.' });
+      if (current.jobs.some(job => job.state === 'leased' || job.state === 'started')) preconditions.push({ node: '*', reason: 'A job is leased or started; let it settle or recover it first.' });
+      // Scheduler jobs are durable history keyed by node: such a node must survive unchanged under its own id.
+      for (const nodeId of new Set(current.jobs.map(job => job.nodeId))) {
+        const before = fromNodes.find(node => node.id === nodeId); const after = toNodes.find(node => node.id === nodeId);
+        if (!after || before?.fingerprint !== after.fingerprint || Object.values(migration.renames).includes(nodeId)) {
+          preconditions.push({ node: nodeId, reason: `Step "${nodeId}" has scheduler history; it must be kept unchanged.` });
+        }
+      }
+      const plan = planWorkflowMigration({ migration, format: profile === 'scheduled-v1' ? 'scheduled-v1' : 'graph-v3', runId: id,
+        fromDigest: migration.from.digest, toDigest: migration.to.digest, from: fromNodes, to: toNodes,
+        steps: Object.entries(state.steps).map(([step, value]) => ({ id: step, status: value.status })), preconditions });
+      if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<ScheduledPublicSnapshot>;
+      assertMigrationAllowed(plan);
+      const store = controls.migrate;
+      if (typeof store !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This adapter cannot migrate in-flight workflow runs.');
+      const fresh = profile === 'scheduled-v1'
+        ? initialWorkflowState(to.manifest as WorkflowManifest, state.input, migration.to.digest, state.policy, state.maxCostMicros)
+        : initialWorkflowGraphState(to.manifest as WorkflowGraphManifest, state.input, migration.to.digest, state.policy, state.maxCostMicros);
+      const carried: Record<string, unknown> = {};
+      for (const entry of plan.entries) if (entry.target) {
+        carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!] : fresh.steps[entry.target];
+      }
+      const steps = Object.fromEntries((to.manifest as WorkflowManifest | WorkflowGraphManifest).graph.map(node => [node.id, carried[node.id]]));
+      const next = { ...state, definition: migration.to.digest, steps,
+        reservedMicros: Object.values(steps).reduce<number>((sum, step) => sum + (step as { costReserved: number }).costReserved, 0) };
+      // One attempt at the planned version: a concurrent change needs a fresh review, and a storage refusal keeps its reason.
+      let result: ScheduledStoredSnapshot;
+      try {
+        const raw = await scheduledStorage(() => store({ ...access(id), expectedVersion: current.record.version, commandId, manifest: to.manifest,
+          resources: to.resources, state: jsonValue(next) as JsonObject, migrationId: migration.id, actorId } as ScheduledMigrate));
+        const checked = scheduledTransition(raw, scopeKey, id, policyHash, profile);
+        result = ('snapshot' in checked ? checked.snapshot : checked) as ScheduledStoredSnapshot;
+      } catch (error) {
+        if (!isStorageCode(error, 'CONFLICT')) throw error;
+        const reason = error instanceof Error && error.message.startsWith('Migration refused:') ? error.message : 'The run changed after the migration was planned; plan it again.';
+        throw new MayuraError('CONFLICT', reason);
+      }
+      const migrated = view(result, id); matches(migration.to, migrated);
+      return freezeJson(jsonValue({ plan, snapshot: snapshot(migrated.record) })) as unknown as WorkflowMigrationResult<ScheduledPublicSnapshot>;
+    },
     async recoverExpired(id) { open(); return snapshot((await write(id, command => api.recover(command))).record); },
     close() {
       if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }

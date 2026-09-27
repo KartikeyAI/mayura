@@ -32,12 +32,16 @@ const storageCodes = new Set<StorageErrorCode>(['INVALID_INPUT', 'CONFLICT', 'NO
 export async function scheduledStorage<T>(operation: () => Promise<T>, timeoutMs = 10_000, signal?: AbortSignal): Promise<T> {
   try { return await scheduledCallback(operation, timeoutMs, signal ?? new AbortController().signal); }
   catch (error) {
-    let code: StorageErrorCode = 'STORAGE_UNAVAILABLE';
+    let code: StorageErrorCode = 'STORAGE_UNAVAILABLE'; let refusal: string | undefined;
     try {
       const own = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'code') : undefined;
       if (own && 'value' in own && storageCodes.has(own.value as StorageErrorCode)) code = own.value as StorageErrorCode;
+      // A migration refusal is fixed storage text plus step ids; it is the reviewer's answer, so it is kept verbatim.
+      const message = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'message') : undefined;
+      if (code === 'CONFLICT' && message && 'value' in message && typeof message.value === 'string'
+        && /^Migration refused: [A-Za-z0-9 .,;:"'()_-]{1,240}$/.test(message.value)) refusal = message.value;
     } catch { /* Exception proxies do not become public diagnostics. */ }
-    throw new StorageError(code, 'Scheduled persistence could not confirm the requested transition. Inspect current state before retrying effects.');
+    throw new StorageError(code, refusal ?? 'Scheduled persistence could not confirm the requested transition. Inspect current state before retrying effects.');
   }
 }
 

@@ -6,6 +6,8 @@ import { digest, resolveBinding } from './definition.js';
 import { createWorkflowLifecycleRuntime, type WorkflowLifecycleRuntime,
   type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowSaga, sagaManifest, type AnyWorkflowSaga, type WorkflowSagaStep } from './saga-definition.js';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 
 export interface WorkflowSagaRuntimeOptions extends WorkflowLifecycleRuntimeOptions {}
 
@@ -27,6 +29,14 @@ export interface WorkflowSagaRuntime {
   inspect(id: string): Promise<WorkflowSagaSnapshot>;
   events(id: string, after?: number): ReturnType<WorkflowSagaRuntimeOptions['store']['events']>;
   runUntilSettled(definition: AnyWorkflowSaga, id: string): Promise<WorkflowSagaSnapshot>;
+  /** Quiescent operator pause: no further child is started or driven; the linked child keeps its own state. */
+  pause(id: string): Promise<WorkflowSagaSnapshot>;
+  resume(id: string): Promise<WorkflowSagaSnapshot>;
+  /**
+   * Plan (dryRun) or apply a reviewed migration of a paused saga in its forward phase. A step whose linked child is still
+   * running keeps it only if the child already runs the target's child definition: migrate the child first.
+   */
+  migrate(migration: WorkflowMigration<AnyWorkflowSaga, AnyWorkflowSaga>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowSagaSnapshot>>;
   cancel(id: string): Promise<WorkflowSagaSnapshot>;
   close(): void;
   /** Let admitted child effects settle within the deadline, then close. */
@@ -142,8 +152,10 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
   const mutate = async (id: string, transition: (state: WorkflowSagaState) => boolean, type: string,
     data: JsonObject = {}): Promise<StoredRecord> => {
     for (let attempt = 0; attempt < 32; attempt++) {
-      const record = await load(id); const state = decoded(record);
+      const record = await load(id); const state = decoded(record); const paused = state.status === 'paused';
       if (!transition(state)) return record;
+      // Progress recorded while paused (a child settling) never un-pauses the saga; only a terminal outcome replaces it.
+      if (paused && !terminalSagaStatuses.has(state.status) && type !== 'saga.run.resumed') state.status = 'paused';
       try { return await save(record, state, type, data); }
       catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
     }
@@ -172,7 +184,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
     assertWorkflowSaga(definition);
     for (let wave = 0; wave < definition.steps.length * 2 + 4; wave++) {
       let record = await load(id); let state = decoded(record); verify(definition, record, state);
-      if (terminalSagaStatuses.has(state.status)) return snapshot(record);
+      if (terminalSagaStatuses.has(state.status) || state.status === 'paused') return snapshot(record);
       if (state.status === 'running' || state.status === 'waiting') {
         const index = state.cursor; const step = definition.steps[index];
         if (!step) {
@@ -314,6 +326,61 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
     inspect: async id => snapshot(await load(id)),
     events: (id, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     runUntilSettled: run,
+    pause: async id => snapshot(await mutate(id, state => {
+      if (state.status === 'paused') return false;
+      if (terminalSagaStatuses.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal saga cannot be paused.');
+      state.status = 'paused'; return true;
+    }, 'saga.run.paused')),
+    resume: async id => snapshot(await mutate(id, state => {
+      if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused saga can be resumed.');
+      const compensating = Object.values(state.steps).some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(step.status));
+      state.status = compensating ? 'compensating' : 'running'; return true;
+    }, 'saga.run.resumed')),
+    migrate: async (migration, command) => {
+      ensureOpen(); assertWorkflowMigration(migration); assertWorkflowSaga(migration.from); assertWorkflowSaga(migration.to);
+      const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
+      const record = await load(id); const state = decoded(record); verify(migration.from, record, state);
+      const preconditions: MigrationBlocker[] = [];
+      if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The saga is ${state.status}; pause it before migrating.` });
+      if (Object.values(state.steps).some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(step.status))) {
+        preconditions.push({ node: '*', reason: 'The saga is compensating; only a saga in its forward phase can migrate.' });
+      }
+      // A running linked child is compared by the definition it is actually pinned to (possibly already migrated).
+      const linked = new Map<string, string>();
+      for (const [stepId, step] of Object.entries(state.steps)) if (step.status === 'forward_waiting' && step.forwardRunId) {
+        const child = await storageCall(() => store.read(scopeKey, step.forwardRunId!));
+        if (!child) throw new MayuraError('CONFLICT', 'A linked saga child run is missing.');
+        linked.set(stepId, child.definitionHash);
+      }
+      const nodes = (definition: AnyWorkflowSaga, effective: boolean) => sagaManifest(definition).steps.map((step, index, all) => {
+        const forward = effective && linked.has(step.id) ? { ...step.forward, definitionHash: linked.get(step.id)! } : step.forward;
+        return { id: step.id, kind: 'saga-step', dependsOn: index === 0 ? [] : [all[index - 1]!.id], fingerprint: nodeFingerprint({ ...step, forward } as unknown as Record<string, unknown>) };
+      });
+      const statusFor = (status: string): string => status === 'forward_waiting' ? 'running' : status;
+      const plan = planWorkflowMigration({ migration, format: 'saga-v1', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,
+        from: nodes(migration.from, true), to: nodes(migration.to, false),
+        steps: Object.entries(state.steps).map(([step, value]) => ({ id: step, status: statusFor(value.status) })),
+        preconditions: [...preconditions, ...Object.entries(state.steps).filter(([stepId, step]) => (step.forwardSpentMicros + step.compensationSpentMicros) > 0
+          && !sagaManifest(migration.to).steps.some(target => target.id === stepId || migration.renames[target.id] === stepId))
+          .map(([stepId]) => ({ node: stepId, reason: `Step "${stepId}" already spent budget; removing it would drop recorded spend.` }))] });
+      if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<WorkflowSagaSnapshot>;
+      assertMigrationAllowed(plan);
+      const toManifest = sagaManifest(migration.to);
+      const fresh = initialWorkflowSagaState(toManifest, state.input, migration.to.digest, policy, options.maxCostMicros);
+      const carried: Record<string, WorkflowSagaStepState> = {};
+      for (const entry of plan.entries) if (entry.target) carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
+      const steps = Object.fromEntries(toManifest.steps.map(step => [step.id, carried[step.id]!]));
+      const cursor = toManifest.steps.findIndex(step => steps[step.id]!.status !== 'succeeded');
+      const next: WorkflowSagaState = { ...state, definition: migration.to.digest, steps, cursor: cursor < 0 ? toManifest.steps.length : cursor,
+        spentMicros: Object.values(steps).reduce((sum, step) => sum + step.forwardSpentMicros + step.compensationSpentMicros, 0) };
+      try { assertWorkflowSagaStateMatchesManifest(workflowSagaState({ id, state: jsonValue(next) as JsonObject }), toManifest); }
+      catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated saga state does not satisfy the new definition.'); }
+      if (typeof store.migrate !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This store cannot migrate in-flight workflow runs.');
+      const migrated = await storageCall(() => store.migrate!({ scope: scopeKey, id, expectedVersion: record.version, expectedDefinitionHash: migration.from.digest,
+        definitionHash: migration.to.digest, state: jsonValue(next) as JsonObject, events: [migrationEvent(plan, actorId, commandId) as { type: string; data: JsonObject }] }));
+      verify(migration.to, migrated, decoded(migrated));
+      return freezeJson(jsonValue({ plan, snapshot: snapshot(migrated) })) as unknown as WorkflowMigrationResult<WorkflowSagaSnapshot>;
+    },
     cancel: async id => {
       let record = await load(id); const state = decoded(record);
       if (terminalSagaStatuses.has(state.status)) return snapshot(record);

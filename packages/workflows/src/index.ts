@@ -6,7 +6,7 @@ export { createScheduledWorkflowRuntime, type ScheduledWorkflowRuntime, type Sch
 export { composeExternalEffectVerifiers, defineExternalEffectVerifier, type ExternalEffectProviderAttestation,
   type ExternalEffectVerificationRouter, type ExternalEffectVerifier, type ExternalEffectVerifierOptions } from './reconciliation.js';
 export { agentAsDurableWorkflow, type DurableAgentWorkflowOptions } from './agents.js';
-export { createWorkflowFleetControl, graphFleetTarget, lifecycleFleetTarget, treeFleetTarget, type WorkflowFleetControl,
+export { createWorkflowFleetControl, compositeFleetTarget, graphFleetTarget, lifecycleFleetTarget, treeFleetTarget, type WorkflowFleetControl,
   type WorkflowFleetControlOptions, type WorkflowFleetHoldReader, type WorkflowFleetHoldState, type WorkflowFleetSweepCursor,
   type WorkflowFleetSweepOutcome, type WorkflowFleetSweepReport, type WorkflowFleetTarget } from './fleet-control.js';
 export { createWorkflowLeadership, type WorkflowLeadership, type WorkflowLeadershipOptions, type WorkflowLeadershipState } from './leadership.js';
@@ -14,3 +14,7 @@ export { coordinatorUnit, createWorkflowWorker, type WorkflowWorker, type Workfl
   type WorkflowWorkerUnit } from './worker.js';
 export { createWorkflowHookRelay, workflowHookStages, type WorkflowHookRelay, type WorkflowHookRelayOptions, type WorkflowHookDelivery, type WorkflowHookEvent, type WorkflowHookStage, type WorkflowHooks, type WorkflowEventSource } from './hook-relay.js';
 export { inventoryWorkflowVersions, assertWorkflowVersionsRetained, compositeVersionTarget, type WorkflowVersionInventory, type WorkflowVersionInventoryOptions, type WorkflowVersionEntry, type WorkflowVersionTarget } from './versions.js';
+export { defineWorkflowMigration, createWorkflowMigrationCatalog, type WorkflowMigrationCatalog, planWorkflowMigration, nodeFingerprint, type WorkflowMigration, type WorkflowMigrationOptions, type MigrationPlan,
+  type MigrationPlanEntry, type MigrationBlocker, type MigrationAction, type MigrationCommand, type MigrationNode, type MigrationStep, type WorkflowMigrationResult } from './migration.js';
+export { createWorkflowMigrationService, pinnedDefinitionHash, type WorkflowMigrationService, type WorkflowMigrationServiceOptions,
+  type WorkflowMigrationOfferRecord, type WorkflowMigrationApplyResult } from './migration-service.js';

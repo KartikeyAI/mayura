@@ -1,10 +1,13 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
-import { StorageError, workflowState, workflowOutputs, mergeWorkflowReceipt,
+import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workflowOutputs, mergeWorkflowReceipt,
   type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
   type WorkflowFormat2Status as Status, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+  type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
+import { scheduledManifest } from './scheduled-helpers.js';
 
 export interface WorkflowSnapshot {
   readonly id: string; readonly version: number; readonly status: Status;
@@ -279,6 +282,37 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         }
         state.status = 'paused'; return true;
       }, 'run.paused'));
+    },
+    /**
+     * Plan (dryRun) or apply a reviewed migration of a paused run to a new definition version. The run stays paused;
+     * resume it after review. Waiting approvals of unchanged steps stay valid (their digest does not bind the version).
+     */
+    async migrate(migration: WorkflowMigration<AnyWorkflow, AnyWorkflow>, command: MigrationCommand): Promise<WorkflowMigrationResult<WorkflowSnapshot>> {
+      ensureOpen(); assertWorkflowMigration(migration); assertWorkflow(migration.from); assertWorkflow(migration.to);
+      const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
+      const record = await load(id); const state = stateFrom(record);
+      if (state.definition !== migration.from.digest || record.definitionHash !== migration.from.digest || state.policy !== policy || state.maxCostMicros !== maxCostMicros) {
+        throw new MayuraError('CONFLICT', 'The run is not pinned to the migration source definition and this policy.');
+      }
+      const nodes = (definition: AnyWorkflow) => scheduledManifest(definition).graph.map(node =>
+        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>) }));
+      const preconditions: MigrationBlocker[] = [];
+      if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });
+      const plan = planWorkflowMigration({ migration, format: 'workflow-v2', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,
+        from: nodes(migration.from), to: nodes(migration.to), steps: Object.entries(state.steps).map(([step, value]) => ({ id: step, status: value.status })), preconditions });
+      if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<WorkflowSnapshot>;
+      assertMigrationAllowed(plan);
+      const fresh = initialState(migration.to, state.input, policy, maxCostMicros);
+      const carried: Record<string, Step> = {};
+      for (const entry of plan.entries) if (entry.target) carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
+      const next: State = { ...state, definition: migration.to.digest, steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, carried[node.id]!])) };
+      next.reservedMicros = Object.values(next.steps).reduce((sum, step) => sum + step.costReserved, 0);
+      try { assertWorkflowStateMatchesManifest(workflowState({ id, state: jsonValue(next) as JsonObject }), scheduledManifest(migration.to)); }
+      catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated state does not satisfy the new definition.'); }
+      if (typeof store.migrate !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This store cannot migrate in-flight workflow runs.');
+      const migrated = await storageCall(() => store.migrate!({ scope: scopeKey, id, expectedVersion: record.version, expectedDefinitionHash: migration.from.digest,
+        definitionHash: migration.to.digest, state: jsonValue(next) as JsonObject, events: [migrationEvent(plan, actorId, commandId) as { type: string; data: JsonObject }] }));
+      return freezeJson(jsonValue({ plan, snapshot: snapshot(migrated) })) as unknown as WorkflowMigrationResult<WorkflowSnapshot>;
     },
     /** Resume scheduling only; unresolved waits remain waiting and grant no authority. */
     async resume(id: string): Promise<WorkflowSnapshot> {

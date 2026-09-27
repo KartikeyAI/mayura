@@ -24,7 +24,7 @@ export interface WorkflowGraphCoordinatorOptions extends Omit<WorkflowGraphRunti
 }
 export type WorkflowGraphCandidateOutcome =
   | { readonly kind: 'observed'; readonly reference: ExecutionRef; readonly version: number; readonly status: WorkflowGraphSnapshot['status'] }
-  | { readonly kind: 'skipped'; readonly reference: ExecutionRef; readonly reason: 'unregistered_definition' }
+  | { readonly kind: 'skipped'; readonly reference: ExecutionRef; readonly reason: 'unregistered_definition' | 'paused' }
   | { readonly kind: 'failed'; readonly reference: ExecutionRef; readonly code: ErrorCode }
   | { readonly kind: 'not_attempted'; readonly reference: ExecutionRef };
 export type WorkflowGraphPageReport =
@@ -190,6 +190,8 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
           if (closed || stopped) {
             stopped ??= 'CANCELLED'; outcomes.push({ kind: 'not_attempted', reference: candidate.reference }); continue;
           }
+          // A paused run schedules nothing until an operator resumes it.
+          if (candidate.status === 'paused') { outcomes.push({ kind: 'skipped', reference: candidate.reference, reason: 'paused' }); continue; }
           const definition = registered.get(candidate.reference.definitionHash);
           if (!definition) { outcomes.push({ kind: 'skipped', reference: candidate.reference, reason: 'unregistered_definition' }); continue; }
           try {
