@@ -171,8 +171,12 @@ describe('loopback host admission and lifecycle', () => {
   it('closes partial-header sockets within the grace period and can reuse its released port', async () => {
     const { host } = await fixture(); const socket = await connection(host.origin);
     socket.write(`GET /v1/agents HTTP/1.1\r\nHost: ${new URL(host.origin).host}\r\nX-Unfinished: `);
-    const closed = once(socket, 'close'); const firstClose = host.close(); const secondClose = host.close(); expect(firstClose).toBe(secondClose);
+    // Shutdown ends a half-sent request with FIN, or with RST on macOS; only a reset is an acceptable socket error.
+    const errors: NodeJS.ErrnoException[] = []; socket.on('error', error => { errors.push(error); });
+    const closed = new Promise<void>(resolve => { socket.once('close', () => resolve()); });
+    const firstClose = host.close(); const secondClose = host.close(); expect(firstClose).toBe(secondClose);
     await firstClose; await closed; expect(socket.destroyed).toBe(true);
+    expect(errors.map(error => error.code).filter(code => code !== 'ECONNRESET')).toEqual([]);
     const replacement = await fixture({ port: Number(new URL(host.origin).port) }); expect(replacement.host.origin).toBe(host.origin);
     expect(await replacement.client.agents()).toHaveLength(1);
   });
