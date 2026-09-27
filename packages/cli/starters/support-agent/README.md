@@ -30,7 +30,7 @@ on `.data/support.sqlite`, plus a small front server for the chat. It prints:
 
 - **chat**: `http://127.0.0.1:5173`. Pick a demo customer (Ada or Grace) and try:
   - "Where is my order?": the assistant lists your orders, then tracks the most recent undelivered one. The chips
-    above each reply show the tools it used, live, as the run's events stream in.
+    above each reply show the tools it used, live, and the reply streams in as it is written.
   - "I want to return my mug set": opens a return for your latest delivered order. Asking again finds the same return.
   - "Remember that I prefer weekend deliveries", then later "What do you remember about me?". Sign in as the other
     customer: they see none of it.
@@ -111,8 +111,10 @@ builds from the npm registry, so it needs published Mayura packages; it does not
   once the browser has read the reply); a server restart forgets chats in flight. Capacity counts concurrent chats
   (`src/server.ts`), and a busy server answers HTTP 429. Customer data is not affected: memory, returns and
   follow-ups are durable in the database.
-- **Replies arrive whole.** What streams is the run's activity (tools starting and finishing); the reply text appears
-  when the run completes. The Mayura run protocol has no token streaming.
+- **Streamed text is provisional.** The reply streams in batches, each checked by the PII backstop first; the
+  validated reply replaces it when the run completes. A batch the backstop blocks stops the stream for that answer,
+  and the reply then arrives whole (redacted). Released text cannot be taken back, so keep checks that must see every
+  character in the stream guards.
 - **PII redaction is heuristic.** Card numbers (Luhn-checked), emails and 10 to 15 digit phone numbers are recognized;
   unusual formats slip through and long digit strings can be flagged. Anything the redaction would still change in a
   tool result or reply is withheld (the run ends `blocked`), which is safe but blunt.

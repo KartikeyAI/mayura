@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse } from '@mayura/core';
+import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from '@mayura/core';
 import { createNativeMemory } from '@mayura/memory';
 import { MayuraError, defineAgent, defineTool, type ToolExecutionContext } from '@mayura/sdk';
 import type { MemoryIndexStore } from '@mayura/storage-contracts';
@@ -169,6 +169,10 @@ export function supportAssistant(dependencies: AssistantDependencies) {
     id: assistantId, version: '1', input: supportInput, output: supportOutput, tools, model,
     // Checked on every tool result and on the final reply before either is released.
     guards: { output: [piiBackstop] },
+    // Stream the reply as the model writes it. Each batch passes the PII backstop before release: streamed text is the
+    // model's raw output, before the output schema redacts it, so a batch with a card number or email is withheld
+    // (the rest of the reply then arrives whole, redacted). The final reply is validated and checked as usual.
+    stream: { field: ['reply'], guards: [piiBackstop] },
     instructions: [
       'You are the customer support assistant of an online store, chatting with one signed-in customer.',
       'The input holds the customer\'s new `message` and the recent conversation `history`.',
@@ -292,5 +296,18 @@ export const offlineSupportModel: ModelAdapter = {
     if ('final' in next) return { type: 'final', output: next.final, usage: { costMicros: 0 } };
     const step = request.messages.filter(message => message.role === 'assistant').length + 1;
     return { type: 'tool_calls', calls: [{ id: `call-${step}`, toolId: next.call.toolId, input: next.call.input }], usage: { costMicros: 0 } };
+  },
+  /** The same decisions, streamed: a final answer's JSON arrives in small paced pieces, the way a real model writes it. */
+  async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
+    const response = await offlineSupportModel.generate(request);
+    if (response.type === 'final') {
+      const text = JSON.stringify(response.output);
+      for (let index = 0; index < text.length; index += 12) {
+        request.signal.throwIfAborted();
+        yield { type: 'output.delta', text: text.slice(index, index + 12) };
+        await new Promise(resolve => setTimeout(resolve, 8));
+      }
+    }
+    yield { type: 'response', response };
   },
 };

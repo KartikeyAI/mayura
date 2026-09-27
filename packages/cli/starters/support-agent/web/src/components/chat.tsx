@@ -58,6 +58,13 @@ function LiveActivity({ store }: { readonly store: HeadlessRunStore }) {
   return <ToolChips tools={chips(activity.items)} />;
 }
 
+/** The reply as it streams in; provisional until the run completes and the validated reply replaces it. */
+function LiveReply({ store }: { readonly store: HeadlessRunStore }) {
+  const streamed = useMayuraRun(store).streamedOutput;
+  if (!streamed?.text) return <div className="text-muted-foreground flex items-center gap-2 text-sm"><LoaderCircle className="size-4 animate-spin" /> Working on it…</div>;
+  return <div className="bg-muted rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">{streamed.text}<span className="bg-foreground/60 ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-middle" /></div>;
+}
+
 function Bubble({ message, live }: { readonly message: Message; readonly live: HeadlessRunStore | null }) {
   const customer = message.role === 'customer';
   return (
@@ -68,7 +75,7 @@ function Bubble({ message, live }: { readonly message: Message; readonly live: H
       <div className={cn('flex max-w-[80%] flex-col gap-2', customer && 'items-end')}>
         {!customer && (live ? <LiveActivity store={live} /> : <ToolChips tools={message.tools} />)}
         {message.state === 'pending'
-          ? <div className="text-muted-foreground flex items-center gap-2 text-sm"><LoaderCircle className="size-4 animate-spin" /> Working on it…</div>
+          ? (live ? <LiveReply store={live} /> : <div className="text-muted-foreground flex items-center gap-2 text-sm"><LoaderCircle className="size-4 animate-spin" /> Working on it…</div>)
           : <div className={cn('rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap', customer ? 'bg-primary text-primary-foreground' : 'bg-muted',
               message.state === 'error' && 'bg-destructive/10 text-destructive')}>{message.text}</div>}
       </div>

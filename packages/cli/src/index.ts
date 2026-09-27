@@ -47,7 +47,7 @@ export type StarterName = typeof STARTER_NAMES[number];
 
 const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze({
   'approval-workflow': 'Durable refund approvals: triage agent, human approval, separate server and worker, operator console and a reviewed v1 to v2 migration.',
-  'support-agent': 'Customer support chat: an agent with order tools scoped to the signed-in customer, per-customer native memory, PII redaction, a React chat UI and the operator console.',
+  'support-agent': 'Customer support chat: a streaming agent with order tools scoped to the signed-in customer, per-customer native memory, PII redaction, a React chat UI and the operator console.',
   'research-team': 'Multi-agent research: a planner, parallel researchers over a source library and a writer as one durable workflow under a shared budget, with cited reports stored as content-addressed artifacts and optional OpenTelemetry traces.',
   'event-automation': 'Signed webhooks start durable workflows in which a triage agent acts through MCP tools under explicit capability grants; forged, stale and replayed deliveries are refused.',
 });

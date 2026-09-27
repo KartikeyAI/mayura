@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { createClient, type ClientEvent, type MayuraClient } from '@mayura/client';
-import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse } from '@mayura/core';
+import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from '@mayura/core';
 import { assistantId, supportOutputWire, type SupportInput } from '../src/assistant.js';
 import { newToken, tokenDigest } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
@@ -50,14 +50,22 @@ async function chat(client: MayuraClient, message: string, history: SupportInput
   const outcome = await run.result(supportOutputWire);
   assert.ok(outcome, 'The run settled.');
   const tools = events.filter(event => event.type === 'tool.started').map(event => event.metadata['toolId']);
-  return { run, outcome, tools, reply: outcome.status === 'succeeded' ? outcome.output.reply : '' };
+  const streamed = events.filter(event => event.type === 'output.delta').map(event => String(event.metadata['text'])).join('');
+  const withheld = events.some(event => event.type === 'output.withheld');
+  return { run, outcome, tools, streamed, withheld, reply: outcome.status === 'succeeded' ? outcome.output.reply : '' };
 }
 
 /** A model that plays back fixed steps and records every request it received. */
 function scripted(id: string, steps: readonly ((request: ModelRequest) => ModelResponse)[]) {
   const requests: ModelRequest[] = [];
   const model: ModelAdapter = { id, capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0,
-    async generate(request) { requests.push(request); const step = steps[requests.length - 1]; if (!step) throw new Error('Script exhausted.'); return step(request); } };
+    async generate(request) { requests.push(request); const step = steps[requests.length - 1]; if (!step) throw new Error('Script exhausted.'); return step(request); },
+    // Streams a final answer's JSON in small pieces, as a real provider would.
+    async *stream(request): AsyncIterable<ModelStreamEvent> {
+      const response = await model.generate(request);
+      if (response.type === 'final') { const text = JSON.stringify(response.output); for (let index = 0; index < text.length; index += 5) yield { type: 'output.delta', text: text.slice(index, index + 5) }; }
+      yield { type: 'response', response };
+    } };
   return { model, requests };
 }
 const call = (toolId: string, input: JsonValue, id = `call-${toolId}`): ModelResponse => ({ type: 'tool_calls', calls: [{ id, toolId, input }], usage: { costMicros: 0 } });
@@ -95,6 +103,8 @@ describe('support assistant', () => {
       // The most recent undelivered order, and the other one still on its way.
       assert.match(ada.reply, /ord-1003 \(Brass desk lamp\) is being prepared/u);
       assert.match(ada.reply, /Also on the way: ord-1002 \(shipped\)/u);
+      // The reply streamed as it was written, and the stream matches the validated reply.
+      assert.equal(ada.streamed, ada.reply); assert.equal(ada.withheld, false);
       assert.deepEqual(ada.outcome.status === 'succeeded' && ada.outcome.output.references, [{ kind: 'order', id: 'ord-1003' }, { kind: 'order', id: 'ord-1002' }]);
 
       const shipped = await chat(h.customer('cus-ada'), 'Can you track ord-1002 for me?');
@@ -191,8 +201,11 @@ describe('support assistant', () => {
     const h = await harness({ model: leaky.model });
     try {
       const sent = `My card ${card} was charged twice, email me at ${email}`;
-      const { outcome, reply } = await chat(h.customer('cus-ada'), sent, [{ role: 'customer', text: `Earlier I wrote from ${email}` }]);
+      const { outcome, reply, streamed, withheld } = await chat(h.customer('cus-ada'), sent, [{ role: 'customer', text: `Earlier I wrote from ${email}` }]);
       assert.equal(outcome.status, 'succeeded');
+      // The model's raw reply held PII: the stream stopped before releasing any of it, and the reply arrived redacted.
+      assert.equal(withheld, true);
+      for (const secret of [phone, 'support@example.com']) assert.ok(!streamed.includes(secret), 'no raw PII was streamed');
       const seen = JSON.stringify(leaky.requests[0]!.messages);
       for (const secret of [card, email]) assert.ok(!seen.includes(secret), 'the model never saw the original');
       assert.ok(seen.includes(redactionLabels.card) && seen.includes(redactionLabels.email));
