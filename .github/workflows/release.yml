@@ -4,6 +4,8 @@ name: Mayura release
 #     the last v* tag (Conventional Commits: feat -> minor, fix/perf -> patch, breaking -> major). No release-worthy
 #     commit, no release.
 #   - The first release, or any explicit version, is started by hand from main (Actions > Mayura release > Run workflow).
+# It publishes the single `mayura` package (scripts/bundle-package.mjs) to npm and attaches it to the GitHub Release.
+# GitHub Packages is not used: its npm registry accepts only scoped packages, and `mayura` is unscoped.
 # Nothing is published until the repository variable MAYURA_RELEASE is `enabled`; until then every run is a complete dry
 # run. Publishing also waits for the protected `release` environment (configure required reviewers). See
 # docs/how-to/releasing.md.
@@ -104,7 +106,6 @@ jobs:
     permissions:
       contents: write # the version commit, the tag and the GitHub Release
       id-token: write # npm provenance through OpenID Connect
-      packages: write # GitHub Packages, when enabled
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -130,18 +131,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # empty when npm trusted publishing is configured instead
         run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --publish
-      - name: Publish to GitHub Packages
-        if: vars.MAYURA_GITHUB_PACKAGES == 'enabled'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          # GitHub Packages only accepts a scope equal to the owning account, so @mayura/* needs a `mayura` organization.
-          if [ "$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')" != mayura ]; then
-            echo "::error::GitHub Packages needs the @mayura scope to match the repository owner (a 'mayura' organization); this repository belongs to $OWNER."
-            exit 1
-          fi
-          node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --registry https://npm.pkg.github.com --publish
       - name: Commit the version, tag it and push
         env:
           VERSION: ${{ needs.plan.outputs.version }}

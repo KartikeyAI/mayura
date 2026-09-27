@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
+import { bundle } from './bundle-package.mjs';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -58,64 +59,51 @@ const notice = await readFile(join(workspace, 'NOTICE'));
 assert(license.includes(Buffer.from('Apache License')) && license.includes(Buffer.from('END OF TERMS AND CONDITIONS')), 'Root Apache-2.0 text is incomplete.');
 assert(notice.includes(Buffer.from('Copyright 2026 The Mayura Authors')), 'Root attribution notice is incomplete.');
 
-const reports = [];
-for (const directory of (await readdir(join(workspace, 'packages'), { withFileTypes: true })).filter(entry => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-  const source = join(workspace, 'packages', directory.name);
-  const manifestPath = join(source, 'package.json');
-  if (!existsSync(manifestPath)) continue;
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+// One published package, `mayura`, bundled from every public workspace package (scripts/bundle-package.mjs).
+const staging = join(stagingRoot, 'mayura'); const bundled = await bundle(staging);
+const workspacePackages = (await readdir(join(workspace, 'packages'), { withFileTypes: true })).filter(entry => entry.isDirectory()
+  && existsSync(join(workspace, 'packages', entry.name, 'package.json'))).map(entry => entry.name);
+for (const name of workspacePackages) {
+  const manifest = JSON.parse(await readFile(join(workspace, 'packages', name, 'package.json'), 'utf8'));
   if (internalPackages.has(manifest.name)) continue;
-  assert(manifest.private === true && manifest.version === version && manifest.name === `@mayura/${directory.name}`, 'Source package identity is not release-safe.');
-  const staging = join(stagingRoot, directory.name);
-  await mkdir(staging);
-  // Copy what `files` publishes (npm pack applies the patterns); installs, build output and local state inside a
-  // published folder (such as the CLI's starters) stay behind.
-  const roots = new Set(['dist', 'src', 'image', 'templates', ...(manifest.files ?? []).map(pattern => String(pattern).split('/')[0]).filter(name => name && !name.includes('*'))]);
-  const kept = path => { const parts = relative(source, path).split(sep); return !parts.slice(1).some(part => ['node_modules', '.data', 'coverage', 'dist'].includes(part) || part.endsWith('.tsbuildinfo')); };
-  for (const name of [...roots].sort()) if (!['README.md', 'LICENSE', 'NOTICE', 'package.json'].includes(name) && existsSync(join(source, name))) {
-    await cp(join(source, name), join(staging, name), { recursive: true, errorOnExist: true, filter: kept });
-  }
-  if (existsSync(join(source, 'README.md'))) await cp(join(source, 'README.md'), join(staging, 'README.md'), { errorOnExist: true });
-  const dependencies = Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([name, range]) => [name, String(range).startsWith('workspace:') ? version : range]));
-  const releaseManifest = { ...manifest, private: undefined, license: 'Apache-2.0', dependencies,
-    repository: { ...root.repository, directory: `packages/${directory.name}` }, homepage: root.homepage, bugs: root.bugs,
-    files: [...new Set([...(manifest.files ?? []), 'LICENSE', 'NOTICE'])],
-    publishConfig: { ...(manifest.publishConfig ?? {}), access: 'public', provenance: true } };
-  delete releaseManifest.private;
-  await writeFile(join(staging, 'package.json'), `${JSON.stringify(releaseManifest, null, 2)}\n`);
-  await writeFile(join(staging, 'LICENSE'), license);
-  await writeFile(join(staging, 'NOTICE'), notice);
-  const { stdout } = await exec(process.execPath, [npmCli(), 'pack', staging, '--pack-destination', tarballs, '--ignore-scripts', '--json'], {
-    cwd: workspace, timeout: 60_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
-    env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', HOME: process.env.HOME ?? '', USERPROFILE: process.env.USERPROFILE ?? '',
-      npm_config_cache: npmCache, npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' },
-  });
-  const packed = JSON.parse(stdout);
-  assert(Array.isArray(packed) && packed.length === 1 && typeof packed[0]?.filename === 'string');
-  const archivePath = join(tarballs, packed[0].filename);
-  const bytes = await readFile(archivePath);
-  const files = archiveFiles(bytes);
-  assert(files.get('LICENSE')?.equals(license) && files.get('NOTICE')?.equals(notice), `${manifest.name} omitted exact legal notices.`);
-  const packedManifest = JSON.parse(files.get('package.json').toString('utf8'));
-  assert(packedManifest.name === manifest.name && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
-  assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
-  assert.equal(packedManifest.repository?.url, root.repository.url, `${manifest.name} must name the repository for provenance.`);
-  if (manifest.name === '@mayura/cli') assert([...files.keys()].some(path => path.startsWith('starters/research-team/src/')), 'The CLI archive is missing its starters.');
-  assert(!Object.values(packedManifest.dependencies ?? {}).some(range => String(range).startsWith('workspace:')));
-  if (manifest.name === '@mayura/client-react') assert.deepEqual(packedManifest.peerDependencies, { react: '>=18.3.0 <20' }, 'React peer contract changed.');
-  else assert(!packedManifest.peerDependencies, `${manifest.name} gained an unreviewed peer dependency.`);
-  assert(!packedManifest.scripts, `${manifest.name} gained release-time lifecycle behavior.`);
-  if (manifest.name === '@mayura/cli') assert.deepEqual(packedManifest.bin, { mayura: './dist/bin.js' }, 'CLI executable mapping changed.');
-  else assert(!packedManifest.bin, `${manifest.name} gained release-time executable behavior.`);
-  for (const [path, content] of files) {
-    // A starter's own tests are part of the project `mayura init` creates, so the CLI ships them.
-    const starterTest = manifest.name === '@mayura/cli' && /^starters\/[a-z][a-z0-9-]*\/test\//u.test(path);
-    assert(starterTest || !/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${manifest.name}: ${path}`);
-    assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${manifest.name}: ${path}`);
-  }
-  reports.push({ name: manifest.name, version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size });
+  assert(manifest.private === true && manifest.version === version && manifest.name === `@mayura/${name}`, `Source package identity is not release-safe: ${name}.`);
 }
-assert(reports.length >= 20, 'Release package inventory is unexpectedly incomplete.');
+const { stdout } = await exec(process.execPath, [npmCli(), 'pack', staging, '--pack-destination', tarballs, '--ignore-scripts', '--json'], {
+  cwd: workspace, timeout: 120_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+  env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', HOME: process.env.HOME ?? '', USERPROFILE: process.env.USERPROFILE ?? '',
+    npm_config_cache: npmCache, npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' },
+});
+const packed = JSON.parse(stdout);
+assert(Array.isArray(packed) && packed.length === 1 && typeof packed[0]?.filename === 'string');
+const archivePath = join(tarballs, packed[0].filename);
+const bytes = await readFile(archivePath);
+const files = archiveFiles(bytes);
+assert(files.get('LICENSE')?.equals(license) && files.get('NOTICE')?.equals(notice), 'mayura omitted exact legal notices.');
+const packedManifest = JSON.parse(files.get('package.json').toString('utf8'));
+assert(packedManifest.name === 'mayura' && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
+assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
+assert.equal(packedManifest.repository?.url, root.repository.url, 'mayura must name the repository for provenance.');
+assert(!packedManifest.scripts, 'mayura gained release-time lifecycle behavior.');
+assert.deepEqual(packedManifest.bin, { mayura: './lib/cli/dist/bin.js' }, 'CLI executable mapping changed.');
+for (const [name, range] of Object.entries({ ...packedManifest.dependencies, ...packedManifest.peerDependencies })) {
+  assert(!name.startsWith('@mayura/') && !String(range).startsWith('workspace:'), `mayura depends on ${name}@${range}.`);
+}
+assert.deepEqual(Object.keys(packedManifest.dependencies).sort(), ['@clack/prompts', '@hono/node-server', 'hono'], 'mayura gained an unreviewed required dependency.');
+assert.deepEqual(Object.keys(packedManifest.peerDependencies).sort(), ['@jitl/quickjs-wasmfile-release-sync', 'better-sqlite3', 'pg', 'quickjs-emscripten-core', 'react'],
+  'mayura gained an unreviewed peer dependency.');
+assert(Object.values(packedManifest.peerDependenciesMeta).every(meta => meta.optional === true), 'Every peer of mayura must be optional.');
+assert.equal(packedManifest.peerDependencies.react, '>=18.3.0 <20', 'React peer contract changed.');
+assert(Object.keys(packedManifest.exports).length >= 40 && packedManifest.exports['.'] && packedManifest.exports['./workflows/lifecycle'], 'mayura entry points are incomplete.');
+assert([...files.keys()].some(path => path.startsWith('lib/cli/starters/research-team/src/')), 'The CLI is missing its starters.');
+for (const [path, content] of files) {
+  // A starter's own tests are part of the project `mayura init` creates, so the CLI ships them.
+  const starterTest = /^lib\/cli\/starters\/[a-z][a-z0-9-]*\/test\//u.test(path);
+  assert(starterTest || !/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in mayura: ${path}`);
+  assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in mayura: ${path}`);
+  if (/^lib\/[^/]+\/dist\/.*\.(?:js|d\.ts)$/u.test(path)) assert(!/(?:from|import)\s*\(?\s*['"]@mayura\//u.test(content.toString('utf8')), `${path} still imports an @mayura package.`);
+}
+const reports = [{ name: 'mayura', version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size,
+  bundled: bundled.packages, entryPoints: bundled.entryPoints }];
 const { stdout: commit } = await exec('git', ['-c', `safe.directory=${workspace.replaceAll('\\', '/')}`, 'rev-parse', 'HEAD'], { cwd: workspace, windowsHide: true });
 const report = { format: 1, status: 'passed', version, sourceCommit: commit.trim(), license: 'Apache-2.0', noticeSha256: createHash('sha256').update(notice).digest('hex'), packages: reports };
 await writeFile(join(output, 'release-manifest.json'), `${JSON.stringify(report, null, 2)}\n`);

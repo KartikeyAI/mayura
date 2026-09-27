@@ -58,11 +58,11 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 | F1 Performance suite for the §21.3 reference targets, with a declared-hardware report ([report](performance.md), `pnpm perf`). All four targets met; PostgreSQL, concurrency and macOS/Arm runs belong to hosted CI | ✅ |
 | F2 Standalone threat model covering every trust boundary ([threat model](threat-model.md)) | ✅ |
 | F3 SBOM generation and license review (`pnpm sbom`, in CI and the release workflow) | ✅ |
-| F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job. Releases run from `main` after a green qualification, take their version from Conventional Commits, publish to npm (and GitHub Packages when enabled), then commit, tag and create the GitHub Release; publishing stays a dry run until `MAYURA_RELEASE=enabled` ([guide](how-to/releasing.md)). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |
+| F4 CI: secret scanning, dependency updates, release workflow with provenance, container smoke job. Releases run from `main` after a green qualification, take their version from Conventional Commits, publish the single `mayura` package to npm, then commit, tag and create the GitHub Release; publishing stays a dry run until `MAYURA_RELEASE=enabled` ([guide](how-to/releasing.md)). CodeQL default setup and GitHub secret scanning are repository settings (F7) | ✅ |
 | F5 Flaky timing-sensitive tests stabilized. The one recurring flake, the packed-install import budget under full-suite load, now takes the best of up to three fresh-process measurements against the unchanged 2 s budget | ✅ |
 | F6 Upgrade-compatibility test: a run started on one version resumes on the next (`pnpm upgrade:compat`, a release-workflow step against the previous tag; verified locally from 0126fc1 to the current tree) | ✅ |
 | F7 Host the repository, enable CI, branch protection and private vulnerability reporting | 👤 |
-| F8 Verify `@mayura` npm scope ownership and run a provenance rehearsal | 👤 |
+| F8 Claim the unscoped `mayura` npm package (the `@mayura` scope belongs to someone else) and run a provenance rehearsal | 👤 |
 | F9 Live model/provider qualification (OpenAI, Anthropic, local runtime) with funded credentials | 👤 |
 | F10 macOS and Arm qualification (via hosted CI runners) | 👤 |
 | F11 Independent security audit, including Code Mode | 👤 |

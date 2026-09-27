@@ -1,6 +1,11 @@
 # Release Mayura
 
-Releases are automated and come from `main` only. All Mayura packages share one version.
+Releases are automated and come from `main` only. Mayura is published as **one npm package, `mayura`**, built from
+every workspace package by `scripts/bundle-package.mjs`: `mayura` is the SDK, `mayura/workflows`,
+`mayura/workflows/lifecycle`, `mayura/server-node` and so on mirror the workspace packages, and `mayura` is the CLI
+command. Native SQLite, PostgreSQL, QuickJS and React are optional peers, installed only by projects that use them.
+`pnpm test:bundle` installs the package offline with and without those peers, loads every entry point, type-checks a
+strict consumer and runs the CLI.
 
 ## How a release happens
 
@@ -23,10 +28,9 @@ Releases are automated and come from `main` only. All Mayura packages share one 
    then:
    - publishes to npm with provenance (`latest` for a stable version, `next` for a prerelease), skipping any package
      version that is already there, so a release that stopped part-way can be run again;
-   - publishes to GitHub Packages, when enabled (below);
    - commits `chore(release): vX.Y.Z [skip ci]`, where the changelog's Unreleased section becomes the release's, tags
      it `vX.Y.Z` and pushes both;
-   - creates the GitHub Release with the changelog section as notes, and the archives, their manifest and the SBOM
+   - creates the GitHub Release with the changelog section as notes, and the package archive, its manifest and the SBOM
      attached.
 
 The first release, or any exact version, is started by hand: **Actions → Mayura release → Run workflow** on `main`,
@@ -40,12 +44,12 @@ pushed, tagged or published.
 
 ## One-time setup
 
-1. **npm scope.** Create the `mayura` organization on npmjs.com (so you own `@mayura/*`) and add the publishing
-   account. Then either
+1. **npm package.** Publish from an npm account that will own the `mayura` package (turn on two-factor
+   authentication). Then either
    - add an automation token as the repository secret `NPM_TOKEN`, or
    - configure [trusted publishing](https://docs.npmjs.com/trusted-publishers) for this repository and the
-     `release.yml` workflow (no stored token). Trusted publishing is configured per package, so the first publish of
-     each package may need the token.
+     `release.yml` workflow (no stored token). Trusted publishing is configured per package, so the first publish may
+     need the token.
 2. **Protected environment.** Create the `release` environment (Settings → Environments) with required reviewers and
    the `main` branch only. The release job waits there for approval before it publishes anything.
 3. **Pushing the version commit.** The job pushes `chore(release)` commits and tags with its own token. If `main` is
@@ -53,10 +57,9 @@ pushed, tagged or published.
    `RELEASE_GIT_NAME` and `RELEASE_GIT_EMAIL` repository variables to choose the commit's author; the default is
    `github-actions[bot]`.
 4. **Enable publishing:** set the repository variable `MAYURA_RELEASE=enabled`.
-5. **GitHub Packages (optional).** GitHub's npm registry only accepts a scope equal to the owning account, so
-   publishing `@mayura/*` there needs the repository to live in a GitHub organization named `mayura`. Once it does, set
-   `MAYURA_GITHUB_PACKAGES=enabled`. Consumers then add `@mayura:registry=https://npm.pkg.github.com` to their
-   `.npmrc`.
+
+GitHub Packages is not used: its npm registry accepts only scoped packages (`@owner/name`), and `mayura` is unscoped.
+The GitHub Release carries the same archive.
 
 ## Locally
 
