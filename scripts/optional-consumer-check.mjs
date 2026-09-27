@@ -107,8 +107,11 @@ function inspectMayura(shortName, files) {
   for (const version of Object.values(manifest.dependencies ?? {})) assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into archive.');
   let maps = 0;
   for (const [path, bytes] of files) {
-    assert(/^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|templates\/[A-Za-z0-9_-]+\.ts|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
-    assert(!/\.(?:test|spec)\.ts$/.test(path) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
+    // @mayura/cli ships complete starter projects as UTF-8 source; their tests are part of what a user generates.
+    const starter = shortName === 'cli' && /^starters\/[a-z][a-z0-9-]{0,63}\/(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,99}\/){0,6}[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(path)
+      && !/(?:^|\/)(?:node_modules|dist|\.data)\//.test(path);
+    assert(starter || /^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|templates\/[A-Za-z0-9_-]+\.ts|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
+    assert((starter || !/\.(?:test|spec)\.ts$/.test(path)) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
     if (!path.startsWith('dist/') || !/\.(?:js|d\.ts)$/.test(path)) continue;
     const directives = [...bytes.toString('utf8').matchAll(/^\/\/# sourceMappingURL=([^\r\n]+)$/gm)];
     assert.equal(directives.length, 1); const reference = directives[0][1];
