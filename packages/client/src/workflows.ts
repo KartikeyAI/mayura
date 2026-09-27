@@ -22,6 +22,19 @@ export interface WorkflowViewInput {
 export interface WorkflowGraphNode {
   readonly id: string; readonly kind: WorkflowViewNodeKind; readonly status: WorkflowViewStepStatus; readonly depth: number;
   readonly ready: boolean; readonly childRunId: string | null;
+  /** The pending approval of a waiting tool step, or null. */
+  readonly approval: WorkflowViewApproval | null;
+}
+const toolIdentifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+/** Exact frozen shape of a pending approval (the same rules the client applies to a fetched view). */
+function pendingApproval(value: unknown): value is WorkflowViewApproval {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.isFrozen(value)) return false;
+  const approval = value as Record<string, unknown>; const subject = approval['subject'] as Record<string, unknown> | undefined;
+  return Object.keys(approval).every(key => ['digest', 'expiresAtMs', 'subject'].includes(key)) && typeof approval['digest'] === 'string'
+    && /^[a-f0-9]{64}$/.test(approval['digest']) && typeof approval['expiresAtMs'] === 'number' && Number.isSafeInteger(approval['expiresAtMs']) && approval['expiresAtMs'] > 0
+    && (subject === undefined || (!!subject && typeof subject === 'object' && !Array.isArray(subject) && Object.isFrozen(subject) && Object.keys(subject).length === 3
+      && Object.hasOwn(subject, 'input') && typeof subject['toolId'] === 'string' && toolIdentifier.test(subject['toolId'])
+      && typeof subject['toolVersion'] === 'string' && toolIdentifier.test(subject['toolVersion'])));
 }
 export interface WorkflowGraphEdge { readonly from: string; readonly to: string }
 export interface WorkflowGraphProjection {
@@ -101,18 +114,20 @@ export function createWorkflowGraphProjection(input: WorkflowViewInput): Workflo
     edgeCount += list.length; if (edgeCount > 512) return invalid(); nodes.set(id, { id, kind, dependsOn: list as readonly string[], index });
   }
   for (const node of nodes.values()) if (node.dependsOn.some(dependency => dependency === node.id || !nodes.has(dependency))) return invalid();
-  const steps = new Map<string, { id: string; kind: WorkflowViewNodeKind; status: WorkflowViewStepStatus; childRunId: string | null }>();
+  const steps = new Map<string, { id: string; kind: WorkflowViewNodeKind; status: WorkflowViewStepStatus; childRunId: string | null; approval: WorkflowViewApproval | null }>();
   for (const raw of rawSteps) {
     if (!raw || typeof raw !== 'object' || !Object.isFrozen(raw)) return invalid(); const descriptors = Object.getOwnPropertyDescriptors(raw);
-    const names = Reflect.ownKeys(descriptors); const allowed = ['id', 'kind', 'status', 'childRunId'];
+    const names = Reflect.ownKeys(descriptors); const allowed = ['id', 'kind', 'status', 'childRunId', 'approval'];
     if (names.some(key => typeof key !== 'string' || !allowed.includes(key) || !('value' in descriptors[key]!)) || !['id', 'kind', 'status'].every(key => descriptors[key])) return invalid();
     const id = descriptors['id']!.value as string; const kind = descriptors['kind']!.value as WorkflowViewNodeKind; const stepStatus = descriptors['status']!.value as WorkflowViewStepStatus;
     const hasChildRunId = descriptors['childRunId'] !== undefined; const childRunId = descriptors['childRunId']?.value as string | undefined; const node = nodes.get(id);
+    const approval = descriptors['approval']?.value as WorkflowViewApproval | undefined;
     if (!node || steps.has(id) || kind !== node.kind || typeof stepStatus !== 'string' || !stepStatuses.has(stepStatus)
       || (kind === 'human' && !humanStatuses.has(stepStatus)) || (kind === 'timer' && !timerStatuses.has(stepStatus))
       || (stepStatus === 'timed_out' && kind !== 'human')
-      || (hasChildRunId && (kind !== 'child' || typeof childRunId !== 'string' || !digest.test(childRunId)))) return invalid();
-    steps.set(id, { id, kind, status: stepStatus, childRunId: childRunId ?? null });
+      || (hasChildRunId && (kind !== 'child' || typeof childRunId !== 'string' || !digest.test(childRunId)))
+      || (descriptors['approval'] !== undefined && (kind !== 'tool' || stepStatus !== 'waiting' || !pendingApproval(approval)))) return invalid();
+    steps.set(id, { id, kind, status: stepStatus, childRunId: childRunId ?? null, approval: approval ?? null });
   }
   if (steps.size !== nodes.size) return invalid();
   const remaining = new Map([...nodes].map(([id, node]) => [id, node.dependsOn.length])); const depths = new Map<string, number>();
@@ -127,7 +142,7 @@ export function createWorkflowGraphProjection(input: WorkflowViewInput): Workflo
   if (depths.size !== nodes.size) return invalid();
   const projected = [...nodes.values()].sort((a, b) => a.index - b.index).map(node => { const step = steps.get(node.id)!;
     return Object.freeze({ id: node.id, kind: node.kind, status: step.status, depth: depths.get(node.id)!,
-      ready: step.status === 'pending' && node.dependsOn.every(dependency => steps.get(dependency)!.status === 'succeeded'), childRunId: step.childRunId }); });
+      ready: step.status === 'pending' && node.dependsOn.every(dependency => steps.get(dependency)!.status === 'succeeded'), childRunId: step.childRunId, approval: step.approval }); });
   const edges = [...nodes.values()].flatMap(node => node.dependsOn.map(from => Object.freeze({ from, to: node.id })));
   const statuses = [...steps.values()].map(step => step.status); const progress = Object.freeze({ total: statuses.length,
     terminal: statuses.filter(value => terminal.has(value)).length, succeeded: statuses.filter(value => value === 'succeeded').length,

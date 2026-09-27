@@ -22,13 +22,23 @@ describe('durable workflow graph projection', () => {
       { id: 'finish', kind: 'join', status: 'pending' },
     ]));
     expect(projection.nodes).toEqual([
-      { id: 'prepare', kind: 'tool', status: 'succeeded', depth: 0, ready: false, childRunId: null },
-      { id: 'child', kind: 'child', status: 'dispatching', depth: 1, ready: false, childRunId },
-      { id: 'finish', kind: 'join', status: 'pending', depth: 2, ready: false, childRunId: null },
+      { id: 'prepare', kind: 'tool', status: 'succeeded', depth: 0, ready: false, childRunId: null, approval: null },
+      { id: 'child', kind: 'child', status: 'dispatching', depth: 1, ready: false, childRunId, approval: null },
+      { id: 'finish', kind: 'join', status: 'pending', depth: 2, ready: false, childRunId: null, approval: null },
     ]);
     expect(projection.edges).toEqual([{ from: 'prepare', to: 'child' }, { from: 'child', to: 'finish' }]);
     expect(projection.progress).toEqual({ total: 3, terminal: 1, succeeded: 1, active: 1, waiting: 0, failed: 0 });
     expect(Object.isFrozen(projection)).toBe(true); expect(Object.isFrozen(projection.nodes)).toBe(true); expect(projection.nodes.every(Object.isFrozen)).toBe(true);
+  });
+
+  it('carries the approval of a waiting tool step and refuses one anywhere else', () => {
+    const approval = Object.freeze({ digest: 'd'.repeat(64), expiresAtMs: 9_000,
+      subject: Object.freeze({ toolId: 'payments.refund', toolVersion: '1', input: Object.freeze({ amount: 5 }) }) });
+    const projection = createWorkflowGraphProjection(view([{ id: 'pay', kind: 'tool', dependsOn: [] }], [{ id: 'pay', kind: 'tool', status: 'waiting', approval }], { format: 5 }));
+    expect(projection.nodes[0]).toMatchObject({ id: 'pay', status: 'waiting', approval });
+    expect(() => createWorkflowGraphProjection(view([{ id: 'pay', kind: 'tool', dependsOn: [] }], [{ id: 'pay', kind: 'tool', status: 'succeeded', approval }], { format: 5 }))).toThrow();
+    expect(() => createWorkflowGraphProjection(view([{ id: 'pay', kind: 'tool', dependsOn: [] }],
+      [{ id: 'pay', kind: 'tool', status: 'waiting', approval: Object.freeze({ ...approval, digest: 'x' }) }], { format: 5 }))).toThrow();
   });
 
   it('supports each versioned durable node vocabulary without exposing payloads', () => {
