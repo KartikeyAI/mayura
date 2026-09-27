@@ -141,8 +141,10 @@ export function createWebhookRuntime(options: WebhookRuntimeOptions): WebhookRun
     }
     const operation = (async () => { const initial: State = { format: 1, definition: admitted.definitionHash, triggerId: definition.id,
       deliveryId: request.deliveryId, requestDigest: admitted.requestDigest, status: 'admitted', output: null };
+      // The store refuses a delivery identity already recorded with different content; that is the caller's conflict.
       const created = await storage(() => store.create({ scope, id, idempotencyKey: `webhook:${id}`,
-        definitionHash: admitted.definitionHash, state: stable(initial, maxBody + 4096) as JsonObject, events: [{ type: 'webhook.admitted', data: {} }] }));
+        definitionHash: admitted.definitionHash, state: stable(initial, maxBody + 4096) as JsonObject, events: [{ type: 'webhook.admitted', data: {} }] }))
+        .catch((error: unknown) => { if (error instanceof StorageError && error.code === 'CONFLICT') throw new MayuraError('CONFLICT', 'Webhook delivery identity was reused with different content.'); throw error; });
       let record = created.record; const current = state(record);
       if (record.id !== id || record.scope !== scope || record.definitionHash !== admitted.definitionHash || current.requestDigest !== admitted.requestDigest
         || current.triggerId !== definition.id || current.deliveryId !== request.deliveryId) throw new MayuraError('CONFLICT', 'Webhook delivery identity was reused with different content.');

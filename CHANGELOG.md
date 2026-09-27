@@ -68,6 +68,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Smaller fixes found while building the starters:
+  - `RuntimeLimits.maxToolCalls` accepts 0 for agents without tools.
+  - Native memory used before `store.memory.initialize()` reports that call as an `INVALID_CONFIG` error, instead of a generic storage failure.
+  - A webhook delivery id reused with a different body raises the documented `MayuraError('CONFLICT')`, not a raw storage error.
+  - `validatedEnvironment` errors name the environment variables that failed validation (never their values); the error code is unchanged.
+  - The MCP adapter accepts the `_meta` field that the MCP specification allows on tool results.
+  - The `agentAsDurableWorkflow` permissions comment no longer claims an intersection with outer authority.
 - Durable workflow budgets (format-2 workflows and lifecycle workflows) charged every completed tool step its declared ceiling and ignored the usage the tool reported with `context.reportUsage`. They now charge the reported usage, capped at the reservation; a tool that reports nothing is still charged its declared cost, and reported unknown usage still keeps the whole reservation until reconciled. Found by the research-team starter.
 - The agent server never released finished runs or per-principal runtimes, so a long-running server answered `429` after `maxRuns` runs or `maxRuntimes` principals until restarted. Finished runs are now kept for `limits.runRetentionMs` (default 10 minutes); a run whose outcome was read may be released early under pressure; runtimes close when unused; and a same-key retry of a released run gets `410 RUN_EXPIRED` from a bounded tombstone instead of starting a second run.
 - A strict TypeScript host could not pass `createWorkflowOperatorTransports` to the server: view node kinds, step statuses and fleet results were typed too loosely. They now use the server's record types, and `@mayura/server-node` re-exports `ServerIdentity`.

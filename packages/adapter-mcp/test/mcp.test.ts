@@ -33,6 +33,15 @@ describe('MCP tool adapter', () => {
     expect(Object.isFrozen(callTool.mock.calls[0]?.[0])).toBe(true);
   });
 
+  it('accepts the protocol `_meta` field on a result without returning it', async () => {
+    const callTool = vi.fn(async (_request: unknown) => ({ structuredContent: { value: 3 }, _meta: { 'example.com/trace': 'abc' } }));
+    const { tool, invocation } = options(['tool:mcp.records.write', 'records:write', 'effect:write'], callTool);
+    const outcome = await invokeTool(tool, { value: 1 }, invocation);
+    expect(outcome).toMatchObject({ status: 'succeeded', output: { value: 3 } }); expect(JSON.stringify(outcome)).not.toContain('trace');
+    const malformed = options(['tool:mcp.records.write', 'records:write', 'effect:write'], async () => ({ structuredContent: { value: 3 }, _meta: 'not an object' }));
+    expect((await invokeTool(malformed.tool, { value: 1 }, malformed.invocation)).status).not.toBe('succeeded');
+  });
+
   it('fails closed and sanitizes remote errors or malformed results', async () => {
     const failures: Array<(request: unknown) => Promise<unknown>> = [
       async () => { throw new Error('PRIVATE MCP TOKEN'); },

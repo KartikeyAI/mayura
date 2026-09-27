@@ -48,7 +48,9 @@ function structuredResult(value: unknown): JsonValue {
     throw new MayuraError('TOOL_FAILED', 'The MCP server returned an invalid tool result.');
   }
   const keys = Object.keys(envelope);
-  if (keys.some(key => !['content', 'structuredContent', 'isError'].includes(key))
+  // `_meta` is protocol metadata the MCP specification allows on every result; it is accepted and never returned.
+  if (keys.some(key => !['content', 'structuredContent', 'isError', '_meta'].includes(key))
+    || (envelope['_meta'] !== undefined && (envelope['_meta'] === null || typeof envelope['_meta'] !== 'object' || Array.isArray(envelope['_meta'])))
     || (envelope['isError'] !== undefined && typeof envelope['isError'] !== 'boolean')
     || envelope['isError'] === true || !Object.hasOwn(envelope, 'structuredContent')) {
     throw new MayuraError('TOOL_FAILED', 'The MCP server did not return an accepted structured result.');

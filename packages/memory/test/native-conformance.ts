@@ -19,6 +19,12 @@ export function nativeMemoryConformance(name: string, open: () => Promise<Native
       return { fixture, memory };
     };
 
+    it('names the missing memory initialization instead of reporting storage as unavailable', async () => {
+      const fixture = await open(); opened.push(fixture); await fixture.store.initialize();
+      const memory = createNativeMemory({ store: fixture.store, scope, permissions: { allow: all }, allowedSensitivities: ['public', 'internal', 'confidential'] });
+      await expect(memory.add(input('m1', 'prefers email'))).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('store.memory.initialize()') });
+    });
+
     it('adds, corrects and forgets with compare-and-set, and keeps tombstones permanent', async () => {
       const { memory } = await setup();
       const added = await memory.add(input('fact-1', 'The build uses strict TypeScript.'));

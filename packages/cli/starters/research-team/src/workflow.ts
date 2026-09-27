@@ -69,7 +69,7 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
     input: researchRequest, output: planStepOutput,
     execute: (request, context) => traced(telemetry, context, 'research.plan', async span => {
       const planned = await runAgent(planner, { question: request.question, maxSubQuestions: MAX_RESEARCHERS },
-        { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 1 } });
+        { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
       const subQuestions = [...new Set(planned.subQuestions)].slice(0, MAX_RESEARCHERS);
       return { question: request.question, subQuestions,
         slots: researchSlots.map((_, index) => ({ question: request.question, subQuestion: subQuestions[index] ?? null })) };
@@ -110,7 +110,7 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
       const sections = research.flatMap(item => item.subQuestion === null ? [] : [{ subQuestion: item.subQuestion, findings: item.findings }]);
       const reported = new Set(sections.flatMap(section => section.findings.flatMap(item => item.sourceIds)));
       if (reported.size === 0) throw new Error('No researcher found a source for any sub-question; there is nothing to report.');
-      const draft = await runAgent(writer, { question: asked, sections }, { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 1 } });
+      const draft = await runAgent(writer, { question: asked, sections }, { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
       // The writer may only cite what researchers reported, and every citation must resolve in the library.
       const cited = [...new Set(draft.sections.flatMap(section => section.sourceIds))];
       if (cited.some(id => !reported.has(id))) throw new Error('The writer cited a source no researcher reported.');

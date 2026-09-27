@@ -92,8 +92,9 @@ function limitsFor(options: RuntimeLimits | undefined): Required<RuntimeLimits> 
   const result = { ...defaults, ...options };
   if (Object.keys(result).some((key) => !(key in defaults))) throw new MayuraError('INVALID_CONFIG', 'Unknown runtime limit.');
   for (const [key, value] of Object.entries(result)) {
-    if (key === 'maxCostMicros') {
-      if (!Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_CONFIG', 'maxCostMicros must be a non-negative safe integer.');
+    // Zero is meaningful for cost and tool calls (an agent with no tools makes none); every other limit is positive.
+    if (key === 'maxCostMicros' || key === 'maxToolCalls') {
+      if (!Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_CONFIG', `${key} must be a non-negative safe integer.`);
     } else assertPositiveInteger(value, key);
   }
   if (result.maxDurationMs > 2_147_483_647 || !Number.isSafeInteger(result.maxModelCalls + result.maxToolCalls)) {

@@ -68,7 +68,28 @@ export async function validatedEnvironment<S extends Schema>(options: Environmen
       value[outputName] = selected;
     }
   }
-  return validatedConfig(options.schema, value, options.limits);
+  try { return await validatedConfig(options.schema, value, options.limits); }
+  catch (error) {
+    // Name the variables at fault, never their values, so a misconfigured deployment says what to fix.
+    const names = await failingVariables(options.schema, value, options.fields);
+    if (names.length === 0) throw error;
+    // Same error code as before, so callers that branch on it are unaffected; only the message is more useful.
+    throw new MayuraError(error instanceof MayuraError ? error.code : 'INVALID_INPUT', `Invalid environment ${names.length === 1 ? 'variable' : 'variables'}: ${names.join(', ')}.`);
+  }
+}
+
+/** The environment variables whose fields the application's own schema reported, in declaration order. */
+async function failingVariables(schema: Schema, value: JsonObject, fields: Readonly<Record<string, string>>): Promise<string[]> {
+  try {
+    const result = await schema['~standard'].validate(value);
+    const issues = (result as { issues?: readonly { path?: readonly unknown[] }[] }).issues ?? [];
+    const failing = new Set<string>();
+    for (const issue of issues.slice(0, 64)) {
+      const first = issue.path?.[0]; const key = typeof first === 'object' && first !== null && 'key' in first ? (first as { key: unknown }).key : first;
+      if (typeof key === 'string' && Object.hasOwn(fields, key)) failing.add(key);
+    }
+    return Object.entries(fields).filter(([field]) => failing.has(field)).map(([, variable]) => variable);
+  } catch { return []; }
 }
 
 export interface ProviderSchemaBinding<S extends Schema> {

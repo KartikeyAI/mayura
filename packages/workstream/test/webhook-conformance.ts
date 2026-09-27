@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Schema } from '@mayura/core';
+import { MayuraError, type Schema } from '@mayura/core';
 import type { AggregateStore } from '@mayura/storage';
 import { createWebhookRuntime, defineWebhookTrigger, type WebhookRequest, type WebhookRuntime } from '../src/webhooks.js';
 import type { WorkStreamFixture } from './fixtures.js';
@@ -49,6 +49,8 @@ export function webhookConformance(name: string, factory: () => Promise<WorkStre
       const second = await runtime.receive(definition, signed({ action: 'release' }, 'retry', now));
       expect(second).toEqual(first); expect(calls).toBe(1);
       await expect(runtime.receive(definition, signed({ action: 'different' }, 'retry', now))).rejects.toMatchObject({ code: 'CONFLICT' });
+      // The documented public error, not a raw storage error.
+      await expect(runtime.receive(definition, signed({ action: 'different' }, 'retry', now))).rejects.toBeInstanceOf(MayuraError);
       expect(calls).toBe(1);
     });
 

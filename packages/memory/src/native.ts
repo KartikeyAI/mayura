@@ -89,6 +89,9 @@ function storage<T>(operation: () => Promise<T>): Promise<T> {
   return operation().catch((error: unknown) => {
     if (error instanceof MayuraError) throw error;
     if (error instanceof StorageError && error.code === 'INVALID_INPUT') throw new MayuraError('INVALID_INPUT', 'The memory storage command was rejected as invalid.');
+    if (error instanceof StorageError && error.code === 'STORE_NOT_INITIALIZED') {
+      throw new MayuraError('INVALID_CONFIG', 'Native memory storage is not initialized: call `await store.memory.initialize()` after `await store.initialize()`.');
+    }
     if (error instanceof StorageError && ['CONFLICT', 'NOT_FOUND'].includes(error.code)) {
       throw new MayuraError(error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'CONFLICT', 'The memory operation conflicts with current storage state; refresh and retry.');
     }

@@ -197,3 +197,18 @@ describe('@mayura/helpers budget-aware concurrency', () => {
     expect(task.execute).not.toHaveBeenCalled();
   });
 });
+
+describe('environment validation errors', () => {
+  it('name the variables at fault and never their values', async () => {
+    const schema: Schema<{ port: number; secret: string }> = { '~standard': { version: 1, vendor: 'env-test', validate: (value: unknown) => {
+      const input = value as Record<string, unknown>; const issues: { message: string; path: PropertyKey[] }[] = [];
+      if (!/^\d+$/u.test(String(input['port']))) issues.push({ message: 'port', path: ['port'] });
+      if (typeof input['secret'] !== 'string' || input['secret'].length < 32) issues.push({ message: 'secret', path: [{ key: 'secret' }] as unknown as PropertyKey[] });
+      return issues.length ? { issues } : { value: { port: Number(input['port']), secret: String(input['secret']) } };
+    } } };
+    const error = await validatedEnvironment({ schema, source: { PORT: 'eighty', APP_SECRET: 'short-PRIVATE-value' }, fields: { port: 'PORT', secret: 'APP_SECRET' } }).catch(value => value);
+    expect(error).toBeInstanceOf(MayuraError);
+    expect(error).toMatchObject({ code: 'INVALID_INPUT', message: 'Invalid environment variables: PORT, APP_SECRET.' });
+    expect(String(error.message)).not.toContain('PRIVATE');
+  });
+});

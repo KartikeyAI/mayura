@@ -6,7 +6,11 @@ import { defineWorkflow, type WorkflowDefinition } from './definition.js';
 export interface DurableAgentWorkflowOptions {
   readonly id?: string;
   readonly version?: string;
-  /** Authority available inside the admitted agent phase; it is still intersected with outer workflow authority. */
+  /**
+   * Authority for the agent's own model and tool calls inside the phase. It is not intersected with the outer
+   * workflow's grants: the outer workflow separately grants the phase itself (capabilities `agent:durable` and
+   * `model:<agent model id>`). Grant here only what this agent should be able to do.
+   */
   readonly permissions: Permissions;
   readonly limits?: RuntimeLimits;
   /** Host/model phases require approval by default. */
