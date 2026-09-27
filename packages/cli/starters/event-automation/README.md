@@ -31,7 +31,9 @@ npm run dev
 
 `npm run dev` builds and starts, in one process: the local tracker (an MCP server with four sample tickets), the API
 and console, the webhook ingress and a worker, on `.data/event-automation.sqlite`. It sends three signed sample
-deliveries and prints the console URL, a fresh operator token, the webhook URL and a fresh webhook secret.
+deliveries and prints the console URL, an operator token, the webhook URL and the webhook secret.
+
+`npm run dev` runs `mayura dev`: it loads `.env` if you have one, and rebuilds and restarts when you save a file. The tokens it prints are kept in `.data/dev-secrets.json`, so they stay the same across restarts.
 
 Open the console, paste the **operator** token and open **Workflows**:
 

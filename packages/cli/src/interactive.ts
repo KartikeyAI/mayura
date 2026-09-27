@@ -4,6 +4,7 @@ import { relative, resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { applyProjectPlan, planProject, planStarter, starters, templates, type InitPlan, type StarterInitPlan, type StarterName, type TemplateName } from './index.js';
 import { nextSteps, wrap, type Paint } from './output.js';
+import { dollarsToMicros, modelPattern, PROVIDERS, validKey, writeProviderEnvironment, type ProviderChoice, type StarterProvider } from './providers.js';
 
 /** The part of a description before its first colon or full stop: short enough for a menu hint. */
 const summary = (description: string): string => description.split(/[:.]/u)[0]!.trim();
@@ -30,6 +31,37 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
   if (prompts.isCancel(name)) return cancelled();
   prompts.log.message(p.dim(wrap(catalog.find(item => item.name === name)!.description, 76, '')), io);
 
+  // Starters run on real models once configured; templates use fixtures and need no provider.
+  let provider: ProviderChoice | undefined;
+  if (kind === 'starter') {
+    const chosen = await prompts.select({ ...io, message: 'Which model provider?', initialValue: 'offline' as const,
+      options: PROVIDERS.map(item => ({ value: item.id, label: item.label, hint: item.hint })) });
+    if (prompts.isCancel(chosen)) return cancelled();
+    if (chosen !== 'offline') {
+      const details = PROVIDERS.find(item => item.id === chosen)!;
+      const model = await prompts.text({ ...io, message: `${details.label} model`, placeholder: details.defaultModel ?? 'the model id from your account',
+        ...(details.defaultModel ? { defaultValue: details.defaultModel } : {}),
+        validate: value => (value || details.defaultModel) && modelPattern.test(value || details.defaultModel!) ? undefined : 'Enter a model id, such as the one in your provider dashboard.' });
+      if (prompts.isCancel(model)) return cancelled();
+      // Masked, and written only to the project's .env: never printed, logged or put in the plan.
+      const apiKey = await prompts.password({ ...io, message: `${details.label} API key`, mask: '•',
+        validate: value => validKey(value) ? undefined : 'Paste the key: at least 8 visible characters, no spaces.' });
+      if (prompts.isCancel(apiKey)) return cancelled();
+      prompts.log.message(p.dim(wrap('Mayura accounts every call conservatively, so it needs your prices (from the provider\'s pricing page) and a spending cap.', 76, '')), io);
+      const price = async (message: string, defaultValue?: string): Promise<number | symbol> => {
+        const typed = await prompts.text({ ...io, message, placeholder: defaultValue ?? 'e.g. 3 or 0.25', ...(defaultValue ? { defaultValue } : {}),
+          validate: value => dollarsToMicros(value || defaultValue) === undefined ? 'Enter a positive amount in dollars, such as 3 or 0.25.' : undefined });
+        return prompts.isCancel(typed) ? typed : dollarsToMicros(typed || defaultValue)!;
+      };
+      const input = await price('Input price, $ per million tokens'); if (typeof input === 'symbol') return cancelled();
+      const output = await price('Output price, $ per million tokens'); if (typeof output === 'symbol') return cancelled();
+      const call = await price('Most one model call may cost, $', '0.05'); if (typeof call === 'symbol') return cancelled();
+      const run = await price('Most one agent run may cost, $', '0.50'); if (typeof run === 'symbol') return cancelled();
+      provider = { provider: chosen as StarterProvider, apiKey, model: model || details.defaultModel!, inputMicrosPerMillionTokens: input,
+        outputMicrosPerMillionTokens: output, maxCallCostMicros: call, maxRunCostMicros: Math.max(run, call) };
+    }
+  }
+
   const answer = await prompts.text({ ...io, message: 'Where should it go?', placeholder: `./${name}`, defaultValue: `./${name}`,
     validate: value => value !== undefined && /[\0\r\n]/u.test(value) ? 'Use a plain directory path.' : undefined });
   if (prompts.isCancel(answer)) return cancelled();
@@ -55,6 +87,11 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
   try { await applyProjectPlan(plan, replaces.length > 0 ? { confirmation: plan.digest } : {}); }
   catch (error) { progress.error('Nothing was written.'); throw error; }
   progress.stop(`Wrote ${creates.length + replaces.length} files`);
+  if (provider) {
+    const written = await writeProviderEnvironment(directory, provider);
+    prompts.log.success(written === 'written' ? `Saved your ${PROVIDERS.find(item => item.id === provider!.provider)!.label} settings and key to .env (ignored by git)`
+      : '.env already exists, so it was left as it is; add the provider settings to it yourself (see .env.example)', io);
+  }
   if (afterWrite) {
     const step = prompts.spinner(io.output ? { output: io.output } : {}); step.start(afterWrite.label);
     try { step.stop(await afterWrite.run(directory)); } catch (error) { step.error(`${afterWrite.label} failed.`); throw error; }

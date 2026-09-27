@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { ServerIdentity } from '@mayura/server-node';
 import type { Config } from './config.js';
 
@@ -35,4 +37,20 @@ export function authenticate(config: Config, agents: { readonly desk: string; re
     }
     return null;
   };
+}
+
+/**
+ * Development secrets, kept in `.data/dev-secrets.json` (owner-only, ignored by git) so a restart under `mayura dev`
+ * keeps the same tokens and an open console stays signed in. Production never uses this: it configures digests.
+ */
+export async function devSecrets<const N extends string>(names: readonly N[], file = '.data/dev-secrets.json'): Promise<Record<N, string>> {
+  let stored: Record<string, unknown> = {};
+  try { stored = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>; } catch { /* The first run creates them. */ }
+  const valid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
+  const secrets = Object.fromEntries(names.map(name => [name, valid(stored[name]) ? stored[name] : newToken()])) as Record<N, string>;
+  if (names.some(name => secrets[name] !== stored[name])) {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, `${JSON.stringify({ ...stored, ...secrets }, null, 2)}\n`, { mode: 0o600 });
+  }
+  return secrets;
 }

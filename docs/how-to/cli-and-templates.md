@@ -14,6 +14,21 @@ Run `mayura init` with no options in a terminal to choose interactively: starter
 The wizard shows the plan (and lists any file it would replace, defaulting to not replacing), writes the files after
 you confirm, and prints the next steps. It needs a terminal on both input and output; scripts use the flags.
 
+For a starter, the wizard also asks which model provider to use: Offline (no key; rule-based stand-in models),
+OpenAI or Anthropic. For a real provider it asks for the model, the API key (typed masked), your prices per million
+tokens and two spending caps (per model call and per agent run, with defaults), and writes them to the new project's
+`.env`. That file is owner-only and ignored by git; the key is never printed or put in the plan. An existing `.env`
+is left untouched.
+
+## Develop
+
+`mayura dev`, run in a project (the starters' `npm run dev`), runs the project's `build` script, then starts
+`dist/src/dev.js` if the project has one, or else `migrate` once and then `serve` and `worker` for `dist/src/app.js`
+(`--app` and `--entry` choose other files). It loads `.env` for the project (real environment variables win, and no
+value is printed), watches the project, and on each saved change rebuilds and restarts. A failed build prints its
+errors and keeps the last good version running. `--no-watch` builds and runs once. Ctrl+C stops the project
+gracefully; press it again to force.
+
 ## Output
 
 In a terminal, commands print readable output: coloured statuses, wrapped descriptions, and next steps or the flag

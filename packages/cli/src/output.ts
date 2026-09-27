@@ -162,7 +162,7 @@ export function render(command: string, result: unknown, p: Paint, relative: (pa
     for (const [outcome, count] of counts) out.push(`  ${String(count).padStart(5)} ${outcome.replaceAll('_', ' ')}`);
     if (value['nextCursor']) out.push('', p.yellow('Not finished. Run with --json to save nextCursor to a file, then continue with --cursor-file.'));
   } else if (command === 'migrate') out.push(`${p.green('✔')} Storage migrated`);
-  else if (command === 'serve' || command === 'worker') out.push(`${p.green('✔')} Stopped`);
+  else if (command === 'serve' || command === 'worker' || command === 'dev') out.push(`${p.green('✔')} Stopped`);
   else out.push(JSON.stringify(result, null, 2));
   return out.join('\n');
 }
@@ -193,6 +193,7 @@ export function help(p: Paint): string {
     row('starters', 'complete starter projects'), row('templates', 'small single-purpose templates'),
     row('validate --file <path>', 'check a mayura.project.json'), row('inspect --file <path>', 'list its agents, workflows and tools'), '',
     p.bold('Run an application'),
+    row('dev', 'build, run and restart on changes; loads .env'),
     row('serve --app <module>', 'start its server'), row('worker --app <module>', 'start its worker'), row('migrate --app <module>', 'migrate its storage'), '',
     p.bold('Operate a server') + p.dim('  (pipe the token: … | mayura <command> --url <url> --token-stdin)'),
     row('server-health, server-tools', ''), row('run-get, run-wait, run-cancel', ''), row('human-list, human-get, human-respond', ''),

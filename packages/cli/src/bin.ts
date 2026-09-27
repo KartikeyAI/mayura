@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { dirname, join, relative, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, MayuraError, publicError, type JsonValue } from '@mayura/core';
 import { loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from './application.js';
@@ -149,6 +149,19 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     if (command === 'run-cancel') { await cancelRun(settings, id); return { status: 'succeeded', cancellationRequested: true, id }; }
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
+  }
+  if (command === 'dev') {
+    assertArguments(arguments_, ['--app', '--entry'], ['--no-watch']);
+    const app = option(arguments_, '--app'); const entry = option(arguments_, '--entry');
+    // First Ctrl+C: stop watching and let the running project stop. A second one during shutdown forces exit.
+    const controller = new AbortController(); let signals = 0;
+    const stop = (): void => { signals += 1; if (signals > 1) process.exit(1); controller.abort(); };
+    process.on('SIGINT', stop); process.on('SIGTERM', stop);
+    const { runDev } = await import('./dev.js');
+    try {
+      return await runDev({ directory: process.cwd(), bin: fileURLToPath(import.meta.url), watch: !arguments_.includes('--no-watch'), signal: controller.signal,
+        p: out, print: line => { console.log(line); }, ...(app === undefined ? {} : { app }), ...(entry === undefined ? {} : { entry }) });
+    } finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); }
   }
   if (command === 'migrate') {
     assertArguments(arguments_, ['--app']); const path = option(arguments_, '--app');

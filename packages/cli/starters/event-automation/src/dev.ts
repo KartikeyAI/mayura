@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { newToken, tokenDigest } from './auth.js';
+import { devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { startServer } from './server.js';
 import { openServices } from './services.js';
@@ -11,9 +11,9 @@ import { memoryTracker } from './tracker/tickets.js';
 import { createTicketWorker } from './worker.js';
 
 // Local development in one process: the local tracker (an MCP server on an ephemeral port), the Mayura server, the
-// webhook ingress and a worker, on SQLite, with a fresh operator token and webhook secret printed once.
+// webhook ingress and a worker, on SQLite, with an operator token and webhook secret kept in .data/dev-secrets.json across restarts.
 // Production runs `npm run serve` and `npm run worker` as separate processes against your real tracker (see README).
-const operatorToken = newToken(); const webhookSecret = newToken(); const trackerToken = newToken();
+const { operatorToken, webhookSecret, trackerToken } = await devSecrets(['operatorToken', 'webhookSecret', 'trackerToken']);
 const tickets = memoryTracker(Object.values(sampleTickets));
 const tracker = await startTrackerMcpServer({ tracker: tickets, port: 0, token: trackerToken });
 const config = await loadConfig({ ...process.env, MAYURA_ENV: 'development', MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(operatorToken),

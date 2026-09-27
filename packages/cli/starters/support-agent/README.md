@@ -28,6 +28,8 @@ npm run dev
 `npm run dev` compiles the server, builds the chat UI (`web/`), and starts in one process: the Mayura server and a worker
 on `.data/support.sqlite`, plus a small front server for the chat. It prints:
 
+`npm run dev` runs `mayura dev`: it loads `.env` if you have one, and rebuilds and restarts when you save a file. The tokens it prints are kept in `.data/dev-secrets.json`, so they stay the same across restarts.
+
 - **chat**: `http://127.0.0.1:5173`. Pick a demo customer (Ada or Grace) and try:
   - "Where is my order?": the assistant lists your orders, then tracks the most recent undelivered one. The chips
     above each reply show the tools it used, live, and the reply streams in as it is written.

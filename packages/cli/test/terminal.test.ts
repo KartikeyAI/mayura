@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
+import { dollarsToMicros, providerEnvironment } from '../src/providers.js';
 
 const plain = paint(false);
 const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -70,6 +71,20 @@ describe('terminal output', () => {
   });
 });
 
+describe('provider settings', () => {
+  it('writes only variables every starter reads', async () => {
+    const text = providerEnvironment({ provider: 'anthropic', apiKey: 'sk-test-12345678', model: 'm', inputMicrosPerMillionTokens: 1,
+      outputMicrosPerMillionTokens: 2, maxCallCostMicros: 3, maxRunCostMicros: 4 });
+    const names = text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!);
+    for (const starter of starters()) {
+      const config = await readFile(fileURLToPath(new URL(`../starters/${starter.name}/src/config.ts`, import.meta.url)), 'utf8');
+      for (const name of names) expect(config, `${starter.name} reads ${name}`).toContain(`'${name}'`);
+    }
+    expect(dollarsToMicros('3')).toBe(3_000_000); expect(dollarsToMicros('$0.25')).toBe(250_000);
+    expect(dollarsToMicros('0')).toBeUndefined(); expect(dollarsToMicros('-1')).toBeUndefined(); expect(dollarsToMicros('1e3')).toBeUndefined();
+  });
+});
+
 describe('interactive init', () => {
   const roots: string[] = [];
   afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -85,7 +100,7 @@ describe('interactive init', () => {
 
   it('creates a starter chosen with the arrow keys, then shows the next steps', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'my-app');
-    const { result, screen } = await drive([enter, down, down, enter, ...target, enter, enter]);
+    const { result, screen } = await drive([enter, down, down, enter, enter, ...target, enter, enter]);
     expect(result).toMatchObject({ status: 'succeeded', plan: { starter: 'research-team' } });
     expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))).toMatchObject({ name: 'my-app' });
     expect(screen).toContain('Next steps'); expect(screen).toContain('npm run dev');
@@ -95,11 +110,39 @@ describe('interactive init', () => {
     const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'local-app'); const seen: string[] = [];
     const input = new PassThrough(); let screen = '';
     const output = Object.assign(new Writable({ write(chunk, _encoding, done) { screen += String(chunk); done(); } }), { columns: 100, rows: 40 });
-    const typing = (async () => { for (const key of [enter, enter, ...target, enter, enter]) { await new Promise(resolve => setTimeout(resolve, 15)); input.write(key); } })();
+    const typing = (async () => { for (const key of [enter, enter, enter, ...target, enter, enter]) { await new Promise(resolve => setTimeout(resolve, 15)); input.write(key); } })();
     const result = await initWizard(plain, { input, output }, { label: 'Installing', installs: true, run: async directory => { seen.push(directory); return 'Installed 3 packages'; } });
     await typing;
     expect(result.status).toBe('succeeded'); expect(seen).toEqual([target]);
     expect(screen).toContain('Installed 3 packages'); expect(screen).toContain('npm run dev'); expect(screen).not.toContain('npm install');
+  });
+
+  it('asks for a provider, model, key, prices and caps, and saves them to .env without ever showing the key', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'with-openai');
+    const key = 'sk-test-DO-NOT-SHOW-0123456789';
+    // starter → research-team → OpenAI → model → key → input $2 → output $8 → default caps → directory → create
+    const { result, screen } = await drive([enter, down, down, enter, down, enter, ...'test-model', enter, ...key, enter,
+      '2', enter, '8', enter, enter, enter, ...target, enter, enter]);
+    expect(result.status).toBe('succeeded');
+    const saved = await readFile(join(target, '.env'), 'utf8');
+    expect(saved).toContain('MAYURA_MODEL_PROVIDER=openai'); expect(saved).toContain(`OPENAI_API_KEY=${key}`); expect(saved).toContain('MAYURA_MODEL=test-model');
+    expect(saved).toContain('MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=2000000'); expect(saved).toContain('MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=8000000');
+    expect(saved).toContain('MAYURA_MODEL_MAX_CALL_COST_MICROS=50000'); expect(saved).toContain('MAYURA_MAX_RUN_COST_MICROS=500000');
+    expect(screen).not.toContain(key); expect(screen).toContain('Saved your OpenAI settings and key to .env');
+    expect(JSON.stringify(result)).not.toContain(key);
+    // The starter's .gitignore keeps it out of git.
+    expect((await readFile(join(target, '.gitignore'), 'utf8')).split(/\r?\n/u)).toContain('.env');
+  });
+
+  it('keeps an existing .env and chooses no provider for templates', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'kept');
+    await mkdir(target); await writeFile(join(target, '.env'), 'MINE=1\n');
+    const { result, screen } = await drive([enter, down, down, enter, down, down, enter, enter, ...'sk-test-anthropic-123', enter,
+      '3', enter, '15', enter, enter, enter, ...target, enter, enter]);
+    expect(result.status).toBe('succeeded'); expect(await readFile(join(target, '.env'), 'utf8')).toBe('MINE=1\n');
+    expect(screen).toContain('.env already exists');
+    const template = await drive([down, enter, enter, ...join(root, 'template'), enter, enter]);
+    expect(template.result.status).toBe('succeeded'); expect(template.screen).not.toContain('model provider');
   });
 
   it('writes nothing when cancelled', async () => {

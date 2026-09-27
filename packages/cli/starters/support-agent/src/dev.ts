@@ -6,7 +6,7 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError } from '@mayura/core';
 import { createNativeMemory } from '@mayura/memory';
-import { customerPrincipal, newToken, tokenDigest } from './auth.js';
+import { customerPrincipal, devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { demoCustomers } from './orders.js';
 import { startServer } from './server.js';
@@ -26,7 +26,7 @@ const webOrigin = `http://127.0.0.1:${webPort}`;
 const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
 if (!existsSync(resolve(webRoot, 'index.html'))) throw new Error('The chat UI is not built. `npm run dev` builds it; or run `npx vite build web`.');
 
-const operatorToken = newToken();
+const { operatorToken } = await devSecrets(['operatorToken']);
 const config = await loadConfig({ ...process.env, MAYURA_ENV: 'development', MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(operatorToken),
   // The browser's requests arrive through the front server with the chat's origin; the API must accept it.
   MAYURA_ALLOWED_ORIGINS: [process.env['MAYURA_ALLOWED_ORIGINS'], webOrigin].filter(Boolean).join(',') });

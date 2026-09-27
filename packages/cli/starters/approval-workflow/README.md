@@ -22,8 +22,10 @@ npm run dev
 ```
 
 `npm run dev` builds, starts the server and a worker in one process on `.data/refunds.sqlite`, opens three demo refunds
-through the intake agent plus one on workflow v1, and prints the console URL and two fresh tokens. Open the console,
+through the intake agent plus one on workflow v1, and prints the console URL and two tokens. Open the console,
 paste the **operator** token, and open **Workflows**:
+
+`npm run dev` runs `mayura dev`: it loads `.env` if you have one, and rebuilds and restarts when you save a file. The tokens it prints are kept in `.data/dev-secrets.json`, so they stay the same across restarts.
 
 - A run waiting at `issue` shows the exact payment it will make. **Approve** it; the worker issues it within a second
   and then notifies the customer.

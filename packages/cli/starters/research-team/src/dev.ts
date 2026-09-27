@@ -1,15 +1,15 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ClientError, createClient } from '@mayura/client';
-import { newToken, tokenDigest } from './auth.js';
+import { devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { deskOutput, type DeskInput, type DeskOutput } from './desk.js';
 import { startServer } from './server.js';
 import { openServices } from './services.js';
 import { createResearchWorker } from './worker.js';
 
-// Local development in one process: server and worker on SQLite, fresh tokens printed once, one demo research run.
+// Local development in one process: server and worker on SQLite, tokens kept in .data/dev-secrets.json across restarts, one demo research run.
 // Production runs `npm run serve` and `npm run worker` as separate processes instead (see README).
-const operatorToken = newToken(); const deskToken = newToken();
+const { operatorToken, deskToken } = await devSecrets(['operatorToken', 'deskToken']);
 const config = await loadConfig({ ...process.env, MAYURA_ENV: 'development',
   MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(operatorToken), MAYURA_DESK_TOKEN_SHA256: tokenDigest(deskToken) });
 const services = await openServices(config);

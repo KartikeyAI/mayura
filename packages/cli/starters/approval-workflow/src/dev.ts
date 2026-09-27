@@ -1,15 +1,15 @@
 import { ClientError, createClient } from '@mayura/client';
 import { createWorkflowLifecycleFleetRuntime } from '@mayura/workflows/lifecycle';
-import { newToken, tokenDigest } from './auth.js';
+import { devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { intakeOutput } from './intake.js';
 import { startServer } from './server.js';
 import { openServices } from './services.js';
 import { createRefundWorker } from './worker.js';
 
-// Local development in one process: server and worker on SQLite, fresh tokens printed once, a few demo refunds.
+// Local development in one process: server and worker on SQLite, tokens kept in .data/dev-secrets.json across restarts, a few demo refunds.
 // Production runs `npm run serve` and `npm run worker` as separate processes instead (see README).
-const operatorToken = newToken(); const intakeToken = newToken();
+const { operatorToken, intakeToken } = await devSecrets(['operatorToken', 'intakeToken']);
 const config = await loadConfig({ ...process.env, MAYURA_ENV: 'development',
   MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(operatorToken), MAYURA_INTAKE_TOKEN_SHA256: tokenDigest(intakeToken) });
 const services = await openServices(config);

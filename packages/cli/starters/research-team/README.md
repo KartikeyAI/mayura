@@ -26,9 +26,11 @@ npm run dev
 ```
 
 `npm run dev` builds, starts the server and a worker in one process on `.data/research-team.sqlite`, asks the desk
-one demo question, waits for the report and prints the console URL, two fresh tokens and the finished run. Open the
+one demo question, waits for the report and prints the console URL, two tokens and the finished run. Open the
 console, paste the **operator** token and open **Workflows**: the run shows `plan`, the four research slots (three
 used; the fourth skipped because the plan did not need it), the `research` join, `write` and `store`.
+
+`npm run dev` runs `mayura dev`: it loads `.env` if you have one, and rebuilds and restarts when you save a file. The tokens it prints are kept in `.data/dev-secrets.json`, so they stay the same across restarts.
 
 Ask your own question as your application:
 
