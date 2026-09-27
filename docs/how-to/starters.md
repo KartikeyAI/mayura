@@ -35,8 +35,10 @@ workspace, create a new project. A relative `--directory` is resolved from where
 ## What every starter has
 
 - **Runs offline first.** Each agent has a small rule-based stand-in model, clearly labelled, so `npm run dev` and
-  `npm test` need no key and no network. `MAYURA_MODEL_PROVIDER=openai` or `anthropic` switches the same agents to a real
-  model, with explicit prices and cost limits.
+  `npm test` need no key and no network. `MAYURA_MODEL_PROVIDER=openai`, `anthropic` or `compatible` switches the same
+  agents to a real model, with explicit prices and cost limits. `compatible` takes any OpenAI-compatible chat-completions
+  endpoint (`MAYURA_MODEL_ENDPOINT`, a short `MAYURA_MODEL_PROVIDER_ID` such as `groq`, `MAYURA_MODEL_AUTH` and
+  `MAYURA_MODEL_API_KEY`); see [Model providers](model-providers.md). `mayura init` asks for all of this and writes `.env`.
 - **SQLite locally, PostgreSQL in production**, chosen by `DATABASE_URL`.
 - **The production shape.** `src/app.ts` is the entry point for `mayura migrate`, `mayura serve` and `mayura worker`. Run
   the server and workers as separate processes; workers use leadership, so replicas never double-drive the fleet.

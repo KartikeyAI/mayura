@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
-import { dollarsToMicros, providerEnvironment } from '../src/providers.js';
+import { azureEndpoint, dollarsToMicros, endpointProblem, providerEnvironment } from '../src/providers.js';
 
 const plain = paint(false);
 const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -73,15 +73,21 @@ describe('terminal output', () => {
 
 describe('provider settings', () => {
   it('writes only variables every starter reads', async () => {
-    const text = providerEnvironment({ provider: 'anthropic', apiKey: 'sk-test-12345678', model: 'm', inputMicrosPerMillionTokens: 1,
-      outputMicrosPerMillionTokens: 2, maxCallCostMicros: 3, maxRunCostMicros: 4 });
-    const names = text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!);
+    const common = { apiKey: 'sk-test-12345678', model: 'm', inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 2, maxCallCostMicros: 3, maxRunCostMicros: 4 };
+    const text = providerEnvironment({ provider: 'anthropic', ...common }) + providerEnvironment({ provider: 'openai', ...common })
+      + providerEnvironment({ provider: 'compatible', ...common, compatible: { id: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', auth: 'bearer' } });
+    const names = [...new Set(text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!))];
+    expect(names).toEqual(expect.arrayContaining(['MAYURA_MODEL_PROVIDER_ID', 'MAYURA_MODEL_ENDPOINT', 'MAYURA_MODEL_AUTH', 'MAYURA_MODEL_API_KEY']));
     for (const starter of starters()) {
       const config = await readFile(fileURLToPath(new URL(`../starters/${starter.name}/src/config.ts`, import.meta.url)), 'utf8');
       for (const name of names) expect(config, `${starter.name} reads ${name}`).toContain(`'${name}'`);
     }
     expect(dollarsToMicros('3')).toBe(3_000_000); expect(dollarsToMicros('$0.25')).toBe(250_000);
     expect(dollarsToMicros('0')).toBeUndefined(); expect(dollarsToMicros('-1')).toBeUndefined(); expect(dollarsToMicros('1e3')).toBeUndefined();
+    expect(endpointProblem('https://api.groq.com/openai/v1/chat/completions')).toBeUndefined();
+    expect(endpointProblem(azureEndpoint('my-resource', 'gpt-deploy', '2024-10-21'))).toBeUndefined();
+    for (const bad of ['http://api.example.com/v1/chat/completions', 'https://127.0.0.1/v1/chat/completions', 'https://user:pass@api.example.com/v1/chat/completions',
+      'https://api.example.com/v1/completions', 'https://api.example.com/v1/chat/completions?key=1', 'not a url']) expect(endpointProblem(bad), bad).toBeDefined();
   });
 });
 
@@ -133,6 +139,29 @@ describe('interactive init', () => {
     // The starter's .gitignore keeps it out of git.
     expect((await readFile(join(target, '.gitignore'), 'utf8')).split(/\r?\n/u)).toContain('.env');
   });
+
+  it('sets up a preset OpenAI-compatible provider, another endpoint, or Azure OpenAI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const up = '\u001b[A';
+    const answers = (target: string) => [...'test-model', enter, ...'sk-test-compatible-123', enter, '1', enter, '2', enter, enter, enter, ...target, enter, enter];
+    // Groq is the fourth provider.
+    const groq = await drive([enter, down, down, enter, down, down, down, enter, ...answers(join(root, 'groq'))]);
+    expect(groq.result.status).toBe('succeeded');
+    const groqEnv = await readFile(join(root, 'groq', '.env'), 'utf8');
+    for (const line of ['MAYURA_MODEL_PROVIDER=compatible', 'MAYURA_MODEL_PROVIDER_ID=groq', 'MAYURA_MODEL_ENDPOINT=https://api.groq.com/openai/v1/chat/completions',
+      'MAYURA_MODEL_AUTH=bearer', 'MAYURA_MODEL_API_KEY=sk-test-compatible-123']) expect(groqEnv).toContain(line);
+    expect(groq.screen).not.toContain('sk-test-compatible-123'); expect(groq.screen).toContain('Saved your Groq settings');
+    // "Another" is the last option (up wraps from the first); a wrong URL is explained before a right one is accepted.
+    const other = await drive([enter, down, down, enter, up, enter, ...'http://llm.example.com/v1/chat/completions', enter,
+      ...Array(48).fill('\u007f'), ...'https://llm.example.com/v1/chat/completions', enter, enter, ...answers(join(root, 'other'))]);
+    expect(other.result.status).toBe('succeeded'); expect(other.screen).toContain('The endpoint must use https://.');
+    const otherEnv = await readFile(join(root, 'other', '.env'), 'utf8');
+    expect(otherEnv).toContain('MAYURA_MODEL_PROVIDER_ID=llm'); expect(otherEnv).toContain('MAYURA_MODEL_ENDPOINT=https://llm.example.com/v1/chat/completions');
+    // Azure OpenAI is second to last and takes its key as an api-key header.
+    const azure = await drive([enter, down, down, enter, up, up, enter, ...'my-resource', enter, ...'gpt-deploy', enter, ...'2024-10-21', enter, ...answers(join(root, 'azure'))]);
+    expect(azure.result.status).toBe('succeeded');
+    const azureEnv = await readFile(join(root, 'azure', '.env'), 'utf8');
+    expect(azureEnv).toContain(`MAYURA_MODEL_ENDPOINT=${azureEndpoint('my-resource', 'gpt-deploy', '2024-10-21')}`); expect(azureEnv).toContain('MAYURA_MODEL_AUTH=api-key');
+  }, 60_000);
 
   it('keeps an existing .env and chooses no provider for templates', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'kept');

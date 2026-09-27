@@ -5,7 +5,7 @@ checks policy and waits for an **operator to approve the exact payment**, and a 
 restarts, never pay twice, and can be moved to a new workflow version while in flight.
 
 It runs offline out of the box: a rule-based stand-in model, SQLite and simulated payment and messaging adapters. One
-environment switch uses OpenAI or Anthropic, and another uses PostgreSQL.
+environment switch uses OpenAI, Anthropic or an OpenAI-compatible provider, and another uses PostgreSQL.
 
 ```
 support system ──token──▶ server ──▶ intake agent ──▶ refunds.open ──▶ durable run (refunds.approval v2)
@@ -55,7 +55,7 @@ scopes.
 | `src/worker.ts` | Advances runs, with leadership so replicas never double-drive the fleet |
 | `src/auth.ts` | Bearer tokens (digests in config), caller scopes, approval credentials |
 | `src/config.ts` | Every setting, from the environment, validated at startup |
-| `src/model.ts` | Offline, OpenAI or Anthropic, chosen by `MAYURA_MODEL_PROVIDER` |
+| `src/model.ts` | Offline, OpenAI, Anthropic or OpenAI-compatible, chosen by `MAYURA_MODEL_PROVIDER` |
 | `src/app.ts` | The entry point for `mayura serve`, `mayura worker` and `mayura migrate` |
 | `src/dev.ts` | The one-process local run with demo data |
 

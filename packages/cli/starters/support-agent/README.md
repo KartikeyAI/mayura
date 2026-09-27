@@ -7,7 +7,7 @@ out. Opening a return starts a small **durable follow-up workflow** that a **wor
 everything in the **console**.
 
 It runs offline out of the box: a rule-based stand-in model, SQLite, sample orders and a simulated returns desk. One
-environment switch uses OpenAI or Anthropic, and another uses PostgreSQL.
+environment switch uses OpenAI, Anthropic or an OpenAI-compatible provider, and another uses PostgreSQL.
 
 ```
 browser (web/) ──session token──▶ server ──▶ support.assistant ──▶ orders.list / orders.track   (read, own orders only)
@@ -61,7 +61,7 @@ memory across runs and restarts and between customers, PII redaction, caller sco
 | `src/server.ts` | HTTP: the agent, the console at `/inspector` and the operator API |
 | `src/worker.ts` | Advances follow-ups, with leadership so replicas never double-drive the fleet |
 | `src/config.ts` | Every setting, from the environment, validated at startup |
-| `src/model.ts` | Offline, OpenAI or Anthropic, chosen by `MAYURA_MODEL_PROVIDER` |
+| `src/model.ts` | Offline, OpenAI, Anthropic or OpenAI-compatible, chosen by `MAYURA_MODEL_PROVIDER` |
 | `src/app.ts` | The entry point for `mayura serve`, `mayura worker` and `mayura migrate` |
 | `src/dev.ts` | The one-process local run with the chat front server and demo data |
 | `web/` | The chat UI: Vite, React, Tailwind and shadcn-style components, `@mayura/client` and `@mayura/client-react` |

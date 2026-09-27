@@ -23,9 +23,15 @@ const schema = z.object({
   allowedOrigins: z.string().max(4_096).default('').transform(value => value.split(',').map(entry => entry.trim()).filter(Boolean)),
   operatorTokens: digests.default([]),
   sessionSecret: secret.optional(),
-  modelProvider: z.enum(['offline', 'openai', 'anthropic']).default('offline'),
+  modelProvider: z.enum(['offline', 'openai', 'anthropic', 'compatible']).default('offline'),
   openaiApiKey: z.string().min(1).optional(),
   anthropicApiKey: z.string().min(1).optional(),
+  // An OpenAI-compatible provider (Groq, Mistral, Azure OpenAI, Gemini, ...): its HTTPS chat-completions endpoint, a short
+  // id that names its adapter (`openai-compatible.<id>`), how it takes the key, and the key.
+  compatibleEndpoint: z.string().url().max(2_048).optional(),
+  compatibleId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/u, 'Use a short lower-case id such as groq.').optional(),
+  compatibleAuth: z.enum(['bearer', 'api-key']).default('bearer'),
+  compatibleApiKey: z.string().min(1).optional(),
   modelName: z.string().min(1).max(128).optional(),
   inputMicrosPerMillionTokens: micros.optional(),
   outputMicrosPerMillionTokens: micros.optional(),
@@ -37,6 +43,9 @@ const schema = z.object({
 export type ModelSettings =
   | { readonly provider: 'offline' }
   | { readonly provider: 'openai' | 'anthropic'; readonly apiKey: string; readonly name: string; readonly maxCallCostMicros: number;
+    readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number } }
+  | { readonly provider: 'compatible'; readonly apiKey: string; readonly name: string; readonly maxCallCostMicros: number;
+    readonly endpoint: string; readonly providerId: string; readonly auth: 'bearer' | 'api-key';
     readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number } };
 
 export interface Config {
@@ -66,7 +75,8 @@ export async function loadConfig(source: Readonly<Record<string, string | undefi
       environment: 'MAYURA_ENV', projectId: 'MAYURA_PROJECT', databaseUrl: 'DATABASE_URL', sqlitePath: 'MAYURA_SQLITE_PATH',
       port: 'PORT', bind: 'MAYURA_BIND', publicOrigin: 'MAYURA_PUBLIC_ORIGIN', allowedOrigins: 'MAYURA_ALLOWED_ORIGINS',
       operatorTokens: 'MAYURA_OPERATOR_TOKEN_SHA256', sessionSecret: 'MAYURA_SESSION_SECRET',
-      modelProvider: 'MAYURA_MODEL_PROVIDER', openaiApiKey: 'OPENAI_API_KEY', anthropicApiKey: 'ANTHROPIC_API_KEY', modelName: 'MAYURA_MODEL',
+      modelProvider: 'MAYURA_MODEL_PROVIDER', openaiApiKey: 'OPENAI_API_KEY', anthropicApiKey: 'ANTHROPIC_API_KEY',
+      compatibleEndpoint: 'MAYURA_MODEL_ENDPOINT', compatibleId: 'MAYURA_MODEL_PROVIDER_ID', compatibleAuth: 'MAYURA_MODEL_AUTH', compatibleApiKey: 'MAYURA_MODEL_API_KEY', modelName: 'MAYURA_MODEL',
       inputMicrosPerMillionTokens: 'MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS', outputMicrosPerMillionTokens: 'MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS',
       maxCallCostMicros: 'MAYURA_MODEL_MAX_CALL_COST_MICROS', maxRunCostMicros: 'MAYURA_MAX_RUN_COST_MICROS', returnReminderHours: 'RETURN_REMINDER_HOURS',
     },
@@ -94,12 +104,17 @@ export async function loadConfig(source: Readonly<Record<string, string | undefi
 
 function modelSettings(value: z.infer<typeof schema>): ModelSettings {
   if (value.modelProvider === 'offline') return { provider: 'offline' };
-  const apiKey = value.modelProvider === 'openai' ? value.openaiApiKey : value.anthropicApiKey;
-  const keyName = value.modelProvider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
+  const apiKey = value.modelProvider === 'openai' ? value.openaiApiKey : value.modelProvider === 'anthropic' ? value.anthropicApiKey : value.compatibleApiKey;
+  const keyName = value.modelProvider === 'openai' ? 'OPENAI_API_KEY' : value.modelProvider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'MAYURA_MODEL_API_KEY';
+  if (value.modelProvider === 'compatible' && (!value.compatibleEndpoint || !value.compatibleId)) {
+    throw new Error('MAYURA_MODEL_PROVIDER=compatible requires MAYURA_MODEL_ENDPOINT (the https://.../chat/completions URL) and MAYURA_MODEL_PROVIDER_ID (such as groq).');
+  }
   if (!apiKey || !value.modelName || value.inputMicrosPerMillionTokens === undefined || value.outputMicrosPerMillionTokens === undefined || value.maxCallCostMicros === 0) {
     throw new Error(`MAYURA_MODEL_PROVIDER=${value.modelProvider} requires ${keyName}, MAYURA_MODEL, both MAYURA_MODEL_*_MICROS_PER_MILLION_TOKENS prices and MAYURA_MODEL_MAX_CALL_COST_MICROS.`);
   }
   if (value.maxRunCostMicros < value.maxCallCostMicros) throw new Error('MAYURA_MAX_RUN_COST_MICROS must cover at least one model call.');
-  return { provider: value.modelProvider, apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros,
-    pricing: { inputMicrosPerMillionTokens: value.inputMicrosPerMillionTokens, outputMicrosPerMillionTokens: value.outputMicrosPerMillionTokens } };
+  const pricing = { inputMicrosPerMillionTokens: value.inputMicrosPerMillionTokens, outputMicrosPerMillionTokens: value.outputMicrosPerMillionTokens };
+  if (value.modelProvider === 'compatible') return { provider: 'compatible', apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros,
+    endpoint: value.compatibleEndpoint!, providerId: value.compatibleId!, auth: value.compatibleAuth, pricing };
+  return { provider: value.modelProvider, apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros, pricing };
 }

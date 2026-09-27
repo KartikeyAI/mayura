@@ -6,7 +6,7 @@ thing is one **durable workflow** run by a **worker**, under **one shared cost b
 **content-addressed artifact**. Optional **OpenTelemetry** traces carry timing metadata only, never content.
 
 It runs offline out of the box: rule-based stand-in models, SQLite, a bundled six-document library and local artifact
-files. One environment switch uses OpenAI or Anthropic, another uses PostgreSQL, a third turns on tracing.
+files. One environment switch uses OpenAI, Anthropic or an OpenAI-compatible provider, another uses PostgreSQL, a third turns on tracing.
 
 ```
 your app ──desk token──▶ server ──▶ research.desk ──▶ research.start ──▶ durable run (research.run v1)
@@ -69,7 +69,7 @@ metadata-only trace export to a local collector, and configuration checks.
 | `src/worker.ts` | Advances research runs, with leadership so replicas never double-drive the fleet |
 | `src/auth.ts` | Bearer tokens (digests in config) and caller scopes |
 | `src/config.ts` | Every setting, from the environment, validated at startup |
-| `src/model.ts` | Offline, OpenAI or Anthropic, chosen by `MAYURA_MODEL_PROVIDER` |
+| `src/model.ts` | Offline, OpenAI, Anthropic or OpenAI-compatible, chosen by `MAYURA_MODEL_PROVIDER` |
 | `src/app.ts` | The entry point for `mayura serve`, `mayura worker` and `mayura migrate` |
 | `src/dev.ts` | The one-process local run with a demo question |
 

@@ -7,7 +7,7 @@ separate workflow step that **waits for an operator to approve the exact call**.
 start nothing.
 
 It runs offline out of the box: a rule-based stand-in model, SQLite, and a small local tracker that speaks MCP. One
-environment switch uses OpenAI or Anthropic, another uses PostgreSQL, and a URL points it at your real tracker.
+environment switch uses OpenAI, Anthropic or an OpenAI-compatible provider, another uses PostgreSQL, and a URL points it at your real tracker.
 
 ```
 tracker ──signed POST──▶ webhook ingress ──▶ verify HMAC, replay window, schema; record the delivery once
@@ -68,7 +68,7 @@ caller scopes and configuration.
 | `src/server.ts` | The API, console and operator API, plus the ingress, as one handle |
 | `src/worker.ts` | Advances runs, with leadership so replicas never double-drive the fleet |
 | `src/tracker/` | The local stand-in tracker: `TicketTracker`, an in-memory store and a minimal MCP server (`npm run tracker`) |
-| `src/auth.ts`, `src/config.ts`, `src/model.ts` | Operator tokens and approvals; settings; offline, OpenAI or Anthropic |
+| `src/auth.ts`, `src/config.ts`, `src/model.ts` | Operator tokens and approvals; settings; offline, OpenAI, Anthropic or OpenAI-compatible |
 | `src/app.ts`, `src/dev.ts`, `src/send-sample.ts` | `mayura serve`/`worker`/`migrate`; the one-process local run; the sample sender |
 
 ## How the pieces keep each other honest

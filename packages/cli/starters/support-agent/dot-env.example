@@ -23,10 +23,15 @@ MAYURA_OPERATOR_TOKEN_SHA256=
 # application backend, which signs sessions with mintSessionToken (src/session.ts). Never ship it to a browser.
 MAYURA_SESSION_SECRET=
 
-# Model: offline (default, rule-based, no network), openai or anthropic.
+# Model: offline (default, rule-based, no network), openai, anthropic, or compatible (any OpenAI-compatible endpoint).
 MAYURA_MODEL_PROVIDER=offline
 # OPENAI_API_KEY=
 # ANTHROPIC_API_KEY=
+# For compatible: the chat-completions URL, a short id for the provider, and its key (Azure OpenAI uses MAYURA_MODEL_AUTH=api-key).
+# MAYURA_MODEL_ENDPOINT=https://api.groq.com/openai/v1/chat/completions
+# MAYURA_MODEL_PROVIDER_ID=groq
+# MAYURA_MODEL_AUTH=bearer
+# MAYURA_MODEL_API_KEY=
 # MAYURA_MODEL=
 # Prices in micro-dollars per million tokens, and the most one call and one run may cost.
 # MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=

@@ -15,7 +15,11 @@ The wizard shows the plan (and lists any file it would replace, defaulting to no
 you confirm, and prints the next steps. It needs a terminal on both input and output; scripts use the flags.
 
 For a starter, the wizard also asks which model provider to use: Offline (no key; rule-based stand-in models),
-OpenAI or Anthropic. For a real provider it asks for the model, the API key (typed masked), your prices per million
+OpenAI, Anthropic, an OpenAI-compatible provider with a known endpoint (Groq, Google Gemini, Mistral, DeepSeek, xAI,
+OpenRouter, Together, Fireworks), Azure OpenAI (it asks for the resource, deployment and API version) or any other
+HTTPS chat-completions endpoint. The compatible endpoints follow [Model providers](model-providers.md); Mayura has not
+qualified them against live accounts, so check yours with `pnpm providers:live-check`. For a real provider it asks for
+the model, the API key (typed masked), your prices per million
 tokens and two spending caps (per model call and per agent run, with defaults), and writes them to the new project's
 `.env`. That file is owner-only and ignored by git; the key is never printed or put in the plan. An existing `.env`
 is left untouched.
