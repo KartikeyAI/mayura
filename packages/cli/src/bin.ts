@@ -184,11 +184,12 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
         ? ['--url', '--id', '--revision', '--command-id'] : command === 'workflow-approve'
         ? ['--url', '--id', '--revision', '--command-id', '--node', '--digest', '--child-id']
         : ['--url', '--id', '--revision', '--command-id', '--signal-id', '--signal-name', '--value-file'];
-    assertArguments(arguments_, valued, ['--token-stdin']); const baseUrl = option(arguments_, '--url'); const id = option(arguments_, '--id');
+    assertArguments(arguments_, valued, command === 'workflow-list' ? ['--token-stdin', '--settled'] : ['--token-stdin']); const baseUrl = option(arguments_, '--url'); const id = option(arguments_, '--id');
     if (!baseUrl || !arguments_.includes('--token-stdin') || (command !== 'workflow-list' && !id)) throw new Error(`${command} requires --url${command === 'workflow-list' ? '' : ', --id'} and --token-stdin.`);
     const credential = await stdinToken(); const settings = { baseUrl, token: () => credential };
     if (command === 'workflow-list') { const after = option(arguments_, '--after'); const limit = option(arguments_, '--limit');
-      return { status: 'succeeded', page: await inspectWorkflows(settings, { ...(after === undefined ? {} : { after }), ...(limit === undefined ? {} : { limit: Number(limit) }) }) }; }
+      return { status: 'succeeded', page: await inspectWorkflows(settings, { ...(after === undefined ? {} : { after }), ...(limit === undefined ? {} : { limit: Number(limit) }),
+        ...(arguments_.includes('--settled') ? { settled: true } : {}) }) }; }
     if (command === 'workflow-get') return { status: 'succeeded', workflow: await inspectWorkflow(settings, id!) };
     const revision = option(arguments_, '--revision'); const commandId = option(arguments_, '--command-id');
     if (!revision || !commandId) throw new Error(`${command} requires --revision and --command-id.`);

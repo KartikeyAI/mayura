@@ -217,6 +217,18 @@ describe('@mayura/cli authenticated operations', () => {
     expect(calls).toBe(1); expect(error).toMatchObject({ code: 'TOOL_FAILED' }); expect(String(error)).not.toContain('PRIVATE');
   });
 
+  it('lists settled workflow runs and refuses active records in that view', async () => {
+    const runId = 'c'.repeat(64); const queries: string[] = [];
+    const reply = (item: Record<string, unknown>) => async (input: string | URL | Request) => { queries.push(new URL(String(input)).search);
+      return new Response(JSON.stringify({ items: [item], next: null }), { headers: { 'content-type': 'application/json' } }); };
+    const settled = { format: 5, definitionId: 'deploy', definitionVersion: '1', runId, revision: 3, status: 'outcome_unknown', settledAtMs: 42 };
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE' };
+    expect((await inspectWorkflows({ ...settings, fetch: reply(settled) }, { settled: true })).items).toEqual([settled]);
+    expect(new URLSearchParams(queries[0]).get('view')).toBe('settled');
+    await expect(inspectWorkflows({ ...settings, fetch: reply({ ...settled, status: 'running' }) }, { settled: true })).rejects.toBeDefined();
+    await expect(inspectWorkflows({ ...settings, fetch: reply(settled) })).rejects.toBeDefined();
+  });
+
   it('inspects, cancels, approves and signals durable workflows without retry', async () => {
     const workflowId = 'a'.repeat(64); const childId = 'b'.repeat(64); const digest = 'd'.repeat(64); const calls: Array<{ path: string; body?: unknown }> = [];
     const workflow = (revision: number, status = 'waiting') => ({ format: 4, definitionId: 'deploy', definitionVersion: '1', runId: workflowId, revision, status,

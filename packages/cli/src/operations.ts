@@ -49,6 +49,8 @@ export interface OperationalWorkflow {
 export interface OperationalWorkflowIndexEntry {
   readonly format: OperationalWorkflowFormat; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: OperationalWorkflowStatus;
+  /** Only when listing settled runs: when the run reached its final status. */
+  readonly settledAtMs?: number;
 }
 export interface OperationalWorkflowIndexPage { readonly items: readonly OperationalWorkflowIndexEntry[]; readonly next: string | null }
 
@@ -216,14 +218,16 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
     status: item['status'] as OperationalWorkflowStatus, nodes: Object.freeze([...nodes.values()]), steps: Object.freeze([...steps.values()]) });
 }
 
-function workflowIndexEntry(value: unknown): OperationalWorkflowIndexEntry {
-  const item = record(value); exact(item, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status']);
+function workflowIndexEntry(value: unknown, settled = false): OperationalWorkflowIndexEntry {
+  const item = record(value); exact(item, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', ...(settled ? ['settledAtMs'] : [])]);
+  if (settled && (!Number.isSafeInteger(item['settledAtMs']) || (item['settledAtMs'] as number) < 0 || ['running', 'waiting', 'paused'].includes(String(item['status'])))) return fail();
   if (![2, 3, 4, 5].includes(item['format'] as number) || typeof item['definitionId'] !== 'string' || !workflowNodeIdentifier.test(item['definitionId'])
     || typeof item['definitionVersion'] !== 'string' || !workflowVersion.test(item['definitionVersion']) || typeof item['runId'] !== 'string'
     || !workflowRunIdentifier.test(item['runId']) || !Number.isSafeInteger(item['revision']) || (item['revision'] as number) < 1
     || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))) return fail();
   return Object.freeze({ format: item['format'] as OperationalWorkflowFormat, definitionId: item['definitionId'], definitionVersion: item['definitionVersion'],
-    runId: item['runId'], revision: item['revision'] as number, status: item['status'] as OperationalWorkflowStatus });
+    runId: item['runId'], revision: item['revision'] as number, status: item['status'] as OperationalWorkflowStatus,
+    ...(settled ? { settledAtMs: item['settledAtMs'] as number } : {}) });
 }
 
 /** Read sanitized readiness metadata. HTTP 503 is a valid degraded report, not a transport failure. */
@@ -306,17 +310,20 @@ export async function inspectWorkflow(options: OperationalClientOptions, id: str
   const raw = await transport(options, `/v1/workflow-runs/${id}`, [200]); exact(raw, ['workflow']); return workflow(raw['workflow'], id);
 }
 
-/** Read one explicit page of authorized content-free durable workflow summaries. */
+/**
+ * Read one explicit page of authorized content-free durable workflow summaries: active runs, or with `settled` recently
+ * finished runs and runs whose outcome is unknown.
+ */
 export async function inspectWorkflows(options: OperationalClientOptions,
-  page: { readonly after?: string; readonly limit?: number } = {}): Promise<OperationalWorkflowIndexPage> {
-  const limit = page.limit ?? 20;
+  page: { readonly after?: string; readonly limit?: number; readonly settled?: boolean } = {}): Promise<OperationalWorkflowIndexPage> {
+  const limit = page.limit ?? 20; const settled = page.settled === true;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (page.after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/u.test(page.after)))
     throw new MayuraError('INVALID_CONFIG', 'Workflow pagination is invalid.');
-  const query = new URLSearchParams({ limit: String(limit), ...(page.after === undefined ? {} : { after: page.after }) });
+  const query = new URLSearchParams({ limit: String(limit), ...(page.after === undefined ? {} : { after: page.after }), ...(settled ? { view: 'settled' } : {}) });
   const raw = await transport(options, `/v1/workflow-runs?${query}`, [200]); exact(raw, ['items', 'next']);
   if (!Array.isArray(raw['items']) || raw['items'].length > limit || (raw['next'] !== null
     && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(raw['next']) || raw['next'] === page.after))) return fail();
-  const items = raw['items'].map(workflowIndexEntry); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
+  const items = raw['items'].map(item => workflowIndexEntry(item, settled)); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
   return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
 }
 

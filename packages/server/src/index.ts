@@ -45,10 +45,16 @@ export interface WorkflowViewTransport {
 export interface WorkflowIndexRecord {
   readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: WorkflowViewRecord['status'];
+  /** Only in the settled view: when the run reached its final status. */
+  readonly settledAtMs?: number;
 }
 export interface WorkflowIndexTransport {
+  /**
+   * Active runs, or with `view: 'settled'` recently finished runs and runs whose outcome is unknown. The field is
+   * present only for the settled view; a transport that ignores it fails the settled request closed.
+   */
   readonly list: (input: { readonly scope: Scope; readonly agentIds: readonly string[]; readonly after: string | null;
-    readonly limit: number; readonly signal: AbortSignal }) => Promise<{ readonly items: readonly WorkflowIndexRecord[]; readonly next: string | null }>;
+    readonly limit: number; readonly signal: AbortSignal; readonly view?: 'settled' }) => Promise<{ readonly items: readonly WorkflowIndexRecord[]; readonly next: string | null }>;
 }
 export type WorkflowControlResult = { readonly status: 'applied'; readonly workflow: WorkflowViewRecord }
   | { readonly status: 'conflict' } | { readonly status: 'not_found' };
@@ -332,9 +338,12 @@ function migrationPlan(value: unknown, runId: string, migrationId: string): Work
   }
   return freezeJson(raw) as unknown as WorkflowMigrationPlanRecord;
 }
-function workflowIndexRecord(value: unknown): WorkflowIndexRecord {
+const settledStatuses = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+function workflowIndexRecord(value: unknown, settled = false): WorkflowIndexRecord {
   let raw: JsonObject; try { raw = object(value, 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
-  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status']);
+  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', ...(settled ? ['settledAtMs'] : [])]);
+  if (settled && (!settledStatuses.has(raw['status'] as string) || typeof raw['settledAtMs'] !== 'number' || !Number.isSafeInteger(raw['settledAtMs']) || raw['settledAtMs'] < 0))
+    throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
   if (![2, 3, 4, 5].includes(raw['format'] as number) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
     || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion'])
     || typeof raw['runId'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['runId']) || typeof raw['revision'] !== 'number'
@@ -643,8 +652,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const catalogQuery = effectiveMethod === 'GET' && url.pathname === '/v1/tools';
     const humanListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/human-requests';
     const workflowListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/workflow-runs';
-    if ([...url.searchParams.keys()].some(key => effectiveMethod !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery || workflowListQuery ? !['after', 'limit'].includes(key) : true))
-      || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
+    if ([...url.searchParams.keys()].some(key => effectiveMethod !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery ? !['after', 'limit'].includes(key) : workflowListQuery ? !['after', 'limit', 'view'].includes(key) : true))
+      || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1 || url.searchParams.getAll('view').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
       if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, 'ORIGIN_DENIED');
       const headers = (request.headers.get('access-control-request-headers') ?? '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
@@ -660,9 +669,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const after = url.searchParams.get('after'); const limitText = url.searchParams.get('limit') ?? '20';
       if ((after !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !/^\d+$/.test(limitText)) throw new HttpFailure(400, 'INVALID_CURSOR');
       const limit = Number(limitText); if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
+      const view = url.searchParams.get('view') ?? 'active'; if (view !== 'active' && view !== 'settled') throw new HttpFailure(400, 'INVALID_QUERY');
+      const settled = view === 'settled';
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const operation = Promise.resolve().then(() => workflowIndex.list(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
-        after, limit, signal }))).finally(() => { workflowOperations--; });
+        after, limit, signal, ...(settled ? { view: 'settled' as const } : {}) }))).finally(() => { workflowOperations--; });
       let supplied: unknown; try { supplied = await bounded(operation, signal); }
       catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
       let page: JsonObject; try { page = object(supplied, 524_288); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
@@ -670,7 +681,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (!Array.isArray(page['items']) || page['items'].length > limit || (page['next'] !== null
         && (typeof page['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(page['next']) || page['next'] === after)))
         throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      const items = page['items'].map(workflowIndexRecord); if (new Set(items.map(item => item.runId)).size !== items.length)
+      const items = page['items'].map(item => workflowIndexRecord(item, settled)); if (new Set(items.map(item => item.runId)).size !== items.length)
         throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ items, next: page['next'] });
     }

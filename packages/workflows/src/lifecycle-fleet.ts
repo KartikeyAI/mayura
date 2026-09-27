@@ -33,7 +33,26 @@ export interface WorkflowLifecycleFleetReport {
   readonly page: WorkflowLifecycleFleetPage;
   readonly outcomes: readonly WorkflowLifecycleFleetOutcome[];
 }
+/** A run that reached a final status, kept in a bounded per-scope list for operators. */
+export interface WorkflowLifecycleSettledEntry {
+  readonly runId: string;
+  readonly definitionHash: string;
+  readonly version: number;
+  readonly status: 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+  readonly settledAtMs: number;
+}
+export interface WorkflowLifecycleSettledPage {
+  readonly entries: readonly WorkflowLifecycleSettledEntry[];
+  readonly shardReads: number;
+  readonly nextCursor: WorkflowLifecycleFleetCursor | null;
+}
 export interface WorkflowLifecycleFleetRuntime extends WorkflowLifecycleRuntime {
+  /**
+   * Recently settled runs, for operators: at most 64 per shard (16,384 per scope), oldest dropped first, and a run
+   * whose outcome is unknown (it needs reconciliation) is kept in preference to finished ones.
+   */
+  settled(command?: { readonly cursor?: WorkflowLifecycleFleetCursor | null; readonly limit?: number;
+    readonly maxShardReads?: number }): Promise<WorkflowLifecycleSettledPage>;
   scan(command?: { readonly cursor?: WorkflowLifecycleFleetCursor | null; readonly limit?: number;
     readonly maxShardReads?: number }): Promise<WorkflowLifecycleFleetPage>;
   runPage(definitions: readonly AnyWorkflowLifecycle[], command?: { readonly cursor?: WorkflowLifecycleFleetCursor | null;
@@ -57,6 +76,40 @@ function object(value: JsonValue | undefined): JsonObject {
   return value;
 }
 function indexId(shard: string): string { return `lifecycle-index.${shard}`; }
+function settledId(shard: string): string { return `lifecycle-settled.${shard}`; }
+const settledPerShard = 64;
+/**
+ * Keep at most `maximum` entries: drop the oldest finished run first, and a run whose outcome is unknown only when
+ * nothing else is left, because those are the runs an operator must still reconcile. Sorted by run id for paging.
+ * @internal
+ */
+export function retainSettled(entries: readonly WorkflowLifecycleSettledEntry[], maximum: number): WorkflowLifecycleSettledEntry[] {
+  const kept = [...entries];
+  while (kept.length > maximum) {
+    const oldest = (unknown: boolean) => kept.reduce<number>((found, entry, position) => (entry.status === 'outcome_unknown') === unknown
+      && (found < 0 || entry.settledAtMs < kept[found]!.settledAtMs) ? position : found, -1);
+    const finished = oldest(false);
+    kept.splice(finished >= 0 ? finished : oldest(true), 1);
+  }
+  return kept.sort((left, right) => left.runId.localeCompare(right.runId));
+}
+interface SettledState { format: 1; shard: string; entries: WorkflowLifecycleSettledEntry[] }
+function settledFrom(record: StoredRecord, scope: string, shard: string): SettledState {
+  try {
+    if (record.scope !== scope || record.id !== settledId(shard)
+      || record.definitionHash !== digest('mayura:workflow-lifecycle-settled-format:v1', { shard })) throw new Error();
+    const raw = object(record.state);
+    if (Object.keys(raw).length !== 3 || raw['format'] !== 1 || raw['shard'] !== shard || !Array.isArray(raw['entries']) || raw['entries'].length > settledPerShard) throw new Error();
+    const entries = raw['entries'].map(value => {
+      const entry = object(value);
+      if (Object.keys(entry).length !== 5 || typeof entry['runId'] !== 'string' || !hashPattern.test(entry['runId']) || !entry['runId'].startsWith(shard)
+        || typeof entry['definitionHash'] !== 'string' || !hashPattern.test(entry['definitionHash']) || !Number.isSafeInteger(entry['version'])
+        || !terminal.has(entry['status'] as WorkflowLifecycleSnapshot['status']) || !Number.isSafeInteger(entry['settledAtMs'])) throw new Error();
+      return entry as unknown as WorkflowLifecycleSettledEntry;
+    });
+    return { format: 1, shard, entries };
+  } catch { throw new MayuraError('CONFLICT', 'Lifecycle settled index failed integrity validation.'); }
+}
 function stateFrom(record: StoredRecord, scope: string, shard: string, maximum: number): IndexState {
   try {
     if (record.scope !== scope || record.id !== indexId(shard)
@@ -127,7 +180,10 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
       if (terminal.has(snapshot.status) && !found) return;
       const current = found ?? await ensure(shard); const index = current.state.entries.findIndex(entry => entry.runId === snapshot.id);
       if (terminal.has(snapshot.status)) {
-        if (index < 0) return; current.state.entries.splice(index, 1);
+        if (index < 0) return;
+        // Record the outcome before the run leaves the active index, so a crash between the two leaves it in both.
+        await settle(snapshot, current.state.entries[index]!.definitionHash);
+        current.state.entries.splice(index, 1);
       } else {
         if (snapshot.status !== 'running' && snapshot.status !== 'waiting' && snapshot.status !== 'paused') {
           throw new MayuraError('CONFLICT', 'Lifecycle fleet received an invalid nonterminal state.');
@@ -157,6 +213,39 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     }
     throw new MayuraError('CONFLICT', 'Lifecycle fleet index remained busy after bounded retries.');
   };
+  const readSettled = async (shard: string): Promise<{ record: StoredRecord; state: SettledState } | undefined> => {
+    open();
+    try { const record = await store.read(scope, settledId(shard)); return record ? { record, state: settledFrom(record, scope, shard) } : undefined; }
+    catch (error) { if (error instanceof MayuraError) throw error; throw new MayuraError('STORAGE_UNAVAILABLE', 'Lifecycle settled index could not be read.'); }
+  };
+  /** Add or refresh one settled entry, keeping the shard bounded and runs needing reconciliation over finished ones. */
+  async function settle(snapshot: WorkflowLifecycleSnapshot, definitionHash: string): Promise<void> {
+    const shard = snapshot.id.slice(0, 2);
+    for (let attempt = 0; attempt < retries; attempt++) {
+      let current = await readSettled(shard);
+      if (!current) {
+        try {
+          const created = await store.create({ scope, id: settledId(shard), idempotencyKey: settledId(shard),
+            definitionHash: digest('mayura:workflow-lifecycle-settled-format:v1', { shard }), state: { format: 1, shard, entries: [] },
+            events: [{ type: 'lifecycle-settled.created', data: { shard } }] });
+          current = { record: created.record, state: settledFrom(created.record, scope, shard) };
+        } catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'Lifecycle settled index could not be initialized.'); }
+      }
+      const entries = current.state.entries.filter(entry => entry.runId !== snapshot.id);
+      const previous = current.state.entries.find(entry => entry.runId === snapshot.id);
+      if (previous && previous.version >= snapshot.version) return;
+      entries.push({ runId: snapshot.id, definitionHash, version: snapshot.version, status: snapshot.status as WorkflowLifecycleSettledEntry['status'], settledAtMs: now() });
+      const retained = retainSettled(entries, settledPerShard);
+      try {
+        await store.update({ scope, id: current.record.id, expectedVersion: current.record.version, state: jsonValue({ format: 1, shard, entries: retained }) as JsonObject,
+          events: [{ type: 'lifecycle-settled.recorded', data: { runId: snapshot.id, status: snapshot.status } }] }); return;
+      } catch (error) {
+        if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+        throw new MayuraError('STORAGE_UNAVAILABLE', 'Lifecycle settled index update could not be confirmed.');
+      }
+    }
+    throw new MayuraError('CONFLICT', 'Lifecycle settled index remained busy after bounded retries.');
+  }
   const admittedCursor = (cursor: WorkflowLifecycleFleetCursor | null | undefined): WorkflowLifecycleFleetCursor => {
     if (cursor === undefined || cursor === null) return { format: 1, scope, shard: 0, afterId: '' };
     const value = object(jsonValue(cursor, { maxBytes: 1_024 }));
@@ -187,6 +276,24 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     const nextCursor = shard >= 256 ? null : freezeJson(jsonValue({ format: 1, scope, shard, afterId })) as unknown as WorkflowLifecycleFleetCursor;
     return freezeJson(jsonValue({ candidates, examined, shardReads, nextCursor })) as unknown as WorkflowLifecycleFleetPage;
   };
+  const settled = async (command: { readonly cursor?: WorkflowLifecycleFleetCursor | null; readonly limit?: number; readonly maxShardReads?: number } = {}): Promise<WorkflowLifecycleSettledPage> => {
+    open(); const cursor = admittedCursor(command.cursor); const limit = command.limit ?? 32; const maxShardReads = command.maxShardReads ?? 32;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 || !Number.isSafeInteger(maxShardReads) || maxShardReads < 1 || maxShardReads > 256) {
+      throw new MayuraError('INVALID_INPUT', 'Lifecycle settled scan bounds are invalid.');
+    }
+    let shard = cursor.shard; let afterId = cursor.afterId; let shardReads = 0; const entries: WorkflowLifecycleSettledEntry[] = [];
+    while (shard < 256 && entries.length < limit && shardReads < maxShardReads) {
+      const current = await readSettled(hex[shard]!); shardReads += 1;
+      const remaining = current?.state.entries.filter(entry => entry.runId > afterId) ?? []; let exhausted = true;
+      for (const entry of remaining) {
+        if (entries.length >= limit) { exhausted = false; break; }
+        afterId = entry.runId; entries.push(entry);
+      }
+      if (exhausted) { shard += 1; afterId = ''; }
+    }
+    const nextCursor = shard >= 256 ? null : freezeJson(jsonValue({ format: 1, scope, shard, afterId })) as unknown as WorkflowLifecycleFleetCursor;
+    return freezeJson(jsonValue({ entries, shardReads, nextCursor })) as unknown as WorkflowLifecycleSettledPage;
+  };
   const wrapped = {
     ...runtime,
     submit: async (definition: AnyWorkflowLifecycle, command: { readonly input: unknown; readonly idempotencyKey: string }) => {
@@ -215,6 +322,7 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     cancel: async (id: string) => { const snapshot = await runtime.cancel(id); await write(snapshot); return snapshot; },
     recoverAbandoned: async (id: string) => { const snapshot = await runtime.recoverAbandoned(id); await write(snapshot); return snapshot; },
     scan,
+    settled,
     runPage: async (definitions: readonly AnyWorkflowLifecycle[], command = {}): Promise<WorkflowLifecycleFleetReport> => {
       if (!Array.isArray(definitions) || definitions.length > 128) throw new MayuraError('INVALID_INPUT', 'Lifecycle fleet definition catalog is invalid.');
       const catalog = new Map<string, AnyWorkflowLifecycle>();

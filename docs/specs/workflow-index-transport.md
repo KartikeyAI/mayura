@@ -8,4 +8,6 @@ Each exact summary contains only workflow format, definition identity/version, 6
 
 Listing shares the workflow operation pool with inspection and mutation. A non-cooperative callback retains its slot until settlement; cancellation, callback exceptions and capability changes fail closed with sanitized errors. The browser and CLI read exactly one page and never follow a cursor automatically.
 
+`view=settled` (one value; `active` is the default) asks for runs that reached a final status. The callback then receives `view: 'settled'`, and each summary must also carry a non-negative integer `settledAtMs` and a status of `succeeded`, `failed`, `blocked`, `cancelled` or `outcome_unknown`; a callback that ignores the view and returns active summaries fails the request closed with `WORKFLOW_TRANSPORT_INVALID`. The active view is unchanged and rejects the extra field. The reference lifecycle adapter retains a bounded settled set per scope (64 per shard) and prefers keeping `outcome_unknown` runs; it is a recent-history view, not an archive.
+
 The cursor is adapter-owned and opaque. This contract does not claim a stable snapshot, total count, cross-page deduplication, global ordering, change stream, retention service, fleet health or that an absent/omitted run does not exist. Applications must filter every page by current scope and agent authority.

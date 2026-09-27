@@ -20,7 +20,7 @@ Everything goes through the ordinary authenticated API, so the console can see a
 | View | Reads | Actions | Capabilities |
 |---|---|---|---|
 | Overview | Health, agents, tools | — | `operations:read`, `runs:read` |
-| Workflows | Run index, step graph and pending approvals with the exact tool call | Pause, resume, cancel, approve | `workflows:read`, `workflows:control` |
+| Workflows | Run index (active, or finished and unresolved runs), step graph and pending approvals with the exact tool call | Pause, resume, cancel, approve | `workflows:read`, `workflows:control` |
 | Human requests | Waiting requests | Respond with JSON | `humans:read`, `humans:respond` |
 | Fleet control | Hold state | Hold, release, pause and resume sweeps | `workflows:read`, `workflows:fleet` |
 | Migrations | Migrations offered per run, dry-run plans | Apply a reviewed migration to a paused run | `workflows:read`, `workflows:migrate` |

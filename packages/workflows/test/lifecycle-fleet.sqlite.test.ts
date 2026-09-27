@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JsonValue, Schema } from '@mayura/core';
 import { createWorkflowLifecycleFleetRuntime, defineWorkflowLifecycle,
-  type WorkflowLifecycleFleetCursor, type WorkflowLifecycleFleetReport } from '../src/lifecycle.js';
+  type WorkflowLifecycleFleetCursor, type WorkflowLifecycleFleetReport, type WorkflowLifecycleSettledEntry } from '../src/lifecycle.js';
+import { retainSettled } from '../src/lifecycle-fleet.js';
 import { sqliteFixture, type WorkflowFixture } from './fixtures.js';
 
 const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'lifecycle-fleet-test',
@@ -62,6 +63,41 @@ describe('durable lifecycle fleet index on SQLite', () => {
     expect((await runtime.resume(submitted.id)).status).toBe('running');
     expect((await find(runtime)).outcomes).toEqual([{ kind: 'advanced', runId: submitted.id, status: 'succeeded' }]);
     runtime.close();
+  });
+
+  it('lists settled runs, including cancelled ones, and keeps them after reopening storage', async () => {
+    const clock = { value: 500 }; let runtime = await open(clock);
+    const done = await runtime.submit(definition, { input: { fireAtMs: 500 }, idempotencyKey: 'done' });
+    const stopped = await runtime.submit(definition, { input: { fireAtMs: 9_000 }, idempotencyKey: 'stopped' });
+    const settledAll = async () => {
+      const entries: WorkflowLifecycleSettledEntry[] = []; let cursor: WorkflowLifecycleFleetCursor | null = null; let pages = 0;
+      do { const page = await runtime.settled({ cursor, maxShardReads: 64, limit: 1 }); entries.push(...page.entries); cursor = page.nextCursor; pages++; } while (cursor && pages < 300);
+      return entries;
+    };
+    expect(await settledAll()).toEqual([]);
+    const sweep = async () => { let cursor: WorkflowLifecycleFleetCursor | null = null;
+      do { cursor = (await runtime.runPage([definition], { cursor, maxShardReads: 64, limit: 32 })).page.nextCursor; } while (cursor); };
+    for (let round = 0; round < 4 && (await runtime.inspect(done.id)).status !== 'succeeded'; round++) await sweep();
+    expect((await runtime.inspect(done.id)).status).toBe('succeeded');
+    expect((await settledAll()).map(entry => entry.runId)).toEqual([done.id]);
+    await runtime.cancel(stopped.id);
+    const settled = await settledAll();
+    expect(settled.map(entry => [entry.runId, entry.status]).sort()).toEqual([[done.id, 'succeeded'], [stopped.id, 'cancelled']].sort());
+    expect(settled.every(entry => entry.settledAtMs === 500 && entry.definitionHash === definition.digest)).toBe(true);
+    runtime.close(); await store!.close(); store = undefined;
+    runtime = await open(clock, true);
+    expect((await settledAll()).map(entry => entry.runId).sort()).toEqual([done.id, stopped.id].sort());
+    await expect(runtime.settled({ limit: 0 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    runtime.close();
+  });
+
+  it('drops the oldest finished run first and keeps runs whose outcome is unknown', () => {
+    const entry = (runId: string, status: WorkflowLifecycleSettledEntry['status'], settledAtMs: number): WorkflowLifecycleSettledEntry =>
+      ({ runId: runId.repeat(64), definitionHash: 'f'.repeat(64), version: 3, status, settledAtMs });
+    const kept = retainSettled([entry('a', 'outcome_unknown', 1), entry('b', 'succeeded', 5), entry('c', 'failed', 2), entry('d', 'cancelled', 9)], 2);
+    expect(kept.map(item => item.runId[0])).toEqual(['a', 'd']);
+    const unknown = retainSettled([entry('a', 'outcome_unknown', 4), entry('b', 'outcome_unknown', 1), entry('c', 'outcome_unknown', 7)], 2);
+    expect(unknown.map(item => item.runId[0])).toEqual(['a', 'c']);
   });
 
   it('rejects cross-scope cursors and keeps caller-owned storage open', async () => {

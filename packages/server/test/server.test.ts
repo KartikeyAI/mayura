@@ -565,6 +565,20 @@ describe('authenticated durable workflow index transport', () => {
     await error(await value.fetch(request('/v1/workflow-runs?after=../private&limit=101')), 400, 'INVALID_CURSOR'); expect(list).not.toHaveBeenCalled();
   });
 
+  it('passes the settled view and fails closed when a transport answers it with active runs', async () => {
+    const settled = summary({ format: 5, status: 'outcome_unknown', settledAtMs: 1_000 });
+    const list = vi.fn(async (input: { view?: string }) => ({ items: input.view === 'settled' ? [settled] : [summary()], next: null }));
+    const value = server({ workflowIndex: { list } });
+    expect(await json(await value.fetch(request('/v1/workflow-runs?view=settled&limit=5')))).toEqual({ items: [settled], next: null });
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'settled' }));
+    expect(await json(await value.fetch(request('/v1/workflow-runs?view=active')))).toEqual({ items: [summary()], next: null });
+    expect(list.mock.calls.at(-1)![0]).not.toHaveProperty('view');
+    const ignoring = server({ workflowIndex: { list: async () => ({ items: [summary()], next: null }) } });
+    await error(await ignoring.fetch(request('/v1/workflow-runs?view=settled')), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    await error(await value.fetch(request('/v1/workflow-runs?view=archived')), 400, 'INVALID_QUERY');
+    await error(await value.fetch(request('/v1/workflow-runs?view=settled&view=active')), 400, 'INVALID_QUERY');
+  });
+
   it('fails closed on duplicate, private or cursor-loop adapter pages', async () => {
     for (const page of [
       { items: [summary(), summary()], next: null },

@@ -36,6 +36,8 @@ export {
   type WorkflowLifecycleFleetReport,
   type WorkflowLifecycleFleetRuntime,
   type WorkflowLifecycleFleetRuntimeOptions,
+  type WorkflowLifecycleSettledEntry,
+  type WorkflowLifecycleSettledPage,
 } from './lifecycle-fleet.js';
 export {
   createWorkflowLifecycleHost,

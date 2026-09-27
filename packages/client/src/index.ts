@@ -49,6 +49,8 @@ export interface WorkflowSignalCommand {
 export interface WorkflowIndexEntry {
   readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: WorkflowViewRunStatus;
+  /** Only in the settled view: when the run reached its final status. */
+  readonly settledAtMs?: number;
 }
 export interface WorkflowIndexPage { readonly items: readonly WorkflowIndexEntry[]; readonly next: string | null }
 export interface WorkflowFleetHold { readonly held: boolean; readonly generation: number; readonly changedAtMs: number | null }
@@ -86,7 +88,8 @@ export interface MayuraClient {
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
   workflow(id: string, options?: { readonly signal?: AbortSignal }): Promise<WorkflowViewInput>;
-  workflows(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<WorkflowIndexPage>;
+  /** Active runs, or with `view: 'settled'` recently finished runs and runs whose outcome is unknown (needs reconciling). */
+  workflows(options?: { readonly after?: string; readonly limit?: number; readonly view?: 'active' | 'settled'; readonly signal?: AbortSignal }): Promise<WorkflowIndexPage>;
   cancelWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   approveWorkflow(id: string, command: WorkflowApprovalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
   signalWorkflow(id: string, command: WorkflowSignalCommand, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
@@ -310,8 +313,10 @@ function workflowApproval(value: unknown): boolean {
       && Object.hasOwn(subject, 'input') && typeof subject['toolId'] === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(subject['toolId'])
       && typeof subject['toolVersion'] === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(subject['toolVersion'])));
 }
-function workflowIndexEntry(value: unknown): WorkflowIndexEntry {
-  const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status'];
+function workflowIndexEntry(value: unknown, settled = false): WorkflowIndexEntry {
+  const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', ...(settled ? ['settledAtMs'] : [])];
+  if (settled && (typeof raw['settledAtMs'] !== 'number' || !Number.isSafeInteger(raw['settledAtMs']) || raw['settledAtMs'] < 0
+    || ['running', 'waiting', 'paused'].includes(raw['status'] as string))) return fail();
   if (!Object.isFrozen(raw) || Object.keys(raw).length !== expected.length || expected.some(key => !Object.hasOwn(raw, key))
     || typeof raw['format'] !== 'number' || ![2, 3, 4, 5].includes(raw['format']) || typeof raw['definitionId'] !== 'string'
     || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId']) || typeof raw['definitionVersion'] !== 'string'
@@ -528,15 +533,16 @@ export function createClient(options: ClientOptions): MayuraClient {
       const raw = await command(`/v1/workflow-runs/${id}`, 'GET', settings?.signal);
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
     },
-    async workflows(settings?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }) {
-      const limit = settings?.limit ?? 20; const after = settings?.after;
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)))
-        throw new ClientError('INVALID_REQUEST');
-      const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }) });
+    async workflows(settings?: { readonly after?: string; readonly limit?: number; readonly view?: 'active' | 'settled'; readonly signal?: AbortSignal }) {
+      const limit = settings?.limit ?? 20; const after = settings?.after; const view = settings?.view ?? 'active';
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after))
+        || (view !== 'active' && view !== 'settled')) throw new ClientError('INVALID_REQUEST');
+      const settled = view === 'settled';
+      const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }), ...(settled ? { view } : {}) });
       const raw = await command(`/v1/workflow-runs?${query}`, 'GET', settings?.signal); const keys = Object.keys(raw);
       if (keys.length !== 2 || !Object.hasOwn(raw, 'items') || !Object.hasOwn(raw, 'next') || !Array.isArray(raw['items']) || raw['items'].length > limit
         || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next']) || raw['next'] === after))) return fail();
-      const items = raw['items'].map(workflowIndexEntry); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
+      const items = raw['items'].map(item => workflowIndexEntry(item, settled)); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
       return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
     },
     async cancelWorkflow(id: string, revision: number, settings: WorkflowCommandOptions) {

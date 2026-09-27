@@ -3,30 +3,37 @@ import { ArrowLeft, Ban, Check, ChevronRight, Pause, Play, RefreshCw } from 'luc
 import { createWorkflowGraphProjection, type WorkflowViewApproval, type WorkflowViewInput } from '@mayura/client/workflows';
 import { commandId, useLoad, useSession } from '@/lib/session';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/primitives';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsList, TabsTrigger } from '@/components/ui/primitives';
 import { ConfirmAction, Empty, ErrorAlert, Mono, PageHeader, StatusBadge, short } from '@/components/common';
 import { MigrationPanel } from './migrations';
 
 export function Workflows() {
   const { client } = useSession();
   const [cursor, setCursor] = React.useState<string | undefined>(); const [history, setHistory] = React.useState<(string | undefined)[]>([]);
-  const [selected, setSelected] = React.useState<string>();
-  const page = useLoad(signal => client.workflows({ limit: 25, ...(cursor ? { after: cursor } : {}), signal }), [cursor]);
+  const [selected, setSelected] = React.useState<string>(); const [view, setView] = React.useState<'active' | 'settled'>('active');
+  const page = useLoad(signal => client.workflows({ limit: 25, view, ...(cursor ? { after: cursor } : {}), signal }), [cursor, view]);
+  const switchView = (next: string) => { setView(next === 'settled' ? 'settled' : 'active'); setCursor(undefined); setHistory([]); };
   if (selected) return <WorkflowDetail runId={selected} onBack={() => { setSelected(undefined); page.reload(); }} />;
   return (
     <div className="space-y-6">
       <PageHeader title="Workflows" description="Durable runs visible to this token, across all workflow formats."
         actions={<Button variant="outline" size="sm" onClick={page.reload}><RefreshCw />Refresh</Button>} />
       <Card><CardContent>
+        <Tabs value={view} onValueChange={switchView} className="pb-4">
+          <TabsList><TabsTrigger value="active">Active</TabsTrigger><TabsTrigger value="settled">Finished</TabsTrigger></TabsList>
+        </Tabs>
+        {view === 'settled' ? <p className="text-muted-foreground pb-4 text-sm">Recently settled lifecycle runs. Runs with an unknown outcome are kept longest: they still need reconciling.</p> : null}
         <ErrorAlert error={page.error} />
-        {page.data?.items.length === 0 ? <Empty>No workflow runs.</Empty> : null}
+        {page.data?.items.length === 0 ? <Empty>{view === 'settled' ? 'No finished workflow runs.' : 'No workflow runs.'}</Empty> : null}
         {page.data?.items.length ? (
-          <Table><TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Definition</TableHead><TableHead>Format</TableHead><TableHead>Revision</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
+          <Table><TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Definition</TableHead><TableHead>Format</TableHead><TableHead>Revision</TableHead><TableHead>Status</TableHead>
+            {view === 'settled' ? <TableHead>Settled</TableHead> : null}<TableHead /></TableRow></TableHeader>
             <TableBody>{page.data.items.map(item => (
               <TableRow key={item.runId} className="cursor-pointer" onClick={() => setSelected(item.runId)}>
                 <TableCell><Mono title={item.runId}>{short(item.runId)}</Mono></TableCell>
                 <TableCell className="font-medium">{item.definitionId}<span className="text-muted-foreground">@{item.definitionVersion}</span></TableCell>
                 <TableCell>{item.format}</TableCell><TableCell>{item.revision}</TableCell><TableCell><StatusBadge status={item.status} /></TableCell>
+                {view === 'settled' ? <TableCell className="text-muted-foreground">{item.settledAtMs === undefined ? '' : new Date(item.settledAtMs).toLocaleString()}</TableCell> : null}
                 <TableCell className="text-right"><ChevronRight className="text-muted-foreground inline size-4" /></TableCell>
               </TableRow>))}</TableBody></Table>) : null}
         <div className="flex justify-end gap-2 pt-4">

@@ -486,7 +486,7 @@
       },
       "MayuraClient": {
         "kind": "interface",
-        "declaration": "394478f52828fbd9"
+        "declaration": "7f4d326da09d606e"
       },
       "RemoteHumanRequest": {
         "kind": "interface",
@@ -538,7 +538,7 @@
       },
       "WorkflowIndexEntry": {
         "kind": "interface",
-        "declaration": "3d828f406fa8739d"
+        "declaration": "32e213a53ec9aaf2"
       },
       "WorkflowIndexPage": {
         "kind": "interface",
@@ -2748,11 +2748,11 @@
       },
       "WorkflowIndexRecord": {
         "kind": "interface",
-        "declaration": "e348166f55e5612e"
+        "declaration": "b171ece4261fa3f5"
       },
       "WorkflowIndexTransport": {
         "kind": "interface",
-        "declaration": "63f400fced325166"
+        "declaration": "3ed46d7bf60115e7"
       },
       "WorkflowMigrationPlanRecord": {
         "kind": "interface",
@@ -5354,6 +5354,10 @@
         "kind": "type",
         "declaration": "1d63f10790165780"
       },
+      "WorkflowOperatorSettledRecord": {
+        "kind": "type",
+        "declaration": "be990170b9329d8b"
+      },
       "WorkflowOperatorStatus": {
         "kind": "type",
         "declaration": "de547a26ca9de93d"
@@ -5364,7 +5368,7 @@
       },
       "WorkflowOperatorTarget": {
         "kind": "interface",
-        "declaration": "077de520b465f135"
+        "declaration": "6803d8d0b575252b"
       },
       "WorkflowOperatorTransportOptions": {
         "kind": "interface",
@@ -5372,7 +5376,7 @@
       },
       "WorkflowOperatorTransports": {
         "kind": "interface",
-        "declaration": "fe243d4be2d5a524"
+        "declaration": "a8d9dc6af35acf59"
       },
       "WorkflowOperatorView": {
         "kind": "interface",
@@ -5784,7 +5788,7 @@
       },
       "WorkflowLifecycleFleetRuntime": {
         "kind": "interface",
-        "declaration": "3dd3acfb481fdb69"
+        "declaration": "5fd1214c32c89555"
       },
       "WorkflowLifecycleFleetRuntimeOptions": {
         "kind": "interface",
@@ -5869,6 +5873,14 @@
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",
         "declaration": "7579f0d1cc603aa3"
+      },
+      "WorkflowLifecycleSettledEntry": {
+        "kind": "interface",
+        "declaration": "f886efb41a8365bc"
+      },
+      "WorkflowLifecycleSettledPage": {
+        "kind": "interface",
+        "declaration": "df1cba8a99a369a2"
       },
       "WorkflowLifecycleSnapshot": {
         "kind": "interface",

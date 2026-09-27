@@ -132,6 +132,8 @@ export interface WorkflowOperatorApproval {
   readonly subject?: { readonly toolId: string; readonly toolVersion: string; readonly input: JsonValue };
 }
 export type WorkflowOperatorIndexRecord = Pick<WorkflowOperatorView, 'format' | 'definitionId' | 'definitionVersion' | 'runId' | 'revision' | 'status'>;
+/** A run in the settled view: finished, or with an unknown outcome that still needs reconciling. */
+export type WorkflowOperatorSettledRecord = WorkflowOperatorIndexRecord & { readonly settledAtMs: number };
 export type WorkflowOperatorResult = { readonly status: 'applied'; readonly workflow: WorkflowOperatorView } | { readonly status: 'conflict' } | { readonly status: 'not_found' };
 type Result = WorkflowOperatorResult;
 export interface WorkflowOperatorControlInput { readonly scope: Scope; readonly agentIds: readonly string[]; readonly actorId: string; readonly runId: string; readonly revision: number; readonly commandId: string; readonly signal: AbortSignal }
@@ -142,6 +144,8 @@ export interface WorkflowOperatorTarget {
   readonly name: string;
   /** One page of active runs (running, waiting or paused); `after` and `next` are this target's opaque cursor strings. */
   page(after: string | null, limit: number): Promise<{ readonly items: readonly WorkflowOperatorIndexRecord[]; readonly next: string | null }>;
+  /** Recently settled runs, when the target keeps them (lifecycle runs do; graph and tree runs do not yet). */
+  settledPage?(after: string | null, limit: number): Promise<{ readonly items: readonly WorkflowOperatorSettledRecord[]; readonly next: string | null }>;
   /** The run projected on its pinned definition; null when this target does not own the run or its version is not registered. */
   view(runId: string): Promise<WorkflowOperatorView | null>;
   pause(runId: string): Promise<unknown>;
@@ -193,6 +197,15 @@ export function lifecycleOperatorTarget(options: { readonly runtime: WorkflowLif
       const page = await runtime.scan({ cursor: match ? { format: 1, scope: scopeKey, shard: Number(match[1]), afterId: match[2] ?? '' } : null, limit: Math.min(limit, 128), maxShardReads: 256 });
       const items = page.candidates.flatMap(candidate => { const definition = definitions.get(candidate.definitionHash); return definition
         ? [{ format: 5 as const, definitionId: definition.id, definitionVersion: definition.version, runId: candidate.runId, revision: candidate.version, status: candidate.status }] : []; });
+      const next = page.nextCursor ? `${page.nextCursor.shard}${page.nextCursor.afterId ? `.${page.nextCursor.afterId}` : ''}` : null;
+      return { items, next };
+    },
+    async settledPage(after, limit) {
+      const match = after === null ? null : /^(\d{1,3})(?:\.([a-f0-9]{64}))?$/.exec(after);
+      if (after !== null && (!match || Number(match[1]) > 255)) throw new MayuraError('INVALID_INPUT', 'Invalid lifecycle settled cursor.');
+      const page = await runtime.settled({ cursor: match ? { format: 1, scope: scopeKey, shard: Number(match[1]), afterId: match[2] ?? '' } : null, limit: Math.min(limit, 128), maxShardReads: 256 });
+      const items = page.entries.flatMap(entry => { const definition = definitions.get(entry.definitionHash); return definition
+        ? [{ format: 5 as const, definitionId: definition.id, definitionVersion: definition.version, runId: entry.runId, revision: entry.version, status: entry.status, settledAtMs: entry.settledAtMs }] : []; });
       const next = page.nextCursor ? `${page.nextCursor.shard}${page.nextCursor.afterId ? `.${page.nextCursor.afterId}` : ''}` : null;
       return { items, next };
     },
@@ -284,7 +297,7 @@ export type WorkflowOperatorFleetSweepOutcome =
 type FleetSweep = { readonly outcomes: readonly WorkflowOperatorFleetSweepOutcome[]; readonly nextCursor: JsonObject | null };
 /** Structurally the agent server's workflow transport options: spread it into the server options. */
 export interface WorkflowOperatorTransports {
-  readonly workflowIndex: { list(input: ScopedInput & { readonly after: string | null; readonly limit: number }): Promise<{ readonly items: readonly WorkflowOperatorIndexRecord[]; readonly next: string | null }> };
+  readonly workflowIndex: { list(input: ScopedInput & { readonly after: string | null; readonly limit: number; readonly view?: 'settled' }): Promise<{ readonly items: readonly WorkflowOperatorIndexRecord[]; readonly next: string | null }> };
   readonly workflowViews: { inspect(input: ScopedInput & { readonly runId: string }): Promise<WorkflowOperatorView | null> };
   readonly workflowControls: {
     cancel(input: ControlInput): Promise<WorkflowOperatorResult>;
@@ -344,11 +357,14 @@ export function createWorkflowOperatorTransports(options: WorkflowOperatorTransp
     return { index: Number(match[1]), inner: match[2] === '-' ? null : match[2]! };
   };
   const transports = {
-    workflowIndex: { list: async (input: { readonly scope: Scope; readonly after: string | null; readonly limit: number }) => {
+    workflowIndex: { list: async (input: { readonly scope: Scope; readonly after: string | null; readonly limit: number; readonly view?: 'settled' }) => {
       if (!inScope(input)) return { items: [], next: null };
-      // One target per page: a short page is normal and the cursor moves on to the next format.
-      const { index, inner } = decode(input.after); const page = await targets[index]!.page(inner, input.limit);
-      const next = page.next !== null ? `${index}:${page.next}` : index + 1 < targets.length ? `${index + 1}:-` : null;
+      // One target per page: a short page is normal and the cursor moves on to the next format. The settled view
+      // reads only targets that keep settled runs.
+      const settled = input.view === 'settled'; const { index, inner } = decode(input.after); const target = targets[index]!;
+      const page = !settled ? await target.page(inner, input.limit) : target.settledPage ? await target.settledPage(inner, input.limit) : { items: [], next: null };
+      const following = targets.findIndex((candidate, position) => position > index && (!settled || candidate.settledPage !== undefined));
+      const next = page.next !== null ? `${index}:${page.next}` : following >= 0 ? `${following}:-` : null;
       return { items: page.items.slice(0, input.limit), next };
     } },
     workflowViews: { inspect: async (input: { readonly scope: Scope; readonly runId: string }) => inScope(input) ? (await locate(input.runId))?.view ?? null : null },

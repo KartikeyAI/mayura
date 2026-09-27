@@ -385,7 +385,24 @@ describe('browser durable workflow index client', () => {
     const item = Object.freeze({ format: 4, definitionId: 'workflow', definitionVersion: '1', runId: indexedRunId, revision: 2, status: 'running' });
     const { client, transport } = fakeClient(() => jsonResponse({ items: [item, { ...item, privatePrompt: 'PRIVATE' }], next: null }));
     await expect(client.workflows({ after: '../bad', limit: 101 })).rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).not.toHaveBeenCalled();
+    await expect(client.workflows({ view: 'archived' as never })).rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).not.toHaveBeenCalled();
     await expect(client.workflows({ limit: 2 })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' }); expect(transport).toHaveBeenCalledOnce();
+  });
+});
+
+describe('browser settled workflow index', () => {
+  const runId = 'b'.repeat(64);
+  const entry = { format: 5, definitionId: 'workflow', definitionVersion: '1', runId, revision: 4, status: 'outcome_unknown', settledAtMs: 1_000 };
+  it('asks for the settled view and admits settled records only', async () => {
+    const { client, transport } = fakeClient(() => jsonResponse({ items: [entry], next: null }));
+    expect(await client.workflows({ view: 'settled' })).toEqual({ items: [entry], next: null });
+    expect(new URL(String(transport.mock.calls[0]?.[0])).searchParams.get('view')).toBe('settled');
+    for (const bad of [{ ...entry, status: 'running' }, { ...entry, settledAtMs: undefined }, { ...entry, settledAtMs: -1 }]) {
+      const failing = fakeClient(() => jsonResponse({ items: [bad], next: null }));
+      await expect(failing.client.workflows({ view: 'settled' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    }
+    // The active view does not accept a settled record's extra field.
+    await expect(fakeClient(() => jsonResponse({ items: [entry], next: null })).client.workflows()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 });
 
@@ -707,6 +724,17 @@ describe('production workflow operator transports', () => {
       expect(migrated.workflow).toMatchObject({ definitionVersion: '2', status: 'paused' });
       expect(await client.migrateWorkflow(first.id, 'ops-1-to-2', paused.revision, { commandId: 'migrate-first' })).toEqual(migrated);
       expect((await client.workflow(first.id)).steps.map(step => step.id)).toEqual(['wake', 'settle']);
+
+      // A cancelled run leaves the active view and appears, on its pinned version, in the settled view.
+      const cancelled = await client.cancelWorkflow(first.id, migrated.workflow.revision, { commandId: 'cancel-first' });
+      expect(cancelled.status).toBe('cancelled');
+      const settled: { runId: string; status: string; definitionVersion: string; settledAtMs?: number }[] = []; let settledAfter: string | undefined; let settledPages = 0;
+      do { const page = await client.workflows({ view: 'settled', limit: 5, ...(settledAfter ? { after: settledAfter } : {}) }); settled.push(...page.items); settledAfter = page.next ?? undefined; settledPages++; }
+      while (settledAfter && settledPages < 20);
+      expect(settled).toEqual([expect.objectContaining({ runId: first.id, status: 'cancelled', definitionVersion: '2', settledAtMs: expect.any(Number) })]);
+      const active: string[] = []; after = undefined; pages = 0;
+      do { const page = await client.workflows({ limit: 5, ...(after ? { after } : {}) }); active.push(...page.items.map(item => item.runId)); after = page.next ?? undefined; pages++; } while (after && pages < 20);
+      expect(active).not.toContain(first.id);
 
       // The view carries each pending approval's digest, so an operator approves over HTTP alone; approvals map the
       // operator to the runtime's verified human.
