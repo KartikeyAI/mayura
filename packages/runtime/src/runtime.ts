@@ -374,8 +374,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const definitions = requiredChecks(agent.guards.output);
       return reserveCalls(state, [{ kind, maxCostMicros }, ...definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))]);
     };
-    const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<void> => {
-      try { await guardChecks(checks, value, boundary, callId, held, signal); }
+    /** Runs the guards and returns the content to use: the original, or what local guards rewrote it to. */
+    const guard = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<JsonValue> => {
+      try { return await guardChecks(checks, value, boundary, callId, held, signal); }
       catch (error) {
         if (error instanceof MayuraError && error.code === 'GUARD_BLOCKED') {
           await observe(Object.freeze({ stage: 'onViolation', source: 'guard', boundary, code: 'GUARD_BLOCKED', callId }), null, { signal });
@@ -383,26 +384,44 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         throw error;
       }
     };
-    const guardChecks = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<void> => {
+    /**
+     * Guard `value`; if a guard rewrote it, validate the rewrite against `schema` again so a rewrite can never hand on a
+     * value its boundary would have refused. Returns the frozen content to use.
+     */
+    const guarded = async (checks: readonly AgentGuard[], value: JsonValue, schema: Schema, boundary: 'input' | 'output', callId: string,
+      maxBytes: number, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<JsonValue> => {
+      const result = await guard(checks, value, boundary, callId, held, signal);
+      if (result === value) return value;
+      const revalidated = await cancellable(() => runOperations.run(signal, async () => {
+        checkCancelled(signal); return await validate(schema, result, boundary, { maxBytes });
+      }), signal);
+      return freezeJson(jsonValue(revalidated, { maxBytes }));
+    };
+    const guardChecks = async (checks: readonly AgentGuard[], value: JsonValue, boundary: 'input' | 'output', callId: string, held?: readonly CallTicket[], signal: AbortSignal = controller.signal): Promise<JsonValue> => {
       checkCancelled(signal);
       const definitions = managed(checks);
       const local = checks.filter(check => !readManagedGuardDefinition(check)) as readonly Guard[];
-      const verdicts = await cancellable(() => Promise.all(local.map(check => runOperations.run(signal, async () => {
-        try {
-          checkCancelled(signal);
-          const verdict = await check.check(value, Object.freeze({ runId: id, callId, scope, signal, boundary }));
-          const decision = verdict?.decision;
-          if (decision !== 'allow' && decision !== 'block') throw new Error();
-          // Read adapter-owned properties inside the redaction boundary; do not retain a mutable verdict.
-          return decision;
-        }
-        catch { throw new MayuraError('GUARD_UNAVAILABLE', 'A required guard could not complete its check.'); }
-      }))), signal);
-      checkCancelled(signal);
-      if (verdicts.some((decision) => decision !== 'allow')) {
-        throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this content.');
+      // Local guards run in declared order, each on the content the one before it allowed or rewrote.
+      let current = value;
+      for (const check of local) {
+        type Checked = { readonly decision: 'allow' | 'block' } | { readonly decision: 'rewrite'; readonly value: JsonValue };
+        const verdict = await cancellable(() => runOperations.run(signal, async (): Promise<Checked> => {
+          try {
+            checkCancelled(signal);
+            const raw = await check.check(current, Object.freeze({ runId: id, callId, scope, signal, boundary }));
+            // Read adapter-owned properties inside the redaction boundary; do not retain a mutable verdict.
+            const decision = raw?.decision;
+            if (decision === 'allow' || decision === 'block') return { decision } as const;
+            if (decision === 'rewrite') return { decision, value: freezeJson(jsonValue((raw as { value: JsonValue }).value, { maxBytes: limits.maxOutputBytes })) } as const;
+            throw new Error();
+          }
+          catch { throw new MayuraError('GUARD_UNAVAILABLE', 'A required guard could not complete its check.'); }
+        }), signal);
+        checkCancelled(signal);
+        if (verdict.decision === 'block') throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this content.');
+        if (verdict.decision === 'rewrite') current = verdict.value;
       }
-      if (definitions.length === 0) return;
+      if (definitions.length === 0) return current;
       requiredChecks(checks);
       const owned = held === undefined ? reserveCalls(state, definitions.map(({ descriptor }) => ({ kind: 'model' as const, maxCostMicros: descriptor.model.maxCostMicros }))) : undefined;
       const entries = held ?? owned!.entries;
@@ -411,7 +430,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const results = await cancellable(() => Promise.allSettled(definitions.map(({ descriptor }, index) => {
           const entry = entries[index]!;
           const metadata = { purpose: 'guardrail', modelId: descriptor.model.id, checkId: descriptor.id, checkVersion: descriptor.version, boundary, callId } as const;
-          return evaluateManagedGuard({ descriptor, candidate: value,
+          return evaluateManagedGuard({ descriptor, candidate: current,
             context: Object.freeze({ runId: id, callId, scope, signal, boundary }), limits, operations: runOperations,
             assertActive: () => checkCancelled(signal),
             start: () => {
@@ -427,6 +446,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         if (rejected?.status === 'rejected') throw rejected.reason;
         checkCancelled(signal);
       } finally { owned?.close(); }
+      return current;
     };
 
     const preflight = async (tool: AnyTool, rawInput: JsonValue, signal: AbortSignal = controller.signal): Promise<void> => {
@@ -558,11 +578,12 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           if (withHooks) await observe(Object.freeze({ stage: 'afterToolCall', step, ...completion }), step, { signal });
           return outcome;
         }
-        const toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
+        let toolOutput = freezeJson(jsonValue(outcome.output, { maxBytes: limits.maxOutputBytes }));
         let failure: Exclude<Outcome<never>, { status: 'succeeded' }> | undefined;
         let observed = false;
         try {
-          await guard(agent.guards.output, toolOutput, 'output', callId, toolBundle.entries.slice(1), signal);
+          // A rewritten tool result (for example redacted) is what the model sees, validated again by the tool's schema.
+          toolOutput = await guarded(agent.guards.output, toolOutput, tool.output, 'output', callId, limits.maxOutputBytes, toolBundle.entries.slice(1), signal);
           if (withHooks) failure = await control(Object.freeze({ stage: 'beforeOutputRelease', source: 'tool', callId,
             toolId: tool.id, candidate: toolOutput }), step, signal);
           // Observe the real released outcome before it enters model history; a mandatory failure withholds it.
@@ -600,8 +621,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const validated = inputAdmitted ? input : await cancellable(() => runOperations.run(controller.signal, async () => {
         checkCancelled(); return await validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes });
       }), controller.signal);
-      const approvedInput = freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes }));
-      await guard(agent.guards.input, approvedInput, 'input', 'input');
+      const approvedInput = await guarded(agent.guards.input, freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes })), agent.input, 'input', 'input', limits.maxInputBytes);
       const inputFailure = await control(Object.freeze({ stage: 'beforeExecution', input: approvedInput }), null);
       if (inputFailure) return inputFailure;
       const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
@@ -619,18 +639,28 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const release = async (batches: readonly string[]): Promise<void> => {
           for (const batch of batches) {
             if (withheld || batch.length === 0) return;
-            const window = released.slice(-512) + batch;
-            const verdicts = await cancellable(() => Promise.all(policy.guards.map(async check => {
-              try { const verdict = await check.check(window, Object.freeze({ runId: id, callId: `model.${modelCall}.stream`, scope, signal: controller.signal, boundary: 'output' as const })); return verdict?.decision; }
-              catch { return 'unavailable'; }
-            })), controller.signal);
-            checkCancelled();
-            if (verdicts.some(decision => decision !== 'allow')) {
+            // Guards run in order on the batch with already released context; a guard may rewrite the batch (for
+            // example to redact it), and the next guard sees the rewrite. Context before the batch is never changed.
+            const context = released.slice(-512); let text = batch; let blocked = false;
+            for (const check of policy.guards) {
+              let verdict: { readonly decision?: unknown; readonly value?: unknown } | undefined;
+              try { verdict = await cancellable(async () => check.check(context + text, Object.freeze({ runId: id, callId: `model.${modelCall}.stream`, scope, signal: controller.signal, boundary: 'output' as const })), controller.signal); }
+              catch { blocked = true; break; }
+              checkCancelled();
+              if (verdict?.decision === 'allow') continue;
+              // A rewrite must keep the released context unchanged and return the rest as bounded text.
+              if (verdict?.decision === 'rewrite' && typeof verdict.value === 'string' && verdict.value.startsWith(context) && verdict.value.length - context.length <= 4_096) {
+                text = verdict.value.slice(context.length); continue;
+              }
+              blocked = true; break;
+            }
+            if (blocked) {
               withheld = true; events.emit('output.withheld', { step, modelCall });
               await observe(Object.freeze({ stage: 'onViolation', source: 'guard', boundary: 'output', code: 'GUARD_BLOCKED', callId: `model.${modelCall}.stream` }), step);
               return;
             }
-            released += batch; events.emit('output.delta', { step, modelCall, index: index++, text: batch });
+            if (text.length === 0) continue;
+            released += text; events.emit('output.delta', { step, modelCall, index: index++, text });
           }
         };
         for await (const event of agent.model.stream!(request)) {
@@ -698,9 +728,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             const output = await cancellable(() => runOperations.run(controller.signal, async () => {
               checkCancelled(); return await validate(agent.output, response.output, 'output', { maxBytes: limits.maxOutputBytes });
             }), controller.signal);
-            const approvedOutput = freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes }));
             const callId = `model.${state.modelCalls}`;
-            await guard(agent.guards.output, approvedOutput, 'output', callId, primaryBundle.entries.slice(1));
+            const approvedOutput = await guarded(agent.guards.output, freezeJson(jsonValue(output, { maxBytes: limits.maxOutputBytes })), agent.output, 'output', callId,
+              limits.maxOutputBytes, primaryBundle.entries.slice(1));
             const outputFailure = await control(Object.freeze({ stage: 'beforeOutputRelease', source: 'agent',
               callId, candidate: approvedOutput }), step);
             if (outputFailure) return { done: true, outcome: outputFailure };

@@ -47,7 +47,12 @@ export interface RunHandle<T> {
   cancel(): void;
 }
 export interface GuardContext extends ExecutionContext { readonly boundary: 'input' | 'output' }
-export type GuardVerdict = { readonly decision: 'allow' } | { readonly decision: 'block'; readonly reason?: string };
+/**
+ * A guard allows content, blocks it, or rewrites it (for example to redact personal data). A rewritten value replaces
+ * the content for the guards after it and is validated again against the boundary's schema before anything uses it.
+ */
+export type GuardVerdict = { readonly decision: 'allow' } | { readonly decision: 'block'; readonly reason?: string }
+  | { readonly decision: 'rewrite'; readonly value: JsonValue };
 export interface Guard {
   readonly id: string;
   check(value: JsonValue, context: GuardContext): Promise<GuardVerdict> | GuardVerdict;

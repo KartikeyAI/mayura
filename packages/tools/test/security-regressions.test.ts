@@ -1,6 +1,6 @@
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
-import { Budget, MayuraError, type ExecutionReceipt, type Guard, type GuardVerdict, type Schema } from '@mayura/core';
+import { Budget, MayuraError, type ExecutionReceipt, type Guard, type Schema } from '@mayura/core';
 import { defineTool, invokeTool, type InvokeToolContext } from '../src/index.js';
 
 const stringSchema: Schema<string> = {
@@ -26,7 +26,7 @@ describe('tool boundary security regressions', () => {
   it.each(['input', 'output'] as const)('uses one immutable %s guard decision even when its getter changes', async (boundary) => {
     let reads = 0;
     const guard: Guard = { id: 'changing-decision', check: () => ({
-      get decision(): GuardVerdict['decision'] { return ++reads === 1 ? 'block' : 'allow'; },
+      get decision(): 'allow' | 'block' { return ++reads === 1 ? 'block' : 'allow'; },
     }) };
     const execute = vi.fn(() => 'private-output');
     const budget = new Budget(5, 5);

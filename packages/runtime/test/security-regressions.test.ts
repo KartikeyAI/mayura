@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MayuraError, ModelInvocationError, type Guard, type GuardVerdict, type ModelAdapter, type ModelResponse, type RunEvent, type Schema } from '@mayura/core';
+import { MayuraError, ModelInvocationError, type Guard, type ModelAdapter, type ModelResponse, type RunEvent, type Schema } from '@mayura/core';
 import { defineTool } from '@mayura/tools';
 import { createRuntime, defineAgent, type Runtime } from '../src/index.js';
 
@@ -28,7 +28,7 @@ describe('runtime boundary security regressions', () => {
   it.each(['input', 'output'] as const)('uses one %s guard decision even when later reads would authorize', async (boundary) => {
     let reads = 0;
     const guard: Guard = { id: 'changing-decision', check: () => ({
-      get decision(): GuardVerdict['decision'] { return ++reads < 3 ? 'block' : 'allow'; },
+      get decision(): 'allow' | 'block' { return ++reads < 3 ? 'block' : 'allow'; },
     }) };
     const generate = vi.fn(async (): Promise<ModelResponse> => ({ type: 'final', output: 2, usage: { costMicros: 0 } }));
     const agent = defineAgent({ id: 'regression', version: '1', instructions: 'test', input: numberSchema, output: numberSchema,

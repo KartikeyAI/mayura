@@ -60,3 +60,21 @@ Model events identify managed calls with `purpose: 'guardrail'`, bounded model/c
 Known usage is charged before checking a provider's content envelope. Unknown usage remains reserved. Cancellation or a deadline withholds output and cancels only never-dispatched tickets; independently known late charges still settle once without resurrecting the result. An over-bound charge records the full exact cost and stops further admissions. A reservation is not a provider billing guarantee.
 
 Model moderation can be wrong. These mechanics do not certify compliance, prevent all prompt injection, detect all PII or contain arbitrary application JavaScript. The explicit `/host` integration entries are for trusted runtime authors, not public guard contexts or sandbox gateways. Durable auxiliary execution, retries, language processing and streaming checks require separate qualification. [Required control hooks](lifecycle-hooks.md) can request brokered actions with these output checks, but auxiliary moderation deliberately does not recursively invoke hooks. The full [integration contract](../specs/runtime-managed-guardrails.md) and [status ledger](../development-status.md) define the boundary.
+
+## Redact instead of block
+
+A local guard can rewrite content rather than only allow or block it. Return `{ decision: 'rewrite', value }`, or wrap
+a guardrails pipeline with `pipelineGuard`:
+
+```ts
+import { createPipeline, pipelineGuard, redactPII } from '@mayura/guardrails';
+
+const redact = pipelineGuard('pii.redact', createPipeline({ processors: [redactPII({ email: true, phone: true })] }));
+const agent = defineAgent({ /* ... */ guards: { input: [redact], output: [redact] } });
+```
+
+Agent guards run in the order declared, each on the content the previous guard allowed or rewrote. A rewritten agent
+input, final output or tool result is validated again against its schema, so a rewrite cannot hand on a value the
+boundary would refuse; the model sees a rewritten tool result, never the original. Model-backed (managed) guards and
+tool-level guards allow or block only, and treat a rewrite verdict as a block. For streamed output, see
+[Stream an agent's answer](streaming.md).

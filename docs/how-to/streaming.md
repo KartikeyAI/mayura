@@ -26,7 +26,9 @@ adapter without it, the agent answers buffered.
 - **Every batch is checked before release.** Each batch goes through `stream.guards` together with up to 512
   characters of text already released, so a pattern split across batches can still be seen. A block, or a guard that
   throws, stops further release for that model call (`output.withheld`); the answer is still delivered whole if the
-  final checks pass. `guards: []` streams without batch checks and must be chosen explicitly.
+  final checks pass. A guard may instead **rewrite** the batch (return `{ decision: 'rewrite', value }` with the same
+  released context followed by the new batch text), for example to redact an email address and keep streaming.
+  `guards: []` streams without batch checks and must be chosen explicitly.
 - **The final output stays authoritative.** The complete response is validated against the output schema and passes
   the agent's output guards exactly as a buffered answer does. Streamed text is provisional: if the final checks
   block, the run fails even though some text was shown. **Released text cannot be retracted**, so put checks that

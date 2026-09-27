@@ -5,3 +5,4 @@ export { prepareOutputDisclosure, type OutputDisclosureOptions, type OutputDiscl
 export { createAuxiliaryCheck, type AuxiliaryLimits, type AuxiliaryOptions, type AuxiliaryEvidence, type AuxiliaryResult, type AuxiliaryCheck } from './auxiliary.js';
 export { detectAndTranslate, createModerationGuard, type LanguageSegment, type LanguageDocument, type LanguageDetection, type DetectAndTranslateOptions, type LanguageResult, type ModerationVerdict, type ModerationOptions, type ModerationGuard } from './auxiliary-helpers.js';
 export { defineModerationGuard, type ManagedModerationOptions } from './managed.js';
+export { pipelineGuard } from './agent-guard.js';

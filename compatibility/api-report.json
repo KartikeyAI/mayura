@@ -1180,7 +1180,7 @@
       },
       "GuardVerdict": {
         "kind": "type",
-        "declaration": "21eea243c61e246e"
+        "declaration": "80e489545951ba0e"
       },
       "InferInput": {
         "kind": "type",
@@ -1579,6 +1579,10 @@
       "Pipeline": {
         "kind": "interface",
         "declaration": "fe369b4850added4"
+      },
+      "pipelineGuard": {
+        "kind": "function",
+        "declaration": "89894a829d6687e6"
       },
       "PipelineOptions": {
         "kind": "interface",
@@ -2406,7 +2410,7 @@
       },
       "GuardVerdict": {
         "kind": "type",
-        "declaration": "21eea243c61e246e"
+        "declaration": "80e489545951ba0e"
       },
       "HookAction": {
         "kind": "interface",
