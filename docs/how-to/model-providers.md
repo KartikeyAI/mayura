@@ -56,6 +56,12 @@ reported token usage (for streaming, `stream_options.include_usage`). A provider
 dialect or omits usage is refused rather than guessed at. Verify your provider and model with a live check before
 production.
 
+## Qualify a provider against your account
+
+`pnpm providers:live-check` runs structured output, a tool round trip, streaming, cost accounting and router failover
+against the providers you select with explicit environment variables, under required price and cost caps. See
+[Qualify model providers against live accounts](live-provider-checks.md).
+
 ## Native adapters
 
 Use `openAIResponses` for OpenAI and `anthropicMessages` for Anthropic; they support provider features the

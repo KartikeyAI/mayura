@@ -60,15 +60,24 @@ describe('Anthropic Messages adapter', () => {
     await expect(anthropicMessages(options({ fetch })).generate(request())).rejects.toBeInstanceOf(ModelInvocationError);
   });
 
-  it('rejects mixed or unknown tool blocks after preserving confirmed usage', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([
-      { type: 'text', text: 'PRIVATE' }, { type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 2 } },
+  it('accepts text before a tool call and drops it, but rejects unknown blocks after preserving confirmed usage', async () => {
+    const pricing = { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 1_000_000 };
+    const narrated = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([
+      { type: 'text', text: 'PRIVATE narration' }, { type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 2 } },
     ], 'tool_use', { input_tokens: 2, output_tokens: 1 }));
-    const error: unknown = await anthropicMessages(options({ fetch, pricing: { inputMicrosPerMillionTokens: 1_000_000,
-      outputMicrosPerMillionTokens: 1_000_000 } })).generate(request()).catch(value => value);
-    expect(error).toBeInstanceOf(ModelInvocationError);
-    expect(error).toMatchObject({ costMicros: 3 });
-    expect(JSON.stringify(error)).not.toContain('PRIVATE');
+    const called = await anthropicMessages(options({ fetch: narrated, pricing })).generate(request());
+    expect(called).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_1', input: { value: 2 } }], usage: { costMicros: 3 } });
+    expect(JSON.stringify(called)).not.toContain('PRIVATE');
+    for (const content of [
+      [{ type: 'image', source: 'PRIVATE' }, { type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 2 } }],
+      [{ type: 'text', text: 'PRIVATE only text' }],
+    ]) {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(content, 'tool_use', { input_tokens: 2, output_tokens: 1 }));
+      const error: unknown = await anthropicMessages(options({ fetch, pricing })).generate(request()).catch(value => value);
+      expect(error).toBeInstanceOf(ModelInvocationError);
+      expect(error).toMatchObject({ costMicros: 3 });
+      expect(JSON.stringify(error)).not.toContain('PRIVATE');
+    }
   });
 
   it('rejects continuation without sending and validates credentials and schemas eagerly', async () => {

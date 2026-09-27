@@ -235,6 +235,9 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           const seen = new Set<string>();
           for (const raw of payload['content']) {
             const block = object(raw);
+            // Claude often says what it is about to do before calling a tool. That text is narration, not an answer:
+            // it is dropped, never passed on. Any other block type is still refused.
+            if (block['type'] === 'text' && typeof block['text'] === 'string') continue;
             const callId = block['id'];
             const alias = block['name'];
             if (block['type'] !== 'tool_use' || typeof callId !== 'string'
@@ -243,6 +246,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
             seen.add(callId);
             calls.push({ id: callId, toolId: ids.get(alias)!, input: jsonValue(block['input']) });
           }
+          if (calls.length === 0) return failed();
           return { type: 'tool_calls', calls, usage: accounting };
         }
         if (payload['stop_reason'] !== 'end_turn') return failed();

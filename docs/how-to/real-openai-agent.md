@@ -6,4 +6,6 @@ Set `OPENAI_API_KEY`, `MAYURA_OPENAI_MODEL`, `MAYURA_QUESTION`, `MAYURA_OPENAI_M
 
 The adapter sends the credential only in the Authorization header to its fixed HTTPS endpoint. Definitions, events and errors do not contain it. HTTP 401/403 returns a safe authentication/model-access diagnostic; HTTP 429 returns a safe rate-limit diagnostic. Other rejected or malformed responses remain the generic `MODEL_FAILED` boundary. The adapter performs no retry. Application retry policy must respect idempotency, total budget and provider limits.
 
+To qualify an adapter against your account, rather than run one agent, use `pnpm providers:live-check`. It checks structured output, tools, streaming, cost and router failover; see [Qualify model providers against live accounts](live-provider-checks.md).
+
 The configured per-call maximum is reserved before dispatch. The run maximum is a separate total ceiling and must be at least the admitted call maximum. Cancellation stops new Mayura work and aborts the fetch, but cannot prove a provider received no request or incurred no usage.
