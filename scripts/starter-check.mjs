@@ -16,6 +16,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { gunzipSync } from 'node:zlib';
 import { applyProjectPlan, planStarter, readProject, STARTER_NAMES } from '../packages/cli/dist/index.js';
 
 const exec = promisify(execFile);
@@ -124,6 +125,12 @@ if (!skipPacked) {
     const { starter } = report; const directory = join(output, starter); const started = performance.now();
     const plan = await planStarter(starter, directory); assert(plan.changes.every(change => change.operation === 'create')); await applyProjectPlan(plan);
     assert.equal((await readProject(join(directory, 'mayura.project.json'))).template, starter);
+    // The published CLI must ship every file the initializer generates from the repository copy (its `files` patterns
+    // are explicit, so a new kind of starter file would otherwise be dropped silently).
+    const cli = await packClosure([['@mayura/cli', join(workspace, 'packages', 'cli')]]).then(() => packages.get('@mayura/cli'));
+    const shipped = new Set(archivePaths(await readFile(fileURLToPath(cli.archive))).filter(path => path.startsWith(`starters/${starter}/`))
+      .map(path => path.slice(`starters/${starter}/`.length).split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/')));
+    assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).sort(), `@mayura/cli does not ship exactly the ${starter} files.`);
     const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const cliVersion = JSON.parse(await readFile(join(workspace, 'packages', 'cli', 'package.json'), 'utf8')).version;
     for (const [name, range] of Object.entries(manifest.dependencies)) if (name.startsWith('@mayura/')) assert.equal(range, cliVersion, `${starter} pins ${name} to ${range}.`);
@@ -150,6 +157,19 @@ if (!skipPacked) {
     report.packed = { dependencies: installed.size, tests: tests.stdout.trim().split(/\r?\n/u).at(-1) ?? '', boot: await boot(starter, directory), ms: Math.round(performance.now() - started) };
   }
   reports.output = output;
+}
+
+/** File paths in a packed npm archive (ustar), relative to its `package/` root. */
+function archivePaths(bytes) {
+  const tar = gunzipSync(bytes); const paths = [];
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512); if (header.every(byte => byte === 0)) break;
+    const text = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\u0000.*$/su, '');
+    const name = [text(345, 155), text(0, 100)].filter(Boolean).join('/'); const size = Number.parseInt(text(124, 12).trim() || '0', 8);
+    if (header[156] === 48 || header[156] === 0) paths.push(name.replace(/^package\//u, ''));
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return paths;
 }
 
 /** Boot the application the way production does: migrate, then serve and worker as separate processes. */
