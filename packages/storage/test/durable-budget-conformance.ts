@@ -343,7 +343,9 @@ export function durableBudgetConformance(name: string, factory: () => Promise<Du
       expect([...first, ...second].map(value => value.sequence)).toEqual(Array.from({ length: 1920 }, (_, index) => index + 1));
       expect(await api.closeSubtree({ ...key, accountId: 'root' })).toEqual(terminal);
     // This is bounded durability/headroom qualification, not a production throughput guarantee.
-    }, 180_000);
+    // Deliberately fills every bound with hundreds of durable transactions: about 95 s on a fast local disk and more than
+    // 180 s on hosted Windows runners, so it gets a longer ceiling than the default.
+    }, 600_000);
 
     it.each(['reserve-before', 'reserve-after', 'start-before', 'start-after', 'settle-before', 'settle-after'] as const)(
       'survives an actual owned-process kill at %s without partial ancestor accounting or replay permission', async phase => {

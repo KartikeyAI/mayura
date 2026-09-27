@@ -57,6 +57,7 @@ const sbom = { bomFormat: 'CycloneDX', specVersion: '1.5', serialNumber: `urn:uu
   components: [...components.values()].sort((a, b) => a['bom-ref'].localeCompare(b['bom-ref'])),
   dependencies: [...edges.entries()].map(([ref, dependsOn]) => ({ ref, dependsOn: [...dependsOn].sort() })).sort((a, b) => a.ref.localeCompare(b.ref)) };
 const argument = process.argv.indexOf('--output');
+if (argument < 0) await mkdir(join(workspace, '.artifacts'), { recursive: true }); // gitignored: absent in a fresh checkout
 const output = argument >= 0 ? resolve(process.argv[argument + 1]) : join(await mkdtemp(join(workspace, '.artifacts', 'sbom-')), 'sbom.cdx.json');
 await mkdir(dirname(output), { recursive: true }); await writeFile(output, `${JSON.stringify(sbom, null, 2)}\n`);
 const licences = {}; for (const component of components.values()) { const key = component.licenses?.[0]?.expression ?? 'UNDECLARED'; licences[key] = (licences[key] ?? 0) + 1; }

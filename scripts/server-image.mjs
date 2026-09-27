@@ -47,6 +47,7 @@ const node = (args, cwd, timeout) => run(process.execPath, args, cwd, timeout);
 
 async function main() {
   const smoke = process.argv.includes('--smoke');
+  await mkdir(join(workspace, '.artifacts'), { recursive: true }); // gitignored: absent in a fresh checkout
   const output = await mkdtemp(join(workspace, '.artifacts', 'server-image-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
   const packed = new Map();
   const packMayura = async name => {

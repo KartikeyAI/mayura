@@ -39,6 +39,7 @@ try {
   await psql('mayura', `DROP DATABASE IF EXISTS ${database}`).catch(() => {});
   await psql('mayura', `DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
 }
+await mkdir(join(workspace, '.artifacts'), { recursive: true }); // gitignored: absent in a fresh checkout
 const output = await mkdtemp(join(workspace, '.artifacts', 'restore-drill-')); await mkdir(output, { recursive: true });
 await writeFile(join(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ ...report, report: relative(workspace, join(output, 'report.json')) }));
