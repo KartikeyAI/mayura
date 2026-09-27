@@ -196,7 +196,9 @@ async function boot(starter, directory) {
     const listed = (await agents.json()).agents.map(agent => agent.id);
     const declared = (await readProject(join(directory, 'mayura.project.json'))).definitions.filter(item => item.kind === 'agent').map(item => item.id);
     assert.deepEqual([...new Set(listed)].sort(), [...new Set(declared)].sort(), `${starter} serves different agents than it declares.`);
-    const ready = await fetch(`http://127.0.0.1:${probe}/readyz`); assert.equal(ready.status, 200, `${starter} worker is not ready.`);
+    // The worker reports ready once it holds (or has confirmed another replica holds) leadership, a moment after it starts.
+    let ready = 0; for (let attempt = 0; attempt < 60 && ready !== 200; attempt++) { if (attempt) await new Promise(resolve => setTimeout(resolve, 250)); ready = (await fetch(`http://127.0.0.1:${probe}/readyz`)).status; }
+    assert.equal(ready, 200, `${starter} worker did not become ready within 15 s.`);
     return { migrate: migrated, agents: listed.length, worker: 'ready' };
   } finally {
     for (const child of processes) { child.removeAllListeners('exit'); child.kill(); }

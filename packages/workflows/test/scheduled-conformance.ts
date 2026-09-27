@@ -683,8 +683,10 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
 
     it('renews a live long-running handler and does not replay it after one lease interval', async () => {
       let effects = 0;
-      const definition = single(tool({ execute: async input => { effects++; await new Promise(resolve => setTimeout(resolve, 1_300)); return input; } }));
-      const engine = runtime({ leaseMs: 1_000 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'renewal' });
+      // The handler outlives a full lease interval, so only renewal (every leaseMs/3) keeps it. A 3 s lease leaves about
+      // 2 s of slack per renewal round trip, which a loaded CI runner with PostgreSQL needs; 1 s left too little.
+      const definition = single(tool({ execute: async input => { effects++; await new Promise(resolve => setTimeout(resolve, 3_900)); return input; } }));
+      const engine = runtime({ leaseMs: 3_000 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'renewal' });
       const result = await engine.runUntilSettled(definition, run.id);
       expect(result.status).toBe('succeeded'); expect(effects).toBe(1); expect((await detail(run.id)).jobs[0]!.fence).toBe(1);
     });
