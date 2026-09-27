@@ -1,0 +1,27 @@
+{
+  "name": "@mayura/inspector-ui",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal source of the operator console. Built into a static bundle embedded in @mayura/server; never published.",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@mayura/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "get-nonce": "1.0.1",
+    "lucide-react": "1.48.0",
+    "radix-ui": "1.6.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.0"
+  }
+}

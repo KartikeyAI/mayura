@@ -25,6 +25,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: node scripts/secret-scan.mjs
       - run: pnpm typecheck
+      - run: pnpm console:check
       - run: pnpm test
       - run: pnpm test:consumer
       - run: pnpm test:consumer:optional

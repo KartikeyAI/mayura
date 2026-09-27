@@ -10,6 +10,8 @@ import { gunzipSync } from 'node:zlib';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+// Internal packages (test harnesses, the console source embedded in @mayura/server) are never packed or published.
+const internalPackages = new Set(JSON.parse(await readFile(join(workspace, 'compatibility', 'api-stability.json'), 'utf8')).internalPackages);
 const version = '0.1.0-dev.0';
 
 function npmCli() {
@@ -60,7 +62,7 @@ for (const directory of (await readdir(join(workspace, 'packages'), { withFileTy
   const manifestPath = join(source, 'package.json');
   if (!existsSync(manifestPath)) continue;
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  if (manifest.name === '@mayura/consumer-tests') continue;
+  if (internalPackages.has(manifest.name)) continue;
   assert(manifest.private === true && manifest.version === version && manifest.name === `@mayura/${directory.name}`, 'Source package identity is not release-safe.');
   const staging = join(stagingRoot, directory.name);
   await mkdir(staging);

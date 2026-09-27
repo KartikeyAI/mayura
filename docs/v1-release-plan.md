@@ -24,7 +24,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| B1 Definition-version policy and tooling for in-flight runs: side-by-side retention, a cross-format version inventory and a deploy gate ([guide](how-to/workflow-versions.md)). In-place state migration is deliberately not offered; plan §4.3 allows retention as the alternative | ✅ |
+| B1 Definition-version policy and tooling for in-flight runs: side-by-side retention, a cross-format version inventory and a deploy gate ([guide](how-to/workflow-versions.md)), plus reviewed in-place migration of paused runs for every format, re-verified by storage on SQLite and PostgreSQL ([guide](how-to/workflow-migrations.md), [spec](specs/workflow-migration-v1.md)) | ✅ |
 | Timers, recovery, reconciliation, pause, drain | ✅ |
 
 ## C. Hooks, guardrails, streaming
@@ -47,7 +47,7 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started · 👤 requires the own
 
 | Item | Status |
 |---|---|
-| E1 Local inspector UI over the authenticated read APIs: opt-in, read-only and same-origin ([guide](how-to/inspector.md)). Qualified live in a Chromium browser pane, which found and fixed a `pattern`/`v`-flag bug | ✅ |
+| E1 Operator console (React and shadcn/ui) over the authenticated APIs: opt-in and same-origin, with confirmed, revision-bound commands for workflows, human requests, fleet control, migrations and agent runs ([guide](how-to/inspector.md)). Qualified live in a Chromium browser pane: the full pause → review → migrate → resume flow, with no CSP violations after a per-response style nonce fix | ✅ |
 | E2 Every package declared stable in `compatibility/api-stability.json`: 47 stable plus 3 trusted-host entry points, a 1,442-symbol API report gated in CI, and a SemVer/deprecation/support policy ([policy](api-stability.md)). The version bump to 1.0.0 happens at the release cut; the owner confirms the proposed support windows (F12) | ✅ |
 | E3 Node.js 22 LTS and 24 support: engines range, compatibility fixes, CI matrix. Local evidence: Node.js 22.23.2 packed install and server/worker image smoke ([matrix](support-matrix.md)); the full unit suite on 22 runs in hosted CI (F7) | ✅ |
 

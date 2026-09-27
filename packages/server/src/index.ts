@@ -5,7 +5,7 @@ import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type Ru
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control' | 'workflows:fleet')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control' | 'workflows:fleet' | 'workflows:migrate')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
@@ -84,6 +84,33 @@ export interface WorkflowFleetTransport {
   readonly sweep: (input: WorkflowFleetBase & { readonly phase: 'pause' | 'resume'; readonly cursor: JsonObject | null; readonly limit: number })
     => Promise<{ readonly status: 'applied'; readonly sweep: WorkflowFleetSweepRecord } | { readonly status: 'conflict' }>;
 }
+/** A reviewed migration the host offers for runs pinned to its source definition. */
+export interface WorkflowMigrationRecord {
+  readonly id: string; readonly description: string;
+  readonly fromVersion: string; readonly toVersion: string; readonly fromDigest: string; readonly toDigest: string;
+}
+/** What a migration would do to one run, decided from the run's real state. */
+export interface WorkflowMigrationPlanRecord {
+  readonly migrationId: string; readonly format: string; readonly runId: string; readonly fromDigest: string; readonly toDigest: string;
+  readonly entries: readonly { readonly action: 'keep' | 'update' | 'reset' | 'accept' | 'add' | 'remove'; readonly target?: string; readonly source?: string; readonly status?: string }[];
+  readonly blockers: readonly { readonly node: string; readonly reason: string }[];
+  readonly allowed: boolean;
+}
+interface WorkflowMigrationBase { readonly scope: Scope; readonly agentIds: readonly string[]; readonly runId: string; readonly signal: AbortSignal }
+/**
+ * In-place migration of paused runs to a new definition version. Listing and planning are reads; applying requires the
+ * separate `workflows:migrate` capability, the run's exact revision and a stable command id.
+ */
+export interface WorkflowMigrationTransport {
+  /** Migrations whose source is the run's pinned definition; null when the run is not visible to this identity. */
+  readonly list: (input: WorkflowMigrationBase) => Promise<readonly WorkflowMigrationRecord[] | null>;
+  /** Dry run: the plan for this run. Writes nothing. Null when the run or migration is not visible. */
+  readonly plan: (input: WorkflowMigrationBase & { readonly migrationId: string }) => Promise<WorkflowMigrationPlanRecord | null>;
+  readonly apply: (input: WorkflowControlBase & { readonly migrationId: string }) => Promise<
+    | { readonly status: 'applied'; readonly plan: WorkflowMigrationPlanRecord; readonly workflow: WorkflowViewRecord }
+    | { readonly status: 'refused'; readonly plan: WorkflowMigrationPlanRecord }
+    | { readonly status: 'conflict' } | { readonly status: 'not_found' }>;
+}
 export interface SubmissionJournal {
   readonly claim: (input: { readonly owner: string; readonly key: string; readonly digest: string; readonly signal: AbortSignal })
     => Promise<{ readonly status: 'claimed' } | { readonly status: 'existing'; readonly digest: string }>;
@@ -111,6 +138,7 @@ export interface AgentServerOptions {
   readonly workflowResumes?: WorkflowResumeTransport;
   readonly workflowPauses?: WorkflowPauseTransport;
   readonly workflowFleet?: WorkflowFleetTransport;
+  readonly workflowMigrations?: WorkflowMigrationTransport;
   /**
    * Durable claim of every run submission key. Without it, idempotency lasts only as long as the process: a retry
    * after a restart could start a duplicate run. With it, such a retry is refused with SUBMISSION_OUTCOME_UNKNOWN.
@@ -236,6 +264,44 @@ function fleetSweep(value: unknown, limit: number): WorkflowFleetSweepRecord {
   if (raw['nextCursor'] !== null) { try { nextCursor = object(raw['nextCursor'], 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); } }
   return Object.freeze({ outcomes: Object.freeze(outcomes), nextCursor });
 }
+const migrationIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const migrationActions = new Set(['keep', 'update', 'reset', 'accept', 'add', 'remove']);
+const nodeIdPattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+const shortText = (value: unknown, maximum: number): boolean => typeof value === 'string' && value.length <= maximum && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(value);
+function migrationRecord(value: unknown): WorkflowMigrationRecord {
+  let raw: JsonObject; try { raw = object(value, 8_192); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['id', 'description', 'fromVersion', 'toVersion', 'fromDigest', 'toDigest']);
+  if (typeof raw['id'] !== 'string' || !migrationIdPattern.test(raw['id']) || !shortText(raw['description'], 2_048)
+    || typeof raw['fromVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['fromVersion'])
+    || typeof raw['toVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['toVersion'])
+    || typeof raw['fromDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['fromDigest'])
+    || typeof raw['toDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['toDigest']) || raw['fromDigest'] === raw['toDigest']) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  return freezeJson(raw) as unknown as WorkflowMigrationRecord;
+}
+function migrationPlan(value: unknown, runId: string, migrationId: string): WorkflowMigrationPlanRecord {
+  let raw: JsonObject; try { raw = object(value, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+  workflowExact(raw, ['migrationId', 'format', 'runId', 'fromDigest', 'toDigest', 'entries', 'blockers', 'allowed']);
+  const entries = raw['entries']; const blockers = raw['blockers'];
+  if (raw['migrationId'] !== migrationId || raw['runId'] !== runId || typeof raw['format'] !== 'string' || !/^[a-z0-9-]{1,32}$/.test(raw['format'])
+    || typeof raw['fromDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['fromDigest']) || typeof raw['toDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['toDigest'])
+    || typeof raw['allowed'] !== 'boolean' || !Array.isArray(entries) || entries.length > 512 || !Array.isArray(blockers) || blockers.length > 512
+    || raw['allowed'] !== (blockers.length === 0)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    if (Object.keys(entry).some(key => !['action', 'target', 'source', 'status'].includes(key)) || !migrationActions.has(String(entry['action']))
+      || (entry['target'] !== undefined && (typeof entry['target'] !== 'string' || !nodeIdPattern.test(entry['target'])))
+      || (entry['source'] !== undefined && (typeof entry['source'] !== 'string' || !nodeIdPattern.test(entry['source'])))
+      || (entry['status'] !== undefined && (typeof entry['status'] !== 'string' || !/^[a-z_]{1,32}$/.test(entry['status'])))
+      || (entry['target'] === undefined && entry['source'] === undefined)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  }
+  for (const blocker of blockers) {
+    if (blocker === null || typeof blocker !== 'object' || Array.isArray(blocker)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    workflowExact(blocker, ['node', 'reason']);
+    if (typeof blocker['node'] !== 'string' || !(blocker['node'] === '*' || nodeIdPattern.test(blocker['node'])) || !shortText(blocker['reason'], 512) || !blocker['reason'])
+      throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+  }
+  return freezeJson(raw) as unknown as WorkflowMigrationPlanRecord;
+}
 function workflowIndexRecord(value: unknown): WorkflowIndexRecord {
   let raw: JsonObject; try { raw = object(value, 4_096); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
   workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status']);
@@ -352,6 +418,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       throw new Error('Workflow fleet transport requires exact inspect, hold, release and sweep callbacks.');
     return Object.freeze(Object.fromEntries(names.map(name => [name, fields[name]!.value])) as unknown as WorkflowFleetTransport);
   })();
+  const workflowMigrations: WorkflowMigrationTransport | undefined = (() => {
+    if (options.workflowMigrations === undefined) return undefined;
+    if (options.workflowMigrations === null || typeof options.workflowMigrations !== 'object') throw new Error('Workflow migration transport is invalid.');
+    const fields = Object.getOwnPropertyDescriptors(options.workflowMigrations); const names = ['list', 'plan', 'apply'] as const;
+    if (Reflect.ownKeys(fields).length !== names.length || names.some(name => !fields[name] || !('value' in fields[name]!) || typeof fields[name]!.value !== 'function'))
+      throw new Error('Workflow migration transport requires exact list, plan and apply callbacks.');
+    return Object.freeze(Object.fromEntries(names.map(name => [name, fields[name]!.value])) as unknown as WorkflowMigrationTransport);
+  })();
   const registry = new Map<string, RegisteredAgent>();
   for (const config of options.agents) {
     assertAgent(config.agent);
@@ -430,7 +504,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 9 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet'].includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 10 || raw['capabilities'].some(cap => !['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate'].includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs']) || raw['expiresAtMs'] <= Date.now()) throw new Error();
       return freezeJson(raw) as unknown as ServerIdentity;
     } catch { throw new HttpFailure(401, 'UNAUTHORIZED'); }
@@ -502,11 +576,13 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const route = async (request: Request, signal: AbortSignal): Promise<Response> => {
     const url = new URL(request.url);
     if (url.origin !== publicOrigin || url.username || url.password || url.hash) throw new HttpFailure(400, 'INVALID_DESTINATION');
+    // Console assets are static and data-free; module scripts carry an Origin header even when same-origin.
+    if (options.inspector === true && !url.search) { const asset = inspectorAsset(request.method, url.pathname); if (asset) return asset; }
     const requestOrigin = request.headers.get('origin');
-    if (requestOrigin !== null && !origins.has(requestOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
+    // With the console enabled, the server's own origin is a legitimate same-origin caller; others need allowedOrigins.
+    if (requestOrigin !== null && !origins.has(requestOrigin) && !(options.inspector === true && requestOrigin === publicOrigin)) throw new HttpFailure(403, 'ORIGIN_DENIED');
     // A preflight is validated as the request it announces: the same query rules apply, so query credentials still fail,
     // but a legitimate paginated GET can be preflighted.
-    if (options.inspector === true && !url.search) { const asset = inspectorAsset(request.method, url.pathname); if (asset) return asset; }
     const effectiveMethod = request.method === 'OPTIONS' ? request.headers.get('access-control-request-method') ?? '' : request.method;
     const eventMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(url.pathname);
     const catalogQuery = effectiveMethod === 'GET' && url.pathname === '/v1/tools';
@@ -640,6 +716,50 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const record = workflowRecord(raw['workflow'], workflowSignalMatch[1]!);
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       return response({ workflow: record });
+    }
+    const migrationMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/migrations(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))?$/.exec(url.pathname);
+    if (migrationMatch && (request.method === 'GET' || (request.method === 'POST' && migrationMatch[2] !== undefined))) {
+      const runId = migrationMatch[1]!; const migrationId = migrationMatch[2];
+      const capability = request.method === 'POST' ? 'workflows:migrate' as const : 'workflows:read' as const;
+      requireCapability(identity, capability); if (!workflowMigrations) throw new HttpFailure(404, 'NOT_FOUND');
+      let data: JsonObject | undefined;
+      if (request.method === 'POST') {
+        data = await body(request, signal); exact(data, ['commandId', 'revision']);
+        if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
+          || !Number.isSafeInteger(data['revision']) || data['revision'] < 1) throw new HttpFailure(400, 'INVALID_REQUEST');
+      }
+      if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
+      const base = { scope: identity.scope, agentIds: identity.agentIds, runId, signal };
+      const operation = Promise.resolve().then((): Promise<unknown> => migrationId === undefined ? workflowMigrations.list(Object.freeze(base))
+        : data === undefined ? workflowMigrations.plan(Object.freeze({ ...base, migrationId }))
+          : workflowMigrations.apply(Object.freeze({ ...base, actorId: identity.scope.principalId, revision: data['revision'] as number,
+            commandId: data['commandId'] as string, migrationId }))).finally(() => { workflowOperations--; });
+      let result: unknown;
+      try { result = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
+      assertActive(signal); requireCapability(identity, capability);
+      if (migrationId === undefined) {
+        if (result === null) throw new HttpFailure(404, 'NOT_FOUND');
+        if (!Array.isArray(result) || result.length > 256) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+        const migrations = result.map(migrationRecord);
+        if (new Set(migrations.map(item => item.id)).size !== migrations.length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+        return response({ migrations });
+      }
+      if (data === undefined) {
+        if (result === null) throw new HttpFailure(404, 'NOT_FOUND');
+        return response({ plan: migrationPlan(result, runId, migrationId) });
+      }
+      let raw: JsonObject; try { raw = object(result, 524_288); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
+      if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw new HttpFailure(409, 'WORKFLOW_CONFLICT');
+      if (raw['status'] === 'not_found' && Object.keys(raw).length === 1) throw new HttpFailure(404, 'NOT_FOUND');
+      if (raw['status'] === 'refused') {
+        workflowExact(raw, ['status', 'plan']); const plan = migrationPlan(raw['plan'], runId, migrationId);
+        if (plan.allowed) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+        return response({ plan }, 409);
+      }
+      workflowExact(raw, ['status', 'plan', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      const plan = migrationPlan(raw['plan'], runId, migrationId); const record = workflowRecord(raw['workflow'], runId);
+      if (!plan.allowed || record.revision <= (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+      return response({ plan, workflow: record });
     }
     // Continuation and operator pause share one exact revision-bound body; each has its own least-authority adapter.
     const workflowResumeMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/(resume|pause)$/.exec(url.pathname);

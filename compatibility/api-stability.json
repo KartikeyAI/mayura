@@ -58,7 +58,8 @@
   ],
   "experimentalEntryPoints": [],
   "internalPackages": [
-    "@mayura/consumer-tests"
+    "@mayura/consumer-tests",
+    "@mayura/inspector-ui"
   ],
   "apiReport": "compatibility/api-report.json"
 }

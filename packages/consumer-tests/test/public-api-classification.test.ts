@@ -9,7 +9,7 @@ describe('public API classification', () => {
       format: number; release: string; targetRelease: string; stableEntryPoints: string[]; trustedHostEntryPoints: string[];
       experimentalEntryPoints: string[]; internalPackages: string[]; apiReport: string;
     };
-    expect(policy).toMatchObject({ format: 2, targetRelease: '1.0.0', experimentalEntryPoints: [], internalPackages: ['@mayura/consumer-tests'],
+    expect(policy).toMatchObject({ format: 2, targetRelease: '1.0.0', experimentalEntryPoints: [], internalPackages: ['@mayura/consumer-tests', '@mayura/inspector-ui'],
       trustedHostEntryPoints: ['@mayura/core/host', '@mayura/storage-sql/host', '@mayura/tools/host'], apiReport: 'compatibility/api-report.json' });
     const packages = resolve(root, 'packages');
     const classified: string[] = [];

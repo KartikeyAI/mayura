@@ -466,7 +466,7 @@
       },
       "MayuraClient": {
         "kind": "interface",
-        "declaration": "ef9166d847124048"
+        "declaration": "394478f52828fbd9"
       },
       "RemoteHumanRequest": {
         "kind": "interface",
@@ -523,6 +523,18 @@
       "WorkflowIndexPage": {
         "kind": "interface",
         "declaration": "26bfa676e99cd347"
+      },
+      "WorkflowMigrationAction": {
+        "kind": "type",
+        "declaration": "29f550a023e899a6"
+      },
+      "WorkflowMigrationOffer": {
+        "kind": "interface",
+        "declaration": "04ae902e0e5892e0"
+      },
+      "WorkflowMigrationPlan": {
+        "kind": "interface",
+        "declaration": "3d95bb831a608ca2"
       },
       "WorkflowSignalCommand": {
         "kind": "interface",
@@ -2572,7 +2584,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "058ba945a41b11e8"
+        "declaration": "731be9b0b27dd9f3"
       },
       "createAgentServer": {
         "kind": "function",
@@ -2596,7 +2608,7 @@
       },
       "ServerIdentity": {
         "kind": "interface",
-        "declaration": "7696941e2ca0c291"
+        "declaration": "e0fbf3de0a4592e5"
       },
       "SubmissionJournal": {
         "kind": "interface",
@@ -2633,6 +2645,18 @@
       "WorkflowIndexTransport": {
         "kind": "interface",
         "declaration": "63f400fced325166"
+      },
+      "WorkflowMigrationPlanRecord": {
+        "kind": "interface",
+        "declaration": "1a7a1451df16f53c"
+      },
+      "WorkflowMigrationRecord": {
+        "kind": "interface",
+        "declaration": "a340f054e71f42d2"
+      },
+      "WorkflowMigrationTransport": {
+        "kind": "interface",
+        "declaration": "c1f9705d87686b4e"
       },
       "WorkflowPauseTransport": {
         "kind": "interface",
@@ -2696,7 +2720,7 @@
     "@mayura/storage": {
       "AggregateStore": {
         "kind": "interface",
-        "declaration": "553f487c88f53b97"
+        "declaration": "4bb4d29f043b4c13"
       },
       "assertWorkflowGraphStateMatchesManifest": {
         "kind": "function",
@@ -3022,6 +3046,10 @@
         "kind": "function",
         "declaration": "1968ecafd1842b6f"
       },
+      "MigrateRecord": {
+        "kind": "interface",
+        "declaration": "5011eb0f3c429b23"
+      },
       "migrateSqliteStoreV0ToV1": {
         "kind": "function",
         "declaration": "b8d73910537b01f1"
@@ -3046,6 +3074,10 @@
         "kind": "interface",
         "declaration": "0542ffd04c7b3fe4"
       },
+      "ScheduledMigrate": {
+        "kind": "interface",
+        "declaration": "1a3b0d30a2c5ca36"
+      },
       "ScheduledRunAccess": {
         "kind": "interface",
         "declaration": "b0528867482995a5"
@@ -3064,7 +3096,7 @@
       },
       "ScheduledWorkflowStore": {
         "kind": "interface",
-        "declaration": "550f8b8af1e0b27a"
+        "declaration": "62e8ba1e318f99eb"
       },
       "ScheduledWrite": {
         "kind": "interface",
@@ -3164,7 +3196,7 @@
       },
       "WorkflowGraphDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "53cfe7798244b41c"
+        "declaration": "021d31d26a64666d"
       },
       "workflowGraphDiscoveryCommand": {
         "kind": "function",
@@ -3236,7 +3268,7 @@
       },
       "WorkflowGraphStore": {
         "kind": "interface",
-        "declaration": "10bedabe4240b19f"
+        "declaration": "5031bca0a63a4058"
       },
       "WorkflowGraphStoreSnapshot": {
         "kind": "interface",
@@ -3336,7 +3368,7 @@
       },
       "WorkflowLoopStatus": {
         "kind": "type",
-        "declaration": "0f142f9639134da9"
+        "declaration": "2b71a96679c30d50"
       },
       "workflowManifest": {
         "kind": "function",
@@ -3392,7 +3424,7 @@
       },
       "WorkflowSagaStatus": {
         "kind": "type",
-        "declaration": "15655af3efcd90f0"
+        "declaration": "fac812ac7e4af937"
       },
       "WorkflowSagaStepManifest": {
         "kind": "interface",
@@ -3460,7 +3492,7 @@
       },
       "WorkflowTreeDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "ba292eebdc471144"
+        "declaration": "cd07589a00b3144c"
       },
       "workflowTreeDiscoveryCommand": {
         "kind": "function",
@@ -3513,6 +3545,10 @@
       "WorkflowTreeMethod": {
         "kind": "type",
         "declaration": "00059cbc1dfe689e"
+      },
+      "WorkflowTreeMigrateRoot": {
+        "kind": "interface",
+        "declaration": "dc63d1cae5e86933"
       },
       "workflowTreePolicy": {
         "kind": "function",
@@ -3600,13 +3636,13 @@
       },
       "WorkflowTreeStore": {
         "kind": "interface",
-        "declaration": "9e340737af33c751"
+        "declaration": "417d796d1b41ef11"
       }
     },
     "@mayura/storage-contracts": {
       "AggregateStore": {
         "kind": "interface",
-        "declaration": "553f487c88f53b97"
+        "declaration": "4bb4d29f043b4c13"
       },
       "assertWorkflowGraphStateMatchesManifest": {
         "kind": "function",
@@ -3920,6 +3956,10 @@
         "kind": "function",
         "declaration": "1968ecafd1842b6f"
       },
+      "MigrateRecord": {
+        "kind": "interface",
+        "declaration": "5011eb0f3c429b23"
+      },
       "ReceiptCommand": {
         "kind": "interface",
         "declaration": "1297e6bebe053d4d"
@@ -3931,6 +3971,10 @@
       "ScheduledEnrollment": {
         "kind": "interface",
         "declaration": "0542ffd04c7b3fe4"
+      },
+      "ScheduledMigrate": {
+        "kind": "interface",
+        "declaration": "1a3b0d30a2c5ca36"
       },
       "ScheduledRunAccess": {
         "kind": "interface",
@@ -3950,7 +3994,7 @@
       },
       "ScheduledWorkflowStore": {
         "kind": "interface",
-        "declaration": "550f8b8af1e0b27a"
+        "declaration": "62e8ba1e318f99eb"
       },
       "ScheduledWrite": {
         "kind": "interface",
@@ -4038,7 +4082,7 @@
       },
       "WorkflowGraphDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "53cfe7798244b41c"
+        "declaration": "021d31d26a64666d"
       },
       "workflowGraphDiscoveryCommand": {
         "kind": "function",
@@ -4110,7 +4154,7 @@
       },
       "WorkflowGraphStore": {
         "kind": "interface",
-        "declaration": "10bedabe4240b19f"
+        "declaration": "5031bca0a63a4058"
       },
       "WorkflowGraphStoreSnapshot": {
         "kind": "interface",
@@ -4210,7 +4254,7 @@
       },
       "WorkflowLoopStatus": {
         "kind": "type",
-        "declaration": "0f142f9639134da9"
+        "declaration": "2b71a96679c30d50"
       },
       "workflowManifest": {
         "kind": "function",
@@ -4266,7 +4310,7 @@
       },
       "WorkflowSagaStatus": {
         "kind": "type",
-        "declaration": "15655af3efcd90f0"
+        "declaration": "fac812ac7e4af937"
       },
       "WorkflowSagaStepManifest": {
         "kind": "interface",
@@ -4334,7 +4378,7 @@
       },
       "WorkflowTreeDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "ba292eebdc471144"
+        "declaration": "cd07589a00b3144c"
       },
       "workflowTreeDiscoveryCommand": {
         "kind": "function",
@@ -4387,6 +4431,10 @@
       "WorkflowTreeMethod": {
         "kind": "type",
         "declaration": "00059cbc1dfe689e"
+      },
+      "WorkflowTreeMigrateRoot": {
+        "kind": "interface",
+        "declaration": "dc63d1cae5e86933"
       },
       "workflowTreePolicy": {
         "kind": "function",
@@ -4474,7 +4522,7 @@
       },
       "WorkflowTreeStore": {
         "kind": "interface",
-        "declaration": "9e340737af33c751"
+        "declaration": "417d796d1b41ef11"
       }
     },
     "@mayura/storage-postgres": {
@@ -4532,6 +4580,10 @@
         "kind": "function",
         "declaration": "60613e3d0dbf9950"
       },
+      "migrateCommand": {
+        "kind": "function",
+        "declaration": "97e64981a3df42e5"
+      },
       "nextCounter": {
         "kind": "function",
         "declaration": "a42eb9ed7a046608"
@@ -4550,7 +4602,7 @@
       },
       "ScheduledWorkflowDatabase": {
         "kind": "class",
-        "declaration": "bf9a4eda808b375e"
+        "declaration": "513f55c9d019bb22"
       },
       "SchedulerBackend": {
         "kind": "interface",
@@ -4618,7 +4670,7 @@
       },
       "WorkflowTreeDatabase": {
         "kind": "class",
-        "declaration": "7bd5ea38c91f13ed"
+        "declaration": "5161d8087d723578"
       },
       "workflowTreeDiscoveryFacade": {
         "kind": "function",
@@ -4838,6 +4890,10 @@
         "kind": "function",
         "declaration": "b170eb2be1396f1e"
       },
+      "compositeFleetTarget": {
+        "kind": "function",
+        "declaration": "169706721d296870"
+      },
       "compositeVersionTarget": {
         "kind": "function",
         "declaration": "f5563fe44f483846"
@@ -4862,9 +4918,17 @@
         "kind": "function",
         "declaration": "bd410ce6ae7a504e"
       },
+      "createWorkflowMigrationCatalog": {
+        "kind": "function",
+        "declaration": "883ceff25baeec37"
+      },
+      "createWorkflowMigrationService": {
+        "kind": "function",
+        "declaration": "27809c0ae20ea0e8"
+      },
       "createWorkflowRuntime": {
         "kind": "function",
-        "declaration": "cba99a0098bead5d"
+        "declaration": "efdd344feea25c52"
       },
       "createWorkflowWorker": {
         "kind": "function",
@@ -4877,6 +4941,10 @@
       "defineWorkflow": {
         "kind": "function",
         "declaration": "ca0fc599f6834d38"
+      },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
       },
       "DurableAgentWorkflowOptions": {
         "kind": "interface",
@@ -4904,7 +4972,7 @@
       },
       "graphFleetTarget": {
         "kind": "function",
-        "declaration": "69a13652fff5ecc1"
+        "declaration": "9a7b9c6ffd515240"
       },
       "inventoryWorkflowVersions": {
         "kind": "function",
@@ -4914,13 +4982,53 @@
         "kind": "function",
         "declaration": "af52396e61348442"
       },
+      "MigrationAction": {
+        "kind": "type",
+        "declaration": "0c931abcd7e3155e"
+      },
+      "MigrationBlocker": {
+        "kind": "interface",
+        "declaration": "ea3aaadd60fb66f7"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationNode": {
+        "kind": "interface",
+        "declaration": "b7ed8212f694d7f8"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
+      },
+      "MigrationPlanEntry": {
+        "kind": "interface",
+        "declaration": "ba6b3f320820ecf2"
+      },
+      "MigrationStep": {
+        "kind": "interface",
+        "declaration": "5a04c93ce75c0b4a"
+      },
+      "nodeFingerprint": {
+        "kind": "function",
+        "declaration": "128671f18879c26f"
+      },
+      "pinnedDefinitionHash": {
+        "kind": "function",
+        "declaration": "67af91f22b3d85be"
+      },
+      "planWorkflowMigration": {
+        "kind": "function",
+        "declaration": "c67bea70a338e1ea"
+      },
       "ReconcileExternalEffectCommand": {
         "kind": "interface",
         "declaration": "5ca55f4d0676ba29"
       },
       "ScheduledWorkflowRuntime": {
         "kind": "interface",
-        "declaration": "524efe941183d020"
+        "declaration": "121e56cdd251b3b8"
       },
       "ScheduledWorkflowRuntimeOptions": {
         "kind": "interface",
@@ -4928,7 +5036,7 @@
       },
       "treeFleetTarget": {
         "kind": "function",
-        "declaration": "d62dd08e25b030d2"
+        "declaration": "42d727fd7248b517"
       },
       "VerifiedExternalEffect": {
         "kind": "interface",
@@ -5026,6 +5134,38 @@
         "kind": "interface",
         "declaration": "9f13c7e17c457b87"
       },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationApplyResult": {
+        "kind": "type",
+        "declaration": "f9ab6493a73b6632"
+      },
+      "WorkflowMigrationCatalog": {
+        "kind": "interface",
+        "declaration": "ddbeb2046a6b70f0"
+      },
+      "WorkflowMigrationOfferRecord": {
+        "kind": "interface",
+        "declaration": "94a64ffee0a32033"
+      },
+      "WorkflowMigrationOptions": {
+        "kind": "interface",
+        "declaration": "4b63f3a085bebe59"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
+      },
+      "WorkflowMigrationService": {
+        "kind": "interface",
+        "declaration": "247d6463c438a379"
+      },
+      "WorkflowMigrationServiceOptions": {
+        "kind": "interface",
+        "declaration": "b7e927bd6b551bd6"
+      },
       "WorkflowNode": {
         "kind": "type",
         "declaration": "7188d1f549610b06"
@@ -5114,6 +5254,18 @@
         "kind": "function",
         "declaration": "7ca31c42364475da"
       },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
+      },
       "WorkflowDrainOptions": {
         "kind": "interface",
         "declaration": "a3d1202bb3c7d21b"
@@ -5124,7 +5276,7 @@
       },
       "WorkflowGraphCandidateOutcome": {
         "kind": "type",
-        "declaration": "68509c818333e240"
+        "declaration": "9b90385ea01cebc6"
       },
       "WorkflowGraphCatalogEntry": {
         "kind": "interface",
@@ -5148,7 +5300,7 @@
       },
       "WorkflowGraphDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "53cfe7798244b41c"
+        "declaration": "021d31d26a64666d"
       },
       "WorkflowGraphDiscoveryCursor": {
         "kind": "interface",
@@ -5180,7 +5332,7 @@
       },
       "WorkflowGraphRuntime": {
         "kind": "interface",
-        "declaration": "6d869e9ecf8d7687"
+        "declaration": "5c17a710a4ae3b63"
       },
       "WorkflowGraphRuntimeOptions": {
         "kind": "interface",
@@ -5193,6 +5345,14 @@
       "WorkflowGraphTargetBinding": {
         "kind": "type",
         "declaration": "bbf79841cda85324"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
       }
     },
     "@mayura/workflows/children": {
@@ -5216,9 +5376,21 @@
         "kind": "function",
         "declaration": "7b80655d05d69a46"
       },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
       "defineWorkflowTree": {
         "kind": "function",
         "declaration": "d870a29400cf8bdc"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
       },
       "treeManifest": {
         "kind": "function",
@@ -5232,9 +5404,17 @@
         "kind": "interface",
         "declaration": "363cc10512002dff"
       },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
+      },
       "WorkflowTreeCandidateOutcome": {
         "kind": "type",
-        "declaration": "372e8b9d58442f06"
+        "declaration": "28b4bc68239bdd6a"
       },
       "WorkflowTreeChildNode": {
         "kind": "interface",
@@ -5266,7 +5446,7 @@
       },
       "WorkflowTreeDiscoveryCandidate": {
         "kind": "interface",
-        "declaration": "ba292eebdc471144"
+        "declaration": "cd07589a00b3144c"
       },
       "WorkflowTreeDiscoveryCursor": {
         "kind": "interface",
@@ -5302,7 +5482,7 @@
       },
       "WorkflowTreeRuntime": {
         "kind": "interface",
-        "declaration": "7c4d270ecbcb3546"
+        "declaration": "104f2094b78ad10c"
       },
       "WorkflowTreeRuntimeOptions": {
         "kind": "interface",
@@ -5342,9 +5522,21 @@
         "kind": "function",
         "declaration": "3570426059200aad"
       },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
       "lifecycleManifest": {
         "kind": "function",
         "declaration": "2060514f1128bedd"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
       },
       "WorkflowDrainOptions": {
         "kind": "interface",
@@ -5460,7 +5652,7 @@
       },
       "WorkflowLifecycleRuntime": {
         "kind": "interface",
-        "declaration": "d02910e79fb1bddf"
+        "declaration": "a948bf52fb817bd7"
       },
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",
@@ -5481,6 +5673,14 @@
       "WorkflowLifecycleVerifiedActor": {
         "kind": "interface",
         "declaration": "b3446df2b93e3400"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
       }
     },
     "@mayura/workflows/sagas": {
@@ -5496,9 +5696,21 @@
         "kind": "function",
         "declaration": "12b93f4f3d4027a2"
       },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
       "defineWorkflowSaga": {
         "kind": "function",
         "declaration": "fe80f7f0c64856b0"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
       },
       "sagaManifest": {
         "kind": "function",
@@ -5511,6 +5723,14 @@
       "WorkflowDrainReport": {
         "kind": "interface",
         "declaration": "363cc10512002dff"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
       },
       "WorkflowSagaCompensation": {
         "kind": "interface",
@@ -5534,7 +5754,7 @@
       },
       "WorkflowSagaRuntime": {
         "kind": "interface",
-        "declaration": "ba5d087888f7694e"
+        "declaration": "f5e6975cafeb74a0"
       },
       "WorkflowSagaRuntimeOptions": {
         "kind": "interface",
@@ -5546,7 +5766,7 @@
       },
       "WorkflowSagaStatus": {
         "kind": "type",
-        "declaration": "15655af3efcd90f0"
+        "declaration": "fac812ac7e4af937"
       },
       "WorkflowSagaStep": {
         "kind": "interface",
@@ -5574,9 +5794,21 @@
         "kind": "function",
         "declaration": "e90f461f1e7935f0"
       },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
       "loopManifest": {
         "kind": "function",
         "declaration": "64d10b3cf0c61801"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
       },
       "WorkflowDrainOptions": {
         "kind": "interface",
@@ -5608,7 +5840,7 @@
       },
       "WorkflowLoopRuntime": {
         "kind": "interface",
-        "declaration": "477406bfb3a9a98c"
+        "declaration": "bca7c61bc405e71d"
       },
       "WorkflowLoopRuntimeOptions": {
         "kind": "interface",
@@ -5620,7 +5852,15 @@
       },
       "WorkflowLoopStatus": {
         "kind": "type",
-        "declaration": "0f142f9639134da9"
+        "declaration": "2b71a96679c30d50"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
       }
     },
     "@mayura/workflows/composites": {
@@ -5646,7 +5886,7 @@
       },
       "WorkflowCompositeFleetRuntime": {
         "kind": "interface",
-        "declaration": "b274d9276efd7d68"
+        "declaration": "0dfd05eabd5ad96a"
       },
       "WorkflowCompositeHost": {
         "kind": "interface",

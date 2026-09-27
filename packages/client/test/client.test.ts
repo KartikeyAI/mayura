@@ -6,8 +6,8 @@ import { createWorkflowGraphProjection } from '../src/workflows.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
 import { createSqliteStore } from '../../storage/dist/index.js';
-import { createWorkflowFleetControl, lifecycleFleetTarget } from '../../workflows/dist/index.js';
-import { createWorkflowLifecycleFleetRuntime, defineWorkflowLifecycle } from '../../workflows/dist/lifecycle.js';
+import { createWorkflowFleetControl, createWorkflowMigrationCatalog, createWorkflowMigrationService, lifecycleFleetTarget, pinnedDefinitionHash } from '../../workflows/dist/index.js';
+import { createWorkflowLifecycleFleetRuntime, defineWorkflowLifecycle, defineWorkflowMigration } from '../../workflows/dist/lifecycle.js';
 import { MayuraError } from '../../core/dist/index.js';
 import type { Guard, JsonValue, ModelAdapter, ModelResponse, Schema } from '../../core/src/index.js';
 
@@ -44,6 +44,7 @@ function fixture(options: {
   workflowResumes?: AgentServerOptions['workflowResumes'];
   workflowPauses?: AgentServerOptions['workflowPauses'];
   workflowFleet?: AgentServerOptions['workflowFleet'];
+  workflowMigrations?: AgentServerOptions['workflowMigrations'];
 } = {}) {
   let index = 0;
   const generate = vi.fn<ModelAdapter['generate']>(options.generate ?? (async () => (options.responses ?? [final(4)])[index++]!));
@@ -56,7 +57,7 @@ function fixture(options: {
   });
   const server = createAgentServer({ publicOrigin: origin, agents: [{ agent, permissions: { allow: ['model:fixture.model','tool:fixture.write','effect:write'] } }],
     authenticate: options.authenticate ?? (async ({ token }) => token === 'test-token' ? {
-      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control','workflows:fleet'], expiresAtMs: Date.now() + 60_000,
+      scope: { principalId: 'developer', projectId: 'project' }, agentIds: [agent.id], capabilities: ['runs:read','runs:submit','runs:cancel','humans:read','humans:respond','workflows:read','workflows:control','workflows:fleet','workflows:migrate'], expiresAtMs: Date.now() + 60_000,
     } : null), ...(options.limits ? { limits: options.limits } : {}), ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
     ...(options.workflowViews ? { workflowViews: options.workflowViews } : {}),
     ...(options.workflowIndex ? { workflowIndex: options.workflowIndex } : {}),
@@ -65,6 +66,7 @@ function fixture(options: {
     ...(options.workflowResumes ? { workflowResumes: options.workflowResumes } : {}),
     ...(options.workflowPauses ? { workflowPauses: options.workflowPauses } : {}),
     ...(options.workflowFleet ? { workflowFleet: options.workflowFleet } : {}),
+    ...(options.workflowMigrations ? { workflowMigrations: options.workflowMigrations } : {}),
   });
   servers.push(server);
   const transport = vi.fn<typeof fetch>(async (input, init) => server.fetch(new Request(input, init)));
@@ -571,5 +573,54 @@ describe('client cancellation boundaries and browser import graph', () => {
     const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies?: Record<string, string> };
     expect(source).not.toMatch(/\b(?:from\s+['"](?:node:|@mayura\/)|require\s*\(|import\s*\()/);
     expect(manifest.dependencies ?? {}).toEqual({});
+  });
+});
+
+describe('browser workflow migration client', () => {
+  it('previews and applies a reviewed migration to a real paused lifecycle run end to end', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    try {
+      const scope = { principalId: 'developer', projectId: 'project' };
+      const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'migration-e2e', validate: value => ({ value: value as JsonValue }) } };
+      const lifecycle = (version: string, extra: boolean) => defineWorkflowLifecycle({ id: 'e2e-migrate', version, input: any, output: any, nodes: [
+        { kind: 'timer', id: 'wake', fireAtMs: { kind: 'input', path: ['fireAtMs'] } },
+        ...(extra ? [{ kind: 'timer' as const, id: 'settle', dependsOn: ['wake'], fireAtMs: { kind: 'input' as const, path: ['fireAtMs'] } }] : []),
+      ], result: { kind: 'step', stepId: 'wake', path: [] } });
+      const v1 = lifecycle('1', false); const v2 = lifecycle('2', true);
+      const runtime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0, now: () => 100 });
+      const run = await runtime.submit(v1, { input: { fireAtMs: 500 }, idempotencyKey: 'e2e-migrate' }); await runtime.runUntilSettled(v1, run.id);
+      const definitions = new Map([[v1.digest, v1], [v2.digest, v2]]);
+      const service = createWorkflowMigrationService({ catalog: createWorkflowMigrationCatalog([defineWorkflowMigration({ id: 'e2e-1-to-2', from: v1, to: v2, description: 'Adds a settle timer.' })]),
+        pinned: id => pinnedDefinitionHash(store, scope, id), inspect: id => runtime.inspect(id), migrate: (migration, command) => runtime.migrate(migration as never, command) });
+      const view = async (id: string) => {
+        const snapshot = await runtime.inspect(id); const definition = definitions.get((await pinnedDefinitionHash(store, scope, id))!)!;
+        return { format: 5 as const, definitionId: definition.id, definitionVersion: definition.version, runId: id, revision: snapshot.version, status: snapshot.status,
+          nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind, dependsOn: [...(node.dependsOn ?? [])] })),
+          steps: definition.nodes.map(node => ({ id: node.id, kind: node.kind, status: snapshot.steps[node.id]!.status })) } as never;
+      };
+      // The adapter shape documented in docs/how-to/workflow-migrations.md.
+      const workflowMigrations: NonNullable<AgentServerOptions['workflowMigrations']> = {
+        list: ({ runId }) => service.list(runId), plan: ({ runId, migrationId }) => service.plan(runId, migrationId) as never,
+        apply: async ({ runId, migrationId, revision, actorId, commandId }) => {
+          const result = await service.apply(runId, migrationId, { revision, actorId, commandId });
+          return result.status === 'applied' ? { status: 'applied', plan: result.plan as never, workflow: await view(runId) } : result as never;
+        },
+      };
+      const { client } = fixture({ workflowMigrations });
+      expect(await client.workflowMigrations(run.id)).toEqual([{ id: 'e2e-1-to-2', description: 'Adds a settle timer.', fromVersion: '1', toVersion: '2', fromDigest: v1.digest, toDigest: v2.digest }]);
+      const blocked = await client.planWorkflowMigration(run.id, 'e2e-1-to-2');
+      expect(blocked).toMatchObject({ allowed: false, blockers: [{ node: '*' }] });
+      const waiting = await runtime.inspect(run.id);
+      await expect(client.migrateWorkflow(run.id, 'e2e-1-to-2', waiting.version, { commandId: 'migrate-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+      const paused = await runtime.pause(run.id);
+      expect((await client.planWorkflowMigration(run.id, 'e2e-1-to-2')).entries.map(entry => entry.action)).toEqual(['keep', 'add']);
+      await expect(client.migrateWorkflow(run.id, 'e2e-1-to-2', paused.version - 1, { commandId: 'migrate-1' })).rejects.toMatchObject({ status: 409 });
+      const applied = await client.migrateWorkflow(run.id, 'e2e-1-to-2', paused.version, { commandId: 'migrate-1' });
+      expect(applied.workflow).toMatchObject({ definitionVersion: '2', status: 'paused' });
+      expect(applied.workflow.revision).toBeGreaterThan(paused.version);
+      expect(await client.workflowMigrations(run.id)).toEqual([]);
+      await expect(client.migrateWorkflow(run.id, 'bad/id', 1, { commandId: 'x' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      runtime.close();
+    } finally { await store.close(); }
   });
 });

@@ -905,3 +905,60 @@ describe('bounded metadata SSE observations and shutdown', () => {
     await error(await response, 503, 'SERVER_CLOSED');
   });
 });
+
+describe('authenticated workflow migrations', () => {
+  const fromDigest = 'c'.repeat(64); const toDigest = 'd'.repeat(64);
+  const record = { id: 'deployment-1-to-2', description: 'Adds an audit step.', fromVersion: '1', toVersion: '2', fromDigest, toDigest };
+  const plan = (allowed = true) => ({ migrationId: 'deployment-1-to-2', format: 'tree-v4', runId: workflowId, fromDigest, toDigest,
+    entries: [{ action: 'keep' as const, target: 'prepare', source: 'prepare', status: 'succeeded' }, { action: 'add' as const, target: 'audit' }],
+    blockers: allowed ? [] : [{ node: '*', reason: 'The tree is running; pause it before migrating.' }], allowed });
+  const migrator = identity({ capabilities: ['workflows:read', 'workflows:migrate'] });
+  const post = (path: string, value: unknown) => request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
+  const transport = (overrides: Partial<NonNullable<AgentServerOptions['workflowMigrations']>> = {}) => ({
+    list: vi.fn(async () => [record]), plan: vi.fn(async () => plan()),
+    apply: vi.fn(async () => ({ status: 'applied' as const, plan: plan(), workflow: { ...workflow(), revision: 3, status: 'paused' as const } })), ...overrides });
+
+  it('lists and plans with read access and applies only with the migrate capability', async () => {
+    const migrations = transport();
+    const reader = server({ workflowMigrations: migrations });
+    const listed = await reader.fetch(request(`/v1/workflow-runs/${workflowId}/migrations`));
+    expect(listed.status).toBe(200); expect((await json(listed))['migrations']).toEqual([record]);
+    const planned = await reader.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`));
+    expect((await json(planned))['plan']).toEqual(plan());
+    expect(migrations.plan).toHaveBeenCalledWith(expect.objectContaining({ runId: workflowId, migrationId: 'deployment-1-to-2' }));
+    await error(await reader.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 })), 403, 'FORBIDDEN');
+    expect(migrations.apply).not.toHaveBeenCalled();
+    const operator = server({ authenticate: async () => migrator, workflowMigrations: migrations });
+    const applied = await operator.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 }));
+    expect(applied.status).toBe(200); expect(await json(applied)).toMatchObject({ plan: { allowed: true }, workflow: { revision: 3, status: 'paused' } });
+    expect(migrations.apply).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'alice', runId: workflowId, revision: 2, commandId: 'm-1', migrationId: 'deployment-1-to-2' }));
+  });
+
+  it('returns the refusing plan as a conflict and maps missing runs', async () => {
+    const refused = server({ authenticate: async () => migrator, workflowMigrations: transport({ list: vi.fn(async () => null), plan: vi.fn(async () => null),
+      apply: vi.fn(async () => ({ status: 'refused' as const, plan: plan(false) })) }) });
+    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations`)), 404, 'NOT_FOUND');
+    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`)), 404, 'NOT_FOUND');
+    const response = await refused.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 }));
+    expect(response.status).toBe(409); expect((await json(response))['plan']).toMatchObject({ allowed: false, blockers: [{ node: '*' }] });
+  });
+
+  it('rejects malformed requests and hostile or inconsistent transport replies', async () => {
+    const migrations = transport(); const value = server({ authenticate: async () => migrator, workflowMigrations: migrations });
+    await error(await value.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2, force: true })), 400, 'INVALID_REQUEST');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/bad%2Fid`)), 404, 'NOT_FOUND');
+    expect(migrations.apply).not.toHaveBeenCalled();
+    const hostile = [
+      transport({ list: vi.fn(async () => [{ ...record, secret: 'PRIVATE' }] as never) }),
+      transport({ plan: vi.fn(async () => ({ ...plan(), runId: 'e'.repeat(64) })) }),
+      transport({ plan: vi.fn(async () => ({ ...plan(), allowed: false })) }),
+      transport({ apply: vi.fn(async () => ({ status: 'applied' as const, plan: plan(), workflow: workflow() })) }),
+    ];
+    for (const [index, candidate] of hostile.entries()) {
+      const target = server({ authenticate: async () => migrator, workflowMigrations: candidate });
+      const path = index === 0 ? `/v1/workflow-runs/${workflowId}/migrations` : `/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`;
+      await error(await target.fetch(index === 3 ? post(path, { commandId: 'm-1', revision: 2 }) : request(path)), 503, 'WORKFLOW_TRANSPORT_INVALID');
+    }
+    expect(() => server({ workflowMigrations: { list: async () => [], plan: async () => null } as never })).toThrow();
+  });
+});

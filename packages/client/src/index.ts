@@ -58,6 +58,19 @@ export type WorkflowFleetSweepOutcome =
   | { readonly target: string; readonly runId: string; readonly outcome: 'failed'; readonly code: string };
 /** One content-free sweep page. Pass `nextCursor` back unchanged to continue; null means the sweep is complete. */
 export interface WorkflowFleetSweep { readonly outcomes: readonly WorkflowFleetSweepOutcome[]; readonly nextCursor: ClientJson | null }
+/** A reviewed migration offered for runs pinned to its source definition version. */
+export interface WorkflowMigrationOffer {
+  readonly id: string; readonly description: string;
+  readonly fromVersion: string; readonly toVersion: string; readonly fromDigest: string; readonly toDigest: string;
+}
+export type WorkflowMigrationAction = 'keep' | 'update' | 'reset' | 'accept' | 'add' | 'remove';
+/** What a migration would do to one run; `allowed` is false exactly when `blockers` is non-empty. */
+export interface WorkflowMigrationPlan {
+  readonly migrationId: string; readonly format: string; readonly runId: string; readonly fromDigest: string; readonly toDigest: string;
+  readonly entries: readonly { readonly action: WorkflowMigrationAction; readonly target?: string; readonly source?: string; readonly status?: string }[];
+  readonly blockers: readonly { readonly node: string; readonly reason: string }[];
+  readonly allowed: boolean;
+}
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token: () => string | Promise<string>;
@@ -88,6 +101,15 @@ export interface MayuraClient {
   sweepWorkflowFleet(phase: 'pause' | 'resume', command: { readonly cursor: ClientJson | null; readonly limit?: number },
     options?: { readonly signal?: AbortSignal }): Promise<WorkflowFleetSweep>;
   pauseWorkflow(id: string, revision: number, options: WorkflowCommandOptions): Promise<WorkflowViewInput>;
+  /** Reviewed migrations whose source is the run's pinned definition. Requires `workflows:read`. */
+  workflowMigrations(id: string, options?: { readonly signal?: AbortSignal }): Promise<readonly WorkflowMigrationOffer[]>;
+  /** Dry run of one migration against the run's real state; writes nothing. Requires `workflows:read`. */
+  planWorkflowMigration(id: string, migrationId: string, options?: { readonly signal?: AbortSignal }): Promise<WorkflowMigrationPlan>;
+  /**
+   * Apply a reviewed migration to a paused run at its exact revision. Requires `workflows:migrate`. A refused plan or a
+   * changed revision is HTTP 409: plan again to see the blockers.
+   */
+  migrateWorkflow(id: string, migrationId: string, revision: number, options: WorkflowCommandOptions): Promise<{ readonly plan: WorkflowMigrationPlan; readonly workflow: WorkflowViewInput }>;
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
@@ -96,6 +118,46 @@ export class ClientError extends Error {
   constructor(readonly code: string, readonly status?: number) { super(`Mayura request failed (${code}).`); this.name = 'ClientError'; Object.freeze(this); }
 }
 const encoder = new TextEncoder();
+const migrationIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const migrationNodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+const migrationActions: readonly string[] = ['keep', 'update', 'reset', 'accept', 'add', 'remove'];
+function plainObject(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail(); return value as Record<string, unknown>;
+}
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): void {
+  if (Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))) fail();
+}
+function migrationOffer(value: unknown): WorkflowMigrationOffer {
+  const raw = plainObject(value); exactKeys(raw, ['id', 'description', 'fromVersion', 'toVersion', 'fromDigest', 'toDigest']);
+  if (typeof raw['id'] !== 'string' || !migrationIdPattern.test(raw['id']) || typeof raw['description'] !== 'string' || raw['description'].length > 2_048
+    || typeof raw['fromVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['fromVersion'])
+    || typeof raw['toVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['toVersion'])
+    || typeof raw['fromDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['fromDigest'])
+    || typeof raw['toDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['toDigest'])) fail();
+  return Object.freeze({ ...raw }) as unknown as WorkflowMigrationOffer;
+}
+function migrationPlan(value: unknown, runId: string, migrationId: string): WorkflowMigrationPlan {
+  const raw = plainObject(value); exactKeys(raw, ['migrationId', 'format', 'runId', 'fromDigest', 'toDigest', 'entries', 'blockers', 'allowed']);
+  const entries = raw['entries']; const blockers = raw['blockers'];
+  if (raw['migrationId'] !== migrationId || raw['runId'] !== runId || typeof raw['format'] !== 'string' || !/^[a-z0-9-]{1,32}$/.test(raw['format'])
+    || typeof raw['fromDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['fromDigest']) || typeof raw['toDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(raw['toDigest'])
+    || !Array.isArray(entries) || entries.length > 512 || !Array.isArray(blockers) || blockers.length > 512 || raw['allowed'] !== (blockers.length === 0)) fail();
+  const frozenEntries = (entries as unknown[]).map(item => {
+    const entry = plainObject(item);
+    if (Object.keys(entry).some(key => !['action', 'target', 'source', 'status'].includes(key)) || !migrationActions.includes(String(entry['action']))
+      || (entry['target'] === undefined && entry['source'] === undefined)
+      || [entry['target'], entry['source']].some(node => node !== undefined && (typeof node !== 'string' || !migrationNodePattern.test(node)))
+      || (entry['status'] !== undefined && (typeof entry['status'] !== 'string' || !/^[a-z_]{1,32}$/.test(entry['status'])))) fail();
+    return Object.freeze({ ...entry });
+  });
+  const frozenBlockers = (blockers as unknown[]).map(item => {
+    const blocker = plainObject(item); exactKeys(blocker, ['node', 'reason']);
+    if (typeof blocker['node'] !== 'string' || !(blocker['node'] === '*' || migrationNodePattern.test(blocker['node']))
+      || typeof blocker['reason'] !== 'string' || !blocker['reason'] || blocker['reason'].length > 512) fail();
+    return Object.freeze({ node: blocker['node'], reason: blocker['reason'] });
+  });
+  return Object.freeze({ ...raw, entries: Object.freeze(frozenEntries), blockers: Object.freeze(frozenBlockers) }) as unknown as WorkflowMigrationPlan;
+}
 
 /** Encode untrusted text for an HTML text node. Prefer DOM `textContent` when a DOM is available. */
 export function escapeHtmlText(value: string, maxBytes = 1_048_576): string {
@@ -499,6 +561,27 @@ export function createClient(options: ClientOptions): MayuraClient {
       const raw = await command(`/v1/workflow-runs/${id}/pause`, 'POST', settings.signal,
         json({ commandId: settings.commandId, revision }, maxBytes));
       if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'workflow')) return fail(); return workflowView(raw['workflow'], id);
+    },
+    async workflowMigrations(id: string, settings?: { readonly signal?: AbortSignal }) {
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/migrations`, 'GET', settings?.signal);
+      if (Object.keys(raw).length !== 1 || !Array.isArray(raw['migrations']) || raw['migrations'].length > 256) return fail();
+      const offers = raw['migrations'].map(migrationOffer); if (new Set(offers.map(item => item.id)).size !== offers.length) return fail();
+      return Object.freeze(offers);
+    },
+    async planWorkflowMigration(id: string, migrationId: string, settings?: { readonly signal?: AbortSignal }) {
+      if (!/^[a-f0-9]{64}$/.test(id) || typeof migrationId !== 'string' || !migrationIdPattern.test(migrationId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/migrations/${migrationId}`, 'GET', settings?.signal);
+      if (Object.keys(raw).length !== 1 || !Object.hasOwn(raw, 'plan')) return fail(); return migrationPlan(raw['plan'], id, migrationId);
+    },
+    async migrateWorkflow(id: string, migrationId: string, revision: number, settings: WorkflowCommandOptions) {
+      if (!/^[a-f0-9]{64}$/.test(id) || typeof migrationId !== 'string' || !migrationIdPattern.test(migrationId) || !Number.isSafeInteger(revision) || revision < 1 || !settings
+        || typeof settings.commandId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(settings.commandId)) throw new ClientError('INVALID_REQUEST');
+      const raw = await command(`/v1/workflow-runs/${id}/migrations/${migrationId}`, 'POST', settings.signal, json({ commandId: settings.commandId, revision }, maxBytes));
+      if (Object.keys(raw).length !== 2 || !Object.hasOwn(raw, 'plan') || !Object.hasOwn(raw, 'workflow')) return fail();
+      const plan = migrationPlan(raw['plan'], id, migrationId); const workflow = workflowView(raw['workflow'], id);
+      if (!plan.allowed || workflow.revision <= revision) return fail();
+      return Object.freeze({ plan, workflow });
     },
     async workflowFleet(settings?: { readonly signal?: AbortSignal }) {
       const raw = await command('/v1/workflow-fleet', 'GET', settings?.signal);

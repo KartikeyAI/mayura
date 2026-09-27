@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "node node_modules/typescript/bin/tsc --build",
-    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json",
+    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json && node node_modules/typescript/bin/tsc --project packages/inspector-ui/tsconfig.json",
     "test": "node node_modules/vitest/vitest.mjs run",
     "check": "pnpm typecheck && pnpm test",
     "test:consumer": "node scripts/consumer-check.mjs",
@@ -23,6 +23,7 @@
     "release:artifacts": "node scripts/release-artifact-check.mjs",
     "upgrade:compat": "node scripts/upgrade-compat.mjs",
     "api:report": "node scripts/api-report.mjs",
+    "console:check": "node scripts/inspector-bundle.mjs --check",
     "perf": "node scripts/perf-suite.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
     "server:image": "node scripts/server-image.mjs",

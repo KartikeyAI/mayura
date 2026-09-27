@@ -24,6 +24,7 @@ export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin
     ...(options.workflowResumes === undefined ? {} : { workflowResumes: options.workflowResumes }),
     ...(options.workflowPauses === undefined ? {} : { workflowPauses: options.workflowPauses }),
     ...(options.workflowFleet === undefined ? {} : { workflowFleet: options.workflowFleet }),
+    ...(options.workflowMigrations === undefined ? {} : { workflowMigrations: options.workflowMigrations }),
     ...(options.submissionJournal === undefined ? {} : { submissionJournal: options.submissionJournal }),
     ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: Object.freeze([...options.allowedOrigins]) }),
     ...(options.limits === undefined ? {} : { limits: Object.freeze({ ...options.limits }) }),
