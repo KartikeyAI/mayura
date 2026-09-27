@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { createLocalArtifactStore } from '@mayura/artifacts';
-import { createPostgresStore } from '@mayura/storage-postgres';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { createWorkflowFleetControl } from '@mayura/workflows';
-import { createWorkflowLifecycleRuntime } from '@mayura/workflows/lifecycle';
+import { createLocalArtifactStore } from 'mayura/artifacts';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { createWorkflowFleetControl } from 'mayura/workflows';
+import { createWorkflowLifecycleRuntime } from 'mayura/workflows/lifecycle';
 import type { Config } from './config.js';
 import { harlowCreekCorpus } from './library/corpus.js';
 import { localLibrary, type SourceLibrary } from './library/index.js';

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { BookOpen, Bot, LoaderCircle, LogOut, NotebookPen, Package, Send, ShieldCheck, Truck, Undo2, User, type LucideIcon } from 'lucide-react';
-import { ClientError } from '@mayura/client';
-import { createHeadlessRunStore, createRunActivityProjection, type HeadlessRunStore, type RunActivityItem } from '@mayura/client/headless';
-import { useMayuraRun, useMayuraRunActivity } from '@mayura/client-react';
+import { ClientError } from 'mayura/client';
+import { createHeadlessRunStore, createRunActivityProjection, type HeadlessRunStore, type RunActivityItem } from 'mayura/client/headless';
+import { useMayuraRun, useMayuraRunActivity } from 'mayura/client-react';
 import { Button } from '@/components/ui/button';
 import { Badge, Textarea } from '@/components/ui/primitives';
 import { assistantId, replySchema, supportClient, toolLabels, type Session, type Turn } from '@/lib/api';

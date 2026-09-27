@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { defineTool } from '@mayura/sdk';
-import { defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
+import { defineTool } from 'mayura';
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 import { z } from 'zod';
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u);

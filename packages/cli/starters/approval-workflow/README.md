@@ -36,7 +36,7 @@ paste the **operator** token, and open **Workflows**:
 Submit your own request as the support system:
 
 ```ts
-import { createClient } from '@mayura/client';
+import { createClient } from 'mayura/client';
 const client = createClient({ baseUrl: 'http://127.0.0.1:8080', token: () => process.env.INTAKE_TOKEN! });
 const run = await client.submit('refunds.intake', { ticketId: 'T-200', customerId: 'cus-grace', orderId: 'ord-2001',
   amountCents: 18_450, reason: 'The parcel never arrived.' }, { idempotencyKey: 'T-200' });

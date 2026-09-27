@@ -1,8 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { createPostgresStore } from '@mayura/storage-postgres';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { createWorkflowFleetControl } from '@mayura/workflows';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { createWorkflowFleetControl } from 'mayura/workflows';
 import type { Config } from './config.js';
 import { returnWorkflows, simulatedReturnsDesk, type ReturnsDesk } from './returns.js';
 

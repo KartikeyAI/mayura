@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { createClient } from '@mayura/client';
-import { defineAgent, type Guard } from '@mayura/sdk';
-import { listenAgentServer } from '@mayura/server-node';
-import { scriptedModel } from '@mayura/testing';
+import { createClient } from 'mayura/client';
+import { defineAgent, type Guard } from 'mayura';
+import { listenAgentServer } from 'mayura/server-node';
+import { scriptedModel } from 'mayura/testing';
 
 const message = { '~standard': { version: 1 as const, vendor: 'starter', validate: (value: unknown) => typeof value === 'string'
   ? { value } : { issues: [{ message: 'Expected text.' }] } } };
@@ -19,5 +19,5 @@ try {
   const client = createClient({ baseUrl: server.origin, token: () => token });
   const run = await client.submit(agent.id, 'Hello', { idempotencyKey: 'starter-request' }); let events = 0;
   for await (const _event of run.events()) events++;
-  console.log(JSON.stringify({ result: await run.result(message), events, frontend: 'Use @mayura/client from any browser application; never expose the server token.' }));
+  console.log(JSON.stringify({ result: await run.result(message), events, frontend: 'Use mayura/client from any browser application; never expose the server token.' }));
 } finally { await server.close(); }

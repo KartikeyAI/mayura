@@ -1,4 +1,4 @@
-import { defineTool } from '@mayura/sdk';
+import { defineTool } from 'mayura';
 import { z } from 'zod';
 import { jsonSchema } from '../model.js';
 

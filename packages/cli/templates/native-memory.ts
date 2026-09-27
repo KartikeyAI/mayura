@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createMemoryStore } from '@mayura/memory';
-import { createSqliteStore } from '@mayura/storage-sqlite';
+import { createMemoryStore } from 'mayura/memory';
+import { createSqliteStore } from 'mayura/storage-sqlite';
 
 const storage = createSqliteStore({ filename: ':memory:' }); await storage.initialize();
 const memory = createMemoryStore({ store: storage, scope: { principalId: 'local-developer', projectId: 'starter' },

@@ -1,5 +1,5 @@
-import type { AnyTool } from '@mayura/sdk';
-import { defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
+import type { AnyTool } from 'mayura';
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 import { z } from 'zod';
 import type { TrackerTools } from './tracker-tools.js';
 import { ticket, triageOutput } from './triage.js';

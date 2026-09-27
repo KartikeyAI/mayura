@@ -74,7 +74,7 @@ caller scopes and configuration.
 ## How the pieces keep each other honest
 
 - **Signatures.** The tracker signs `<timestamp>.<delivery id>.<raw body>` with HMAC-SHA256 and the shared
-  `WEBHOOK_SECRET`. The ingress passes the exact raw bytes to `@mayura/workstream/webhooks`, which checks the signature
+  `WEBHOOK_SECRET`. The ingress passes the exact raw bytes to `mayura/workstream/webhooks`, which checks the signature
   in constant time, refuses timestamps more than five minutes from its clock, and only then parses and validates the
   JSON against a strict schema. A refused request changes nothing, not even the delivery record.
 - **Replays and retries.** Each verified delivery is recorded durably in the same store as the runs, keyed by delivery

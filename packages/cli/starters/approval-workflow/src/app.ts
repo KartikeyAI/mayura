@@ -1,4 +1,4 @@
-import { defineMayuraApplication } from '@mayura/cli';
+import { defineMayuraApplication } from 'mayura/cli';
 import { loadConfig } from './config.js';
 import { startServer } from './server.js';
 import { openServices, type Services } from './services.js';

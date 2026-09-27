@@ -1,6 +1,6 @@
-import type { JsonObject, ModelAdapter } from '@mayura/core';
-import { anthropicMessages } from '@mayura/provider-anthropic';
-import { openAICompatibleChat, openAIResponses } from '@mayura/provider-openai';
+import type { JsonObject, ModelAdapter } from 'mayura/core';
+import { anthropicMessages } from 'mayura/provider-anthropic';
+import { openAICompatibleChat, openAIResponses } from 'mayura/provider-openai';
 import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 

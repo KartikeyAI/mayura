@@ -1,4 +1,4 @@
-import { createClient, type ClientSchema, type MayuraClient } from '@mayura/client';
+import { createClient, type ClientSchema, type MayuraClient } from 'mayura/client';
 
 // Everything the chat needs from the outside world. No secret lives in this bundle: the browser holds only a short-lived
 // customer session, and the Mayura API decides what that session may do.

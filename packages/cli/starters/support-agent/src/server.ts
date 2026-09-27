@@ -1,8 +1,8 @@
-import type { ModelAdapter } from '@mayura/core';
-import { createAggregateSubmissionJournal } from '@mayura/storage-contracts';
-import { listenAgentServer, listenProductionServer } from '@mayura/server-node';
-import { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget } from '@mayura/workflows';
-import { createWorkflowLifecycleFleetRuntime } from '@mayura/workflows/lifecycle';
+import type { ModelAdapter } from 'mayura/core';
+import { createAggregateSubmissionJournal } from 'mayura/storage-contracts';
+import { listenAgentServer, listenProductionServer } from 'mayura/server-node';
+import { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleFleetRuntime } from 'mayura/workflows/lifecycle';
 import { supportAssistant } from './assistant.js';
 import { authenticate } from './auth.js';
 import type { Config } from './config.js';

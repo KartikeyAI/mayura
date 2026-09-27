@@ -55,7 +55,7 @@ memory across runs and restarts and between customers, PII redaction, caller sco
 | `src/assistant.ts` | The agent, its five tools, input/output schemas and the offline stand-in model |
 | `src/orders.ts` | The order-directory interface (orders *of a customer*, nothing else) and the sample data |
 | `src/returns.ts` | The returns-desk interface, the simulated desk and the `returns.follow-up` workflow |
-| `src/guardrails.ts` | PII redaction (a `@mayura/guardrails` pipeline) and the output guard that backs it up |
+| `src/guardrails.ts` | PII redaction (a `mayura/guardrails` pipeline) and the output guard that backs it up |
 | `src/session.ts` | Customer session tokens: `mintSessionToken` for your backend, verification for the server |
 | `src/auth.ts` | Who may do what: customers (own runs only) and operators (console) |
 | `src/server.ts` | HTTP: the agent, the console at `/inspector` and the operator API |
@@ -64,7 +64,7 @@ memory across runs and restarts and between customers, PII redaction, caller sco
 | `src/model.ts` | Offline, OpenAI, Anthropic or OpenAI-compatible, chosen by `MAYURA_MODEL_PROVIDER` |
 | `src/app.ts` | The entry point for `mayura serve`, `mayura worker` and `mayura migrate` |
 | `src/dev.ts` | The one-process local run with the chat front server and demo data |
-| `web/` | The chat UI: Vite, React, Tailwind and shadcn-style components, `@mayura/client` and `@mayura/client-react` |
+| `web/` | The chat UI: Vite, React, Tailwind and shadcn-style components, `mayura/client` and `mayura/client-react` |
 
 ## How customers are kept apart
 

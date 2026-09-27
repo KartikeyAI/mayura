@@ -1,5 +1,5 @@
-import { createRuntime, defineAgent, defineTool } from '@mayura/sdk';
-import { scriptedModel } from '@mayura/testing';
+import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
 import { z } from 'zod';
 
 let executions = 0;

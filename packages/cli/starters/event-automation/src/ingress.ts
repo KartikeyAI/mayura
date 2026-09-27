@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { MayuraError } from '@mayura/core';
-import { StorageError } from '@mayura/storage-contracts';
-import { createWebhookRuntime, defineWebhookTrigger } from '@mayura/workstream/webhooks';
+import { MayuraError } from 'mayura/core';
+import { StorageError } from 'mayura/storage-contracts';
+import { createWebhookRuntime, defineWebhookTrigger } from 'mayura/workstream/webhooks';
 import type { Config } from './config.js';
 import { jsonSchema } from './model.js';
 import type { Services } from './services.js';

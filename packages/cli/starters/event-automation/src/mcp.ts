@@ -1,7 +1,7 @@
-import type { McpCallToolRequest, McpClient } from '@mayura/adapter-mcp';
+import type { McpCallToolRequest, McpClient } from 'mayura/adapter-mcp';
 
 /**
- * The MCP client transport `@mayura/adapter-mcp` asks the application to supply: the MCP Streamable HTTP transport,
+ * The MCP client transport `mayura/adapter-mcp` asks the application to supply: the MCP Streamable HTTP transport,
  * reduced to what tool calls need. It performs the `initialize` handshake once (lazily, on the first call), keeps the
  * server's session id if it issues one, and sends JSON-RPC requests as POSTs, accepting either a JSON body or a
  * server-sent-event stream in reply. Everything is bounded: one timeout per request and a maximum response size.

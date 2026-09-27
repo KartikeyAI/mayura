@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { createClient } from '@mayura/client';
+import { createClient } from 'mayura/client';
 import { newToken, tokenDigest } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { mcpHttpClient } from '../src/mcp.js';

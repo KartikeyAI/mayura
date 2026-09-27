@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { ServerIdentity } from '@mayura/server-node';
+import type { ServerIdentity } from 'mayura/server-node';
 import type { Config } from './config.js';
 
 // Bearer tokens are 64 hex characters. Configuration holds only their SHA-256 digests, never the tokens themselves.

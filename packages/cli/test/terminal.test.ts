@@ -191,3 +191,19 @@ describe('interactive init', () => {
     expect(await readFile(join(target, 'README.md'), 'utf8')).toBe('mine\n');
   });
 });
+
+describe('generated project versions', () => {
+  it('pins third-party packages to the versions the workspace uses', async () => {
+    const { PEER_VERSIONS } = await import('../src/index.js');
+    const read = async (path: string) => JSON.parse(await readFile(fileURLToPath(new URL(path, import.meta.url)), 'utf8')) as { dependencies?: Record<string, string> };
+    expect(PEER_VERSIONS['better-sqlite3']).toBe((await read('../../storage-sqlite/package.json')).dependencies!['better-sqlite3']);
+    expect(PEER_VERSIONS['pg']).toBe((await read('../../storage-postgres/package.json')).dependencies!['pg']);
+    const quickjs = (await read('../../adapter-code-quickjs/package.json')).dependencies!;
+    expect(PEER_VERSIONS['quickjs-emscripten-core']).toBe(quickjs['quickjs-emscripten-core']);
+    expect(PEER_VERSIONS['@jitl/quickjs-wasmfile-release-sync']).toBe(quickjs['@jitl/quickjs-wasmfile-release-sync']);
+    for (const starter of starters()) {
+      const manifest = await read(`../starters/${starter.name}/package.json`);
+      for (const [name, version] of Object.entries(manifest.dependencies ?? {})) if (name in PEER_VERSIONS) expect(version, `${starter.name} ${name}`).toBe(PEER_VERSIONS[name]);
+    }
+  });
+});

@@ -31,15 +31,20 @@ const descriptions: Readonly<Record<TemplateName, string>> = Object.freeze({
   'capability-policy': 'Explicit capability grant and denial behavior.',
 });
 
+/** What a template's project installs: `mayura`, and the optional peers the parts it uses need. */
 const dependencies: Readonly<Record<TemplateName, readonly string[]>> = Object.freeze({
-  'typed-tool-runner': ['@mayura/sdk', '@mayura/testing', 'zod'],
-  'basic-agent': ['@mayura/sdk', '@mayura/testing', 'zod'],
-  'durable-approval': ['@mayura/storage-sqlite', '@mayura/tools', '@mayura/workflows', 'zod'],
-  'parallel-research': ['@mayura/sdk', '@mayura/testing', 'zod'],
-  'native-memory': ['@mayura/memory', '@mayura/storage-sqlite'],
-  'guarded-streaming-app': ['@mayura/client', '@mayura/sdk', '@mayura/server-node', '@mayura/testing'],
-  'code-mode-workflow': ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/code-mode-workflows', '@mayura/core', '@mayura/storage-sqlite', '@mayura/tools', '@mayura/workflows'],
-  'capability-policy': ['@mayura/sdk', '@mayura/testing', 'zod'],
+  'typed-tool-runner': ['mayura', 'zod'],
+  'basic-agent': ['mayura', 'zod'],
+  'durable-approval': ['better-sqlite3', 'mayura', 'zod'],
+  'parallel-research': ['mayura', 'zod'],
+  'native-memory': ['better-sqlite3', 'mayura'],
+  'guarded-streaming-app': ['mayura'],
+  'code-mode-workflow': ['@jitl/quickjs-wasmfile-release-sync', 'better-sqlite3', 'mayura', 'quickjs-emscripten-core'],
+  'capability-policy': ['mayura', 'zod'],
+});
+/** Versions of the third-party packages generated projects install; kept equal to the workspace's (tested). */
+export const PEER_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
+  zod: '4.6.5', 'better-sqlite3': '13.0.3', pg: '8.23.0', '@jitl/quickjs-wasmfile-release-sync': '0.32.0', 'quickjs-emscripten-core': '0.32.0',
 });
 
 /** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */
@@ -100,7 +105,7 @@ const cliVersion = (): string => (JSON.parse(readFileSync(fileURLToPath(new URL(
 
 function packageManifest(name: string, template: TemplateName): string {
   const versions: Record<string, string> = {}; const mayura = cliVersion();
-  for (const dependency of dependencies[template]) versions[dependency] = dependency === 'zod' ? '4.6.5' : mayura;
+  for (const dependency of dependencies[template]) versions[dependency] = dependency === 'mayura' ? mayura : PEER_VERSIONS[dependency]!;
   return `${JSON.stringify({ name, version: '0.1.0', private: true, type: 'module', scripts: {
     build: 'tsc -p tsconfig.json', typecheck: 'tsc -p tsconfig.json --noEmit', start: 'node dist/index.js', test: 'node --test',
   }, dependencies: versions, devDependencies: { typescript: '7.0.2', '@types/node': '24.13.6' } }, null, 2)}\n`;
@@ -246,8 +251,8 @@ async function starterManifest(content: string, name: string): Promise<string> {
   for (const field of ['dependencies', 'devDependencies']) {
     const entries = manifest[field] as Record<string, string> | undefined;
     for (const [dependency, range] of Object.entries(entries ?? {})) {
-      if (range === 'workspace:*' && dependency.startsWith('@mayura/')) entries![dependency] = version;
-      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only Mayura packages to the workspace.');
+      if (range === 'workspace:*' && dependency === 'mayura') entries![dependency] = version;
+      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only mayura to the workspace.');
     }
   }
   return `${JSON.stringify(manifest, null, 2)}\n`;

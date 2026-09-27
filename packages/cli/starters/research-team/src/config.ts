@@ -1,4 +1,4 @@
-import { validatedEnvironment } from '@mayura/helpers';
+import { validatedEnvironment } from 'mayura/helpers';
 import { z } from 'zod';
 
 // Every setting comes from the environment and is validated once at startup. Nothing is discovered implicitly:

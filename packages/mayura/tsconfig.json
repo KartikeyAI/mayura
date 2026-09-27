@@ -1,0 +1,108 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../adapter-code-docker"
+    },
+    {
+      "path": "../adapter-code-quickjs"
+    },
+    {
+      "path": "../adapter-mcp"
+    },
+    {
+      "path": "../artifacts"
+    },
+    {
+      "path": "../cli"
+    },
+    {
+      "path": "../client"
+    },
+    {
+      "path": "../client-react"
+    },
+    {
+      "path": "../code-mode"
+    },
+    {
+      "path": "../code-mode-workflows"
+    },
+    {
+      "path": "../context"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../exporter-otlp"
+    },
+    {
+      "path": "../guardrails"
+    },
+    {
+      "path": "../helpers"
+    },
+    {
+      "path": "../memory"
+    },
+    {
+      "path": "../memory-remote"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../provider-anthropic"
+    },
+    {
+      "path": "../provider-openai"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../server"
+    },
+    {
+      "path": "../server-node"
+    },
+    {
+      "path": "../storage"
+    },
+    {
+      "path": "../storage-contracts"
+    },
+    {
+      "path": "../storage-postgres"
+    },
+    {
+      "path": "../storage-sql"
+    },
+    {
+      "path": "../storage-sqlite"
+    },
+    {
+      "path": "../testing"
+    },
+    {
+      "path": "../tools"
+    },
+    {
+      "path": "../workflows"
+    },
+    {
+      "path": "../workstream"
+    }
+  ]
+}

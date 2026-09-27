@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Durable refund approvals on Mayura: an intake agent, a human-approved workflow, a separate server and worker, and the operator console.",
-  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "engines": {
+    "node": ">=22.12.0 <23 || >=24.14.1 <25"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,18 +18,9 @@
     "worker": "mayura worker --app dist/src/app.js --probe-host 0.0.0.0 --probe-port 9090"
   },
   "dependencies": {
-    "@mayura/cli": "workspace:*",
-    "@mayura/client": "workspace:*",
-    "@mayura/core": "workspace:*",
-    "@mayura/helpers": "workspace:*",
-    "@mayura/provider-anthropic": "workspace:*",
-    "@mayura/provider-openai": "workspace:*",
-    "@mayura/sdk": "workspace:*",
-    "@mayura/server-node": "workspace:*",
-    "@mayura/storage-contracts": "workspace:*",
-    "@mayura/storage-postgres": "workspace:*",
-    "@mayura/storage-sqlite": "workspace:*",
-    "@mayura/workflows": "workspace:*",
+    "better-sqlite3": "13.0.3",
+    "mayura": "workspace:*",
+    "pg": "8.23.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
-import { createAggregateSubmissionJournal } from '@mayura/storage-contracts';
-import { listenAgentServer, listenProductionServer } from '@mayura/server-node';
-import { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget } from '@mayura/workflows';
-import { createWorkflowLifecycleFleetRuntime } from '@mayura/workflows/lifecycle';
+import { createAggregateSubmissionJournal } from 'mayura/storage-contracts';
+import { listenAgentServer, listenProductionServer } from 'mayura/server-node';
+import { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleFleetRuntime } from 'mayura/workflows/lifecycle';
 import { authenticate } from './auth.js';
 import type { Config } from './config.js';
 import { deskAgent, describeRun } from './desk.js';

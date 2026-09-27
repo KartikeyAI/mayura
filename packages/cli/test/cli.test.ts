@@ -41,7 +41,7 @@ describe('@mayura/cli initialization', () => {
     await applyProjectPlan(plan); const project = await readProject(join(target, 'mayura.project.json'));
     expect(project).toMatchObject({ format: 'mayura.project.v1', template: 'basic-agent' });
     expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8')).dependencies).toEqual({
-      '@mayura/sdk': cliVersion, '@mayura/testing': cliVersion, zod: '4.6.5',
+      mayura: cliVersion, zod: '4.6.5',
     });
   });
 

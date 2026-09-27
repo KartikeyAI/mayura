@@ -56,13 +56,16 @@ if (!skipPacked) {
     assert.equal((await readProject(join(directory, 'mayura.project.json'))).template, starter);
     // The published CLI must ship every file the initializer generates from the repository copy (its `files` patterns
     // are explicit, so a new kind of starter file would otherwise be dropped silently).
-    const cli = await packClosure([['@mayura/cli', join(workspace, 'packages', 'cli')]]).then(() => packages.get('@mayura/cli'));
-    const shipped = new Set(archivePaths(await readFile(fileURLToPath(cli.archive))).filter(path => path.startsWith(`starters/${starter}/`))
-      .map(path => path.slice(`starters/${starter}/`.length).split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/')));
-    assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).sort(), `@mayura/cli does not ship exactly the ${starter} files.`);
+    // The published package (`mayura`, bundled) must ship every file the initializer generates from the repository copy.
+    const published = await packClosure([['mayura', join(workspace, 'packages', 'cli')]]).then(() => packages.get('mayura'));
+    const prefix = `lib/cli/starters/${starter}/`;
+    const shipped = new Set(archivePaths(await readFile(fileURLToPath(published.archive))).filter(path => path.startsWith(prefix))
+      .map(path => path.slice(prefix.length).split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/')));
+    assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).sort(), `mayura does not ship exactly the ${starter} files.`);
     const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const cliVersion = JSON.parse(await readFile(join(workspace, 'packages', 'cli', 'package.json'), 'utf8')).version;
-    for (const [name, range] of Object.entries(manifest.dependencies)) if (name.startsWith('@mayura/')) assert.equal(range, cliVersion, `${starter} pins ${name} to ${range}.`);
+    assert.equal(manifest.dependencies.mayura, cliVersion, `${starter} must pin mayura to the CLI's version.`);
+    for (const field of ['dependencies', 'devDependencies']) for (const name of Object.keys(manifest[field] ?? {})) assert(!name.startsWith('@mayura/'), `${starter} still depends on ${name}.`);
     const source = join(workspace, 'packages', 'cli', 'starters', starter);
     const development = Object.keys(manifest.devDependencies ?? {}).filter(name => packedDevelopment.has(name));
     const allowed = await packClosure([...Object.keys(manifest.dependencies), ...development].map(name => [name, source]).concat([[compilerPlatform, join(workspace, 'node_modules', '.pnpm')]]));
@@ -103,7 +106,7 @@ function archivePaths(bytes) {
 
 /** Boot the application the way production does: migrate, then serve and worker as separate processes. */
 async function boot(starter, directory) {
-  const bin = join(directory, 'node_modules', '@mayura', 'cli', 'dist', 'bin.js'); const app = join(directory, 'dist', 'src', 'app.js');
+  const bin = join(directory, 'node_modules', 'mayura', 'lib', 'cli', 'dist', 'bin.js'); const app = join(directory, 'dist', 'src', 'app.js');
   const token = randomBytes(32).toString('hex'); const port = await freePort(); const probe = await freePort();
   const env = { MAYURA_ENV: 'development', PORT: String(port), MAYURA_SQLITE_PATH: join(directory, '.data', 'boot.sqlite'),
     MAYURA_OPERATOR_TOKEN_SHA256: createHash('sha256').update(token).digest('hex') };

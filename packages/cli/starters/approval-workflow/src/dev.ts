@@ -1,5 +1,5 @@
-import { ClientError, createClient } from '@mayura/client';
-import { createWorkflowLifecycleFleetRuntime } from '@mayura/workflows/lifecycle';
+import { ClientError, createClient } from 'mayura/client';
+import { createWorkflowLifecycleFleetRuntime } from 'mayura/workflows/lifecycle';
 import { devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { intakeOutput } from './intake.js';

@@ -1,6 +1,6 @@
 import { hostname } from 'node:os';
-import { createWorkflowLeadership, createWorkflowWorker } from '@mayura/workflows';
-import { createWorkflowLifecycleHost } from '@mayura/workflows/lifecycle';
+import { createWorkflowLeadership, createWorkflowWorker } from 'mayura/workflows';
+import { createWorkflowLifecycleHost } from 'mayura/workflows/lifecycle';
 import type { Config } from './config.js';
 import type { Services } from './services.js';
 

@@ -1,9 +1,9 @@
-import type { RunHandle } from '@mayura/core';
-import { agentRunTraceSpans, createOtlpHttpJsonTraceExporter, type OtlpTraceSpan } from '@mayura/exporter-otlp';
-import { createObserver } from '@mayura/observability';
-import type { AggregateStore } from '@mayura/storage-contracts';
+import type { RunHandle } from 'mayura/core';
+import { agentRunTraceSpans, createOtlpHttpJsonTraceExporter, type OtlpTraceSpan } from 'mayura/exporter-otlp';
+import { createObserver } from 'mayura/observability';
+import type { AggregateStore } from 'mayura/storage-contracts';
 import { createWorkflowTraceExport, workflowStepTraceContext, type WorkflowFleetTarget, type WorkflowTraceDefinition, type WorkflowTraceExport,
-  type WorkflowTraceSource, type WorkflowWorkerUnit } from '@mayura/workflows';
+  type WorkflowTraceSource, type WorkflowWorkerUnit } from 'mayura/workflows';
 import type { TelemetrySettings } from './config.js';
 
 /**
@@ -15,7 +15,7 @@ import type { TelemetrySettings } from './config.js';
  *   │     ├─ model.call                                                         each model call
  *   │     └─ tool:library.search, tool:library.read                             each tool call
  *
- * The workflow spans come from the run's durable event log once the run settles (`@mayura/workflows` trace export):
+ * The workflow spans come from the run's durable event log once the run settles (`mayura/workflows` trace export):
  * a worker that restarts exports them later, and exporting twice sends identical ids. Agent spans are projected when
  * the agent finishes and nested under their step. What is exported: names, times, ok/error, run and node ids, step
  * statuses and budget integers. Never questions, prompts, sources, findings, reports, tool inputs or outputs.

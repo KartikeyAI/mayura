@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { McpClient } from '@mayura/adapter-mcp';
-import { createPostgresStore } from '@mayura/storage-postgres';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { createWorkflowFleetControl } from '@mayura/workflows';
-import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecycleFleetRuntime } from '@mayura/workflows/lifecycle';
+import type { McpClient } from 'mayura/adapter-mcp';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { createWorkflowFleetControl } from 'mayura/workflows';
+import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecycleFleetRuntime } from 'mayura/workflows/lifecycle';
 import type { Config } from './config.js';
 import { mcpHttpClient } from './mcp.js';
 import { trackerTools } from './tracker-tools.js';

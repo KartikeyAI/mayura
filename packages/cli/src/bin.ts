@@ -21,12 +21,12 @@ const shownPath = (path: string): string => { const inner = relative(process.cwd
 const usage = (message: string): MayuraError => new MayuraError('INVALID_INPUT', message);
 
 /** Resolve an ESM package's import entry the way Node would from the application module's directory. */
-function installedEntry(application: string, name: string): string {
+function installedEntry(application: string, name: string, subpath = '.'): string {
   for (let directory = dirname(application); ; directory = dirname(directory)) {
     const manifestPath = join(directory, 'node_modules', name, 'package.json');
     if (existsSync(manifestPath)) {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { exports?: { '.'?: { import?: string } } };
-      const entry = manifest.exports?.['.']?.import; if (typeof entry !== 'string') break;
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { exports?: Record<string, { import?: string } | string> };
+      const exported = manifest.exports?.[subpath]; const entry = typeof exported === 'string' ? exported : exported?.import; if (typeof entry !== 'string') break;
       return join(dirname(manifestPath), entry);
     }
     if (dirname(directory) === directory) break;
@@ -176,7 +176,11 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     // Probes are an explicit opt-in served by the application's own @mayura/server-node; the CLI stays network-free.
     let listenProbe: Parameters<typeof runWorkerApplication>[0]['listenProbe'];
     if (command === 'worker' && probePort !== undefined) {
-      listenProbe = (await import(pathToFileURL(installedEntry(resolve(path), '@mayura/server-node')).href) as { listenProbe: typeof listenProbe }).listenProbe;
+      // An installed application has `mayura`; an application inside the Mayura workspace has the internal package.
+      let entry: string; try { entry = installedEntry(resolve(path), 'mayura', './server-node'); } catch {
+        try { entry = installedEntry(resolve(path), '@mayura/server-node'); } catch { throw usage('worker --probe-port requires mayura to be installed with the application.'); }
+      }
+      listenProbe = (await import(pathToFileURL(entry).href) as { listenProbe: typeof listenProbe }).listenProbe;
     }
     // First signal: graceful close or drain. A second signal during shutdown forces exit.
     const controller = new AbortController(); let signals = 0;

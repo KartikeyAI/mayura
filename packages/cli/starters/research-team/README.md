@@ -35,7 +35,7 @@ used; the fourth skipped because the plan did not need it), the `research` join,
 Ask your own question as your application:
 
 ```ts
-import { createClient } from '@mayura/client';
+import { createClient } from 'mayura/client';
 import { deskOutput } from './src/desk.js'; // or your own copy of the output schema
 const desk = createClient({ baseUrl: 'http://127.0.0.1:8080', token: () => process.env.DESK_TOKEN! });
 async function ask(input: object, idempotencyKey: string) {
@@ -76,7 +76,7 @@ metadata-only trace export to a local collector, and configuration checks.
 ## How it works
 
 **Why a lifecycle workflow.** Mayura has several durable formats. This starter uses the lifecycle format
-(`@mayura/workflows/lifecycle`, format 5) because it covers what the team needs with the least machinery: tool steps
+(`mayura/workflows/lifecycle`, format 5) because it covers what the team needs with the least machinery: tool steps
 whose dependencies are met run **in parallel** in the same wave; every step is journaled before it runs and **never
 replayed** after a crash; the run record carries **one cost budget** that every step draws on, checked before each
 step starts; `createWorkflowLifecycleHost` is a ready-made worker unit (with leadership, the fleet hold and backoff);
@@ -100,7 +100,7 @@ run ends `blocked`: no model is called and no report is written. The desk report
 `{ status: 'blocked', stopReason: 'budget_exhausted' }`. By default the budget is six step ceilings: plan, four
 research slots and write (storing costs nothing), enough for the largest plan.
 
-**Parallel research.** `fanOut` from `@mayura/workflows/lifecycle` gives the graph one slot per possible researcher
+**Parallel research.** `fanOut` from `mayura/workflows/lifecycle` gives the graph one slot per possible researcher
 (four). The planner returns as many assignments as it needs (two to four); slot n runs the researcher on assignment n,
 and a slot without an assignment is bypassed: it never starts and reserves nothing from the budget. The `research`
 join lists every slot's output in order, `null` for a bypassed slot, and the writer reads that list.
@@ -109,7 +109,7 @@ join lists every slot's output in order, `null` for a bypassed slot, and the wri
 that cites anything else fails the step. The writer may cite only sources the researchers reported, and every cited id
 must resolve in the library, whose titles (not the model's) fill the reference list.
 
-**Content-addressed reports.** The `store` step writes the Markdown report to `@mayura/artifacts`; its reference
+**Content-addressed reports.** The `store` step writes the Markdown report to `mayura/artifacts`; its reference
 (`sha256:` digest of the exact bytes) is the run's result. `research.report` reads the bytes back through the store,
 which re-verifies the digest.
 
@@ -169,7 +169,7 @@ from `.env`. The image builds from the npm registry, so it needs published Mayur
   that is almost out of budget can stop at a step it could have afforded in practice; size `RESEARCH_BUDGET_MICROS`
   with that headroom. Research slots the plan does not use are bypassed and reserve nothing. Offline, the ceilings
   default to zero and the budget never binds.
-- **Artifacts are local files.** `@mayura/artifacts` is a same-host store. With several machines, mount shared storage
+- **Artifacts are local files.** `mayura/artifacts` is a same-host store. With several machines, mount shared storage
   at `RESEARCH_ARTIFACTS_DIR` for the server and every worker, or replace the store with object storage. Artifact
   files are not deleted when runs are; plan retention yourself.
 - **A failed step fails the run.** Nothing is retried automatically (a model call costs money); submit again with a

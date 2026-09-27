@@ -3,7 +3,7 @@
 // `pnpm local:init` (trying a starter before Mayura is published), so both install exactly the same way.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs';
 import { cp, mkdtemp, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -98,10 +98,39 @@ export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3
     const entry = { archive: pathToFileURL(destination).href, manifest, directory }; packages.set(name, entry); return entry;
   };
   const workspacePackage = name => join(workspace, 'packages', name.slice('@mayura/'.length));
+  /** A third-party package's installed directory, from whichever workspace package depends on it. */
+  const thirdParty = name => {
+    for (const entry of readdirSync(join(workspace, 'packages'), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue; const found = findInstalled(name, join(workspace, 'packages', entry.name)); if (found) return found;
+    }
+    return installedDirectory(name, workspace);
+  };
+  // `mayura` is always the published bundle (scripts/bundle-package.mjs), never the workspace facade of that name.
+  let bundled;
+  const mayura = async () => {
+    if (bundled) return bundled;
+    const { bundle } = await import('./bundle-package.mjs');
+    const staging = await mkdtemp(join(output, 'mayura-')); await bundle(staging);
+    const packing = await mkdtemp(join(output, 'npm-pack-'));
+    await run([npm, 'pack', staging, '--ignore-scripts', '--offline', '--pack-destination', packing], workspace);
+    const [archive] = await readdir(packing); assert(archive?.endsWith('.tgz'));
+    const manifest = JSON.parse(await readFile(join(staging, 'package.json'), 'utf8'));
+    const destination = join(tarballs, `mayura-${manifest.version}.tgz`); await rename(join(packing, archive), destination);
+    bundled = { archive: pathToFileURL(destination).href, manifest, directory: staging }; packages.set('mayura', bundled); return bundled;
+  };
   const packClosure = async (roots, { optional = false } = {}) => {
     const closure = new Set(); const queue = roots.map(([name, parent]) => ({ name, parent, required: true }));
     while (queue.length) {
       const { name, parent, required } = queue.shift(); if (closure.has(name)) continue;
+      if (name === 'mayura') {
+        // Its optional peers are the project's to declare; its dependencies come from the workspace installation.
+        closure.add(name); const { manifest } = await mayura();
+        for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+          if (!closure.has(dependency)) { closure.add(dependency); const { manifest: third } = await packDirectory(dependency, thirdParty(dependency));
+            for (const next of Object.keys(third.dependencies ?? {})) queue.push({ name: next, parent: thirdParty(dependency), required: true }); }
+        }
+        continue;
+      }
       const directory = name.startsWith('@mayura/') ? workspacePackage(name) : required ? installedDirectory(name, parent) : findInstalled(name, parent);
       if (directory === undefined) continue; // an optional dependency that is not installed here
       // Optional packages for other platforms can be installed in the workspace too; npm would never install them here.

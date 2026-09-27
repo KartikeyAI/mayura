@@ -1,6 +1,6 @@
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { defineTool } from '@mayura/tools';
-import { createScheduledWorkflowRuntime, defineWorkflow } from '@mayura/workflows';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { defineTool } from 'mayura/tools';
+import { createScheduledWorkflowRuntime, defineWorkflow } from 'mayura/workflows';
 import { z } from 'zod';
 
 let executions = 0; const schema = z.number().int().min(0).max(1_000);

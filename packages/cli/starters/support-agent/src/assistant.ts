@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from '@mayura/core';
-import { createNativeMemory } from '@mayura/memory';
-import { MayuraError, defineAgent, defineTool, type ToolExecutionContext } from '@mayura/sdk';
-import type { MemoryIndexStore } from '@mayura/storage-contracts';
+import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from 'mayura/core';
+import { createNativeMemory } from 'mayura/memory';
+import { MayuraError, defineAgent, defineTool, type ToolExecutionContext } from 'mayura';
+import type { MemoryIndexStore } from 'mayura/storage-contracts';
 import { z } from 'zod';
 import { customerFromScope } from './auth.js';
 import type { ModelSettings } from './config.js';

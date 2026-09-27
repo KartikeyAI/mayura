@@ -1,5 +1,5 @@
-import type { AnyTool, JsonValue, ModelAdapter, ModelRequest, ModelResponse } from '@mayura/sdk';
-import { defineAgent } from '@mayura/sdk';
+import type { AnyTool, JsonValue, ModelAdapter, ModelRequest, ModelResponse } from 'mayura';
+import { defineAgent } from 'mayura';
 import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 import { MAX_RESEARCHERS } from './config.js';

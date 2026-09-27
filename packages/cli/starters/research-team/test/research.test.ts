@@ -5,7 +5,7 @@ import { createServer, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { createClient } from '@mayura/client';
+import { createClient } from 'mayura/client';
 import { newToken, tokenDigest } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { deskOutput, type DeskInput } from '../src/desk.js';

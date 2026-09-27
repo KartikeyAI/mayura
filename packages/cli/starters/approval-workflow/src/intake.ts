@@ -1,5 +1,5 @@
-import type { ModelAdapter, ModelRequest, ModelResponse } from '@mayura/core';
-import { defineAgent, defineTool } from '@mayura/sdk';
+import type { ModelAdapter, ModelRequest, ModelResponse } from 'mayura/core';
+import { defineAgent, defineTool } from 'mayura';
 import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 import { jsonSchema, selectModel } from './model.js';

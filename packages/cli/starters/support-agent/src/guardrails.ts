@@ -1,9 +1,9 @@
-import type { Guard, GuardContext, JsonValue } from '@mayura/core';
-import { createPipeline, redactPII, type ContentProcessor, type ContentSnapshot } from '@mayura/guardrails';
+import type { Guard, GuardContext, JsonValue } from 'mayura/core';
+import { createPipeline, redactPII, type ContentProcessor, type ContentSnapshot } from 'mayura/guardrails';
 
 // PII handling, in two layers:
 //
-// 1. Redaction. The agent's input and output schemas pass every chat text through one @mayura/guardrails pipeline:
+// 1. Redaction. The agent's input and output schemas pass every chat text through one mayura/guardrails pipeline:
 //    card numbers, email addresses and phone numbers become fixed labels. So the model (possibly a hosted provider)
 //    never receives them, memory never stores them, and a reply never shows them, whatever the model wrote.
 // 2. A fail-closed backstop. An output guard on the agent re-runs the same redaction over every tool result and every
@@ -11,7 +11,7 @@ import { createPipeline, redactPII, type ContentProcessor, type ContentSnapshot 
 //    ends `blocked`.
 //
 // Agent guards can only allow or block, so the transforming step lives in the schemas; the guard proves it happened.
-// These recognizers are heuristics (see @mayura/guardrails `redactPII`): they miss unusual formats and can flag long
+// These recognizers are heuristics (see mayura/guardrails `redactPII`): they miss unusual formats and can flag long
 // digit strings that are not PII. They are a safety net, not a compliance certification.
 
 export const redactionLabels = Object.freeze({ card: '[card removed]', email: '[email removed]', phone: '[phone removed]' });

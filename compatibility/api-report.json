@@ -370,6 +370,10 @@
         "kind": "function",
         "declaration": "6014c362f6dbe8ac"
       },
+      "PEER_VERSIONS": {
+        "kind": "const",
+        "declaration": "7decf92734f6a2f9"
+      },
       "planProject": {
         "kind": "function",
         "declaration": "ccf208a1a0c06397"

@@ -1,7 +1,7 @@
-import type { ArtifactReference, ArtifactScope, LocalArtifactStore } from '@mayura/artifacts';
+import type { ArtifactReference, ArtifactScope, LocalArtifactStore } from 'mayura/artifacts';
 import { createRuntime, defineTool, type AgentDefinition, type InferInput, type InferOutput, type RuntimeLimits, type Schema,
-  type ToolExecutionContext } from '@mayura/sdk';
-import { defineWorkflowLifecycle, fanOut, type WorkflowLifecycleNode } from '@mayura/workflows/lifecycle';
+  type ToolExecutionContext } from 'mayura';
+import { defineWorkflowLifecycle, fanOut, type WorkflowLifecycleNode } from 'mayura/workflows/lifecycle';
 import { z } from 'zod';
 import { MAX_RESEARCHERS, type ModelSettings } from './config.js';
 import { libraryTools, sourceId, type SourceLibrary } from './library/index.js';

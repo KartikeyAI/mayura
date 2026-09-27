@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ClientError, createClient } from '@mayura/client';
+import { ClientError, createClient } from 'mayura/client';
 import { devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
 import { deskOutput, type DeskInput, type DeskOutput } from './desk.js';

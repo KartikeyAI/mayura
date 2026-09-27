@@ -1,10 +1,10 @@
-import { Budget, type JsonValue, type Outcome, type Schema } from '@mayura/core';
-import { createQuickJsSandboxAdapter } from '@mayura/adapter-code-quickjs';
-import { createCodeMode, defineCodeProgram } from '@mayura/code-mode';
-import { createDurableCodeAudit, defineDurableCodeWorkflow } from '@mayura/code-mode-workflows';
-import { createSqliteStore } from '@mayura/storage-sqlite';
-import { invokeTool } from '@mayura/tools';
-import { createScheduledWorkflowRuntime } from '@mayura/workflows';
+import { Budget, type JsonValue, type Outcome, type Schema } from 'mayura/core';
+import { createQuickJsSandboxAdapter } from 'mayura/adapter-code-quickjs';
+import { createCodeMode, defineCodeProgram } from 'mayura/code-mode';
+import { createDurableCodeAudit, defineDurableCodeWorkflow } from 'mayura/code-mode-workflows';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+import { invokeTool } from 'mayura/tools';
+import { createScheduledWorkflowRuntime } from 'mayura/workflows';
 
 type Value = { readonly value: number };
 const schema: Schema<Value, Value> = { '~standard': { version: 1, vendor: 'starter', validate: value => value && typeof value === 'object'

@@ -8,11 +8,10 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { applyProjectPlan, planProject, readProject, TEMPLATE_NAMES } from '../packages/cli/dist/index.js';
+import { compilerPlatform, createPacker } from './local-packages.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const mayuraPackages = ['adapter-code-quickjs', 'client', 'code-mode', 'code-mode-workflows', 'core', 'memory', 'runtime', 'sdk',
-  'server', 'server-node', 'storage-contracts', 'storage-sql', 'storage-sqlite', 'testing', 'tools', 'workflows'];
 
 function inside(parent, child) {
   const value = relative(parent, child); return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value);
@@ -26,94 +25,22 @@ function environment() {
     npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false' };
 }
 
-function cli(kind) {
-  const nodeShebang = path => {
-    const bytes = Buffer.alloc(256); let descriptor;
-    try { descriptor = openSync(path, 'r'); return /^#![^\r\n]*\bnode\b/u.test(bytes.subarray(0, readSync(descriptor, bytes, 0, bytes.length, 0)).toString('utf8')); }
-    catch { return false; } finally { if (descriptor !== undefined) closeSync(descriptor); }
-  };
-  const valid = path => { try { return isAbsolute(path) && statSync(path).isFile() && (/\.(?:js|cjs|mjs)$/iu.test(path) || nodeShebang(path)); } catch { return false; } };
-  const configured = process.env[`MAYURA_${kind.toUpperCase()}_CLI`];
-  if (configured) { assert(valid(configured), `Configured ${kind} CLI must be an absolute local JavaScript entry point.`); return realpathSync(configured); }
-  const directories = [...new Set([dirname(process.execPath), ...(process.env.PATH ?? process.env.Path ?? '').split(delimiter)
-    .filter(Boolean).map(value => value.replace(/^"|"$/gu, ''))])];
-  const suffixes = kind === 'npm' ? ['npm/bin/npm-cli.js'] : ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'];
-  const candidates = suffixes.flatMap(suffix => directories.flatMap(directory => [join(directory, 'node_modules', suffix),
-    resolve(directory, '..', 'lib', 'node_modules', suffix)]));
-  for (const directory of directories) { try { const path = realpathSync(join(directory, kind)); if (valid(path)) candidates.push(path); } catch { /* Inspect the next path entry. */ } }
-  const found = candidates.find(valid); assert(found, `Set MAYURA_${kind.toUpperCase()}_CLI to an existing local JavaScript entry point.`); return realpathSync(found);
-}
 
 async function run(args, cwd, timeout = 60_000) {
   try { return await exec(process.execPath, args, { cwd, env: environment(), timeout, windowsHide: true, maxBuffer: 8 * 1_048_576 }); }
   catch (error) { throw new Error(`Packed template command failed: ${args.slice(1, 3).join(' ')}\n${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}`); }
 }
 
-function installedDirectory(name, parent) {
-  const require = createRequire(join(parent, 'package.json'));
-  const candidates = require.resolve.paths(name).map(path => join(path, name, 'package.json'));
-  candidates.push(join(workspace, 'node_modules', '.pnpm', 'node_modules', name, 'package.json'));
-  const found = candidates.find(existsSync);
-  assert(found, `Qualified dependency is not installed: ${name}`);
-  const directory = dirname(realpathSync(found)); assert(inside(resolve(workspace, '..', '..'), directory), `Dependency path is outside the local installation: ${name}`);
-  return directory;
-}
 
-function requiredDependencies(manifest) {
-  const result = new Set(Object.keys(manifest.dependencies ?? {}));
-  for (const name of Object.keys(manifest.peerDependencies ?? {})) if (!manifest.peerDependenciesMeta?.[name]?.optional) result.add(name);
-  return result;
-}
 
-const npm = cli('npm'); const pnpm = cli('pnpm');
-const compilerPlatform = `@typescript/typescript-${process.platform}-${process.arch}`;
 const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
 const canonicalArtifacts = await realpath(artifactRoot); assert(inside(workspace, canonicalArtifacts));
 const output = await mkdtemp(join(canonicalArtifacts, 'template-check-')); const tarballs = join(output, 'tarballs');
 const cache = join(output, 'npm-cache'); await mkdir(tarballs); await mkdir(cache);
-const packages = new Map();
-
-for (const shortName of mayuraPackages) {
-  const directory = join(workspace, 'packages', shortName); const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-  assert.equal(manifest.name, `@mayura/${shortName}`); assert(existsSync(join(directory, 'dist')), `Build ${manifest.name} before template qualification.`);
-  const destination = join(tarballs, `${shortName}.tgz`); await run([pnpm, 'pack', '--out', destination], directory);
-  packages.set(manifest.name, { archive: pathToFileURL(destination).href, manifest });
-}
-
-const externalRoots = [
-  ['zod', workspace], ['typescript', workspace], [compilerPlatform, join(workspace, 'node_modules', '.pnpm')],
-  ['@types/node', workspace], ['undici-types', installedDirectory('@types/node', workspace)],
-  ['better-sqlite3', join(workspace, 'packages', 'storage-sqlite')],
-  ['node-addon-api', installedDirectory('better-sqlite3', join(workspace, 'packages', 'storage-sqlite'))],
-  ['quickjs-emscripten-core', join(workspace, 'packages', 'adapter-code-quickjs')],
-  ['@jitl/quickjs-wasmfile-release-sync', join(workspace, 'packages', 'adapter-code-quickjs')],
-  ['@jitl/quickjs-ffi-types', installedDirectory('@jitl/quickjs-wasmfile-release-sync', join(workspace, 'packages', 'adapter-code-quickjs'))],
-  ['hono', join(workspace, 'packages', 'server-node')], ['@hono/node-server', join(workspace, 'packages', 'server-node')],
-];
-for (const [name, parent] of externalRoots) {
-  const directory = installedDirectory(name, parent); const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-  assert.equal(manifest.name, name); for (const script of ['preinstall', 'install', 'postinstall']) assert(!manifest.scripts?.[script], `${name} has an unreviewed installation script.`);
-  // pnpm materializes duplicate declaration files instead of encoding them as
-  // hard links, which npm currently drops while extracting local archives on Windows.
-  const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${manifest.version}.tgz`);
-  if (name === compilerPlatform && process.platform !== 'win32') {
-    // pnpm pack writes every file as 0644, which strips the native compiler's execute bit on Linux and macOS;
-    // npm pack keeps file modes. (On Windows there is no execute bit, and pnpm's layout is needed there.)
-    const staging = await mkdtemp(join(output, 'npm-pack-'));
-    await run([npm, 'pack', directory, '--ignore-scripts', '--offline', '--pack-destination', staging], workspace);
-    const [archive] = await readdir(staging); assert(archive?.endsWith('.tgz'), `npm pack produced no archive for ${name}.`);
-    await rename(join(staging, archive), destination);
-  } else await run([pnpm, 'pack', '--out', destination], directory);
-  packages.set(name, { archive: pathToFileURL(destination).href, manifest });
-}
-
-const closure = roots => {
-  const selected = new Set(); const visit = name => {
-    if (selected.has(name)) return; const entry = packages.get(name); assert(entry, `Unpacked template dependency: ${name}`);
-    selected.add(name); for (const dependency of requiredDependencies(entry.manifest)) visit(dependency);
-  };
-  roots.forEach(visit); return selected;
-};
+// `mayura` is the published bundle; third-party packages come from the local installation (scripts/local-packages.mjs).
+const { npm, packages, packClosure } = createPacker({ output, tarballs });
+const parents = { 'better-sqlite3': join(workspace, 'packages', 'storage-sqlite'), 'quickjs-emscripten-core': join(workspace, 'packages', 'adapter-code-quickjs'),
+  '@jitl/quickjs-wasmfile-release-sync': join(workspace, 'packages', 'adapter-code-quickjs'), [compilerPlatform]: join(workspace, 'node_modules', '.pnpm') };
 
 const reports = [];
 for (const template of TEMPLATE_NAMES) {
@@ -121,7 +48,8 @@ for (const template of TEMPLATE_NAMES) {
   assert(plan.changes.every(change => change.operation === 'create')); await applyProjectPlan(plan);
   const project = await readProject(join(directory, 'mayura.project.json')); assert.equal(project.template, template);
   const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  const roots = [...Object.keys(manifest.dependencies), ...Object.keys(manifest.devDependencies), compilerPlatform]; const allowed = closure(roots);
+  const roots = [...Object.keys(manifest.dependencies), ...Object.keys(manifest.devDependencies), compilerPlatform];
+  const allowed = await packClosure(roots.map(name => [name, parents[name] ?? workspace]));
   manifest.dependencies = Object.fromEntries(Object.keys(manifest.dependencies).map(name => [name, packages.get(name).archive]));
   manifest.devDependencies = Object.fromEntries(Object.keys(manifest.devDependencies).map(name => [name, packages.get(name).archive]));
   manifest.devDependencies[compilerPlatform] = packages.get(compilerPlatform).archive;

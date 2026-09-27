@@ -1,5 +1,5 @@
-import { agentAsTool, createRuntime, defineAgent } from '@mayura/sdk';
-import { scriptedModel } from '@mayura/testing';
+import { agentAsTool, createRuntime, defineAgent } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
 import { z } from 'zod';
 
 const input = z.object({ topic: z.string() }); const finding = z.object({ finding: z.string() });
