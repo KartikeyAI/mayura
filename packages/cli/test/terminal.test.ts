@@ -91,6 +91,17 @@ describe('interactive init', () => {
     expect(screen).toContain('Next steps'); expect(screen).toContain('npm run dev');
   });
 
+  it('runs an extra step after writing, and leaves npm install out of the next steps when that step installs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const target = join(root, 'local-app'); const seen: string[] = [];
+    const input = new PassThrough(); let screen = '';
+    const output = Object.assign(new Writable({ write(chunk, _encoding, done) { screen += String(chunk); done(); } }), { columns: 100, rows: 40 });
+    const typing = (async () => { for (const key of [enter, enter, ...target, enter, enter]) { await new Promise(resolve => setTimeout(resolve, 15)); input.write(key); } })();
+    const result = await initWizard(plain, { input, output }, { label: 'Installing', installs: true, run: async directory => { seen.push(directory); return 'Installed 3 packages'; } });
+    await typing;
+    expect(result.status).toBe('succeeded'); expect(seen).toEqual([target]);
+    expect(screen).toContain('Installed 3 packages'); expect(screen).toContain('npm run dev'); expect(screen).not.toContain('npm install');
+  });
+
   it('writes nothing when cancelled', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root);
     const { result, screen } = await drive([enter, '\u0003']);

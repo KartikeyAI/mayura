@@ -6,61 +6,24 @@
 // Web UI toolchains (Vite, Tailwind) are verified in step 1 only; step 2 installs the server's dependencies.
 //   node scripts/starter-check.mjs [--only <starter>] [--skip-packed]
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
-import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { createRequire } from 'node:module';
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { compilerPlatform, createPacker, environment, inside, installedDirectory, run, workspace } from './local-packages.mjs';
 import { applyProjectPlan, planStarter, readProject, STARTER_NAMES } from '../packages/cli/dist/index.js';
 
-const exec = promisify(execFile);
-const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
 const only = argument('--only'); const skipPacked = process.argv.includes('--skip-packed');
 const selected = STARTER_NAMES.filter(name => !only || name === only); assert(selected.length > 0, `Unknown starter: ${only}`);
-const compilerPlatform = `@typescript/typescript-${process.platform}-${process.arch}`;
 // Development tools a packed install keeps; every other devDependency belongs to a web UI and is checked in step 1.
 const packedDevelopment = new Set(['typescript', '@types/node']);
 
-const inside = (parent, child) => { const value = relative(parent, child); return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value); };
-function environment(extra = {}) {
-  const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'COREPACK_HOME']);
-  return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase()))),
-    COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_ignore_scripts: 'true',
-    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false', ...extra };
-}
-async function run(args, cwd, { timeout = 120_000, env } = {}) {
-  try { return await exec(process.execPath, args, { cwd, env: environment(env), timeout, windowsHide: true, maxBuffer: 16 * 1_048_576 }); }
-  catch (error) { throw new Error(`Starter command failed in ${relative(workspace, cwd) || '.'}: ${args.slice(0, 3).map(value => relative(workspace, value) || value).join(' ')}\n${String(error.stdout ?? '').slice(-6_000)}\n${String(error.stderr ?? '').slice(-6_000)}`); }
-}
-function cli(kind) {
-  const shebang = path => { const bytes = Buffer.alloc(256); let descriptor;
-    try { descriptor = openSync(path, 'r'); return /^#![^\r\n]*\bnode\b/u.test(bytes.subarray(0, readSync(descriptor, bytes, 0, bytes.length, 0)).toString('utf8')); }
-    catch { return false; } finally { if (descriptor !== undefined) closeSync(descriptor); } };
-  const valid = path => { try { return isAbsolute(path) && statSync(path).isFile() && (/\.(?:js|cjs|mjs)$/iu.test(path) || shebang(path)); } catch { return false; } };
-  const configured = process.env[`MAYURA_${kind.toUpperCase()}_CLI`];
-  if (configured) { assert(valid(configured), `Configured ${kind} CLI must be an absolute local JavaScript entry point.`); return realpathSync(configured); }
-  const directories = [...new Set([dirname(process.execPath), ...(process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean).map(value => value.replace(/^"|"$/gu, ''))])];
-  const suffixes = kind === 'npm' ? ['npm/bin/npm-cli.js'] : ['pnpm/bin/pnpm.cjs', 'corepack/dist/pnpm.js'];
-  const candidates = suffixes.flatMap(suffix => directories.flatMap(directory => [join(directory, 'node_modules', suffix), resolve(directory, '..', 'lib', 'node_modules', suffix)]));
-  for (const directory of directories) { try { const path = realpathSync(join(directory, kind)); if (valid(path)) candidates.push(path); } catch { /* next */ } }
-  const found = candidates.find(valid); assert(found, `Set MAYURA_${kind.toUpperCase()}_CLI to an existing local JavaScript entry point.`); return realpathSync(found);
-}
-/** The installed directory of `name` as Node resolves it from `parent` (a pnpm-linked package). */
-function installedDirectory(name, parent) {
-  const require = createRequire(join(parent, 'package.json'));
-  const candidates = require.resolve.paths(name).map(path => join(path, name, 'package.json'));
-  candidates.push(join(workspace, 'node_modules', '.pnpm', 'node_modules', name, 'package.json'));
-  const found = candidates.find(existsSync); assert(found, `Dependency is not installed: ${name} (from ${relative(workspace, parent)})`);
-  const directory = dirname(realpathSync(found)); assert(inside(resolve(workspace, '..', '..'), directory), `Dependency path is outside the local installation: ${name}`);
-  return directory;
-}
 const freePort = () => new Promise((resolvePort, reject) => { const server = createServer(); server.once('error', reject);
   server.listen(0, '127.0.0.1', () => { const { port } = server.address(); server.close(() => resolvePort(port)); }); });
 
@@ -82,44 +45,10 @@ for (const starter of selected) {
 
 if (!skipPacked) {
   // ---- Step 2: packed and offline ------------------------------------------------------------------------------------
-  const npm = cli('npm'); const pnpm = cli('pnpm');
   const artifacts = join(workspace, '.artifacts'); await mkdir(artifacts, { recursive: true });
   const output = await mkdtemp(join(await realpath(artifacts), 'starter-check-')); const tarballs = join(output, 'tarballs'); const cache = join(output, 'npm-cache');
   await mkdir(tarballs); await mkdir(cache);
-  const packages = new Map(); // name -> { archive, manifest }
-
-  const packDirectory = async (name, directory) => {
-    if (packages.has(name)) return packages.get(name);
-    const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); assert.equal(manifest.name, name);
-    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${manifest.version}.tgz`);
-    if (!name.startsWith('@mayura/')) for (const script of ['preinstall', 'install', 'postinstall']) {
-      // better-sqlite3 is built once in the workspace (pnpm onlyBuiltDependencies) and packed with its binary.
-      assert(!manifest.scripts?.[script] || name === 'better-sqlite3', `${name} has an unreviewed installation script.`);
-    }
-    if (name === compilerPlatform && process.platform !== 'win32') {
-      // pnpm pack writes every file as 0644, which strips the native compiler's execute bit on Linux and macOS; npm pack
-      // keeps file modes. Everything else is packed by pnpm, as the template check does.
-      const staging = await mkdtemp(join(output, 'npm-pack-'));
-      await run([npm, 'pack', directory, '--ignore-scripts', '--offline', '--pack-destination', staging], workspace);
-      const [archive] = await readdir(staging); assert(archive?.endsWith('.tgz')); await rename(join(staging, archive), destination);
-    } else await run([pnpm, 'pack', '--out', destination], directory);
-    const entry = { archive: pathToFileURL(destination).href, manifest, directory }; packages.set(name, entry); return entry;
-  };
-  const workspacePackage = name => join(workspace, 'packages', name.slice('@mayura/'.length));
-  /** Pack `name` (resolved from `parent`) and everything it needs at run time; returns the closure of names. */
-  const packClosure = async (roots) => {
-    const closure = new Set(); const queue = roots.map(([name, parent]) => ({ name, parent }));
-    while (queue.length) {
-      const { name, parent } = queue.shift(); if (closure.has(name)) continue; closure.add(name);
-      const directory = name.startsWith('@mayura/') ? workspacePackage(name) : installedDirectory(name, parent);
-      if (name.startsWith('@mayura/')) assert(existsSync(join(directory, 'dist')), `Build ${name} before starter qualification.`);
-      const { manifest } = await packDirectory(name, directory);
-      const required = new Set(Object.keys(manifest.dependencies ?? {}));
-      for (const peer of Object.keys(manifest.peerDependencies ?? {})) if (!manifest.peerDependenciesMeta?.[peer]?.optional) required.add(peer);
-      for (const dependency of required) queue.push({ name: dependency, parent: directory });
-    }
-    return closure;
-  };
+  const { npm, packages, packClosure } = createPacker({ output, tarballs });
 
   for (const report of reports) {
     const { starter } = report; const directory = join(output, starter); const started = performance.now();

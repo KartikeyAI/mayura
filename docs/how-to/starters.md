@@ -13,6 +13,25 @@ mayura init --starter approval-workflow --directory ./refunds --apply
 its digest, and replacing an existing file needs `--apply --confirm <plan digest>`. The generated `package.json` pins
 every Mayura package to the CLI's exact release.
 
+## Try a starter from this repository
+
+Before Mayura is published to npm, `npm install` in a generated project cannot find the `@mayura/*` packages. From a
+clone of this repository, create the project with `pnpm local:init` instead:
+
+```text
+pnpm install
+pnpm local:init                                                   # choose interactively
+pnpm local:init --starter research-team --directory ../research-app
+pnpm local:init --template basic-agent --directory ../my-agent
+```
+
+It builds the workspace, creates the project exactly as `mayura init` does, packs this workspace's Mayura packages and
+the third-party packages they use (taken from the local installation, including this machine's native binaries such
+as SQLite's), and installs them offline into the project. Nothing is downloaded. Then `cd` into the project and run
+`npm run dev` (for a template, `npm run build` and `npm start`). The packed packages stay in the project's
+`.mayura-local/` folder (ignored by git), so `npm install` keeps working there offline. To pick up later changes to the
+workspace, create a new project. A relative `--directory` is resolved from where you run the command.
+
 ## What every starter has
 
 - **Runs offline first.** Each agent has a small rule-based stand-in model, clearly labelled, so `npm run dev` and

@@ -11,8 +11,10 @@ const shown = (directory: string): string => { const path = relative(process.cwd
 
 /** Streams to prompt on; the process's terminal by default. Tests drive the wizard through these. */
 export interface WizardIo { readonly input?: Readable; readonly output?: Writable }
+/** An extra step after the files are written, shown with its own spinner; `installs` drops `npm install` from the next steps. */
+export interface WizardAfterWrite { readonly label: string; readonly installs: boolean; run(directory: string): Promise<string> }
 
-export async function initWizard(p: Paint, io: WizardIo = {}): Promise<{ readonly status: 'succeeded' | 'cancelled'; readonly plan?: InitPlan | StarterInitPlan }> {
+export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: WizardAfterWrite): Promise<{ readonly status: 'succeeded' | 'cancelled'; readonly plan?: InitPlan | StarterInitPlan }> {
   const prompts = await import('@clack/prompts');
   const cancelled = (): { readonly status: 'cancelled' } => { prompts.cancel('Nothing was created.', io); return { status: 'cancelled' }; };
   prompts.intro(p.bold(' Create a Mayura project '), io);
@@ -53,7 +55,12 @@ export async function initWizard(p: Paint, io: WizardIo = {}): Promise<{ readonl
   try { await applyProjectPlan(plan, replaces.length > 0 ? { confirmation: plan.digest } : {}); }
   catch (error) { progress.error('Nothing was written.'); throw error; }
   progress.stop(`Wrote ${creates.length + replaces.length} files`);
-  prompts.note(nextSteps(kind, shown(directory)).map(step => p.cyan(step)).join('\n'), 'Next steps', io);
+  if (afterWrite) {
+    const step = prompts.spinner(io.output ? { output: io.output } : {}); step.start(afterWrite.label);
+    try { step.stop(await afterWrite.run(directory)); } catch (error) { step.error(`${afterWrite.label} failed.`); throw error; }
+  }
+  const steps = nextSteps(kind, shown(directory)).filter(step => !(afterWrite?.installs && step === 'npm install'));
+  prompts.note(steps.map(step => p.cyan(step)).join('\n'), 'Next steps', io);
   prompts.outro(kind === 'starter' ? `Open the README for a tour of the ${name} starter.` : 'Done.', io);
   return { status: 'succeeded', plan };
 }
