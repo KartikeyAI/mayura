@@ -47,6 +47,7 @@ jobs:
       - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
       - run: node scripts/ci-step.mjs -- pnpm api:report
       - run: node scripts/ci-step.mjs -- node scripts/version.mjs check
+      - run: node scripts/ci-step.mjs -- pnpm test:bundle
       - run: node scripts/ci-step.mjs -- pnpm release:artifacts
       - run: node scripts/ci-step.mjs -- node scripts/sbom.mjs
   postgres:
