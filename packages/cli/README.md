@@ -2,9 +2,12 @@
 
 Node-only Mayura project initialization and inspection CLI. Initialization is plan-first: it prints every create/replace operation and a content-bound confirmation digest before it can write. Existing files are never replaced from a stale or unconfirmed plan.
 
-Initial commands:
+In a terminal, run `mayura init` with no options to choose a starter or template interactively, and `mayura --help` for the commands. Output is readable in a terminal and JSON when piped; `--json` always prints JSON.
+
+Commands:
 
 ```text
+mayura init
 mayura templates
 mayura init --template basic-agent --directory ./my-agent
 mayura init --template basic-agent --directory ./my-agent --apply

@@ -15,7 +15,7 @@ const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote'];
 const expectedDependencies = {
-  core: [], cli: ['@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
+  core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'client-react': ['@mayura/client'],
@@ -178,6 +178,40 @@ async function main() {
     packages.set(name, { archive: pathToFileURL(destination).href, manifest });
     reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
+  // The CLI's interactive prompts: @clack/prompts and its small closure, each reviewed as MIT with no install scripts.
+  const clackDependencies = {
+    '@clack/prompts': ['@clack/core', 'fast-string-width', 'fast-wrap-ansi', 'sisteransi'], '@clack/core': ['fast-wrap-ansi', 'sisteransi'],
+    'fast-wrap-ansi': ['fast-string-width'], 'fast-string-width': ['fast-string-truncated-width'], 'fast-string-truncated-width': [], sisteransi: [],
+  };
+  const clackDirectories = new Map(); const locate = async (name, from) => {
+    if (clackDirectories.has(name)) return;
+    // Walk up node_modules the way Node resolves; some of these packages do not export their package.json.
+    let directory;
+    for (let parent = from; ; parent = dirname(parent)) {
+      if (existsSync(join(parent, 'node_modules', name, 'package.json'))) { directory = await realpath(join(parent, 'node_modules', name)); break; }
+      assert.notEqual(dirname(parent), parent, `${name} is not installed.`);
+    }
+    clackDirectories.set(name, directory);
+    for (const dependency of clackDependencies[name]) await locate(dependency, directory);
+  };
+  await locate('@clack/prompts', join(workspace, 'packages', 'cli'));
+  assert.deepEqual([...clackDirectories.keys()].sort(), Object.keys(clackDependencies).sort());
+  for (const [name, directory] of clackDirectories) {
+    const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(original.license, 'MIT', `${name} must be MIT.`);
+    for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(original.scripts?.[script], undefined, `${name} has an unreviewed installation script.`);
+    assert.deepEqual(Object.keys(original.dependencies ?? {}).sort(), clackDependencies[name], `${name} has unreviewed dependencies.`);
+    const staged = await mkdtemp(join(output, 'stage-')); await cp(directory, staged, { recursive: true, dereference: true });
+    const stagedManifest = JSON.parse(await readFile(join(staged, 'package.json'), 'utf8')); delete stagedManifest.scripts; delete stagedManifest.devDependencies;
+    await writeFile(join(staged, 'package.json'), `${JSON.stringify(stagedManifest, null, 2)}\n`);
+    const packed = JSON.parse((await run([npm, 'pack', staged, '--ignore-scripts', '--offline', '--pack-destination', tarballs, '--json'], workspace)).stdout);
+    assert.equal(packed.length, 1); const destination = join(tarballs, packed[0].filename);
+    const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+    assert.equal(manifest.name, name); assert.equal(manifest.version, original.version);
+    packages.set(name, { archive: pathToFileURL(destination).href, manifest });
+    reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
+  }
+  assert.equal(packages.get('@mayura/cli').manifest.dependencies['@clack/prompts'], packages.get('@clack/prompts').manifest.version, 'The CLI must pin the packed @clack/prompts version.');
   const reactDirectory = await realpath(join(workspace, 'node_modules', 'react'));
   const reactOriginal = JSON.parse(await readFile(join(reactDirectory, 'package.json'), 'utf8'));
   assert.equal(reactOriginal.version, '19.3.0'); assert.equal(reactOriginal.license, 'MIT');
