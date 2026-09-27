@@ -2648,7 +2648,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "731be9b0b27dd9f3"
+        "declaration": "804dc473761fca86"
       },
       "createAgentServer": {
         "kind": "function",

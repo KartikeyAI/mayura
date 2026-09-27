@@ -65,6 +65,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- The agent server never released finished runs or per-principal runtimes, so a long-running server answered `429` after `maxRuns` runs or `maxRuntimes` principals until restarted. Finished runs are now kept for `limits.runRetentionMs` (default 10 minutes); a run whose outcome was read may be released early under pressure; runtimes close when unused; and a same-key retry of a released run gets `410 RUN_EXPIRED` from a bounded tombstone instead of starting a second run.
 - A strict TypeScript host could not pass `createWorkflowOperatorTransports` to the server: view node kinds, step statuses and fleet results were typed too loosely. They now use the server's record types, and `@mayura/server-node` re-exports `ServerIdentity`.
 - A scheduled run whose approval expired before its step was admitted retried the refused preparation until it failed with a contention error. The driver now requests a fresh review, and the run waits for a human again.
 - The migration planner could accept a settled tool step whose tool changed. The migrated state then failed validation. Such a plan is now refused, with the reason.

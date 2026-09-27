@@ -107,10 +107,10 @@ builds from the npm registry, so it needs published Mayura packages; it does not
 
 ## Know the limits
 
-- **The server keeps runs in memory.** The agent server holds every chat run it started, and one runtime per customer
-  who chatted, until the process restarts; after 20,000 runs or 5,000 distinct customers (`src/server.ts`) it answers
-  HTTP 429. Restart or rotate servers well before that. This is a current limit of the Mayura agent server, not of
-  your data: memory, returns and follow-ups are durable in the database.
+- **Chat runs are held in server memory.** A finished chat stays readable for five minutes (sooner released under load
+  once the browser has read the reply); a server restart forgets chats in flight. Capacity counts concurrent chats
+  (`src/server.ts`), and a busy server answers HTTP 429. Customer data is not affected: memory, returns and
+  follow-ups are durable in the database.
 - **Replies arrive whole.** What streams is the run's activity (tools starting and finishing); the reply text appears
   when the run completes. The Mayura run protocol has no token streaming.
 - **PII redaction is heuristic.** Card numbers (Luhn-checked), emails and 10 to 15 digit phone numbers are recognized;

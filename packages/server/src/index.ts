@@ -156,13 +156,27 @@ export interface AgentServerOptions {
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
     readonly maxHealthOperations?: number; readonly maxHumanOperations?: number; readonly maxWorkflowOperations?: number;
     readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
+    /**
+     * How long a finished run stays readable (result, events and same-key resubmission) before the server releases
+     * it, and with it any runtime no retained run still uses. Default 10 minutes. At `maxRuns` or `maxRuntimes` a
+     * finished run whose outcome its owner has already read (a run read with its outcome, or an event stream read to
+     * the end) is released early, oldest first; a result nobody has read is kept for the full period.
+     * After release, a same-key resubmission is answered `410 RUN_EXPIRED` (or `409 IDEMPOTENCY_CONFLICT` for a
+     * different payload) from a bounded tombstone rather than starting a second run. Configure `submissionJournal`
+     * for idempotency that also survives restarts and tombstone expiry.
+     */
+    readonly runRetentionMs?: number;
   };
 }
 export interface AgentServer { fetch(request: Request): Promise<Response>; close(): Promise<void> }
 interface Entry {
   readonly owner: string; readonly agentId: string; readonly digest: string;
   readonly handle: RunHandle<unknown>; readonly runtime: Runtime;
+  readonly runtimeKey: string; readonly submissionKey: string;
   outcome?: Outcome<unknown>;
+  finished?: boolean;
+  /** The owner has received the outcome; the run may be released early under capacity pressure. */
+  collected?: boolean;
 }
 class HttpFailure extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
@@ -350,8 +364,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   if (options.inspector !== undefined && typeof options.inspector !== 'boolean') throw new Error('The inspector setting must be a boolean.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
     maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32, maxWorkflowOperations: 32,
-    requestTimeoutMs: 10_000, streamDurationMs: 30_000, ...options.limits });
-  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'maxWorkflowOperations', 'requestTimeoutMs', 'streamDurationMs'].includes(key))) throw new Error('Unknown server limit.');
+    requestTimeoutMs: 10_000, streamDurationMs: 30_000, runRetentionMs: 600_000, ...options.limits });
+  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'maxWorkflowOperations', 'requestTimeoutMs', 'streamDurationMs', 'runRetentionMs'].includes(key))) throw new Error('Unknown server limit.');
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 16_777_216) throw new Error('Server limits must be bounded positive integers.');
   const healthChecks: readonly HealthCheck[] = (() => {
     const supplied = options.healthChecks ?? [];
@@ -468,6 +482,31 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     return Object.freeze({ claim: options.submissionJournal.claim.bind(options.submissionJournal) });
   })();
   const submissions = new Map<string, Entry>();
+  // Runs retained per runtime; a runtime closes when its last retained run is released.
+  const retained = new Map<string, number>();
+  const retentionTimers = new Set<ReturnType<typeof setTimeout>>();
+  // Idempotency evidence for released runs: submission key -> request digest, oldest dropped past a fixed bound.
+  const tombstones = new Map<string, string>(); const maxTombstones = 16_384;
+  const release = (entry: Entry): void => {
+    if (runs.get(entry.handle.id) !== entry) return;
+    runs.delete(entry.handle.id);
+    if (submissions.get(entry.submissionKey) === entry) {
+      submissions.delete(entry.submissionKey); tombstones.delete(entry.submissionKey); tombstones.set(entry.submissionKey, entry.digest);
+      if (tombstones.size > maxTombstones) tombstones.delete(tombstones.keys().next().value!);
+    }
+    const remaining = (retained.get(entry.runtimeKey) ?? 1) - 1;
+    if (remaining > 0) { retained.set(entry.runtimeKey, remaining); return; }
+    retained.delete(entry.runtimeKey);
+    const runtime = runtimes.get(entry.runtimeKey);
+    if (runtime === entry.runtime) { runtimes.delete(entry.runtimeKey); void Promise.resolve().then(() => runtime.close()).catch(() => undefined); }
+  };
+  /** Release the oldest finished runs until a new run (and, when needed, a new runtime) fits. Active runs are never released. */
+  const makeRoom = (runtimeKey: string): void => {
+    for (const entry of runs.values()) {
+      if (runs.size < limits.maxRuns && (runtimes.has(runtimeKey) || runtimes.size < limits.maxRuntimes)) return;
+      if (entry.finished && entry.collected) release(entry);
+    }
+  };
   const streams = new Set<() => void>();
   let closed = false;
   let requests = 0;
@@ -574,7 +613,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         try {
           const next = await iterator.next();
           if (ended) return;
-          if (next.done) { finish(); return; }
+          if (next.done) { if (entry.finished) entry.collected = true; finish(); return; }
           const event = JSON.stringify(jsonValue(next.value, { maxBytes: 16_384 }));
           value.enqueue(encoder.encode(`id: ${next.value.sequence}\nevent: ${next.value.type}\ndata: ${event}\n\n`));
         } catch {
@@ -879,8 +918,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         if (previous.digest !== digest) throw new HttpFailure(409, 'IDEMPOTENCY_CONFLICT');
         return response({ id: previous.handle.id, profile: 'ephemeral' }, 200);
       }
-      if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
+      const expired = tombstones.get(submissionKey);
+      if (expired !== undefined) throw new HttpFailure(expired === digest ? 410 : 409, expired === digest ? 'RUN_EXPIRED' : 'IDEMPOTENCY_CONFLICT');
       const runtimeKey = JSON.stringify([owner, agentId]);
+      makeRoom(runtimeKey);
+      if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
       if (!runtimes.has(runtimeKey) && runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
       const start = async (): Promise<Entry | 'duplicate'> => {
         if (submissionJournal) {
@@ -896,6 +938,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           if (result?.status !== 'claimed') throw new HttpFailure(503, 'SUBMISSION_JOURNAL_UNAVAILABLE');
           assertActive(signal); if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
         }
+        makeRoom(runtimeKey);
+        if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
         let runtime = runtimes.get(runtimeKey);
         if (!runtime) {
           if (runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
@@ -903,9 +947,15 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           runtimes.set(runtimeKey, runtime);
         }
         const handle = runtime.submit(config.agent, { input: data['input'] });
-        const entry: Entry = { owner, agentId, digest, handle, runtime };
+        const entry: Entry = { owner, agentId, digest, handle, runtime, runtimeKey, submissionKey };
         runs.set(handle.id, entry); submissions.set(submissionKey, entry);
-        void handle.result().then(outcome => { entry.outcome = outcome; });
+        retained.set(runtimeKey, (retained.get(runtimeKey) ?? 0) + 1);
+        void handle.result().then(outcome => {
+          entry.outcome = outcome; entry.finished = true;
+          if (closed) return;
+          const timer = setTimeout(() => { retentionTimers.delete(timer); release(entry); }, limits.runRetentionMs);
+          (timer as { unref?: () => void }).unref?.(); retentionTimers.add(timer);
+        });
         return entry;
       };
       const pending = start(); pendingSubmissions.set(submissionKey, pending);
@@ -932,6 +982,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     }
     if (request.method === 'GET' && !match[2]) {
       requireCapability(identity, 'runs:read');
+      if (entry.outcome) entry.collected = true;
       return response({ ...entry.runtime.inspect(entry.handle), ...(entry.outcome ? { outcome: entry.outcome } : {}) });
     }
     throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
@@ -963,6 +1014,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     },
     async close(): Promise<void> {
       closed = true;
+      for (const timer of retentionTimers) clearTimeout(timer); retentionTimers.clear();
       for (const finish of [...streams]) finish();
       await Promise.all([...runtimes.values()].map(runtime => runtime.close()));
     },

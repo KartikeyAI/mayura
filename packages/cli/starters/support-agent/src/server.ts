@@ -17,10 +17,10 @@ export interface ServerOptions {
   readonly model?: ModelAdapter;
 }
 
-// The agent server keeps every run it started, and one runtime per signed-in customer, in memory until the process
-// restarts; past these limits it answers 429. Restart (or scale out and rotate) servers well before you reach them.
-// See README "Know the limits".
-const maxRuns = 20_000; const maxCustomers = 5_000;
+// Chat runs live in server memory: at most `maxRuns` at once, with one runtime per customer who has a run held.
+// A finished run stays readable for `runRetentionMs`, and is released sooner, under load, once the browser has read
+// its reply. Only active chats count against capacity, so size these for concurrent customers, not for the day.
+const maxRuns = 2_000; const maxCustomers = 1_000; const runRetentionMs = 5 * 60_000;
 
 /**
  * The HTTP side: the support assistant for signed-in customers, the operator console at /inspector and the operator
@@ -54,7 +54,7 @@ export async function startServer(config: Config, services: Services, options: S
     inspector: true,
     allowedOrigins: config.server.allowedOrigins,
     ...operator,
-    limits: { maxRequests: 256, maxRuns, maxRuntimes: maxCustomers, maxStreams: 256, maxWorkflowOperations: 32, requestTimeoutMs: 30_000, streamDurationMs: 60_000 },
+    limits: { maxRequests: 256, maxRuns, maxRuntimes: maxCustomers, runRetentionMs, maxStreams: 256, maxWorkflowOperations: 32, requestTimeoutMs: 30_000, streamDurationMs: 60_000 },
   };
 
   if (config.environment === 'production') {

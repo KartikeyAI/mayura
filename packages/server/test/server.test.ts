@@ -361,10 +361,41 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
     expect(new Set([first, second, third]).size).toBe(3);
   });
 
-  it('retains full idempotency evidence at the run cap and admits no replacement after terminal completion', async () => {
-    const value = server({ limits: { maxRuns: 1 } }); const id = await admitted(value); await terminal(value, id);
-    await error(await value.fetch(submission(2, 'new')), 429, 'RUN_LIMIT');
+  it('keeps a finished run whose outcome nobody has read, and answers 429 rather than drop it', async () => {
+    const value = server({ limits: { maxRuns: 1 } }); const id = await admitted(value);
+    await vi.waitFor(async () => { await error(await value.fetch(submission(2, 'new')), 429, 'RUN_LIMIT'); }, { interval: 1, timeout: 1_000 });
     const retry = await value.fetch(submission()); expect(retry.status).toBe(200); expect((await json(retry))['id']).toBe(id);
+    expect((await terminal(value, id))['outcome']).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('releases a finished run once its outcome was read, and keeps its idempotency evidence as a tombstone', async () => {
+    const value = server({ limits: { maxRuns: 1 } }); const id = await admitted(value); await terminal(value, id); // read with its outcome
+    const next = await admitted(value, 2, 'new'); expect(next).not.toBe(id);
+    await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'NOT_FOUND');
+    await error(await value.fetch(submission()), 410, 'RUN_EXPIRED');
+    await error(await value.fetch(submission('CHANGED')), 409, 'IDEMPOTENCY_CONFLICT');
+  });
+
+  it('serves any number of runs and principals over time instead of leaking until it answers 429', async () => {
+    let principal = 0; const value = server({ limits: { maxRuns: 2, maxRuntimes: 2 },
+      authenticate: async () => identity({ scope: { principalId: `user-${principal}`, projectId: 'project' } }) });
+    for (let index = 0; index < 12; index++) {
+      principal = index; const id = await admitted(value, index, `request.${index}`);
+      expect((await terminal(value, id))['outcome']).toMatchObject({ status: 'succeeded', output: index });
+    }
+  });
+
+  it('releases finished runs after the retention period even if nobody reads them', async () => {
+    const value = server({ limits: { maxRuns: 1, runRetentionMs: 20 } }); const id = await admitted(value);
+    await vi.waitFor(async () => { await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'NOT_FOUND'); }, { interval: 5, timeout: 2_000 });
+    expect((await admitted(value, 2, 'new'))).toEqual(expect.any(String));
+  });
+
+  it('counts an event stream read to the end as reading the outcome', async () => {
+    const value = server({ limits: { maxRuns: 1 } }); const id = await admitted(value);
+    await vi.waitFor(async () => { await error(await value.fetch(submission(2, 'new')), 429, 'RUN_LIMIT'); }, { interval: 1, timeout: 1_000 });
+    const stream = await value.fetch(request(`/v1/runs/${id}/events`)); expect(stream.status).toBe(200); await stream.text();
+    expect(await admitted(value, 2, 'new')).not.toBe(id);
   });
 
   it('bounds runtime ownership without evicting another scope', async () => {
