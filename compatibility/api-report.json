@@ -2106,6 +2106,10 @@
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
       },
+      "createModelRouter": {
+        "kind": "function",
+        "declaration": "736e0daaaf101d85"
+      },
       "createRuntime": {
         "kind": "function",
         "declaration": "f73bc2d18bd63cf1"
@@ -2145,6 +2149,22 @@
       "HookStage": {
         "kind": "type",
         "declaration": "47afc8bc643b3e84"
+      },
+      "ModelRouter": {
+        "kind": "interface",
+        "declaration": "27e2f526bc8c33aa"
+      },
+      "ModelRouterAttempt": {
+        "kind": "interface",
+        "declaration": "869ca695c7c1e464"
+      },
+      "ModelRouterOptions": {
+        "kind": "interface",
+        "declaration": "1fdc1ed0e0e11021"
+      },
+      "ModelRouterRouteStatus": {
+        "kind": "interface",
+        "declaration": "b6eb7acc46907878"
       },
       "RunInspection": {
         "kind": "interface",
@@ -2295,6 +2315,10 @@
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
+      },
+      "createModelRouter": {
+        "kind": "function",
+        "declaration": "736e0daaaf101d85"
       },
       "createRuntime": {
         "kind": "function",
@@ -2483,6 +2507,22 @@
       "ModelResponse": {
         "kind": "type",
         "declaration": "23ccf57b03702785"
+      },
+      "ModelRouter": {
+        "kind": "interface",
+        "declaration": "27e2f526bc8c33aa"
+      },
+      "ModelRouterAttempt": {
+        "kind": "interface",
+        "declaration": "869ca695c7c1e464"
+      },
+      "ModelRouterOptions": {
+        "kind": "interface",
+        "declaration": "1fdc1ed0e0e11021"
+      },
+      "ModelRouterRouteStatus": {
+        "kind": "interface",
+        "declaration": "b6eb7acc46907878"
       },
       "ModelTool": {
         "kind": "interface",

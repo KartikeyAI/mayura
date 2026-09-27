@@ -30,6 +30,17 @@ The adapter accepts only `tool_use` as a tool-call terminal reason and `end_turn
 
 Compatible servers vary. Mayura requires the selected server/model to support Chat Completions tools, strict JSON-Schema response formatting and usage fields; unsupported or partial dialects fail closed. No local server process, model download, GPU runtime or model quality is bundled or qualified.
 
+## Provider router
+
+`createModelRouter` is a trusted `ModelAdapter` over 1–8 route adapters in priority order. It is the only place Mayura
+switches providers, and it does so only between calls, never within one. Failover follows timeouts (an adapter's own
+`CANCELLED` while the caller's signal is live), provider/transport failures and unusable responses; caller
+cancellation and `INVALID_CONFIG`/`PERMISSION_DENIED`/`INVALID_INPUT` stop routing. The router's `maxCostMicros` is the
+sum of the largest `maxAttempts` route bounds, and reported usage adds each failed attempt's confirmed cost or, when
+unknown, its full bound. The router's continuation is `{ router, route, inner? }`: the next call starts on that route
+with its own `inner` state, and any other route receives the request without continuation. Circuit state is
+per-process. See [Route between model providers](../how-to/model-routing.md).
+
 ## Qualification
 
 Known usage is accounted independently of content validity. `ModelInvocationError(costMicros)` carries a confirmed cost with a fixed safe message when a provider refuses or returns unusable content. Valid usage on a malformed model envelope still settles; unconfirmed HTTP/transport failures retain reservations. Late completion may settle known usage without reopening a terminal result or exposing raw content.
