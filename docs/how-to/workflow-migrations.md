@@ -108,7 +108,7 @@ The agent server exposes migrations through the `workflowMigrations` transport:
 | `GET /v1/workflow-runs/:id/migrations/:migrationId` | `workflows:read` | Dry-run plan |
 | `POST /v1/workflow-runs/:id/migrations/:migrationId` with `{ commandId, revision }` | `workflows:migrate` | Apply at an exact revision; a refused plan or a changed revision is HTTP 409 |
 
-`createWorkflowMigrationService` connects a migration catalog to one runtime:
+The simplest wiring is the [production operator API](workflow-operator-api.md): pass `migrations: createWorkflowMigrationCatalog([...])` to `createWorkflowOperatorTransports`. It journals every apply, so a retried command returns the same plan. To wire one runtime by hand, `createWorkflowMigrationService` connects a migration catalog to it:
 
 ```ts
 import { createWorkflowMigrationCatalog, createWorkflowMigrationService, pinnedDefinitionHash } from '@mayura/workflows';
@@ -139,4 +139,5 @@ Clients call `client.workflowMigrations(id)`, `client.planWorkflowMigration(id, 
 
 - Idempotent resubmission is keyed on the original submission. Submitting the same idempotency key with the old definition after a migration is refused with `CONFLICT`, because the stored run now uses the new version.
 - Migration never rewrites effects that already happened. A step you accept with `acceptCompleted` keeps its recorded output, even if the new step would have produced something different.
+- A settled step's result stays bound to what produced it. A tool step whose tool changed cannot be accepted: its receipt names the old tool. Reset it by giving the new step a new id, or finish the run on the old version.
 - Record your migration ids and keep old definitions until every run has migrated or finished. `inventoryWorkflowVersions` counts running, waiting and paused runs per version.

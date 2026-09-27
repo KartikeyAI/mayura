@@ -4906,6 +4906,10 @@
         "kind": "function",
         "declaration": "c533a8b63191e95d"
       },
+      "createWorkflowCommandJournal": {
+        "kind": "function",
+        "declaration": "67bf30c6d59e22d8"
+      },
       "createWorkflowFleetControl": {
         "kind": "function",
         "declaration": "7147a6f18a3276e7"
@@ -4925,6 +4929,10 @@
       "createWorkflowMigrationService": {
         "kind": "function",
         "declaration": "27809c0ae20ea0e8"
+      },
+      "createWorkflowOperatorTransports": {
+        "kind": "function",
+        "declaration": "c616062ef0506c56"
       },
       "createWorkflowRuntime": {
         "kind": "function",
@@ -4974,6 +4982,10 @@
         "kind": "function",
         "declaration": "9a7b9c6ffd515240"
       },
+      "graphOperatorTarget": {
+        "kind": "function",
+        "declaration": "3b3b1f0c4a11a214"
+      },
       "inventoryWorkflowVersions": {
         "kind": "function",
         "declaration": "a47d58a435918aad"
@@ -4981,6 +4993,10 @@
       "lifecycleFleetTarget": {
         "kind": "function",
         "declaration": "af52396e61348442"
+      },
+      "lifecycleOperatorTarget": {
+        "kind": "function",
+        "declaration": "07015acea73d0f95"
       },
       "MigrationAction": {
         "kind": "type",
@@ -4996,7 +5012,7 @@
       },
       "MigrationNode": {
         "kind": "interface",
-        "declaration": "b7ed8212f694d7f8"
+        "declaration": "a379897d2803b26f"
       },
       "MigrationPlan": {
         "kind": "interface",
@@ -5009,6 +5025,10 @@
       "MigrationStep": {
         "kind": "interface",
         "declaration": "5a04c93ce75c0b4a"
+      },
+      "nodeEvidence": {
+        "kind": "function",
+        "declaration": "b176f41c5a4c4bc8"
       },
       "nodeFingerprint": {
         "kind": "function",
@@ -5038,6 +5058,10 @@
         "kind": "function",
         "declaration": "42d727fd7248b517"
       },
+      "treeOperatorTarget": {
+        "kind": "function",
+        "declaration": "6e6f154d8c111e95"
+      },
       "VerifiedExternalEffect": {
         "kind": "interface",
         "declaration": "b1fb568ee19a001f"
@@ -5045,6 +5069,26 @@
       "VerifiedHuman": {
         "kind": "interface",
         "declaration": "709217df1dd283e1"
+      },
+      "WorkflowApprovalCredential": {
+        "kind": "type",
+        "declaration": "c3e189cb5161bcde"
+      },
+      "WorkflowCommandJournal": {
+        "kind": "interface",
+        "declaration": "2db4ce0112b4d79e"
+      },
+      "WorkflowCommandJournalOptions": {
+        "kind": "interface",
+        "declaration": "4cd9331c44dbf2dd"
+      },
+      "WorkflowCommandOutcome": {
+        "kind": "type",
+        "declaration": "d6419f66c5ba26f0"
+      },
+      "WorkflowCommandResult": {
+        "kind": "interface",
+        "declaration": "c8f4280c20ad740a"
       },
       "WorkflowDefinition": {
         "kind": "interface",
@@ -5169,6 +5213,38 @@
       "WorkflowNode": {
         "kind": "type",
         "declaration": "7188d1f549610b06"
+      },
+      "WorkflowOperatorControlInput": {
+        "kind": "interface",
+        "declaration": "48845bb0d8b707e2"
+      },
+      "WorkflowOperatorIndexRecord": {
+        "kind": "type",
+        "declaration": "9104ffcf6dd6ac98"
+      },
+      "WorkflowOperatorResult": {
+        "kind": "type",
+        "declaration": "1d63f10790165780"
+      },
+      "WorkflowOperatorStatus": {
+        "kind": "type",
+        "declaration": "de547a26ca9de93d"
+      },
+      "WorkflowOperatorTarget": {
+        "kind": "interface",
+        "declaration": "077de520b465f135"
+      },
+      "WorkflowOperatorTransportOptions": {
+        "kind": "interface",
+        "declaration": "ef74a12dd972412e"
+      },
+      "WorkflowOperatorTransports": {
+        "kind": "interface",
+        "declaration": "f47144321990c25d"
+      },
+      "WorkflowOperatorView": {
+        "kind": "interface",
+        "declaration": "c01159c3f5f7800f"
       },
       "WorkflowOptions": {
         "kind": "interface",
@@ -5296,7 +5372,7 @@
       },
       "WorkflowGraphDiscovery": {
         "kind": "interface",
-        "declaration": "05e41764dfbe1386"
+        "declaration": "3067022b40a1e45e"
       },
       "WorkflowGraphDiscoveryCandidate": {
         "kind": "interface",
@@ -5442,7 +5518,7 @@
       },
       "WorkflowTreeDiscovery": {
         "kind": "interface",
-        "declaration": "d0901e57b2bf3735"
+        "declaration": "2b3416503bc86439"
       },
       "WorkflowTreeDiscoveryCandidate": {
         "kind": "interface",

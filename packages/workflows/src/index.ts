@@ -14,7 +14,10 @@ export { coordinatorUnit, createWorkflowWorker, type WorkflowWorker, type Workfl
   type WorkflowWorkerUnit } from './worker.js';
 export { createWorkflowHookRelay, workflowHookStages, type WorkflowHookRelay, type WorkflowHookRelayOptions, type WorkflowHookDelivery, type WorkflowHookEvent, type WorkflowHookStage, type WorkflowHooks, type WorkflowEventSource } from './hook-relay.js';
 export { inventoryWorkflowVersions, assertWorkflowVersionsRetained, compositeVersionTarget, type WorkflowVersionInventory, type WorkflowVersionInventoryOptions, type WorkflowVersionEntry, type WorkflowVersionTarget } from './versions.js';
-export { defineWorkflowMigration, createWorkflowMigrationCatalog, type WorkflowMigrationCatalog, planWorkflowMigration, nodeFingerprint, type WorkflowMigration, type WorkflowMigrationOptions, type MigrationPlan,
+export { defineWorkflowMigration, createWorkflowMigrationCatalog, type WorkflowMigrationCatalog, planWorkflowMigration, nodeFingerprint, nodeEvidence, type WorkflowMigration, type WorkflowMigrationOptions, type MigrationPlan,
   type MigrationPlanEntry, type MigrationBlocker, type MigrationAction, type MigrationCommand, type MigrationNode, type MigrationStep, type WorkflowMigrationResult } from './migration.js';
 export { createWorkflowMigrationService, pinnedDefinitionHash, type WorkflowMigrationService, type WorkflowMigrationServiceOptions,
   type WorkflowMigrationOfferRecord, type WorkflowMigrationApplyResult } from './migration-service.js';
+export { createWorkflowCommandJournal, createWorkflowOperatorTransports, lifecycleOperatorTarget, graphOperatorTarget, treeOperatorTarget,
+  type WorkflowCommandJournal, type WorkflowCommandJournalOptions, type WorkflowCommandOutcome, type WorkflowCommandResult, type WorkflowOperatorTarget,
+  type WorkflowOperatorView, type WorkflowOperatorIndexRecord, type WorkflowOperatorTransports, type WorkflowOperatorResult, type WorkflowOperatorControlInput, type WorkflowOperatorStatus, type WorkflowOperatorTransportOptions, type WorkflowApprovalCredential } from './operator-transports.js';

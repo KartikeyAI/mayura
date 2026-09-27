@@ -2,11 +2,11 @@
 // Configuration comes only from the environment; nothing is discovered implicitly.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { hostname } from 'node:os';
-import { MayuraError } from '@mayura/core';
 import { createPostgresStore } from '@mayura/storage-postgres';
 import { createAggregateSubmissionJournal } from '@mayura/storage-contracts';
 import { listenProductionServer } from '@mayura/server-node';
-import { createWorkflowFleetControl, createWorkflowLeadership, createWorkflowWorker, lifecycleFleetTarget } from '@mayura/workflows';
+import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowLeadership, createWorkflowOperatorTransports, createWorkflowWorker,
+  lifecycleOperatorTarget } from '@mayura/workflows';
 import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost, defineWorkflowLifecycle } from '@mayura/workflows/lifecycle';
 
 const required = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required.`); return value; };
@@ -16,18 +16,12 @@ const runtimeOptions = { scope, permissions: { allow: [] }, policyVersion: '1', 
 // One example definition: a durable reminder that waits for an absolute time. Real applications register their own.
 const reminder = defineWorkflowLifecycle({ id: 'deployment.reminder', version: '1', input: any, output: any,
   nodes: [{ kind: 'timer', id: 'due', fireAtMs: { kind: 'input', path: ['dueAtMs'] } }], result: { kind: 'step', stepId: 'due', path: [] } });
-const definitions = new Map([[reminder.digest, reminder]]);
+// Every version with runs in flight stays registered; the operator API projects each run on its pinned version.
+const definitions = [reminder];
 
 const store = createPostgresStore({ connectionString: required('DATABASE_URL') });
 let initialized; const ready = () => (initialized ??= store.initialize());
 const fleet = createWorkflowFleetControl({ store, scope });
-
-const view = snapshot => {
-  const definition = [...definitions.values()][0];
-  return { format: 5, definitionId: definition.id, definitionVersion: definition.version, runId: snapshot.id, revision: snapshot.version, status: snapshot.status,
-    nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind, dependsOn: [...(node.dependsOn ?? [])] })),
-    steps: definition.nodes.map(node => ({ id: node.id, kind: node.kind, status: snapshot.steps[node.id].status })) };
-};
 
 export default {
   async server() {
@@ -35,12 +29,10 @@ export default {
     // Operator credential: a 64-hex token whose SHA-256 is provided; the token itself is never stored in configuration.
     const expected = Buffer.from(required('MAYURA_API_TOKEN_SHA256'), 'hex');
     const runtime = createWorkflowLifecycleFleetRuntime({ store, ...runtimeOptions });
-    const command = operate => async input => {
-      try { const current = await runtime.inspect(input.runId); if (current.version !== input.revision) return { status: 'conflict' };
-        return { status: 'applied', workflow: view(await operate(input.runId, current)) }; }
-      catch (error) { if (error instanceof MayuraError && error.code === 'NOT_FOUND') return { status: 'not_found' };
-        if (error instanceof MayuraError && error.code === 'CONFLICT') return { status: 'conflict' }; throw error; }
-    };
+    // Production operator adapters: journaled commands (a retried command id never applies twice, across replicas and
+    // restarts), revision checks, multi-version views, paged index and fleet sweeps, all confined to this scope.
+    const operator = createWorkflowOperatorTransports({ store, scope, journal: createWorkflowCommandJournal({ store, scope }), fleet,
+      targets: [lifecycleOperatorTarget({ runtime, store, scope, definitions })] });
     return listenProductionServer({
       agents: [], publicOrigin: required('MAYURA_PUBLIC_ORIGIN'), hostname: process.env.MAYURA_BIND ?? '0.0.0.0', port: Number(process.env.PORT ?? 8080),
       tls: { terminatedBy: 'proxy' }, submissionJournal: createAggregateSubmissionJournal(store),
@@ -50,23 +42,8 @@ export default {
         if (!/^[a-f0-9]{64}$/.test(token) || digest.length !== expected.length || !timingSafeEqual(digest, expected)) return null;
         return { scope, agentIds: [], capabilities: ['workflows:read', 'workflows:control', 'workflows:fleet'], expiresAtMs: Date.now() + 60_000 };
       },
-      workflowIndex: { list: async ({ limit }) => {
-        const items = []; let cursor = null;
-        do { const page = await runtime.scan({ cursor, maxShardReads: 64 });
-          for (const candidate of page.candidates) if (items.length < limit) items.push({ format: 5, definitionId: reminder.id, definitionVersion: reminder.version,
-            runId: candidate.runId, revision: candidate.version, status: candidate.status });
-          cursor = page.nextCursor; } while (cursor && items.length < limit);
-        return { items, next: null };
-      } },
-      workflowViews: { inspect: async ({ runId }) => { try { return view(await runtime.inspect(runId)); } catch { return null; } } },
-      workflowPauses: { pause: command(id => runtime.pause(id)) },
-      workflowResumes: { resume: command((id, current) => current.status === 'paused' ? runtime.resume(id) : current) },
-      workflowFleet: { inspect: () => fleet.inspect(), hold: () => fleet.hold(), release: () => fleet.release(),
-        sweep: async ({ phase, cursor, limit }) => {
-          const targets = [lifecycleFleetTarget(runtime)];
-          try { return { status: 'applied', sweep: phase === 'pause' ? await fleet.sweepPause(targets, { cursor, limit }) : await fleet.sweepResume(targets, { cursor, limit }) }; }
-          catch (error) { if (error instanceof MayuraError && error.code === 'CONFLICT') return { status: 'conflict' }; throw error; }
-        } },
+      workflowIndex: operator.workflowIndex, workflowViews: operator.workflowViews, workflowControls: operator.workflowControls,
+      workflowPauses: operator.workflowPauses, workflowResumes: operator.workflowResumes, workflowFleet: operator.workflowFleet,
     });
   },
   async worker() {

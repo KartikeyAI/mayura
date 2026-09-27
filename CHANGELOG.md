@@ -25,6 +25,15 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - `createWorkflowMigrationCatalog`, `createWorkflowMigrationService` and `pinnedDefinitionHash` for hosts.
   - Server migration routes behind a new `workflows:migrate` capability, and the client methods `workflowMigrations`, `planWorkflowMigration` and `migrateWorkflow`.
   - `compositeFleetTarget` for fleet sweeps over sagas and loops.
+- **Production operator API.** `createWorkflowOperatorTransports`, with `lifecycleOperatorTarget`, `graphOperatorTarget` and `treeOperatorTarget`, implements the server's workflow transports over the real runtimes. It provides:
+  - a durable, leased command journal (`createWorkflowCommandJournal`), so a command id applies at most once across retries, replicas and restarts;
+  - revision checks;
+  - views on each run's pinned version;
+  - index paging;
+  - fleet sweeps and migrations;
+  - scope isolation.
+  The reference deployment and the console demo use it. Graph and tree discovery gain `cursorAfter`.
+- **Property tests for migration.** They cover generated planner cases, plus generated lifecycle and scheduled runs migrated on SQLite, using a seeded in-house generator with no new dependency.
 - **Lifecycle hook catalog.** All 25 plan lifecycle points are served:
   - `defineHook` accepts 16 agent stages, including observers with `mandatory` fail-closed semantics.
   - New `step.*` and `delegate.*` run events.
@@ -50,6 +59,16 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - The `upgrade:compat` cross-version resume check.
   - The `api:report` public-surface gate and the `perf` suite for the plan §21.3 targets.
   - A threat model, and a stable API, support and deprecation policy.
+
+### Fixed
+
+- A scheduled run whose approval expired before its step was admitted retried the refused preparation until it failed with a contention error. The driver now requests a fresh review, and the run waits for a human again.
+- The migration planner could accept a settled tool step whose tool changed. The migrated state then failed validation. Such a plan is now refused, with the reason.
+- CI on Linux and macOS:
+  - The template check re-packed the native TypeScript compiler without its execute bit.
+  - The SBOM script could not find a globally installed pnpm.
+  - The Docker adapter tests used a Windows-only absolute path.
+  - Two process-recovery tests could race a child that had already exited.
 
 ### Changed
 

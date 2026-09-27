@@ -40,7 +40,7 @@ describe('finite graph discovery public and custom-adapter contract', () => {
     expect(source.scan).toHaveBeenLastCalledWith({ scope: scopeKey, policyHash, cursor: null, limit: 16 });
     expect(page).toEqual(source.page); expect(Object.isFrozen(page)).toBe(true);
     expect(Object.isFrozen(page.candidates[0]!.reference)).toBe(true);
-    expect(Object.keys(facade).sort()).toEqual(['close', 'scan']);
+    expect(Object.keys(facade).sort()).toEqual(['close', 'cursorAfter', 'scan']);
     expect(Object.isFrozen(source.scan.mock.calls[0]![0])).toBe(true);
     await facade.close(); expect(source.close).not.toHaveBeenCalled();
   });

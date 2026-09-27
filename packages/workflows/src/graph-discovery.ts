@@ -19,6 +19,8 @@ export interface WorkflowGraphDiscoveryOptions extends Pick<WorkflowRuntimeOptio
 export interface WorkflowGraphDiscovery {
   /** One finite page of examined owners; candidates are hints, never dispatch authority. */
   scan(command?: { readonly cursor?: WorkflowGraphDiscoveryCursor | null; readonly limit?: number }): Promise<WorkflowGraphDiscoveryPage>;
+  /** The cursor that continues a scan after `runId`, for callers that persist only the last run id. */
+  cursorAfter(runId: string): WorkflowGraphDiscoveryCursor;
   /** Stops this facade without closing caller-owned storage or changing durable executions. */
   close(): Promise<void>;
 }
@@ -119,6 +121,10 @@ export function createWorkflowGraphDiscovery(options: WorkflowGraphDiscoveryOpti
   };
 
   return Object.freeze<WorkflowGraphDiscovery>({
+    cursorAfter(runId: string): WorkflowGraphDiscoveryCursor {
+      if (typeof runId !== 'string' || !/^[a-f0-9]{64}$/.test(runId)) throw invalid();
+      return Object.freeze({ format: 1, scope, policyHash, afterId: runId }) as WorkflowGraphDiscoveryCursor;
+    },
     async scan(command = {}): Promise<WorkflowGraphDiscoveryPage> {
       open(); let admitted: WorkflowGraphDiscoveryScan;
       try {

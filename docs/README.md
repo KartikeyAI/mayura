@@ -47,6 +47,7 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Native memory](specs/native-memory.md) — canonical records and deletion semantics.
 - [Workflow definition versions](how-to/workflow-versions.md) — pinned digests, side-by-side retention, the cross-format version inventory and the deploy gate.
 - [Migrating in-flight workflow runs](how-to/workflow-migrations.md) — reviewed in-place migration of paused runs for every workflow format, with operator routes and console.
+- [Production operator API](how-to/workflow-operator-api.md) — journaled, scope-guarded, multi-version workflow transports for the agent server.
 - [Operator console](how-to/inspector.md) — opt-in, same-origin React console for workflows, human requests, fleet control, migrations and agent runs.
 - [Stable API and support policy](api-stability.md) — stable entry points, the API report gate, SemVer, deprecation and support windows.
 - [Performance report](performance.md) — plan §21.3 targets measured on declared hardware (`pnpm perf`).

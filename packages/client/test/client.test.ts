@@ -6,7 +6,11 @@ import { createWorkflowGraphProjection } from '../src/workflows.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
 import { createSqliteStore } from '../../storage/dist/index.js';
-import { createWorkflowFleetControl, createWorkflowMigrationCatalog, createWorkflowMigrationService, lifecycleFleetTarget, pinnedDefinitionHash } from '../../workflows/dist/index.js';
+import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowMigrationCatalog, createWorkflowMigrationService, createWorkflowOperatorTransports,
+  graphOperatorTarget, lifecycleFleetTarget, lifecycleOperatorTarget, pinnedDefinitionHash, treeOperatorTarget } from '../../workflows/dist/index.js';
+import { createWorkflowGraphDiscovery, createWorkflowGraphRuntime, defineWorkflowGraph } from '../../workflows/dist/graphs.js';
+import { createWorkflowTreeDiscovery, createWorkflowTreeRuntime, defineWorkflowTree } from '../../workflows/dist/children.js';
+import { defineWorkflow } from '../../workflows/dist/index.js';
 import { createWorkflowLifecycleFleetRuntime, defineWorkflowLifecycle, defineWorkflowMigration } from '../../workflows/dist/lifecycle.js';
 import { MayuraError } from '../../core/dist/index.js';
 import type { Guard, JsonValue, ModelAdapter, ModelResponse, Schema } from '../../core/src/index.js';
@@ -622,5 +626,96 @@ describe('browser workflow migration client', () => {
       await expect(client.migrateWorkflow(run.id, 'bad/id', 1, { commandId: 'x' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
       runtime.close();
     } finally { await store.close(); }
+  });
+});
+
+describe('production workflow operator transports', () => {
+  it('serve lifecycle, graph and tree runs through one journaled, scope-guarded, multi-version operator API', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    const closers: { close(): unknown }[] = [];
+    try {
+      const scope = { principalId: 'developer', projectId: 'project' };
+      const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'operator-e2e', validate: value => ({ value: value as JsonValue }) } };
+      const verifyHuman = async (credential: unknown) => ({ id: String((credential as { actor: string }).actor), projectId: 'project', canApprove: true });
+      const approvalCredential = (actor: string) => ({ actor });
+      // Lifecycle: two versions, two runs waiting on timers.
+      const lifecycle = (version: string, extra: boolean) => defineWorkflowLifecycle({ id: 'ops-release', version, input: any, output: any, nodes: [
+        { kind: 'timer', id: 'wake', fireAtMs: { kind: 'input', path: ['fireAtMs'] } },
+        ...(extra ? [{ kind: 'timer' as const, id: 'settle', dependsOn: ['wake'], fireAtMs: { kind: 'input' as const, path: ['fireAtMs'] } }] : []),
+      ], result: { kind: 'step', stepId: 'wake', path: [] } });
+      const v1 = lifecycle('1', false); const v2 = lifecycle('2', true);
+      const lifecycleRuntime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0, now: () => 100 }); closers.push(lifecycleRuntime);
+      const first = await lifecycleRuntime.submit(v1, { input: { fireAtMs: 500 }, idempotencyKey: 'ops-1' }); await lifecycleRuntime.runUntilSettled(v1, first.id);
+      const second = await lifecycleRuntime.submit(v1, { input: { fireAtMs: 500 }, idempotencyKey: 'ops-2' }); await lifecycleRuntime.runUntilSettled(v1, second.id);
+      // Graph: one run waiting on an approval.
+      const effect = defineTool({ id: 'ops.effect', version: '1', description: 'effect', input: any, output: any, effects: 'none', capabilities: [], costMicros: 0, execute: () => 'done' });
+      const graph = defineWorkflowGraph({ id: 'ops-graph', version: '1', input: any, output: any,
+        nodes: [{ kind: 'tool', id: 'ship', tool: effect, input: { kind: 'literal', value: null }, approval: true }], result: { kind: 'step', stepId: 'ship', path: [] } });
+      const graphOptions = { store, scope, permissions: { allow: ['tool:ops.effect'] }, policyVersion: '1', maxCostMicros: 0, maxOutputBytes: 65_536, approvalTtlMs: 60_000 };
+      const graphRuntime = createWorkflowGraphRuntime({ ...graphOptions, workerId: 'ops-graph', verifyHuman }); closers.push(graphRuntime);
+      const graphDiscovery = createWorkflowGraphDiscovery(graphOptions); closers.push(graphDiscovery);
+      const graphRun = await graphRuntime.submit(graph, { input: null, idempotencyKey: 'ops-graph' }); await graphRuntime.runUntilSettled(graph, graphRun.id);
+      // Tree: one run whose child waits on an approval.
+      const leaf = defineWorkflow({ id: 'ops-leaf', version: '1', input: any, output: any,
+        nodes: [{ kind: 'tool', id: 'work', tool: effect, input: { kind: 'input', path: [] }, approval: true }], result: { kind: 'step', stepId: 'work', path: [] } });
+      const tree = defineWorkflowTree({ id: 'ops-tree', version: '1', input: any, output: any, nodes: [{ kind: 'child', id: 'leaf', workflow: leaf, input: { kind: 'input', path: [] },
+        policy: { permissions: ['tool:ops.effect'], maxCostMicros: 0, maxCalls: 1, maxOutputBytes: 1_024, approvalTtlMs: 60_000 }, resources: { work: [] } }], result: { kind: 'step', stepId: 'leaf', path: [] } });
+      const treeOptions = { store, scope, permissions: { allow: ['tool:ops.effect'] }, policyVersion: '1', maxCostMicros: 0, maxCalls: 1, maxOutputBytes: 1_024 };
+      const treeRuntime = createWorkflowTreeRuntime({ ...treeOptions, workerId: 'ops-tree', verifyHuman }); closers.push(treeRuntime);
+      const treeDiscovery = createWorkflowTreeDiscovery(treeOptions); closers.push(treeDiscovery);
+      const treeRun = await treeRuntime.submit(tree, { input: 1, idempotencyKey: 'ops-tree' }); await treeRuntime.runUntilSettled(tree, treeRun.id);
+
+      const transports = createWorkflowOperatorTransports({ store, scope,
+        journal: createWorkflowCommandJournal({ store, scope }), fleet: createWorkflowFleetControl({ store, scope }),
+        migrations: createWorkflowMigrationCatalog([defineWorkflowMigration({ id: 'ops-1-to-2', from: v1, to: v2 })]),
+        targets: [
+          lifecycleOperatorTarget({ runtime: lifecycleRuntime, store, scope, definitions: [v1, v2] }),
+          graphOperatorTarget({ runtime: graphRuntime, discovery: graphDiscovery, store, scope, definitions: [graph], approvalCredential }),
+          treeOperatorTarget({ runtime: treeRuntime, discovery: treeDiscovery, store, scope, definitions: [tree], approvalCredential }),
+        ] });
+      const { client } = fixture(transports as never);
+
+      // Index: pages walk every format with opaque cursors.
+      const listed: { runId: string; format: number }[] = []; let after: string | undefined; let pages = 0;
+      do { const page = await client.workflows({ limit: 1, ...(after ? { after } : {}) }); listed.push(...page.items); after = page.next ?? undefined; pages++; } while (after && pages < 20);
+      expect(listed.map(item => item.format).sort()).toEqual([3, 4, 5, 5]);
+      expect(new Set(listed.map(item => item.runId))).toEqual(new Set([first.id, second.id, graphRun.id, treeRun.id]));
+      expect((await client.workflow(treeRun.id)).steps).toMatchObject([{ id: 'leaf', kind: 'child', childRunId: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
+
+      // Pause is journaled: a retry replays, a reused id with another revision and a stale revision are conflicts.
+      const before = await client.workflow(first.id);
+      const paused = await client.pauseWorkflow(first.id, before.revision, { commandId: 'pause-first' });
+      expect(paused.status).toBe('paused');
+      expect((await client.pauseWorkflow(first.id, before.revision, { commandId: 'pause-first' })).revision).toBe(paused.revision);
+      await expect(client.pauseWorkflow(first.id, paused.revision, { commandId: 'pause-first' })).rejects.toMatchObject({ status: 409 });
+      await expect(client.resumeWorkflow(first.id, before.revision, { commandId: 'resume-stale' })).rejects.toMatchObject({ status: 409 });
+
+      // Migration through the same adapters: the view follows the run's pinned version, and a retry returns the same plan.
+      const migrated = await client.migrateWorkflow(first.id, 'ops-1-to-2', paused.revision, { commandId: 'migrate-first' });
+      expect(migrated.workflow).toMatchObject({ definitionVersion: '2', status: 'paused' });
+      expect(await client.migrateWorkflow(first.id, 'ops-1-to-2', paused.revision, { commandId: 'migrate-first' })).toEqual(migrated);
+      expect((await client.workflow(first.id)).steps.map(step => step.id)).toEqual(['wake', 'settle']);
+
+      // Approvals map the operator to the runtime's verified human.
+      const review = (await graphRuntime.inspect(graphRun.id)).steps['ship']!.approval!.digest;
+      const graphView = await client.workflow(graphRun.id);
+      expect((await client.approveWorkflow(graphRun.id, { revision: graphView.revision, nodeId: 'ship', approvalDigest: review }, { commandId: 'approve-ship' })).steps[0]!.status).toBe('approved');
+
+      // Fleet sweeps reach every format.
+      await client.holdWorkflowFleet();
+      const outcomes: unknown[] = []; let cursor: ClientJson | null = null; let sweeps = 0;
+      do { const page = await client.sweepWorkflowFleet('pause', { cursor, limit: 64 }); outcomes.push(...page.outcomes); cursor = page.nextCursor; sweeps++; } while (cursor && sweeps < 600);
+      expect(outcomes).toEqual(expect.arrayContaining([
+        { target: 'lifecycle', runId: second.id, outcome: 'paused' }, { target: 'graphs', runId: graphRun.id, outcome: 'paused' }, { target: 'trees', runId: treeRun.id, outcome: 'paused' }]));
+
+      // A token for another scope sees and changes nothing.
+      const other = fixture({ ...transports, authenticate: async () => ({ scope: { principalId: 'intruder', projectId: 'project' }, agentIds: [],
+        capabilities: ['workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate'], expiresAtMs: Date.now() + 60_000 }) } as never);
+      expect((await other.client.workflows()).items).toEqual([]);
+      await expect(other.client.workflow(first.id)).rejects.toMatchObject({ status: 404 });
+      await expect(other.client.cancelWorkflow(second.id, 1, { commandId: 'intrude' })).rejects.toMatchObject({ status: 404 });
+      await expect(other.client.workflowFleet()).rejects.toMatchObject({ status: 503 });
+      expect((await lifecycleRuntime.inspect(second.id)).status).toBe('paused');
+    } finally { for (const item of closers) await item.close(); await store.close(); }
   });
 });

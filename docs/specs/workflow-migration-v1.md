@@ -14,7 +14,7 @@ Plan §4.3 requires a deployment to "retain executable versions for active runs 
 
 1. The run must be paused. The format's quiescence rules apply: no leased or started job, and no dispatching step.
 2. Statuses `dispatching`, `unknown`, `leased`, `started` and `running` are in flight. A step in flight is never changed, renamed or removed. Its dependencies in the target must all have succeeded.
-3. Settled statuses can only be carried unchanged. A changed or removed settled step needs `acceptCompleted` or `acceptRemoved`. A settled step cannot be renamed.
+3. Settled statuses can only be carried unchanged. A changed or removed settled step needs `acceptCompleted` or `acceptRemoved`. A settled step cannot be renamed. An accepted step must keep its node `evidence` (the tool a receipt names, or whether a human request has a deadline), because stored state validation binds recorded results to it.
 4. A changed step parked on a decision (`waiting`, `approved`, `forward_waiting`, `compensation_waiting`) is reset to pending, and its request is re-issued with a new digest.
 5. Blocked nodes keep their current status in the plan, so their dependents report only root causes.
 6. Durable history keyed by node must survive unchanged under its own id. That covers a scheduler job (scheduled and graph formats, tree roots) and an admitted child (trees). Storage enforces this inside the migration transaction, independently of the runtime's plan.
@@ -39,6 +39,9 @@ Every applied migration appends `run.migrated { migrationId, from, to, actorId, 
 - `createWorkflowMigrationService` connects a catalog and a runtime to these routes. It never decides safety itself.
 
 ## Verification
+
+- `packages/workflows/test/migration-properties.test.ts` checks the planner invariants over generated migrations: 400 cases per run by default, and 50,000 locally with `MAYURA_PROPERTY_RUNS`.
+- `migration-runtime-properties.sqlite.test.ts` drives generated lifecycle and scheduled runs to random mid-points, then applies generated migrations. An allowed plan must apply, and the run must then finish on the new version without re-running a completed effect. A refused plan must leave the run exactly as it was. That is 30 cases per format per run, and 300 locally with `MAYURA_RUNTIME_PROPERTY_RUNS`. It found the evidence rule in point 3.
 
 - `packages/workflows/test/migration-*-conformance.ts` runs every format on SQLite and PostgreSQL. The tests cover:
   - a migrated run completing on the new version, with executed steps not repeating,
