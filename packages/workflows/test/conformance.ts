@@ -87,6 +87,18 @@ export function workflowConformance(name: string, factory: () => Promise<Workflo
       expect(invoked).toHaveLength(beforeInspection);
     });
 
+    it('charges the usage a tool reports rather than its declared ceiling', async () => {
+      const metered = tool({ costMicros: 5, execute: (input, context) => {
+        (context as unknown as { reportUsage(value: { knownCostMicros: number; unknownCostMicros: number }): void }).reportUsage({ knownCostMicros: 2, unknownCostMicros: 0 });
+        return { value: input.value };
+      } });
+      const definition = single(metered); const engine = runtime();
+      const run = await engine.submit(definition, { input: { value: 1 }, idempotencyKey: 'metered' });
+      // The confirmed usage (2) is charged, not the declared 5. (Reporting unknown usage makes the execution itself
+      // uncertain, which keeps the whole reservation until an operator reconciles it.)
+      expect((await engine.runUntilSettled(definition, run.id)).budget).toEqual({ spentMicros: 2, reservedMicros: 0, maxCostMicros: 10 });
+    });
+
     it('resolves an admitted predecessor output binding before dependent execution', async () => {
       const first = tool({ execute: input => ({ value: input.value + 1 }) });
       const second = tool({ id: 'fixture.second', execute: input => ({ value: input.value * 10 }) });

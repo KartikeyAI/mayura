@@ -75,6 +75,23 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
       commandId: 'late', credential: 'reviewer', value: 'accept' })).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
+  it('charges a durable run the usage a tool reports, not its declared ceiling', async () => {
+    const clock = { value: 100 }; const runtime = await open(clock);
+    const metered = defineTool({ id: 'fixture/draft', version: '2', description: 'Metered draft.', input: any, output: any, effects: 'none', capabilities: [], costMicros: 2,
+      execute: (input, context) => { context.reportUsage({ knownCostMicros: 1, unknownCostMicros: 0 }); return { draft: input }; } });
+    const unreported = defineTool({ id: 'fixture/draft', version: '3', description: 'Unmetered draft.', input: any, output: any, effects: 'none', capabilities: [], costMicros: 2,
+      execute: input => ({ draft: input }) });
+    const cost = async (tool: typeof metered, key: string) => {
+      const workflow = defineWorkflowLifecycle({ id: `usage-${key}`, version: '1', input: any, output: any,
+        nodes: [{ kind: 'tool', id: 'draft', tool, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'draft', path: [] } });
+      const run = await runtime.submit(workflow, { input: key, idempotencyKey: key });
+      return (await runtime.runUntilSettled(workflow, run.id)).budget;
+    };
+    expect(await cost(metered, 'metered')).toMatchObject({ spentMicros: 1, reservedMicros: 0 });
+    // A tool that reports nothing is still charged its declared cost.
+    expect(await cost(unreported, 'unreported')).toMatchObject({ spentMicros: 2, reservedMicros: 0 });
+  });
+
   it('keeps tool approval and cancellation guarded by verified identities', async () => {
     const clock = { value: 100 }; const runtime = await open(clock);
     const approvalDefinition = defineWorkflowLifecycle({ id: 'approval', version: '1', input: any, output: any,

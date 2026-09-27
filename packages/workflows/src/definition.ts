@@ -101,3 +101,13 @@ export function resolveBinding(binding: Binding, input: JsonValue, outputs: Read
   }
   return jsonValue(value);
 }
+
+/**
+ * What a settled tool call costs a durable run: the usage the tool reported (known plus unknown, the unknown part
+ * charged conservatively as spent), never more than what was reserved for it.
+ */
+export function charged(settlement: { readonly knownCostMicros: number; readonly unknownCostMicros: number } | undefined, reserved: number): number {
+  if (!settlement) return reserved;
+  const reported = settlement.knownCostMicros + settlement.unknownCostMicros;
+  return Number.isSafeInteger(reported) && reported >= 0 ? Math.min(reported, reserved) : reserved;
+}

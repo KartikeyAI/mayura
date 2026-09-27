@@ -136,9 +136,10 @@ describe('research runs', () => {
   });
 
   it('stops a run that exhausts its shared budget before any report is written', async () => {
-    // Each agent step may spend 1,000; the run may spend 4,000 in total: the plan and three researchers fit, a
-    // fourth researcher does not. The offline models cost nothing, but admission reserves each step's ceiling.
-    const h = await harness({ MAYURA_MAX_RUN_COST_MICROS: '1000', RESEARCH_BUDGET_MICROS: '4000' });
+    // Each agent step may spend 1,000 and a step starts only if that ceiling fits in what the run has left. The run may
+    // spend 3,500: after the plan, the four researchers are admitted together and only three ceilings fit, so the
+    // fourth is blocked. The offline models cost nothing, so nothing is actually charged (steps are charged by use).
+    const h = await harness({ MAYURA_MAX_RUN_COST_MICROS: '1000', RESEARCH_BUDGET_MICROS: '3500' });
     try {
       const started = await h.start('rq-3');
       const stopped = await h.settle(started.runId);
@@ -151,7 +152,7 @@ describe('research runs', () => {
       const result = await h.report(started.runId, 'report-rq-3');
       assert.equal(result.status, 'blocked'); assert.equal(result.stopReason, 'budget_exhausted');
       assert.equal(result.report, null); assert.equal(result.artifactDigest, null);
-      assert.deepEqual(result.budget, { spentMicros: 4_000, reservedMicros: 0, maxCostMicros: 4_000 });
+      assert.deepEqual(result.budget, { spentMicros: 0, reservedMicros: 0, maxCostMicros: 3_500 });
       assert.deepEqual(await h.artifactFiles(), []);
       // Nothing is retried: another worker cycle leaves the run exactly where it stopped.
       await h.host.runOnce();

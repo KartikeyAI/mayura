@@ -4,7 +4,7 @@ import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainR
 import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workflowOutputs, mergeWorkflowReceipt,
   type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
   type WorkflowFormat2Status as Status, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
-import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
+import { assertWorkflow, charged, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { scheduledManifest } from './scheduled-helpers.js';
@@ -176,14 +176,15 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
           }
           if (node.approval && (current.steps[node.id]?.approval?.expiresAt ?? 0) <= Date.now()) throw new MayuraError('PERMISSION_DENIED', 'Approval expired before dispatch.');
         },
-        onExecutionReceipt: async receipt => {
+        onExecutionReceipt: async (receipt, settlement) => {
           await mutate(id, current => {
             const target = current.steps[node.id]!;
             // Retain late evidence but do not turn an operator-recovered unknown step back into success.
             target.receipt = mergeReceipt(target.receipt, receipt);
             if (receipt.execution !== 'unknown' && target.costReserved > 0) {
               current.reservedMicros -= target.costReserved;
-              if (receipt.execution !== 'not_started') current.spentMicros += target.costReserved;
+              // Charge the reported usage (known plus unknown), capped at the reservation.
+              if (receipt.execution !== 'not_started') current.spentMicros += charged(settlement, target.costReserved);
               target.costReserved = 0;
             }
             return true;

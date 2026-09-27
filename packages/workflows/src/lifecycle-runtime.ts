@@ -6,7 +6,7 @@ import { StorageError, assertWorkflowLifecycleStateMatchesManifest, initialWorkf
   mergeWorkflowReceipt, workflowLifecycleOutputs, workflowLifecycleState,
   type AggregateStore, type StoredRecord, type WorkflowLifecycleState as State,
   type WorkflowLifecycleStatus, type WorkflowLifecycleStep } from '@mayura/storage-contracts';
-import { digest, resolveBinding } from './definition.js';
+import { charged, digest, resolveBinding } from './definition.js';
 import { assertWorkflowLifecycle, lifecycleManifest, type AnyWorkflowLifecycle,
   type WorkflowLifecycleNode } from './lifecycle-definition.js';
 import type { VerifiedHuman } from './runtime.js';
@@ -385,13 +385,15 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
               node.approval ? target.approval!.expiresAt : null) !== candidateHash) throw new MayuraError('CONFLICT', 'Lifecycle dispatch candidate is no longer authorized.');
           if (node.approval && target.approval!.expiresAt <= now()) throw new MayuraError('PERMISSION_DENIED', 'Approval expired before dispatch.');
         },
-        onExecutionReceipt: async evidence => {
+        onExecutionReceipt: async (evidence, settlement) => {
           await mutate(id, current => {
             const target = current.steps[node.id]; if (!target || target.kind !== 'tool') return false;
             target.receipt = receipt(target.receipt, evidence);
             if (evidence.execution !== 'unknown' && target.costReserved > 0) {
               current.reservedMicros -= target.costReserved;
-              if (evidence.execution !== 'not_started') current.spentMicros += target.costReserved;
+              // Charge what the tool reported (known plus unknown usage), never more than its reservation. A tool that
+              // reports nothing is charged its declared cost.
+              if (evidence.execution !== 'not_started') current.spentMicros += charged(settlement, target.costReserved);
               target.costReserved = 0;
             }
             return true;

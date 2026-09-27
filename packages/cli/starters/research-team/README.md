@@ -91,7 +91,8 @@ integration; the lifecycle budget is written in the same record update that clai
 
 **One shared budget.** `RESEARCH_BUDGET_MICROS` is the budget of a whole research run. Every agent step declares a
 ceiling (`MAYURA_MAX_RUN_COST_MICROS`, which is also the agent's own `maxCostMicros`). Before a step runs, the runtime
-reserves its ceiling from what the run has left, in the same storage write that claims the step. When the rest of the
+reserves its ceiling from what the run has left, in the same storage write that claims the step; when the step
+completes, the run is charged what it reported spending and the rest of the reservation is released. When the rest of the
 budget cannot cover a step, that step is `blocked` with code `BUDGET_EXCEEDED`, every later step is skipped, and the
 run ends `blocked`: no model is called and no report is written. The desk reports it as
 `{ status: 'blocked', stopReason: 'budget_exhausted' }`. By default the budget is six step ceilings: plan, four
@@ -156,10 +157,11 @@ from `.env`. The image builds from the npm registry, so it needs published Mayur
 
 ## Know the limits
 
-- **Budget accounting is by ceiling.** The workflow runtime charges each step its declared ceiling, not the smaller
-  amount the agent reports spending, and spare research slots are charged too. A run therefore needs six ceilings to
-  finish however cheap its model calls were; size `RESEARCH_BUDGET_MICROS` for that. Offline, the ceilings default to
-  zero and the budget never binds.
+- **Steps are admitted by ceiling, charged by use.** Before a step starts, its full ceiling must fit in what the run
+  has left; once it completes, the run is charged what the step reported spending and the rest is released. So a run
+  that is almost out of budget can stop at a step it could have afforded in practice; size `RESEARCH_BUDGET_MICROS`
+  with that headroom. Spare research slots are reported as spending nothing. Offline, the ceilings default to zero and
+  the budget never binds.
 - **Artifacts are local files.** `@mayura/artifacts` is a same-host store. With several machines, mount shared storage
   at `RESEARCH_ARTIFACTS_DIR` for the server and every worker, or replace the store with object storage. Artifact
   files are not deleted when runs are; plan retention yourself.
