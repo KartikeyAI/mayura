@@ -8,11 +8,11 @@ Checked 2026-09-24 against local executables and registry metadata. Exact resolv
 | pnpm | 10.17.1 | Maintainer workspace tool, not a consumer requirement |
 | TypeScript | 7.0.2 | Native maintainer compiler; no consumer dependency |
 | Vitest / Vite | 5.0.1 / 8.3.0 | Maintainer test execution |
-| fast-check | 4.10.1 | Property testing; newest release excluded by minimum age policy |
+| fast-check | 4.10.2 | Property testing |
 | Zod | 4.6.5 | Test/reference schema adapter, not a core runtime dependency |
 | better-sqlite3 | 13.0.3 | Optional worker-owned SQLite adapter |
 | pg | 8.23.0 | Optional PostgreSQL adapter |
-| Hono | 4.13.8 | Optional `@mayura/server-node` router; excluded from the base SDK/client |
+| Hono | 4.13.9 | Optional `@mayura/server-node` router; excluded from the base SDK/client |
 | React / React DOM | 19.3.0 | Maintainer-only hook/DOM/SSR qualification; React is a peer of optional `@mayura/client-react` and React DOM is not shipped |
 | jsdom | 29.0.1 | Maintainer-only DOM harness; exact engine range includes the pinned Node 24.14.1 runtime |
 | @hono/node-server | 2.1.1 | Optional Node Fetch/HTTP bridge for the loopback host |

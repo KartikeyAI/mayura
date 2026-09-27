@@ -26,7 +26,7 @@ const postgresImage = readFileSync(join(workspace, 'compose.test.yaml'), 'utf8')
 const roots = ['@mayura/cli', '@mayura/core', '@mayura/server-node', '@mayura/storage-contracts', '@mayura/storage-postgres', '@mayura/workflows'];
 // Reviewed third-party closure: exact versions, no lifecycle scripts. Changes require a dependency review.
 const external = {
-  hono: '4.13.8', '@hono/node-server': '2.1.1',
+  hono: '4.13.9', '@hono/node-server': '2.1.1',
   pg: '8.23.0', 'pg-connection-string': '2.14.0', 'pg-pool': '3.14.0', 'pg-protocol': '1.16.0', 'pg-types': '2.2.0', 'pg-int8': '1.0.1',
   'postgres-array': '2.0.0', 'postgres-bytea': '1.0.1', 'postgres-date': '1.0.7', 'postgres-interval': '1.2.0', xtend: '4.0.2',
   pgpass: '1.0.5', split2: '4.2.0', 'pg-cloudflare': '1.4.0',

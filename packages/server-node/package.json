@@ -3,5 +3,5 @@
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
-  "dependencies": { "@mayura/server": "workspace:*", "hono": "4.13.8", "@hono/node-server": "2.1.1" }
+  "dependencies": { "@mayura/server": "workspace:*", "hono": "4.13.9", "@hono/node-server": "2.1.1" }
 }
