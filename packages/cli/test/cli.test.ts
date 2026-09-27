@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MayuraError } from '@mayura/core';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, templates, validateProject, waitForRun } from '../src/index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, planStarter, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, starters, sweepWorkflowFleet, signalWorkflow, templates, validateProject, waitForRun } from '../src/index.js';
 
 const directories: string[] = [];
 async function directory(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-cli-test-')); directories.push(value); return value; }
@@ -63,6 +63,60 @@ describe('@mayura/cli initialization', () => {
     });
     await expect(applyProjectPlan(plan)).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(await readFile(join(target, 'package.json'), 'utf8')).toBe('{"external":true}\n');
+  });
+});
+
+describe('@mayura/cli starters', () => {
+  const version = async () => (JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string }).version;
+
+  it('lists the starters as an immutable catalog', () => {
+    expect(starters().map(starter => starter.name)).toEqual(['approval-workflow']);
+    expect(Object.isFrozen(starters())).toBe(true);
+  });
+
+  it('plans a complete multi-file project, pins Mayura to this release and restores dotfile names', async () => {
+    const target = join(await directory(), 'refunds'); const plan = await planStarter('approval-workflow', target);
+    const paths = plan.changes.map(change => change.path);
+    expect(plan.changes.every(change => change.operation === 'create')).toBe(true);
+    expect(paths).toEqual(expect.arrayContaining(['package.json', 'mayura.project.json', 'README.md', '.gitignore', '.env.example',
+      '.github/workflows/ci.yml', 'src/app.ts', 'src/workflow.ts', 'test/refunds.test.ts']));
+    expect(paths.some(path => /(^|\/)(node_modules|dist|\.data)(\/|$)|dot-|tsbuildinfo/u.test(path))).toBe(false);
+    await expect(readFile(join(target, 'package.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await applyProjectPlan(plan);
+    const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8')) as { name: string; dependencies: Record<string, string> };
+    expect(manifest.name).toBe('refunds');
+    const release = await version();
+    for (const [name, range] of Object.entries(manifest.dependencies)) expect(range).toBe(name.startsWith('@mayura/') ? release : range.replace(/^workspace:.*/u, 'never'));
+    expect(JSON.stringify(manifest)).not.toContain('workspace:');
+    expect(await readProject(join(target, 'mayura.project.json'))).toMatchObject({ name: 'refunds', template: 'approval-workflow' });
+    expect(await readFile(join(target, 'src', 'workflow.ts'), 'utf8')).toContain('defineWorkflowMigration');
+  });
+
+  it('requires the plan digest before replacing a changed file, and refuses a linked directory inside the target', async () => {
+    const target = join(await directory(), 'refunds'); await applyProjectPlan(await planStarter('approval-workflow', target));
+    await writeFile(join(target, 'src', 'auth.ts'), '// local change\n');
+    const plan = await planStarter('approval-workflow', target);
+    expect(plan.changes.filter(change => change.operation === 'replace').map(change => change.path)).toEqual(['src/auth.ts']);
+    await expect(applyProjectPlan(plan)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(await readFile(join(target, 'src', 'auth.ts'), 'utf8')).toBe('// local change\n');
+
+    const linked = join(await directory(), 'linked'); await mkdir(linked);
+    await symlink(await directory(), join(linked, 'src'), process.platform === 'win32' ? 'junction' : 'dir');
+    await expect(planStarter('approval-workflow', linked)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('accepts exactly one of --template and --starter on the command line', async () => {
+    const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url)); const target = join(await directory(), 'x');
+    const run = (args: string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>(resolve => {
+      const child = spawn(process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let stdout = ''; let stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('close', code => resolve({ code, stdout, stderr }));
+    });
+    expect((await run(['init', '--template', 'basic-agent', '--starter', 'approval-workflow', '--directory', target])).code).toBe(1);
+    expect((await run(['init', '--starter', 'unknown', '--directory', target])).code).toBe(1);
+    const planned = await run(['init', '--starter', 'approval-workflow', '--directory', target]);
+    expect(planned.code).toBe(0); expect(JSON.parse(planned.stdout)).toMatchObject({ status: 'planned', plan: { starter: 'approval-workflow' } });
+    expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(['approval-workflow']);
   });
 });
 

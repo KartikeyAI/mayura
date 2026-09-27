@@ -192,7 +192,7 @@
       },
       "applyProjectPlan": {
         "kind": "function",
-        "declaration": "b02ca7212aa90b95"
+        "declaration": "6ccafa7a3873e9cb"
       },
       "approveWorkflow": {
         "kind": "function",
@@ -268,7 +268,7 @@
       },
       "MayuraProject": {
         "kind": "interface",
-        "declaration": "17f0bcac11e20f0c"
+        "declaration": "93fe90039736e390"
       },
       "MayuraServerHandle": {
         "kind": "interface",
@@ -374,6 +374,10 @@
         "kind": "function",
         "declaration": "ccf208a1a0c06397"
       },
+      "planStarter": {
+        "kind": "function",
+        "declaration": "c8a4e7eb034b47d1"
+      },
       "ProjectDefinitionRecord": {
         "kind": "interface",
         "declaration": "7c68357dbc548ee0"
@@ -409,6 +413,22 @@
       "signalWorkflow": {
         "kind": "function",
         "declaration": "916e797acf8a5c9e"
+      },
+      "STARTER_NAMES": {
+        "kind": "const",
+        "declaration": "d574ae1e0b374128"
+      },
+      "StarterInitPlan": {
+        "kind": "interface",
+        "declaration": "97c05a0729765a92"
+      },
+      "StarterName": {
+        "kind": "type",
+        "declaration": "131d930f5f47dc17"
+      },
+      "starters": {
+        "kind": "function",
+        "declaration": "c08b1e6dcdf4ddcb"
       },
       "sweepWorkflowFleet": {
         "kind": "function",

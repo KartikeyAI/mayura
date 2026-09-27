@@ -17,6 +17,7 @@
     "test:consumer:optional": "node scripts/optional-consumer-check.mjs",
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:templates": "node scripts/template-check.mjs",
+    "test:starters": "node scripts/starter-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
     "model:live-check": "node examples/openai-agent.mjs",

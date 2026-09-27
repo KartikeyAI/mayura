@@ -6,7 +6,7 @@ import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, publicError, type JsonValue } from '@mayura/core';
 import { loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from './application.js';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
-  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, templates, waitForRun, TEMPLATE_NAMES, type TemplateName } from './index.js';
+  inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, planStarter, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, starters, templates, waitForRun, STARTER_NAMES, TEMPLATE_NAMES, type StarterName, type TemplateName } from './index.js';
 
 /** Resolve an ESM package's import entry the way Node would from the application module's directory. */
 function installedEntry(application: string, name: string): string {
@@ -71,11 +71,14 @@ async function signalFile(path: string): Promise<JsonValue> {
 async function main(arguments_: readonly string[]): Promise<unknown> {
   const command = arguments_[0];
   if (command === 'templates') { assertArguments(arguments_, []); return { status: 'succeeded', templates: templates() }; }
+  if (command === 'starters') { assertArguments(arguments_, []); return { status: 'succeeded', starters: starters() }; }
   if (command === 'init') {
-    assertArguments(arguments_, ['--template', '--directory', '--confirm'], ['--apply']);
-    const template = option(arguments_, '--template'); const directory = option(arguments_, '--directory');
-    if (!template || !TEMPLATE_NAMES.includes(template as TemplateName) || !directory) throw new Error('init requires --template and --directory.');
-    const plan = await planProject(template as TemplateName, resolve(directory));
+    assertArguments(arguments_, ['--template', '--starter', '--directory', '--confirm'], ['--apply']);
+    const template = option(arguments_, '--template'); const starter = option(arguments_, '--starter'); const directory = option(arguments_, '--directory');
+    if ((template === undefined) === (starter === undefined) || !directory) throw new Error('init requires exactly one of --template or --starter, and --directory.');
+    if (template !== undefined && !TEMPLATE_NAMES.includes(template as TemplateName)) throw new Error('Unknown template; run mayura templates.');
+    if (starter !== undefined && !STARTER_NAMES.includes(starter as StarterName)) throw new Error('Unknown starter; run mayura starters.');
+    const plan = starter !== undefined ? await planStarter(starter as StarterName, resolve(directory)) : await planProject(template as TemplateName, resolve(directory));
     if (!arguments_.includes('--apply') && arguments_.includes('--confirm')) throw new Error('--confirm requires --apply.');
     if (arguments_.includes('--apply')) {
       const confirmation = option(arguments_, '--confirm');
@@ -203,7 +206,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return { status: 'succeeded', workflow: await approveWorkflow(settings, { id: id!, revision: Number(revision), commandId, nodeId, approvalDigest,
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
-  throw new Error('Use: mayura templates | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause | fleet-get | fleet-hold | fleet-release | fleet-sweep | serve | worker | migrate');
+  throw new Error('Use: mayura templates | starters | init | validate | inspect | server-health | server-tools | human-list | human-get | human-respond | run-get | run-wait | run-cancel | workflow-list | workflow-get | workflow-cancel | workflow-approve | workflow-signal | workflow-resume | workflow-pause | fleet-get | fleet-hold | fleet-release | fleet-sweep | serve | worker | migrate');
 }
 
 try { console.log(JSON.stringify(await main(process.argv.slice(2)), null, 2)); }

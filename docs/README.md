@@ -8,7 +8,8 @@ Mayura is an independent, Apache-2.0 TypeScript agent development framework. All
 - [Technical proposal](mayura-technical-proposal.md) — proposed technology boundaries.
 - [Quickstart](quickstart.md) — credential-free first agent and progressive adoption.
 - [Bounded helper battery](how-to/helpers.md) — explicit configuration, retries, cancellation, cleanup, pagination, artifact transfer, redacted logging and budget-aware concurrency.
-- [CLI and eight starter templates](how-to/cli-and-templates.md) — plan-first initialization, static catalog validation and credential-free runnable starters.
+- [CLI and eight templates](how-to/cli-and-templates.md) — plan-first initialization, static catalog validation and credential-free runnable single-file templates.
+- [Starters](how-to/starters.md) — complete multi-file projects: offline by default, tested, with a server, a worker and deployment files.
 - [First-agent API](specs/first-agent-api.md) — public developer journey.
 - [Child-agent how-to](how-to/agent-orchestration.md) and [orchestration contract](specs/agent-orchestration.md) — direct children and agents as tools, with shared authority/accounting.
 - [Workflow composition how-to](how-to/workflow-composition.md) and [ephemeral contract](specs/ephemeral-workflow-composition.md) — driver-free finite graphs through the same execution boundary.

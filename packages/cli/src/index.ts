@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
@@ -41,10 +41,23 @@ const dependencies: Readonly<Record<TemplateName, readonly string[]>> = Object.f
   'capability-policy': ['@mayura/sdk', '@mayura/testing', 'zod'],
 });
 
+/** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */
+export const STARTER_NAMES = Object.freeze(['approval-workflow'] as const);
+export type StarterName = typeof STARTER_NAMES[number];
+
+const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze({
+  'approval-workflow': 'Durable refund approvals: triage agent, human approval, separate server and worker, operator console and a reviewed v1 to v2 migration.',
+});
+
 const id = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const digest = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
 const inside = (parent: string, child: string): boolean => { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); };
 const templateRoot = fileURLToPath(new URL('../templates/', import.meta.url));
+const starterRoot = fileURLToPath(new URL('../starters/', import.meta.url));
+// Bounds for one starter: text files only, so a plan can always show what it writes.
+const starterLimits = Object.freeze({ files: 256, fileBytes: 262_144, totalBytes: 4_194_304 });
+// Build output, installs and local state never leave the repository copy of a starter.
+const starterSkipped = new Set(['node_modules', 'dist', '.data', 'coverage']);
 
 export interface ProjectToolRecord {
   readonly id: string; readonly version: string; readonly effects: 'none' | 'read' | 'write' | 'host'; readonly capabilities: readonly string[];
@@ -53,7 +66,8 @@ export interface ProjectDefinitionRecord {
   readonly kind: 'agent' | 'workflow'; readonly id: string; readonly version: string; readonly source: string;
 }
 export interface MayuraProject {
-  readonly format: 'mayura.project.v1'; readonly name: string; readonly template: TemplateName;
+  /** The template or starter the project was created from. */
+  readonly format: 'mayura.project.v1'; readonly name: string; readonly template: TemplateName | StarterName;
   readonly definitions: readonly ProjectDefinitionRecord[]; readonly tools: readonly ProjectToolRecord[];
 }
 export interface InitChange {
@@ -64,9 +78,13 @@ export interface InitPlan {
   readonly format: 'mayura.init-plan.v1'; readonly template: TemplateName; readonly directory: string;
   readonly digest: string; readonly changes: readonly InitChange[];
 }
+export interface StarterInitPlan {
+  readonly format: 'mayura.init-plan.v1'; readonly starter: StarterName; readonly directory: string;
+  readonly digest: string; readonly changes: readonly InitChange[];
+}
 
 interface PlanState { readonly files: ReadonlyMap<string, string>; readonly before: ReadonlyMap<string, string | undefined> }
-const plans = new WeakMap<InitPlan, PlanState>();
+const plans = new WeakMap<InitPlan | StarterInitPlan, PlanState>();
 
 function projectName(directory: string): string {
   const name = directory.replaceAll('\\', '/').split('/').filter(Boolean).at(-1)?.toLowerCase().replace(/[^a-z0-9-]+/g, '-') ?? '';
@@ -162,22 +180,95 @@ export async function planProject(template: TemplateName, directory: string): Pr
     }, include: ['src/**/*.ts'] }, null, 2)}\n`],
     ['mayura.project.json', projectManifest(name, template)], ['README.md', readme], ['src/index.ts', source],
   ]);
+  const { changes, before } = await planChanges(target, files);
+  const planDigest = digest(JSON.stringify({ template, directory: target, changes }));
+  const plan = Object.freeze({ format: 'mayura.init-plan.v1' as const, template, directory: target, digest: planDigest, changes: Object.freeze(changes) });
+  plans.set(plan, { files, before }); return plan;
+}
+
+/** Existing directories between the target and a planned file must be real directories, never links. */
+async function assertPlainParents(target: string, relativePath: string): Promise<void> {
+  const segments = relativePath.split('/').slice(0, -1);
+  for (let index = 1; index <= segments.length; index++) {
+    const path = resolve(target, ...segments.slice(0, index));
+    let details; try { details = await lstat(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+    if (!details.isDirectory() || details.isSymbolicLink()) throw new MayuraError('CONFLICT', 'Initializer target directories cannot be links.');
+  }
+}
+
+async function planChanges(target: string, files: ReadonlyMap<string, string>): Promise<{ changes: InitChange[]; before: Map<string, string | undefined> }> {
   const before = new Map<string, string | undefined>(); const changes: InitChange[] = [];
   for (const [relativePath, content] of files) {
+    await assertPlainParents(target, relativePath);
     const prior = await existingFile(resolve(target, relativePath)); before.set(relativePath, prior);
     const operation = prior === undefined ? 'create' : prior === content ? 'unchanged' : 'replace';
     changes.push(Object.freeze({ path: relativePath, operation, ...(prior === undefined ? {} : { beforeDigest: digest(prior) }),
       afterDigest: digest(content), ...(operation === 'replace' ? { diff: diff(relativePath, prior!, content) } : {}) }));
   }
-  const planDigest = digest(JSON.stringify({ template, directory: target, changes }));
-  const plan = Object.freeze({ format: 'mayura.init-plan.v1' as const, template, directory: target, digest: planDigest, changes: Object.freeze(changes) });
+  return { changes, before };
+}
+
+// Starter files that npm would drop or rename when packing (.gitignore, .github) are stored with a `dot-` prefix.
+const starterPath = (segments: readonly string[]): string => segments.map(segment => segment.startsWith('dot-') ? `.${segment.slice(4)}` : segment).join('/');
+
+async function collectStarter(name: StarterName): Promise<Map<string, string>> {
+  const root = resolve(starterRoot, name); const files = new Map<string, string>(); let total = 0;
+  const walk = async (segments: readonly string[]): Promise<void> => {
+    const entries = await readdir(resolve(root, ...segments), { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+      if (starterSkipped.has(entry.name) || entry.name.startsWith('.') || entry.name.endsWith('.tsbuildinfo')) continue;
+      if (!/^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/u.test(entry.name)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file name.');
+      const next = [...segments, entry.name];
+      if (entry.isDirectory()) { await walk(next); continue; }
+      const path = resolve(root, ...next); const details = await lstat(path);
+      if (!details.isFile() || details.isSymbolicLink() || details.size > starterLimits.fileBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file type or size.');
+      total += details.size;
+      if (files.size >= starterLimits.files || total > starterLimits.totalBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter exceeds its file bounds.');
+      let content: string;
+      try { content = new TextDecoder('utf-8', { fatal: true }).decode(await readFile(path)); } catch { throw new MayuraError('INTEGRITY_VIOLATION', 'Starter files must be UTF-8 text.'); }
+      files.set(starterPath(next), content);
+    }
+  };
+  await walk([]); return files;
+}
+
+/** The repository copy links Mayura packages with `workspace:*`; a generated project pins this CLI's exact release. */
+async function starterManifest(content: string, name: string): Promise<string> {
+  const { version } = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
+  const manifest = JSON.parse(content) as Record<string, unknown>; manifest['name'] = name;
+  for (const field of ['dependencies', 'devDependencies']) {
+    const entries = manifest[field] as Record<string, string> | undefined;
+    for (const [dependency, range] of Object.entries(entries ?? {})) {
+      if (range === 'workspace:*' && dependency.startsWith('@mayura/')) entries![dependency] = version;
+      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only Mayura packages to the workspace.');
+    }
+  }
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+/** Produces a complete, content-bound write plan for a multi-file starter without mutating the target. */
+export async function planStarter(starter: StarterName, directory: string): Promise<StarterInitPlan> {
+  if (!STARTER_NAMES.includes(starter) || !isAbsolute(directory) || resolve(directory) === parse(resolve(directory)).root) {
+    throw new MayuraError('INVALID_CONFIG', 'Initializer requires a known starter and a non-root absolute directory.');
+  }
+  const target = await canonicalTarget(resolve(directory)); const name = projectName(target);
+  await assertSafeDirectory(target);
+  const files = await collectStarter(starter);
+  const manifest = files.get('package.json'); const project = files.get('mayura.project.json');
+  if (manifest === undefined || project === undefined) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter is missing its package or project manifest.');
+  files.set('package.json', await starterManifest(manifest, name));
+  const catalog = validateProject(JSON.parse(project)); if (catalog.template !== starter) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter project manifest names another starter.');
+  files.set('mayura.project.json', `${JSON.stringify({ ...catalog, name }, null, 2)}\n`);
+  const { changes, before } = await planChanges(target, files);
+  const planDigest = digest(JSON.stringify({ starter, directory: target, changes }));
+  const plan = Object.freeze({ format: 'mayura.init-plan.v1' as const, starter, directory: target, digest: planDigest, changes: Object.freeze(changes) });
   plans.set(plan, { files, before }); return plan;
 }
 
 export interface ApplyInitOptions { readonly confirmation?: string }
 
 /** Applies one genuine fresh plan. Replacements require its displayed digest as confirmation. */
-export async function applyProjectPlan(plan: InitPlan, options: ApplyInitOptions = {}): Promise<void> {
+export async function applyProjectPlan(plan: InitPlan | StarterInitPlan, options: ApplyInitOptions = {}): Promise<void> {
   const state = plans.get(plan); if (!state) throw new MayuraError('INVALID_CONFIG', 'Use a genuine initialization plan from this process.');
   plans.delete(plan);
   const replacements = plan.changes.filter(change => change.operation === 'replace');
@@ -186,9 +277,14 @@ export async function applyProjectPlan(plan: InitPlan, options: ApplyInitOptions
   }
   await mkdir(plan.directory, { recursive: true }); const canonical = await realpath(plan.directory);
   if (canonical !== plan.directory && resolve(canonical) !== resolve(plan.directory)) throw new MayuraError('CONFLICT', 'Initializer target resolves through an unexpected path.');
-  await mkdir(resolve(canonical, 'src'), { recursive: true });
-  for (const parent of [canonical, resolve(canonical, 'src')]) {
-    const details = await lstat(parent); if (!details.isDirectory() || details.isSymbolicLink()) throw new MayuraError('CONFLICT', 'Initializer target directories cannot be links.');
+  const root = await lstat(canonical); if (!root.isDirectory() || root.isSymbolicLink()) throw new MayuraError('CONFLICT', 'Initializer target directories cannot be links.');
+  // Create each parent directory one level at a time, parents first, refusing any that is (or became) a link.
+  const parents = new Set<string>();
+  for (const change of plan.changes) { const segments = change.path.split('/'); for (let index = 1; index < segments.length; index++) parents.add(segments.slice(0, index).join('/')); }
+  for (const parent of [...parents].sort((left, right) => left.split('/').length - right.split('/').length)) {
+    const path = resolve(canonical, parent); if (!inside(canonical, path)) throw new MayuraError('INTEGRITY_VIOLATION', 'Initializer path escaped its target.');
+    await mkdir(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+    const details = await lstat(path); if (!details.isDirectory() || details.isSymbolicLink()) throw new MayuraError('CONFLICT', 'Initializer target directories cannot be links.');
   }
   // Complete the stale-plan check before the first write.
   for (const change of plan.changes) {
@@ -230,7 +326,7 @@ export function validateProject(value: unknown): MayuraProject {
   const root = record(value); const keys = Object.keys(root).sort();
   if (JSON.stringify(keys) !== JSON.stringify(['definitions', 'format', 'name', 'template', 'tools']) || root['format'] !== 'mayura.project.v1'
     || typeof root['name'] !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(root['name'])
-    || typeof root['template'] !== 'string' || !TEMPLATE_NAMES.includes(root['template'] as TemplateName)
+    || typeof root['template'] !== 'string' || !(TEMPLATE_NAMES.includes(root['template'] as TemplateName) || STARTER_NAMES.includes(root['template'] as StarterName))
     || !Array.isArray(root['definitions']) || root['definitions'].length > 256 || !Array.isArray(root['tools']) || root['tools'].length > 1_024) {
     throw new MayuraError('INVALID_CONFIG', 'Project configuration shape is invalid.');
   }
@@ -253,7 +349,7 @@ export function validateProject(value: unknown): MayuraProject {
     }
     return item as unknown as ProjectToolRecord;
   });
-  return Object.freeze({ format: 'mayura.project.v1', name: root['name'] as string, template: root['template'] as TemplateName,
+  return Object.freeze({ format: 'mayura.project.v1', name: root['name'] as string, template: root['template'] as TemplateName | StarterName,
     definitions: Object.freeze(definitions), tools: Object.freeze(tools) });
 }
 
@@ -270,6 +366,9 @@ export async function readProject(path: string): Promise<MayuraProject> {
 
 export function templates(): readonly Readonly<{ name: TemplateName; description: string; dependencies: readonly string[] }>[] {
   return Object.freeze(TEMPLATE_NAMES.map(name => Object.freeze({ name, description: descriptions[name], dependencies: dependencies[name] })));
+}
+export function starters(): readonly Readonly<{ name: StarterName; description: string }>[] {
+  return Object.freeze(STARTER_NAMES.map(name => Object.freeze({ name, description: starterDescriptions[name] })));
 }
 export { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
   type MayuraServerHandle, type MayuraWorkerHandle } from './application.js';

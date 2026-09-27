@@ -49,6 +49,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - **Context and speculation.**
   - `createContextCache`, with admission-key caching, invalidation, change-feed following and prefetch.
   - `runtime.speculate`, for verified isolated branches under the shared budget.
+- **Starters.** Complete multi-file projects shipped with `@mayura/cli`: `mayura starters` and `mayura init --starter <name>` (plan-first, digest-confirmed replacement, Mayura pinned to the CLI release). The first is `approval-workflow`. `pnpm test:starters` builds and tests each one in the workspace, then generates it, installs it offline from packed archives, tests it and boots `migrate`, `serve` and `worker`.
 - **Operator console.** A React and shadcn/ui console served same-origin by the agent server (`inspector: true`).
   - Views for workflows, human requests, fleet control, migrations and agent runs.
   - Confirmed, revision-bound operator commands.

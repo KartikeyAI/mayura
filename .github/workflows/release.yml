@@ -47,6 +47,7 @@ jobs:
       - run: pnpm test:consumer:optional
       - run: pnpm test:consumer:storage
       - run: pnpm test:templates
+      - run: pnpm test:starters
       - run: pnpm build
       - run: pnpm upgrade:compat
       - run: pnpm api:report

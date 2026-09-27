@@ -1,0 +1,16 @@
+{
+  "format": "mayura.project.v1",
+  "name": "approval-workflow",
+  "template": "approval-workflow",
+  "definitions": [
+    { "kind": "agent", "id": "refunds.intake", "version": "1", "source": "src/intake.ts" },
+    { "kind": "workflow", "id": "refunds.approval", "version": "1", "source": "src/workflow.ts" },
+    { "kind": "workflow", "id": "refunds.approval", "version": "2", "source": "src/workflow.ts" }
+  ],
+  "tools": [
+    { "id": "refunds.open", "version": "1", "effects": "write", "capabilities": ["refunds:open"] },
+    { "id": "refunds.policy", "version": "1", "effects": "none", "capabilities": [] },
+    { "id": "refunds.issue", "version": "1", "effects": "write", "capabilities": ["payments:refund"] },
+    { "id": "refunds.notify", "version": "1", "effects": "write", "capabilities": ["customers:notify"] }
+  ]
+}

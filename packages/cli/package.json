@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "src/**/*.ts", "templates", "README.md"],
+  "files": ["dist", "src/**/*.ts", "templates", "starters", "!starters/**/node_modules", "!starters/**/dist", "!starters/**/.data", "!starters/**/*.tsbuildinfo", "README.md"],
   "bin": { "mayura": "./dist/bin.js" },
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },

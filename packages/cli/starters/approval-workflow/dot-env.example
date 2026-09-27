@@ -1,0 +1,36 @@
+# Copy to .env. Every setting is read from the environment and validated at startup (src/config.ts).
+# `npm run dev` needs none of these: it runs offline on SQLite with fresh tokens.
+
+# development | production. Production requires MAYURA_PUBLIC_ORIGIN and at least one operator token digest.
+MAYURA_ENV=production
+MAYURA_PUBLIC_ORIGIN=https://refunds.example.com
+MAYURA_PROJECT=refunds
+PORT=8080
+MAYURA_BIND=0.0.0.0
+# Comma-separated browser origins allowed to call the API (not needed for the console, which is same-origin).
+MAYURA_ALLOWED_ORIGINS=
+
+# Storage: PostgreSQL when DATABASE_URL is set, otherwise SQLite at MAYURA_SQLITE_PATH (single node only).
+# compose.yaml sets DATABASE_URL from POSTGRES_PASSWORD.
+POSTGRES_PASSWORD=change-me
+# MAYURA_SQLITE_PATH=.data/refunds.sqlite
+
+# Bearer tokens: configure SHA-256 digests only. `npm run token` prints a new token and its digest.
+# Comma-separate several digests to rotate without downtime.
+MAYURA_OPERATOR_TOKEN_SHA256=
+MAYURA_INTAKE_TOKEN_SHA256=
+
+# Model: offline (default, rule-based, no network), openai or anthropic.
+MAYURA_MODEL_PROVIDER=offline
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# MAYURA_MODEL=
+# Prices in micro-dollars per million tokens, and the most one call and one run may cost.
+# MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_MAX_CALL_COST_MICROS=
+# MAYURA_MAX_RUN_COST_MICROS=
+
+# Largest refund the workflow will pay, in minor units (cents).
+REFUND_LIMIT_CENTS=50000
+# MAYURA_WORKER_ID=worker-1
