@@ -1,0 +1,17 @@
+{
+  "format": "mayura.project.v1",
+  "name": "event-automation",
+  "template": "event-automation",
+  "definitions": [
+    { "kind": "agent", "id": "tickets.triage", "version": "1", "source": "src/triage.ts" },
+    { "kind": "workflow", "id": "tickets.intake", "version": "1", "source": "src/workflows.ts" },
+    { "kind": "workflow", "id": "tickets.escalation", "version": "1", "source": "src/workflows.ts" }
+  ],
+  "tools": [
+    { "id": "tickets.label", "version": "1", "effects": "write", "capabilities": ["tickets:write"] },
+    { "id": "tickets.comment", "version": "1", "effects": "write", "capabilities": ["tickets:write"] },
+    { "id": "tickets.assign", "version": "1", "effects": "write", "capabilities": ["tickets:assign"] },
+    { "id": "tickets.escalate", "version": "1", "effects": "write", "capabilities": ["tickets:escalate"] },
+    { "id": "tickets.triage.run", "version": "1", "effects": "write", "capabilities": ["tickets:triage"] }
+  ]
+}

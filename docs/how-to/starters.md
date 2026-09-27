@@ -31,6 +31,8 @@ every Mayura package to the CLI's exact release.
 | Starter | What it shows |
 |---|---|
 | `approval-workflow` | Refund approvals: an intake agent opens a durable workflow that checks policy, waits for an operator to approve the exact payment in the console, issues it and notifies the customer. Includes a reviewed in-place migration from workflow v1 to v2. |
+| `support-agent` | Customer support chat with a React + shadcn UI: order tools that act only for the signed-in customer (HMAC-signed sessions your backend mints), per-customer native memory, PII redaction of inputs, outputs and tool results, and a durable return follow-up workflow. |
+| `event-automation` | Signed ticket webhooks (HMAC, replay window, durable deduplication) start durable runs in which a triage agent acts on the tracker through MCP tools under explicit capability grants; assigning an urgent ticket waits for operator approval. Ships a minimal local MCP server. |
 
 ## How starters are qualified
 

@@ -1,0 +1,41 @@
+# Production-shaped local stack: PostgreSQL, a one-shot schema migration, the server (API + webhook ingress), one
+# worker, and the local stand-in tracker so the stack works on its own. Point TRACKER_MCP_URL at your real tracker's
+# MCP server and delete the `tracker` service when you have one.
+# Put the TLS proxy of your choice in front of `server`: port 8080 with the public origin's Host for the API and the
+# console, and port 8081 for the tracker's webhooks.
+#   cp .env.example .env   # then fill in the token digest and WEBHOOK_SECRET
+#   docker compose up --build
+services:
+  postgres:
+    image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    environment: { POSTGRES_USER: tickets, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}", POSTGRES_DB: tickets }
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U tickets -d tickets"], interval: 2s, timeout: 5s, retries: 30 }
+  tracker:
+    build: .
+    entrypoint: ["node", "dist/src/tracker/main.js"]
+    command: []
+    environment: { TRACKER_PORT: "8090", TRACKER_MCP_TOKEN: "${TRACKER_MCP_TOKEN:?set TRACKER_MCP_TOKEN in .env}" }
+  migrate:
+    build: .
+    command: ["migrate", "--app", "dist/src/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://tickets:${POSTGRES_PASSWORD}@postgres:5432/tickets", TRACKER_MCP_URL: "http://tracker:8090/mcp" }
+    depends_on: { postgres: { condition: service_healthy } }
+  server:
+    build: .
+    command: ["serve", "--app", "dist/src/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://tickets:${POSTGRES_PASSWORD}@postgres:5432/tickets", TRACKER_MCP_URL: "http://tracker:8090/mcp" }
+    ports: ["8080:8080", "8081:8081"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+  worker:
+    build: .
+    command: ["worker", "--app", "dist/src/app.js", "--probe-host", "0.0.0.0", "--probe-port", "9090"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://tickets:${POSTGRES_PASSWORD}@postgres:5432/tickets", TRACKER_MCP_URL: "http://tracker:8090/mcp" }
+    depends_on: { migrate: { condition: service_completed_successfully }, tracker: { condition: service_started } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9090/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+volumes:
+  postgres-data:

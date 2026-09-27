@@ -47,7 +47,7 @@ export interface RefundDependencies {
  * v2: also notifies the customer after the refund is issued.
  *
  * New refunds start on the latest version. Runs already in flight keep the version they started on until an operator
- * migrates them (console or `POST /v1/workflows/:id/migrations`); the migration is planned and shown before it applies.
+ * migrates them (console, or `POST /v1/workflow-runs/:id/migrations` through the operator API); the migration is planned and shown before it applies.
  * Keep every version with runs in flight registered.
  */
 export function refundWorkflows(dependencies: RefundDependencies) {

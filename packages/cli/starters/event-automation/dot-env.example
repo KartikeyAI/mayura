@@ -1,0 +1,46 @@
+# Copy to .env. Every setting is read from the environment and validated at startup (src/config.ts).
+# `npm run dev` needs none of these: it runs offline on SQLite with a local tracker, fresh tokens and a fresh secret.
+
+# development | production. Production requires MAYURA_PUBLIC_ORIGIN, an operator token digest, WEBHOOK_SECRET and
+# TRACKER_MCP_URL.
+MAYURA_ENV=production
+MAYURA_PUBLIC_ORIGIN=https://tickets.example.com
+MAYURA_PROJECT=tickets
+PORT=8080
+MAYURA_BIND=0.0.0.0
+# Comma-separated browser origins allowed to call the API (not needed for the console, which is same-origin).
+MAYURA_ALLOWED_ORIGINS=
+
+# Storage: PostgreSQL when DATABASE_URL is set, otherwise SQLite at MAYURA_SQLITE_PATH (single node only).
+# compose.yaml sets DATABASE_URL from POSTGRES_PASSWORD.
+POSTGRES_PASSWORD=change-me
+# MAYURA_SQLITE_PATH=.data/event-automation.sqlite
+
+# Operator bearer tokens: configure SHA-256 digests only. `npm run token` prints a new token and its digest.
+# Comma-separate several digests to rotate without downtime.
+MAYURA_OPERATOR_TOKEN_SHA256=
+
+# Webhook ingress: its own port (put your TLS proxy in front of it) and the HMAC secret shared with the tracker.
+# At least 32 characters; the `token` field printed by `npm run token` is a good one.
+WEBHOOK_PORT=8081
+WEBHOOK_SECRET=
+
+# The tracker's MCP endpoint (Streamable HTTP) and the bearer token it expects. compose.yaml points these at the
+# local stand-in tracker; set your real tracker's MCP server here.
+TRACKER_MCP_URL=https://tracker.example.com/mcp
+TRACKER_MCP_TOKEN=
+# Who an approved escalation assigns the ticket to.
+ONCALL_ASSIGNEE=oncall
+
+# Model: offline (default, rule-based, no network), openai or anthropic.
+MAYURA_MODEL_PROVIDER=offline
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# MAYURA_MODEL=
+# Prices in micro-dollars per million tokens, and the most one call and one triage run may cost.
+# MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_MAX_CALL_COST_MICROS=
+# MAYURA_MAX_RUN_COST_MICROS=
+
+# MAYURA_WORKER_ID=worker-1

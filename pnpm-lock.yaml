@@ -217,6 +217,158 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/cli/starters/event-automation:
+    dependencies:
+      '@mayura/adapter-mcp':
+        specifier: workspace:*
+        version: link:../../../adapter-mcp
+      '@mayura/cli':
+        specifier: workspace:*
+        version: link:../..
+      '@mayura/client':
+        specifier: workspace:*
+        version: link:../../../client
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../../../core
+      '@mayura/helpers':
+        specifier: workspace:*
+        version: link:../../../helpers
+      '@mayura/provider-anthropic':
+        specifier: workspace:*
+        version: link:../../../provider-anthropic
+      '@mayura/provider-openai':
+        specifier: workspace:*
+        version: link:../../../provider-openai
+      '@mayura/sdk':
+        specifier: workspace:*
+        version: link:../../../sdk
+      '@mayura/server-node':
+        specifier: workspace:*
+        version: link:../../../server-node
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../../../storage-contracts
+      '@mayura/storage-postgres':
+        specifier: workspace:*
+        version: link:../../../storage-postgres
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../../storage-sqlite
+      '@mayura/workflows':
+        specifier: workspace:*
+        version: link:../../../workflows
+      '@mayura/workstream':
+        specifier: workspace:*
+        version: link:../../../workstream
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/cli/starters/support-agent:
+    dependencies:
+      '@mayura/cli':
+        specifier: workspace:*
+        version: link:../..
+      '@mayura/client':
+        specifier: workspace:*
+        version: link:../../../client
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../../../core
+      '@mayura/guardrails':
+        specifier: workspace:*
+        version: link:../../../guardrails
+      '@mayura/helpers':
+        specifier: workspace:*
+        version: link:../../../helpers
+      '@mayura/memory':
+        specifier: workspace:*
+        version: link:../../../memory
+      '@mayura/provider-anthropic':
+        specifier: workspace:*
+        version: link:../../../provider-anthropic
+      '@mayura/provider-openai':
+        specifier: workspace:*
+        version: link:../../../provider-openai
+      '@mayura/sdk':
+        specifier: workspace:*
+        version: link:../../../sdk
+      '@mayura/server-node':
+        specifier: workspace:*
+        version: link:../../../server-node
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../../../storage-contracts
+      '@mayura/storage-postgres':
+        specifier: workspace:*
+        version: link:../../../storage-postgres
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../../storage-sqlite
+      '@mayura/workflows':
+        specifier: workspace:*
+        version: link:../../../workflows
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@mayura/client-react':
+        specifier: workspace:*
+        version: link:../../../client-react
+      '@tailwindcss/vite':
+        specifier: 4.3.3
+        version: 4.3.3(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: 6.1.1
+        version: 6.1.1(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
+      class-variance-authority:
+        specifier: 0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: 2.1.1
+        version: 2.1.1
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
+      radix-ui:
+        specifier: 1.6.7
+        version: 1.6.7(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      tailwind-merge:
+        specifier: 3.7.0
+        version: 3.7.0
+      tailwindcss:
+        specifier: 4.3.3
+        version: 4.3.3
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vite:
+        specifier: 8.3.0
+        version: 8.3.0(@types/node@24.13.6)(jiti@2.7.0)
+
   packages/client: {}
 
   packages/client-react:

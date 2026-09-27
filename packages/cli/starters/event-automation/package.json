@@ -1,0 +1,41 @@
+{
+  "name": "mayura-starter-event-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Signed ticket webhooks start durable Mayura workflows in which a triage agent acts on the tracker through MCP tools under explicit capability grants.",
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/*.test.js\"",
+    "dev": "tsc -p tsconfig.json && node dist/src/dev.js",
+    "send-sample": "node dist/src/send-sample.js",
+    "tracker": "node dist/src/tracker/main.js",
+    "token": "node dist/src/token.js",
+    "migrate": "mayura migrate --app dist/src/app.js",
+    "serve": "mayura serve --app dist/src/app.js",
+    "worker": "mayura worker --app dist/src/app.js --probe-host 0.0.0.0 --probe-port 9090"
+  },
+  "dependencies": {
+    "@mayura/adapter-mcp": "workspace:*",
+    "@mayura/cli": "workspace:*",
+    "@mayura/client": "workspace:*",
+    "@mayura/core": "workspace:*",
+    "@mayura/helpers": "workspace:*",
+    "@mayura/provider-anthropic": "workspace:*",
+    "@mayura/provider-openai": "workspace:*",
+    "@mayura/sdk": "workspace:*",
+    "@mayura/server-node": "workspace:*",
+    "@mayura/storage-contracts": "workspace:*",
+    "@mayura/storage-postgres": "workspace:*",
+    "@mayura/storage-sqlite": "workspace:*",
+    "@mayura/workflows": "workspace:*",
+    "@mayura/workstream": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "7.0.2"
+  }
+}

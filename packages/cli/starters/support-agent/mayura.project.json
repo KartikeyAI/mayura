@@ -1,0 +1,18 @@
+{
+  "format": "mayura.project.v1",
+  "name": "support-agent",
+  "template": "support-agent",
+  "definitions": [
+    { "kind": "agent", "id": "support.assistant", "version": "1", "source": "src/assistant.ts" },
+    { "kind": "workflow", "id": "returns.follow-up", "version": "1", "source": "src/returns.ts" }
+  ],
+  "tools": [
+    { "id": "orders.list", "version": "1", "effects": "read", "capabilities": [] },
+    { "id": "orders.track", "version": "1", "effects": "read", "capabilities": [] },
+    { "id": "returns.start", "version": "1", "effects": "write", "capabilities": ["returns:start"] },
+    { "id": "memory.remember", "version": "1", "effects": "write", "capabilities": ["memory:write"] },
+    { "id": "memory.recall", "version": "1", "effects": "read", "capabilities": ["memory:read"] },
+    { "id": "returns.schedule", "version": "1", "effects": "none", "capabilities": [] },
+    { "id": "returns.remind", "version": "1", "effects": "write", "capabilities": ["customers:notify"] }
+  ]
+}

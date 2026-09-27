@@ -1,0 +1,39 @@
+# Copy to .env. Every setting is read from the environment and validated at startup (src/config.ts).
+# `npm run dev` needs none of these: it runs offline on SQLite with a fresh operator token and session secret.
+
+# development | production. Production requires MAYURA_PUBLIC_ORIGIN, an operator token digest and a session secret.
+MAYURA_ENV=production
+MAYURA_PUBLIC_ORIGIN=https://support.example.com
+MAYURA_PROJECT=support
+PORT=8080
+MAYURA_BIND=0.0.0.0
+# Comma-separated browser origins allowed to call the API. Not needed when the chat UI is served from
+# MAYURA_PUBLIC_ORIGIN itself (same origin); list the UI's origin here if it lives elsewhere.
+MAYURA_ALLOWED_ORIGINS=
+
+# Storage: PostgreSQL when DATABASE_URL is set, otherwise SQLite at MAYURA_SQLITE_PATH (single node only).
+# compose.yaml sets DATABASE_URL from POSTGRES_PASSWORD.
+POSTGRES_PASSWORD=change-me
+# MAYURA_SQLITE_PATH=.data/support.sqlite
+
+# Operator bearer tokens: configure SHA-256 digests only. `npm run token` prints a new token and its digest.
+# Comma-separate several digests to rotate without downtime.
+MAYURA_OPERATOR_TOKEN_SHA256=
+# Customer sessions: 32+ random bytes as hex (`npm run token` prints one as sessionSecret). The same value goes to your
+# application backend, which signs sessions with mintSessionToken (src/session.ts). Never ship it to a browser.
+MAYURA_SESSION_SECRET=
+
+# Model: offline (default, rule-based, no network), openai or anthropic.
+MAYURA_MODEL_PROVIDER=offline
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# MAYURA_MODEL=
+# Prices in micro-dollars per million tokens, and the most one call and one run may cost.
+# MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_MAX_CALL_COST_MICROS=
+# MAYURA_MAX_RUN_COST_MICROS=
+
+# Hours after a return is opened before the customer is reminded to ship it (0 to 2160).
+RETURN_REMINDER_HOURS=72
+# MAYURA_WORKER_ID=worker-1
