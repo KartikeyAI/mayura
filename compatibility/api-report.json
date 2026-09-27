@@ -2074,7 +2074,7 @@
       },
       "OpenAICompatibleChatOptions": {
         "kind": "interface",
-        "declaration": "dfe0305353915697"
+        "declaration": "ce7d913f908187d8"
       },
       "openAIEmbeddings": {
         "kind": "function",

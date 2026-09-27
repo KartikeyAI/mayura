@@ -24,9 +24,11 @@ Token usage is converted using explicit application-supplied integer micro-USD r
 
 The adapter accepts only `tool_use` as a tool-call terminal reason and `end_turn` as a final terminal reason. Other reasons, mixed tool/text blocks, unknown aliases, duplicate call IDs and malformed structured output fail closed. Confirmed cost includes ordinary input, cache-creation input, cache-read input and output token counts using explicit integer rates. This is conservative configured accounting rather than invoice reconciliation.
 
-## Local compatible adapter
+## Compatible adapter (local and remote)
 
 `openAICompatibleChat()` provides an explicitly configured local path without treating “OpenAI compatible” as permission to send credentials or content to arbitrary hosts. It accepts only exact plain-HTTP loopback URLs at `/v1/chat/completions`, rejects user information, query strings, fragments and every non-loopback destination, and never reads ambient credentials. Applications may supply a bounded header credential when their local server requires one. The adapter sends the complete Mayura history on every call and intentionally rejects opaque continuation.
+
+With `remote: { id, auth? }` the adapter instead accepts an HTTPS URL ending in `/chat/completions` (no credentials in the URL, no hash, at most an `api-version` query, never a loopback host), sends a bearer or Azure `api-key` credential from `apiKey` or a per-request `token()` source (header-safe, bounded), and uses the adapter id `openai-compatible.<id>` so each remote provider is granted separately. See [Choose a model provider](../how-to/model-providers.md).
 
 Compatible servers vary. Mayura requires the selected server/model to support Chat Completions tools, strict JSON-Schema response formatting and usage fields; unsupported or partial dialects fail closed. No local server process, model download, GPU runtime or model quality is bundled or qualified.
 

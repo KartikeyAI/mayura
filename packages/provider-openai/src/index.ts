@@ -14,9 +14,20 @@ export interface OpenAIResponsesOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 export interface OpenAICompatibleChatOptions {
-  /** Exact loopback Chat Completions URL, for example http://127.0.0.1:11434/v1/chat/completions. */
+  /**
+   * The exact Chat Completions URL. Without `remote`, only a loopback HTTP server (for example
+   * http://127.0.0.1:11434/v1/chat/completions). With `remote`, an HTTPS URL ending in `/chat/completions`.
+   */
   readonly endpoint: string;
+  /**
+   * Opt in to a remote provider. Prompts, tool results and outputs are sent to `endpoint`'s host. `id` names the
+   * provider in the adapter id (`openai-compatible.<id>`), which is what a runtime grants as `model:<adapter id>`.
+   * `auth` is `bearer` (Authorization header, the default) or `api-key` (Azure OpenAI's header).
+   */
+  readonly remote?: { readonly id: string; readonly auth?: 'bearer' | 'api-key' };
   readonly apiKey?: string;
+  /** Short-lived credential source (for example a Google OAuth access token), called for each request; not with `apiKey`. */
+  readonly token?: () => string | Promise<string>;
   readonly model: string;
   readonly outputJsonSchema: JsonObject;
   readonly maxCostMicros: number;
@@ -246,15 +257,39 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   let endpoint: URL;
   try { endpoint = new URL(options.endpoint); }
   catch { throw new MayuraError('INVALID_CONFIG', 'A valid loopback Chat Completions endpoint is required.'); }
-  if (endpoint.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)
-    || endpoint.username || endpoint.password || endpoint.pathname !== '/v1/chat/completions' || endpoint.search || endpoint.hash) {
-    throw new MayuraError('INVALID_CONFIG', 'Compatible local models require an exact loopback HTTP endpoint.');
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+  const remote = options.remote;
+  if (remote === undefined) {
+    if (endpoint.protocol !== 'http:' || !loopback || endpoint.username || endpoint.password || endpoint.pathname !== '/v1/chat/completions' || endpoint.search || endpoint.hash) {
+      throw new MayuraError('INVALID_CONFIG', 'Compatible local models require an exact loopback HTTP endpoint; set `remote` to use a remote provider.');
+    }
+  } else {
+    // A remote destination is an explicit data-egress decision: HTTPS only, the exact API path, and no other query
+    // than Azure's `api-version`, so configuration cannot smuggle a different target or credentials into the URL.
+    const query = [...endpoint.searchParams.keys()];
+    if (!remote || typeof remote.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/u.test(remote.id) || (remote.auth !== undefined && remote.auth !== 'bearer' && remote.auth !== 'api-key')
+      || endpoint.protocol !== 'https:' || loopback || endpoint.username || endpoint.password || endpoint.hash || !endpoint.pathname.endsWith('/chat/completions')
+      || query.some(key => key !== 'api-version') || query.length > 1 || (query.length === 1 && !/^[0-9A-Za-z.-]{1,32}$/u.test(endpoint.searchParams.get('api-version')!))) {
+      throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers need an id, an HTTPS `/chat/completions` endpoint and at most an api-version query.');
+    }
   }
   if (options.apiKey !== undefined && (typeof options.apiKey !== 'string' || !options.apiKey || /[\r\n]/u.test(options.apiKey) || options.apiKey.length > 4_096)) {
     throw new MayuraError('INVALID_CONFIG', 'Compatible provider credentials must be bounded header values.');
   }
+  if (options.token !== undefined && (typeof options.token !== 'function' || options.apiKey !== undefined)) {
+    throw new MayuraError('INVALID_CONFIG', 'Give either an apiKey or a token source, not both.');
+  }
+  if (remote !== undefined && options.apiKey === undefined && options.token === undefined) {
+    throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers require an apiKey or a token source.');
+  }
   if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A bounded local model ID is required.');
-  const url = endpoint.href; const apiKey = options.apiKey; const model = options.model; const outputSchema = strictSchema(options.outputJsonSchema);
+  const url = endpoint.href; const apiKey = options.apiKey; const tokenSource = options.token; const model = options.model; const outputSchema = strictSchema(options.outputJsonSchema);
+  const authHeader = remote?.auth === 'api-key' ? 'api-key' : 'Authorization';
+  const credential = async (): Promise<string | undefined> => {
+    const value = tokenSource ? await tokenSource() : apiKey;
+    if (value !== undefined && (typeof value !== 'string' || !value || /[\r\n]/u.test(value) || value.length > 8_192)) return failed();
+    return value === undefined ? undefined : authHeader === 'api-key' ? value : `Bearer ${value}`;
+  };
   const inputPrice = options.pricing.inputMicrosPerMillionTokens; const outputPrice = options.pricing.outputMicrosPerMillionTokens;
   for (const amount of [options.maxCostMicros, inputPrice, outputPrice]) if (!Number.isSafeInteger(amount) || amount < 0) throw new MayuraError('INVALID_CONFIG', 'Configured costs must be non-negative safe integers.');
   const maxRequestBytes = options.maxRequestBytes ?? 1_048_576; const maxResponseBytes = options.maxResponseBytes ?? 1_048_576;
@@ -263,11 +298,11 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'Provider timeout exceeds the supported timer range.');
   const transport = options.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
-  return Object.freeze({ id: 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
-    async generate(request: ModelRequest): Promise<ModelResponse> {
+  /** One Chat Completions call. With `onDelta` it streams, reporting content as it arrives; parsing is shared. */
+  const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
       const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); let knownCost: number | undefined;
       try {
-        const signal = AbortSignal.any([request.signal, controller.signal]);
+        const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
         if (request.continuation !== undefined) return failed();
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
@@ -278,13 +313,15 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires an explicit portable JSON Schema.');
           return { type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: strictSchema(tool.inputJsonSchema) } };
         });
-        const body = JSON.stringify(jsonValue({ model, stream: false, messages: [{ role: 'system', content: request.instructions }, ...compatibleMessages(request.messages, aliases)],
+        const body = JSON.stringify(jsonValue({ model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}), messages: [{ role: 'system', content: request.instructions }, ...compatibleMessages(request.messages, aliases)],
           tools, parallel_tool_calls: true, max_tokens: request.maxOutputTokens,
           response_format: { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
         }, { maxBytes: maxRequestBytes }));
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }; if (apiKey !== undefined) headers['Authorization'] = `Bearer ${apiKey}`;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const authorization = await credential(); if (authorization !== undefined) headers[authHeader] = authorization;
         const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }), signal);
-        const payload = await responseBody(response, maxResponseBytes, signal); const usage = object(payload['usage']);
+        const payload = onDelta ? await assembledCompletion(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
+        const usage = object(payload['usage']);
         const inputTokens = integer(usage['prompt_tokens']); const outputTokens = integer(usage['completion_tokens']);
         const cost = (BigInt(inputTokens) * BigInt(inputPrice) + BigInt(outputTokens) * BigInt(outputPrice) + 999_999n) / 1_000_000n;
         if (cost > BigInt(Number.MAX_SAFE_INTEGER)) return failed(); knownCost = Number(cost);
@@ -305,11 +342,52 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
         return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost } };
       } catch (error) {
         if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
-        if (request.signal.aborted || controller.signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
+        if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
         if (error instanceof ProviderFailure) throw error;
         return failed();
       } finally { clearTimeout(timer); }
-    },
+  };
+  /**
+   * Rebuild the non-streamed completion from Chat Completions chunks: content deltas are reported as they arrive,
+   * tool-call fragments are only assembled by index, and usage must arrive in a final chunk (`include_usage`).
+   */
+  const assembledCompletion = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
+    let content = ''; let finish: JsonValue = null; let usage: JsonValue | undefined; let finished = false;
+    const calls: { id?: JsonValue; name: string; arguments: string }[] = [];
+    for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
+      if (finished) return failed();
+      if (event.data.trim() === '[DONE]') { finished = true; continue; }
+      const chunk = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
+      if (chunk['usage'] !== undefined && chunk['usage'] !== null) usage = chunk['usage'];
+      const choices = chunk['choices'];
+      if (!Array.isArray(choices) || choices.length > 1) return failed();
+      if (choices.length === 0) continue;
+      const choice = object(choices[0]);
+      if (choice['finish_reason'] !== undefined && choice['finish_reason'] !== null) finish = choice['finish_reason'];
+      if (choice['delta'] === undefined || choice['delta'] === null) continue;
+      const delta = object(choice['delta']);
+      if (typeof delta['content'] === 'string' && delta['content']) { content += delta['content']; onDelta(delta['content']); }
+      if (delta['tool_calls'] !== undefined && delta['tool_calls'] !== null) {
+        if (!Array.isArray(delta['tool_calls'])) return failed();
+        for (const raw of delta['tool_calls']) {
+          const fragment = object(raw); const index = integer(fragment['index']);
+          if (index > calls.length || index >= 128) return failed();
+          const entry = calls[index] ?? (calls[index] = { name: '', arguments: '' });
+          if (fragment['id'] !== undefined && fragment['id'] !== null) entry.id = fragment['id'];
+          const fn = fragment['function'] === undefined || fragment['function'] === null ? {} : object(fragment['function']);
+          if (typeof fn['name'] === 'string') entry.name += fn['name'];
+          if (typeof fn['arguments'] === 'string') entry.arguments += fn['arguments'];
+        }
+      }
+    }
+    if (!finished || usage === undefined) return failed();
+    const message: JsonObject = { role: 'assistant', content: calls.length > 0 && !content ? null : content,
+      ...(calls.length > 0 ? { tool_calls: calls.map(entry => ({ type: 'function', id: entry.id ?? null, function: { name: entry.name, arguments: entry.arguments } })) } : {}) };
+    return { choices: [{ message, finish_reason: finish }], usage };
+  };
+  return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
+    stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });
 }
 
