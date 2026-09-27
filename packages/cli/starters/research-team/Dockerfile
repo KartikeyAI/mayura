@@ -18,5 +18,5 @@ RUN mkdir -p /data/artifacts && chown 65532:65532 /data/artifacts
 USER 65532:65532
 ENV NODE_ENV=production MAYURA_ENV=production RESEARCH_ARTIFACTS_DIR=/data/artifacts
 EXPOSE 8080 9090
-ENTRYPOINT ["node", "node_modules/@mayura/cli/dist/bin.js"]
+ENTRYPOINT ["node", "node_modules/mayura/lib/cli/dist/bin.js"]
 CMD ["serve", "--app", "dist/src/app.js"]

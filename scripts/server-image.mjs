@@ -11,6 +11,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { request as httpRequest } from 'node:http';
+import { createPacker } from './local-packages.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -23,10 +24,13 @@ const nodeLine = process.argv.includes('--node') ? process.argv[process.argv.ind
 assert(Object.hasOwn(baseImages, nodeLine), `Unsupported --node line: ${nodeLine}`);
 const baseImage = baseImages[nodeLine];
 const postgresImage = readFileSync(join(workspace, 'compose.test.yaml'), 'utf8').match(/image:\s*(postgres@sha256:[a-f0-9]{64})/)[1];
-const roots = ['@mayura/cli', '@mayura/core', '@mayura/server-node', '@mayura/storage-contracts', '@mayura/storage-postgres', '@mayura/workflows'];
+// What a deployment installs: the published `mayura` package and the one optional peer PostgreSQL deployments need.
+const roots = [['mayura', join(workspace, 'packages', 'cli')], ['pg', join(workspace, 'packages', 'storage-postgres')]];
 // Reviewed third-party closure: exact versions, no lifecycle scripts. Changes require a dependency review.
 const external = {
   hono: '4.13.9', '@hono/node-server': '2.1.1',
+  // The CLI's interactive prompts (loaded only by `mayura init` in a terminal), all MIT with no install scripts.
+  '@clack/prompts': '1.8.1', '@clack/core': '1.5.1', sisteransi: '1.0.5', 'fast-wrap-ansi': '0.2.2', 'fast-string-width': '3.0.2', 'fast-string-truncated-width': '3.0.3',
   pg: '8.23.0', 'pg-connection-string': '2.14.0', 'pg-pool': '3.14.0', 'pg-protocol': '1.16.0', 'pg-types': '2.2.0', 'pg-int8': '1.0.1',
   'postgres-array': '2.0.0', 'postgres-bytea': '1.0.1', 'postgres-date': '1.0.7', 'postgres-interval': '1.2.0', xtend: '4.0.2',
   pgpass: '1.0.5', split2: '4.2.0', 'pg-cloudflare': '1.4.0',
@@ -49,36 +53,19 @@ async function main() {
   const smoke = process.argv.includes('--smoke');
   await mkdir(join(workspace, '.artifacts'), { recursive: true }); // gitignored: absent in a fresh checkout
   const output = await mkdtemp(join(workspace, '.artifacts', 'server-image-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
-  const packed = new Map();
-  const packMayura = async name => {
-    if (packed.has(name)) return; const directory = join(workspace, 'packages', name.replace('@mayura/', ''));
-    assert(existsSync(join(directory, 'dist')), `Build ${name} before packing.`);
-    const destination = join(tarballs, `${name.replace('@mayura/', 'mayura-')}.tgz`); await node([pnpm, 'pack', '--out', destination], directory);
-    const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')); packed.set(name, { archive: destination, directory, manifest });
-    for (const dependency of Object.keys(manifest.dependencies ?? {})) {
-      if (dependency.startsWith('@mayura/')) await packMayura(dependency); else await packExternal(dependency, directory);
-    }
-  };
-  const packExternal = async (name, parent) => {
-    if (packed.has(name)) return;
+  // `mayura` is the bundle (scripts/bundle-package.mjs); third-party packages come from the local installation.
+  const packer = createPacker({ output, tarballs }); const closure = await packer.packClosure(roots);
+  for (const name of closure) {
+    if (name === 'mayura') continue; const { manifest } = packer.packages.get(name);
     assert(external[name], `Unreviewed dependency in the server image closure: ${name}`);
-    const candidates = createRequire(join(parent, 'package.json')).resolve.paths(name).map(path => join(path, name, 'package.json'));
-    const found = candidates.find(existsSync); assert(found, `Dependency is not installed: ${name}`);
-    const directory = dirname(await realpath(found)); assert(inside(workspace, directory), 'Dependency resolution escaped the workspace.');
-    const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
     assert.equal(manifest.version, external[name], `Unexpected ${name} version.`);
-    for (const key of ['preinstall', 'install', 'postinstall', 'prepare']) assert(!manifest.scripts?.[key], `Lifecycle script in ${name}.`);
-    const result = JSON.parse((await node([npm, 'pack', directory, '--pack-destination', tarballs, '--ignore-scripts', '--offline', '--json'], workspace)).stdout);
-    packed.set(name, { archive: join(tarballs, result[0].filename), directory, manifest });
-    for (const dependency of [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.optionalDependencies ?? {})]) await packExternal(dependency, directory);
-  };
-  for (const name of roots) await packMayura(name);
-
+  }
+  const packed = new Map([...closure].map(name => [name, { archive: fileURLToPath(packer.packages.get(name).archive), manifest: packer.packages.get(name).manifest }]));
   // Offline install of exactly the packed closure into the staged application.
   const app = join(output, 'context', 'app'); await mkdir(app, { recursive: true });
   const archive = name => pathToFileURL(packed.get(name).archive).href;
   await writeFile(join(app, 'package.json'), JSON.stringify({ name: 'mayura-deployment', version: '1.0.0', private: true, type: 'module',
-    dependencies: Object.fromEntries(roots.map(name => [name, archive(name)])), overrides: Object.fromEntries([...packed.keys()].map(name => [name, archive(name)])) }, null, 2));
+    dependencies: Object.fromEntries(roots.map(([name]) => [name, archive(name)])), overrides: Object.fromEntries([...packed.keys()].map(name => [name, archive(name)])) }, null, 2));
   await writeFile(join(app, '.npmrc'), '');
   await node([npm, 'install', '--offline', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--userconfig', join(app, '.npmrc'), '--cache', join(output, 'npm-cache')], app, 300_000);
   await rm(join(app, '.npmrc')); await rm(join(app, 'package-lock.json'), { force: true });
@@ -89,7 +76,7 @@ async function main() {
     `LABEL org.opencontainers.image.title="Mayura server and worker" org.opencontainers.image.version="0.1.0-dev.0" org.opencontainers.image.licenses="Apache-2.0" \\`,
     `      org.opencontainers.image.base.name="${baseImage}"`,
     'WORKDIR /app', 'COPY --chown=65532:65532 app/ /app/', 'USER 65532:65532', 'ENV NODE_ENV=production', 'EXPOSE 8080 9090',
-    'ENTRYPOINT ["node", "/app/node_modules/@mayura/cli/dist/bin.js"]', 'CMD ["serve", "--app", "/app/app.mjs"]', ''].join('\n');
+    'ENTRYPOINT ["node", "/app/node_modules/mayura/lib/cli/dist/bin.js"]', 'CMD ["serve", "--app", "/app/app.mjs"]', ''].join('\n');
   await writeFile(join(output, 'context', 'Dockerfile'), dockerfile);
   const tag = `mayura-server:dev-${output.slice(-6).toLowerCase()}`;
   await run('docker', ['build', '--pull=false', '--network=none', '--tag', tag, join(output, 'context')], workspace, 600_000);

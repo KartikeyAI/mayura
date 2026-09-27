@@ -17,5 +17,5 @@ USER 65532:65532
 ENV NODE_ENV=production MAYURA_ENV=production
 # 8080: API and console. 8081: webhook ingress. 9090: worker probes.
 EXPOSE 8080 8081 9090
-ENTRYPOINT ["node", "node_modules/@mayura/cli/dist/bin.js"]
+ENTRYPOINT ["node", "node_modules/mayura/lib/cli/dist/bin.js"]
 CMD ["serve", "--app", "dist/src/app.js"]
