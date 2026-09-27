@@ -643,15 +643,34 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       } finally { continueOld.resolve(); await Promise.allSettled([execution]); }
     });
 
+    it('asks for a fresh review when an approval expires before admission, instead of retrying a refused preparation', async () => {
+      const backing = store.workflows; let delayed = false;
+      const fault = wrapped({ prepare: async command => {
+        // The worker is slow to reach storage: the approval lapses before preparation is admitted.
+        if (!delayed) { delayed = true; await new Promise(resolve => setTimeout(resolve, 2_100)); }
+        return backing.prepare(command);
+      } });
+      let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }), true);
+      const engine = runtime({ store: fault, approvalTtlMs: 2_000 });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'expired-before-admission' });
+      const first = (await engine.runUntilSettled(definition, run.id)).steps['write']!.approval!.digest;
+      await engine.approve({ id: run.id, nodeId: 'write', digest: first, credential: 'verified-scheduled-human' });
+      const reissued = await engine.runUntilSettled(definition, run.id);
+      expect(reissued.status).toBe('waiting'); expect(effects).toBe(0);
+      expect(reissued.steps['write']).toMatchObject({ status: 'waiting' }); expect(reissued.steps['write']!.approval!.digest).not.toBe(first);
+      await engine.approve({ id: run.id, nodeId: 'write', digest: reissued.steps['write']!.approval!.digest, credential: 'verified-scheduled-human' });
+      expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
+    }, 20_000);
+
     it('blocks a candidate whose approval expires after preparation instead of minting another job', async () => {
       const backing = store.workflows; let paused = false;
       const fault = wrapped({ prepare: async command => {
         const result = await backing.prepare(command);
-        if (!paused) { paused = true; await new Promise(resolve => setTimeout(resolve, 550)); }
+        if (!paused) { paused = true; await new Promise(resolve => setTimeout(resolve, 2_100)); }
         return result;
       } });
       let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }), true);
-      const engine = runtime({ store: fault, approvalTtlMs: 500 });
+      const engine = runtime({ store: fault, approvalTtlMs: 2_000 });
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'prepared-expired-review' });
       const waiting = await engine.runUntilSettled(definition, run.id);
       await engine.approve({ id: run.id, nodeId: 'write', digest: waiting.steps['write']!.approval!.digest, credential: 'verified-scheduled-human' });

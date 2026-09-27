@@ -29,6 +29,9 @@ const storageCodes = new Set<StorageErrorCode>(['INVALID_INPUT', 'CONFLICT', 'NO
   'STORE_CLOSED', 'STORE_NOT_INITIALIZED', 'QUEUE_FULL', 'STALE_CLAIM', 'LIMIT_EXCEEDED', 'SCHEDULED_WRITER_REQUIRED']);
 
 /** Preserve only stable storage codes; never copy adapter messages or inspect exception getters. */
+/** Fixed storage answer when an approval expired before admission: final for that call, and a new review is needed. */
+export const reviewExpiredMessage = 'The approval expired; request a new review before admission.';
+export const isReviewExpired = (error: unknown): boolean => error instanceof StorageError && error.code === 'CONFLICT' && error.message === reviewExpiredMessage;
 export async function scheduledStorage<T>(operation: () => Promise<T>, timeoutMs = 10_000, signal?: AbortSignal): Promise<T> {
   try { return await scheduledCallback(operation, timeoutMs, signal ?? new AbortController().signal); }
   catch (error) {
@@ -39,7 +42,7 @@ export async function scheduledStorage<T>(operation: () => Promise<T>, timeoutMs
       // A migration refusal is fixed storage text plus step ids; it is the reviewer's answer, so it is kept verbatim.
       const message = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'message') : undefined;
       if (code === 'CONFLICT' && message && 'value' in message && typeof message.value === 'string'
-        && /^Migration refused: [A-Za-z0-9 .,;:"'()_-]{1,240}$/.test(message.value)) refusal = message.value;
+        && (/^Migration refused: [A-Za-z0-9 .,;:"'()_-]{1,240}$/.test(message.value) || message.value === reviewExpiredMessage)) refusal = message.value;
     } catch { /* Exception proxies do not become public diagnostics. */ }
     throw new StorageError(code, refusal ?? 'Scheduled persistence could not confirm the requested transition. Inspect current state before retrying effects.');
   }

@@ -5,7 +5,7 @@ import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workfl
   type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
   type WorkflowFormat2Status as Status, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowNode } from './definition.js';
-import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { scheduledManifest } from './scheduled-helpers.js';
 
@@ -295,7 +295,8 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         throw new MayuraError('CONFLICT', 'The run is not pinned to the migration source definition and this policy.');
       }
       const nodes = (definition: AnyWorkflow) => scheduledManifest(definition).graph.map(node =>
-        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>) }));
+        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>),
+          ...(nodeEvidence(node) ? { evidence: nodeEvidence(node)! } : {}) }));
       const preconditions: MigrationBlocker[] = [];
       if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });
       const plan = planWorkflowMigration({ migration, format: 'workflow-v2', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,

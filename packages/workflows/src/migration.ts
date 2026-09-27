@@ -29,8 +29,19 @@ export interface WorkflowMigration<F = unknown, T = unknown> {
   readonly description: string;
 }
 
-/** One node of a definition, reduced to what a migration compares. `fingerprint` covers the node's full definition. */
-export interface MigrationNode { readonly id: string; readonly kind: string; readonly dependsOn: readonly string[]; readonly fingerprint: string }
+/**
+ * One node of a definition, reduced to what a migration compares. `fingerprint` covers the node's full definition.
+ * `evidence` names what a settled step's recorded state is bound to (for a tool step, the tool its receipt names):
+ * a changed node can only accept an existing result when this is unchanged.
+ */
+export interface MigrationNode { readonly id: string; readonly kind: string; readonly dependsOn: readonly string[]; readonly fingerprint: string; readonly evidence?: string }
+
+/** Evidence of a manifest node: the tool a receipt must name, or whether a human request carries a deadline. */
+export function nodeEvidence(node: { readonly kind: string; readonly tool?: unknown; readonly deadlineAtMs?: unknown }): string | undefined {
+  if (node.kind === 'tool' && typeof node.tool === 'string') return `tool:${node.tool}`;
+  if (node.kind === 'human') return node.deadlineAtMs === null || node.deadlineAtMs === undefined ? 'human' : 'human:deadline';
+  return undefined;
+}
 /** The run's current state of one source step, normalized across formats. */
 export interface MigrationStep { readonly id: string; readonly status: string }
 
@@ -152,6 +163,11 @@ export function planWorkflowMigration(input: {
     if (from !== node.id) { blockers.push({ node: node.id, reason: `Step "${from}" already settled (${current}); settled steps cannot be renamed.` }); carried.set(node.id, current); continue; }
     if (!accepted.has(node.id)) {
       blockers.push({ node: node.id, reason: `Step "${from}" already settled (${current}) and its definition changed; list it in acceptCompleted to keep the existing result.` });
+      carried.set(node.id, current); continue;
+    }
+    // A recorded result stays bound to what produced it: a receipt from one tool cannot stand for another tool.
+    if (previous.evidence !== node.evidence) {
+      blockers.push({ node: node.id, reason: `Step "${from}" settled (${current}) under ${previous.evidence ?? 'another definition'}; the new definition names ${node.evidence ?? 'something else'}, so its result cannot be accepted.` });
       carried.set(node.id, current); continue;
     }
     entries.push({ action: 'accept', target: node.id, source: from, status: current }); carried.set(node.id, current);

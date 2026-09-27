@@ -780,6 +780,7 @@ export class ScheduledWorkflowDatabase {
       return this.snapshot(run);
     });
     if (result === STALE) throw new StorageError('STALE_CLAIM','Scheduled ownership expired or no longer permits the transition.');
+    // Keep this text in sync with reviewExpiredMessage in @mayura/workflows: the driver recognizes it.
     if (result === REVIEW_EXPIRED) throw new StorageError('CONFLICT','The approval expired; request a new review before admission.');
     return result;
   }

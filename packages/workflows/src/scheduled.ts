@@ -9,13 +9,13 @@ import {
   type WorkflowGraphAggregateStore, type WorkflowGraphStore, type WorkflowFormat2State, type WorkflowGraphFormat3State,
   type ScheduledMigrate, initialWorkflowState, initialWorkflowGraphState, type WorkflowManifest, type WorkflowGraphManifest,
 } from '@mayura/storage-contracts';
-import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeFingerprint, planWorkflowMigration,
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { assertWorkflow, digest, resolveBinding, type AnyWorkflow, type WorkflowDefinition } from './definition.js';
 import { assertWorkflowGraph, graphManifest, type AnyWorkflowGraph } from './graph-definition.js';
 import type { WorkflowGraphRuntimeOptions } from './graphs.js';
 import type { WorkflowRuntimeOptions, WorkflowSnapshot, VerifiedHuman } from './runtime.js';
-import { isStorageCode, safeScheduledJson, scheduledCallback, scheduledClaim, scheduledClaims, scheduledEvents, scheduledManifest, scheduledSnapshot, scheduledState, scheduledStorage as persist, scheduledSubmission, scheduledTransition, scheduledView, type ScheduledTransition, type ScheduledStoredSnapshot, type ScheduledPublicSnapshot, type ScheduledProfile } from './scheduled-helpers.js';
+import { isReviewExpired, isStorageCode, safeScheduledJson, scheduledCallback, scheduledClaim, scheduledClaims, scheduledEvents, scheduledManifest, scheduledSnapshot, scheduledState, scheduledStorage as persist, scheduledSubmission, scheduledTransition, scheduledView, type ScheduledTransition, type ScheduledStoredSnapshot, type ScheduledPublicSnapshot, type ScheduledProfile } from './scheduled-helpers.js';
 
 export interface ScheduledWorkflowRuntimeOptions extends Omit<WorkflowRuntimeOptions, 'store'> {
   readonly store: ScheduledWorkflowAggregateStore;
@@ -231,7 +231,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         if (profile === 'scheduled-v2') view('snapshot' in checked ? checked.snapshot : checked, id);
         return checked;
       }
-      catch (error) { if (!isStorageCode(error, 'CONFLICT')) throw error; }
+      // An expired review is final for this call, not contention: retrying the same command cannot succeed.
+      catch (error) { if (!isStorageCode(error, 'CONFLICT') || isReviewExpired(error)) throw error; }
     }
     throw new MayuraError('CONFLICT', 'Scheduled contention exceeded the bounded retry limit.');
   };
@@ -440,7 +441,12 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
             preparingState = stateFrom(current.record);
             if (preparingState.steps[node.id]?.status !== 'approved') continue;
           }
-          current = await updatePendingNode(id, node.id, command => api.prepare({ ...command, nodeId: node.id, input }));
+          try { current = await updatePendingNode(id, node.id, command => api.prepare({ ...command, nodeId: node.id, input })); }
+          catch (error) {
+            if (!node.approval || !isReviewExpired(error)) throw error;
+            // The approval lapsed before admission: ask for a fresh review instead of admitting on an expired one.
+            current = await updatePendingNode(id, node.id, command => api.requestApproval({ ...command, nodeId: node.id, input }));
+          }
           preparingState = stateFrom(current.record);
         }
         const available = maxConcurrentJobs - slots;
@@ -640,7 +646,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       const state = stateFrom(current.record);
       // Resources are part of what a node does: a changed resource identity is a changed node.
       const nodes = (registered: typeof from) => (registered.manifest as WorkflowManifest | WorkflowGraphManifest).graph.map(node => ({ id: node.id, kind: node.kind,
-        dependsOn: node.dependsOn, fingerprint: nodeFingerprint({ ...node, resources: registered.resources[node.id] ?? null } as unknown as Record<string, unknown>) }));
+        dependsOn: node.dependsOn, fingerprint: nodeFingerprint({ ...node, resources: registered.resources[node.id] ?? null } as unknown as Record<string, unknown>),
+        ...(nodeEvidence(node) ? { evidence: nodeEvidence(node)! } : {}) }));
       const fromNodes = nodes(from); const toNodes = nodes(to);
       const preconditions: MigrationBlocker[] = [];
       if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });

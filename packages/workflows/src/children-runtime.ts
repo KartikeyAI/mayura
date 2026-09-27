@@ -6,7 +6,7 @@ import {
   type Claim, type StoredRecord, type WorkflowTreeAggregateStore, type WorkflowTreeRootSnapshot as StoredTreeSnapshot, type WorkflowTreeStore,
 } from '@mayura/storage-contracts';
 import { assertWorkflow, digest, resolveBinding, type WorkflowNode } from './definition.js';
-import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeFingerprint, planWorkflowMigration,
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { assertWorkflowTree, treeManifest, type AnyWorkflowTree, type WorkflowTreeDefinition } from './children-definition.js';
 import type { VerifiedHuman } from './runtime.js';
@@ -134,7 +134,7 @@ export function createWorkflowTreeRuntime(options:WorkflowTreeRuntimeOptions):Wo
       open();assertWorkflowMigration(migration);supported(migration.from);supported(migration.to);
       const {id,actorId,commandId,dryRun=false}=migrationCommand(command);
       const root=await inspectStored(id);matchRoot(migration.from,root);const state=workflowTreeState(root.record);
-      const nodes=(definition:AnyWorkflowTree)=>treeManifest(definition).graph.map(node=>({id:node.id,kind:node.kind,dependsOn:node.dependsOn,fingerprint:nodeFingerprint(node as unknown as Record<string,unknown>)}));
+      const nodes=(definition:AnyWorkflowTree)=>treeManifest(definition).graph.map(node=>({id:node.id,kind:node.kind,dependsOn:node.dependsOn,fingerprint:nodeFingerprint(node as unknown as Record<string,unknown>),...(nodeEvidence(node)?{evidence:nodeEvidence(node)!}:{})}));
       const fromNodes=nodes(migration.from);const toNodes=nodes(migration.to);
       const preconditions:MigrationBlocker[]=[];
       if(state.status!=='paused')preconditions.push({node:'*',reason:`The tree is ${state.status}; pause it before migrating.`});

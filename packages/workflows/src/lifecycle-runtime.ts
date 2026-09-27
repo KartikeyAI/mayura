@@ -10,7 +10,7 @@ import { digest, resolveBinding } from './definition.js';
 import { assertWorkflowLifecycle, lifecycleManifest, type AnyWorkflowLifecycle,
   type WorkflowLifecycleNode } from './lifecycle-definition.js';
 import type { VerifiedHuman } from './runtime.js';
-import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
+import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 export type { WorkflowMigrationResult } from './migration.js';
 
@@ -557,7 +557,8 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
       const record = await load(id); const state = stateFrom(record); verifyDefinition(migration.from, record, state);
       const nodes = (definition: AnyWorkflowLifecycle) => lifecycleManifest(definition).graph.map(node =>
-        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>) }));
+        ({ id: node.id, kind: node.kind, dependsOn: node.dependsOn, fingerprint: nodeFingerprint(node as unknown as Record<string, unknown>),
+          ...(nodeEvidence(node) ? { evidence: nodeEvidence(node)! } : {}) }));
       const preconditions: MigrationBlocker[] = [];
       if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The run is ${state.status}; pause it before migrating.` });
       const plan = planWorkflowMigration({ migration, format: 'lifecycle-v1', runId: id, fromDigest: migration.from.digest, toDigest: migration.to.digest,
