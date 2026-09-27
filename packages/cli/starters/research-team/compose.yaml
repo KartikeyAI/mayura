@@ -1,0 +1,38 @@
+# Production-shaped local stack: PostgreSQL, a one-shot schema migration, the server and one worker, with a report
+# artifact volume shared by the server (which reads reports) and the worker (which writes them).
+# Put the TLS proxy of your choice in front of `server`; it must forward to port 8080 with the public origin's Host.
+#   cp .env.example .env   # then fill in the token digests
+#   docker compose up --build
+services:
+  postgres:
+    image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    environment: { POSTGRES_USER: research, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}", POSTGRES_DB: research }
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U research -d research"], interval: 2s, timeout: 5s, retries: 30 }
+  migrate:
+    build: .
+    command: ["migrate", "--app", "dist/src/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://research:${POSTGRES_PASSWORD}@postgres:5432/research", RESEARCH_ARTIFACTS_DIR: /data/artifacts }
+    volumes: [artifacts:/data/artifacts]
+    depends_on: { postgres: { condition: service_healthy } }
+  server:
+    build: .
+    command: ["serve", "--app", "dist/src/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://research:${POSTGRES_PASSWORD}@postgres:5432/research", RESEARCH_ARTIFACTS_DIR: /data/artifacts }
+    volumes: [artifacts:/data/artifacts]
+    ports: ["8080:8080"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+  worker:
+    build: .
+    command: ["worker", "--app", "dist/src/app.js", "--probe-host", "0.0.0.0", "--probe-port", "9090"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://research:${POSTGRES_PASSWORD}@postgres:5432/research", RESEARCH_ARTIFACTS_DIR: /data/artifacts }
+    volumes: [artifacts:/data/artifacts]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9090/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+volumes:
+  postgres-data:
+  artifacts:

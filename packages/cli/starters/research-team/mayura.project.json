@@ -1,0 +1,22 @@
+{
+  "format": "mayura.project.v1",
+  "name": "research-team",
+  "template": "research-team",
+  "definitions": [
+    { "kind": "agent", "id": "research.desk", "version": "1", "source": "src/desk.ts" },
+    { "kind": "agent", "id": "research.planner", "version": "1", "source": "src/team.ts" },
+    { "kind": "agent", "id": "research.researcher", "version": "1", "source": "src/team.ts" },
+    { "kind": "agent", "id": "research.writer", "version": "1", "source": "src/team.ts" },
+    { "kind": "workflow", "id": "research.run", "version": "1", "source": "src/workflow.ts" }
+  ],
+  "tools": [
+    { "id": "research.start", "version": "1", "effects": "write", "capabilities": ["research:start"] },
+    { "id": "research.report", "version": "1", "effects": "read", "capabilities": ["research:read"] },
+    { "id": "library.search", "version": "1", "effects": "read", "capabilities": ["library:read"] },
+    { "id": "library.read", "version": "1", "effects": "read", "capabilities": ["library:read"] },
+    { "id": "research.plan", "version": "1", "effects": "none", "capabilities": ["research:plan"] },
+    { "id": "research.investigate", "version": "1", "effects": "none", "capabilities": ["research:investigate"] },
+    { "id": "research.write", "version": "1", "effects": "none", "capabilities": ["research:write"] },
+    { "id": "research.store", "version": "1", "effects": "write", "capabilities": ["artifacts:write"] }
+  ]
+}

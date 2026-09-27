@@ -272,6 +272,64 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/cli/starters/research-team:
+    dependencies:
+      '@mayura/artifacts':
+        specifier: workspace:*
+        version: link:../../../artifacts
+      '@mayura/cli':
+        specifier: workspace:*
+        version: link:../..
+      '@mayura/client':
+        specifier: workspace:*
+        version: link:../../../client
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../../../core
+      '@mayura/exporter-otlp':
+        specifier: workspace:*
+        version: link:../../../exporter-otlp
+      '@mayura/helpers':
+        specifier: workspace:*
+        version: link:../../../helpers
+      '@mayura/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@mayura/provider-anthropic':
+        specifier: workspace:*
+        version: link:../../../provider-anthropic
+      '@mayura/provider-openai':
+        specifier: workspace:*
+        version: link:../../../provider-openai
+      '@mayura/sdk':
+        specifier: workspace:*
+        version: link:../../../sdk
+      '@mayura/server-node':
+        specifier: workspace:*
+        version: link:../../../server-node
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../../../storage-contracts
+      '@mayura/storage-postgres':
+        specifier: workspace:*
+        version: link:../../../storage-postgres
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../../storage-sqlite
+      '@mayura/workflows':
+        specifier: workspace:*
+        version: link:../../../workflows
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/cli/starters/support-agent:
     dependencies:
       '@mayura/cli':

@@ -1,0 +1,44 @@
+# Copy to .env. Every setting is read from the environment and validated at startup (src/config.ts).
+# `npm run dev` needs none of these: it runs offline on SQLite with fresh tokens.
+
+# development | production. Production requires MAYURA_PUBLIC_ORIGIN and at least one operator token digest.
+MAYURA_ENV=production
+MAYURA_PUBLIC_ORIGIN=https://research.example.com
+MAYURA_PROJECT=research
+PORT=8080
+MAYURA_BIND=0.0.0.0
+# Comma-separated browser origins allowed to call the API (not needed for the console, which is same-origin).
+MAYURA_ALLOWED_ORIGINS=
+
+# Storage: PostgreSQL when DATABASE_URL is set, otherwise SQLite at MAYURA_SQLITE_PATH (single node only).
+# compose.yaml sets DATABASE_URL from POSTGRES_PASSWORD.
+POSTGRES_PASSWORD=change-me
+# MAYURA_SQLITE_PATH=.data/research-team.sqlite
+# Report artifacts (content-addressed files). The server and every worker must see the same directory.
+# RESEARCH_ARTIFACTS_DIR=.data/artifacts
+
+# Bearer tokens: configure SHA-256 digests only. `npm run token` prints a new token and its digest.
+# Comma-separate several digests to rotate without downtime.
+MAYURA_OPERATOR_TOKEN_SHA256=
+MAYURA_DESK_TOKEN_SHA256=
+
+# Model: offline (default, rule-based, no network), openai or anthropic.
+MAYURA_MODEL_PROVIDER=offline
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# MAYURA_MODEL=
+# Prices in micro-dollars per million tokens, and the most one model call and one agent step may cost.
+# MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_MAX_CALL_COST_MICROS=
+# MAYURA_MAX_RUN_COST_MICROS=
+# The one budget of a whole research run (planner + every researcher + writer). Default: six step ceilings.
+# RESEARCH_BUDGET_MICROS=
+
+# Metadata-only OpenTelemetry traces (off when unset). The collector's base URL; traces go to <base>/v1/traces.
+# https://, or http:// only to 127.0.0.1 / [::1]. Headers use `name=value,name2=value2` (values URL-encoded).
+# OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com
+# OTEL_EXPORTER_OTLP_HEADERS=
+# OTEL_SERVICE_NAME=research-team
+
+# MAYURA_WORKER_ID=worker-1
