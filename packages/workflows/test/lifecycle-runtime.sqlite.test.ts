@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JsonValue, Schema } from '@mayura/core';
-import { defineTool } from '@mayura/tools';
+import { defineTool, ToolRefusal } from '@mayura/tools';
 import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle } from '../src/lifecycle.js';
 import { sqliteFixture, type WorkflowFixture } from './fixtures.js';
 
@@ -90,6 +90,20 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
     expect(await cost(metered, 'metered')).toMatchObject({ spentMicros: 1, reservedMicros: 0 });
     // A tool that reports nothing is still charged its declared cost.
     expect(await cost(unreported, 'unreported')).toMatchObject({ spentMicros: 2, reservedMicros: 0 });
+  });
+
+  it('fails a run cleanly when a tool with effects refuses before acting, with nothing left to reconcile', async () => {
+    const clock = { value: 100 }; (await open(clock)).close();
+    const runtime = createWorkflowLifecycleRuntime({ store: currentStore!, scope: { principalId: 'operator', projectId: 'project' },
+      permissions: { allow: ['tool:fixture/draft', 'effect:write'] }, policyVersion: '1', maxCostMicros: 2, now: () => clock.value });
+    const refusing = defineTool({ id: 'fixture/draft', version: '4', description: 'Refuses.', input: any, output: any, effects: 'write', capabilities: [], costMicros: 2,
+      execute: () => { throw new ToolRefusal(); } });
+    const workflow = defineWorkflowLifecycle({ id: 'refusal', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'draft', tool: refusing, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'draft', path: [] } });
+    const run = await runtime.submit(workflow, { input: 'x', idempotencyKey: 'refusal' });
+    const settled = await runtime.runUntilSettled(workflow, run.id);
+    expect(settled).toMatchObject({ status: 'failed', steps: { draft: { status: 'failed', receipt: { execution: 'not_started' } } },
+      budget: { spentMicros: 0, reservedMicros: 0 } });
   });
 
   it('keeps tool approval and cancellation guarded by verified identities', async () => {

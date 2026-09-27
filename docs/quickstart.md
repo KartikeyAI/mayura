@@ -55,3 +55,5 @@ The [storage installation guide](how-to/storage-installation.md) separates `@may
 ## Interpreting outcomes
 
 Always switch on `status` before reading `output`. `blocked` is a denied admission/disclosure, not a successful empty response. A tool can execute successfully while its output is withheld; inspect its receipt before deciding whether to retry. `outcome_unknown` means the application must reconcile the original operation instead of blindly executing it again. `cancelled` does not promise that an in-flight external action was undone.
+
+A tool with effects that throws is treated as possibly executed (`outcome_unknown`). When a tool can tell it refused the call before doing anything (the record does not exist, the request is not allowed), it should throw `ToolRefusal` from `@mayura/tools` (also exported by `@mayura/sdk`): the call is recorded as not started, the outcome is `failed`, nothing is charged, and a durable run needs no reconciliation. Only throw it when no effect can have happened, and never after reporting usage. To let the model recover instead of failing the run, return a structured result (for example `{ found: false }`) rather than throwing.

@@ -2664,6 +2664,10 @@
         "kind": "type",
         "declaration": "8254aea9f772dd3b"
       },
+      "ToolRefusal": {
+        "kind": "class",
+        "declaration": "94c84f584a9c0521"
+      },
       "validate": {
         "kind": "function",
         "declaration": "4d36489959cc4162"
@@ -4957,6 +4961,10 @@
       "ToolOutput": {
         "kind": "type",
         "declaration": "8254aea9f772dd3b"
+      },
+      "ToolRefusal": {
+        "kind": "class",
+        "declaration": "94c84f584a9c0521"
       },
       "WaitingBatchOutcome": {
         "kind": "interface",

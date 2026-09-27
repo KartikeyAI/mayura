@@ -140,6 +140,16 @@ function safeToolFailure(error: unknown): PublicError {
 }
 
 /** Rejects forged or foreign-instance tool metadata before any model or effect dispatch. */
+/**
+ * Throw from a tool's `execute` to say it refused the call before causing any external effect, for example because
+ * the ticket does not exist or the request is not allowed. The call is recorded as not started: its outcome is
+ * `failed` (never `outcome_unknown`), its reservation is released, and a durable run needs no reconciliation.
+ * Throw it only when that is true; any other exception from a tool with effects is treated as possibly executed.
+ */
+export class ToolRefusal extends MayuraError {
+  constructor() { super('TOOL_FAILED', 'The tool refused the call before any external effect.'); }
+}
+
 export function assertTool(tool: AnyTool): void {
   if (!registrations.has(tool)) throw new MayuraError('INVALID_CONFIG', 'Tool was not created by this tools package instance.');
 }
@@ -216,6 +226,8 @@ export async function invokeTool<T extends AnyTool>(
 ): Promise<Outcome<ToolOutput<T>>> {
   let execution: ExecutionReceipt['execution'] = 'not_started';
   let dispatched = false;
+  // The executor declared, with ToolRefusal, that it caused no effect.
+  let refused = false;
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let externalSignal: AbortSignal | undefined;
@@ -408,9 +420,12 @@ export async function invokeTool<T extends AnyTool>(
         execution = 'succeeded';
         reservation.settle(usage().knownCostMicros);
       }
-      catch {
+      catch (thrown) {
         handlerActive = false;
-        if (execution !== 'unknown') execution = tool.effects === 'none' ? 'failed' : 'unknown';
+        // A refusal is believed only when the tool reported no usage: usage means something was spent.
+        if (thrown instanceof ToolRefusal && !reportedUsage && execution === 'not_started') {
+          refused = true; settlement = Object.freeze({ knownCostMicros: 0, unknownCostMicros: 0 });
+        } else if (execution !== 'unknown') execution = tool.effects === 'none' ? 'failed' : 'unknown';
         const observed = usage();
         reservation.settleUsage(observed.knownCostMicros, observed.unknownCostMicros);
         await persistReceipt();
@@ -437,7 +452,8 @@ export async function invokeTool<T extends AnyTool>(
     return await Promise.race([work(), bounded]);
   } catch (error) {
     const observedExecution = execution as ExecutionReceipt['execution'];
-    if (dispatched && observedExecution !== 'succeeded' && tool.effects !== 'none') execution = 'unknown';
+    if (refused) { /* The executor declared no effect: keep `not_started`. */ }
+    else if (dispatched && observedExecution !== 'succeeded' && tool.effects !== 'none') execution = 'unknown';
     else if (dispatched && observedExecution === 'not_started') execution = 'unknown';
     // A cancelled pure computation can still finish later. Its execution evidence is unknown,
     // while the requested result is cancelled/timed out; only uncertain effects force reconciliation.
@@ -445,7 +461,8 @@ export async function invokeTool<T extends AnyTool>(
       || (persistenceStarted && !persistenceConfirmed);
     const safeError = unknown
       ? { code: 'OUTCOME_UNKNOWN' as const, message: 'The external operation may have occurred. Reconcile its outcome before retrying.' }
-      : safeToolFailure(error);
+      : refused ? { code: 'TOOL_FAILED' as const, message: 'The tool refused the call before any external effect.' }
+        : safeToolFailure(error);
     const status = unknown ? 'outcome_unknown' as const
       : safeError.code === 'CANCELLED' ? 'cancelled' as const
         : ['PERMISSION_DENIED', 'GUARD_BLOCKED', 'GUARD_UNAVAILABLE', 'BUDGET_EXCEEDED'].includes(safeError.code) ? 'blocked' as const : 'failed' as const;
