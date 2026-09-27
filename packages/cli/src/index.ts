@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
-import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
+import { lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
 
@@ -93,6 +93,29 @@ function diff(path: string, before: string, after: string): string {
   return [`--- ${path}`, `+++ ${path}`, ...oldLines.map(line => `-${line}`), ...newLines.map(line => `+${line}`)].join('\n');
 }
 
+/**
+ * The target with its nearest existing ancestor resolved to its real path. Links above the project (for example the
+ * macOS system links /var and /tmp) resolve here, so the plan names the directory that will actually be written; a
+ * target that is itself a link, or an existing non-directory, is refused.
+ */
+async function canonicalTarget(path: string): Promise<string> {
+  const missing: string[] = []; let candidate = path;
+  while (true) {
+    let details;
+    try { details = await lstat(candidate); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = resolve(candidate, '..');
+      if (parent === candidate) throw new MayuraError('CONFLICT', 'Initializer could not establish a safe target ancestry.');
+      missing.unshift(basename(candidate)); candidate = parent; continue;
+    }
+    if (candidate === path && details.isSymbolicLink()) throw new MayuraError('CONFLICT', 'Initializer target cannot be a link.');
+    const real = await realpath(candidate);
+    if (!(await stat(real)).isDirectory()) throw new MayuraError('CONFLICT', 'Initializer target cannot traverse a link or non-directory path.');
+    return resolve(real, ...missing);
+  }
+}
+
 async function assertSafeDirectory(path: string): Promise<void> {
   let candidate = path;
   while (true) {
@@ -127,7 +150,7 @@ export async function planProject(template: TemplateName, directory: string): Pr
   if (!TEMPLATE_NAMES.includes(template) || !isAbsolute(directory) || resolve(directory) === parse(resolve(directory)).root) {
     throw new MayuraError('INVALID_CONFIG', 'Initializer requires a known template and a non-root absolute directory.');
   }
-  const target = resolve(directory); const name = projectName(target);
+  const target = await canonicalTarget(resolve(directory)); const name = projectName(target);
   await assertSafeDirectory(target);
   const source = await readFile(resolve(templateRoot, `${template}.ts`), 'utf8');
   const readme = `# ${name}\n\n${descriptions[template]}\n\nRun \`npm install\`, \`npm run build\`, then \`npm start\`. Review all capabilities and external prerequisites in \`src/index.ts\` before use.\n`;

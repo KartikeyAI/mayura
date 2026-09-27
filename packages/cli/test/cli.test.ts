@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,18 @@ async function directory(): Promise<string> { const value = await mkdtemp(join(t
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 
 describe('@mayura/cli initialization', () => {
+  it('writes through links above the target to the real directory, but refuses a target that is itself a link', async () => {
+    // Directory junctions need no privilege on Windows; elsewhere a directory symlink. macOS /var and /tmp are such links.
+    const kind = process.platform === 'win32' ? 'junction' : 'dir';
+    const real = await directory(); const linked = join(await directory(), 'linked-parent'); await symlink(real, linked, kind);
+    const plan = await planProject('basic-agent', join(linked, 'agent'));
+    expect(plan.directory).toBe(join(await realpath(real), 'agent'));
+    await applyProjectPlan(plan);
+    expect(JSON.parse(await readFile(join(real, 'agent', 'mayura.project.json'), 'utf8'))).toMatchObject({ template: 'basic-agent' });
+    const linkedTarget = join(await directory(), 'linked-target'); await symlink(await directory(), linkedTarget, kind);
+    await expect(planProject('basic-agent', linkedTarget)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
   it('publishes exactly the eight required bounded templates', () => {
     expect(templates().map(template => template.name)).toEqual(['typed-tool-runner', 'basic-agent', 'durable-approval', 'parallel-research',
       'native-memory', 'guarded-streaming-app', 'code-mode-workflow', 'capability-policy']);

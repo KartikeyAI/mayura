@@ -23,7 +23,7 @@ class FixtureProcess{
 
 describe('real process termination and SQLite workflow-tree recovery',()=>{
   let directory:string;let children:FixtureProcess[];
-  beforeEach(async()=>{directory=await mkdtemp(join(tmpdir(),tempPrefix));children=[];});
+  beforeEach(async()=>{directory=await mkdtemp(join(await realpath(tmpdir()),tempPrefix));children=[];});
   afterEach(async()=>{await Promise.all(children.map(child=>child.kill()));const actual=await realpath(directory);const temporaryRoot=await realpath(tmpdir());if(dirname(actual)!==temporaryRoot||!basename(actual).startsWith(tempPrefix)||resolve(directory)!==resolve(actual))throw new Error('Refusing cleanup outside the verified test-owned temporary directory.');await rm(actual,{recursive:true,force:true});});
   const spawn=(scenario:Scenario,action:'start'|'recover',runId?:string,digest?:string)=>{const child=new FixtureProcess([scenario,action,directory,...(runId?[runId]:[]),...(digest?[digest]:[])]);children.push(child);return child;};
   async function effects(){try{const contents=await readFile(join(directory,'effects.ndjson'),'utf8');return contents.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as {runId:string;callId:string});}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return[];throw error;}}
