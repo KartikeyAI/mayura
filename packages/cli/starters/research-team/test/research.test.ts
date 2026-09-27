@@ -59,6 +59,23 @@ async function harness(env: Record<string, string> = {}, options: { readonly lib
     close: async () => { await host.close(); await server.close(); await services.close(); await rm(directory, { recursive: true, force: true }); } };
 }
 
+/** A library whose searches wait until the test releases them, so a running researcher keeps its budget reservation. */
+function gatedSearches(): SourceLibrary & { readonly release: () => void } {
+  const inner = localLibrary(harlowCreekCorpus); let open: () => void = () => {};
+  const gate = new Promise<void>(resolve => { open = resolve; });
+  return {
+    release: () => open(),
+    read: id => inner.read(id),
+    async search(query, options) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([gate, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('The search was never released.')), 10_000); })]);
+      } finally { clearTimeout(timer); }
+      return inner.search(query, options);
+    },
+  };
+}
+
 /** A library whose searches wait for each other: it only answers once `expected` searches are in flight at once. */
 function overlappingSearches(expected: number): SourceLibrary & { readonly peak: () => number } {
   const inner = localLibrary(harlowCreekCorpus); let active = 0; let peak = 0; const waiting: (() => void)[] = [];
@@ -90,8 +107,9 @@ describe('research runs', () => {
       const done = await h.settle(started.runId);
       assert.equal(done.status, 'succeeded');
       const status = Object.fromEntries(done.steps.map(step => [step.id, step.status]));
-      assert.deepEqual(status, { plan: 'succeeded', 'research-1': 'succeeded', 'research-2': 'succeeded', 'research-3': 'succeeded',
-        'research-4': 'succeeded', gather: 'succeeded', write: 'succeeded', store: 'succeeded' });
+      // Three sub-questions: three researchers run, and the fourth slot is bypassed (shown to operators as skipped).
+      assert.deepEqual(status, { plan: 'succeeded', 'research.1': 'succeeded', 'research.2': 'succeeded', 'research.3': 'succeeded',
+        'research.4': 'skipped', research: 'succeeded', write: 'succeeded', store: 'succeeded' });
       // The three researchers searched at the same time: the library only answers once all three are waiting.
       assert.equal(library.peak(), 3);
 
@@ -137,22 +155,34 @@ describe('research runs', () => {
 
   it('stops a run that exhausts its shared budget before any report is written', async () => {
     // Each agent step may spend 1,000 and a step starts only if that ceiling fits in what the run has left. The run may
-    // spend 3,500: after the plan, the four researchers are admitted together and only three ceilings fit, so the
-    // fourth is blocked. The offline models cost nothing, so nothing is actually charged (steps are charged by use).
-    const h = await harness({ MAYURA_MAX_RUN_COST_MICROS: '1000', RESEARCH_BUDGET_MICROS: '3500' });
+    // spend 1,500: after the plan, the researchers the plan needs (at least two) start together, and while the first one
+    // holds its 1,000 reservation (its searches wait for the test) the others cannot fit and are blocked. Slots the plan
+    // did not use are bypassed and reserve nothing. The offline models cost nothing, so nothing is actually charged.
+    const library = gatedSearches();
+    const h = await harness({ MAYURA_MAX_RUN_COST_MICROS: '1000', RESEARCH_BUDGET_MICROS: '1500' }, { library });
     try {
       const started = await h.start('rq-3');
-      const stopped = await h.settle(started.runId);
+      const settling = h.settle(started.runId);
+      for (let poll = 0; ; poll++) {
+        const view = await h.operator.workflow(started.runId);
+        if (view.steps.some(step => researchSlots.includes(step.id) && step.status === 'blocked')) break;
+        if (poll > 200) assert.fail('No research step was blocked by the budget.');
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      library.release();
+      const stopped = await settling;
       assert.equal(stopped.status, 'blocked');
       const research = stopped.steps.filter(step => researchSlots.includes(step.id));
-      assert.equal(research.filter(step => step.status === 'blocked').length, 1);
-      assert.equal(research.filter(step => step.status === 'succeeded').length, 3);
-      for (const id of ['gather', 'write', 'store']) assert.equal(stopped.steps.find(step => step.id === id)?.status, 'skipped', id);
+      const used = research.filter(step => step.status !== 'skipped');
+      assert.ok(used.length >= 2, 'The plan uses at least two researchers.');
+      assert.equal(research.filter(step => step.status === 'succeeded').length, 1);
+      assert.equal(research.filter(step => step.status === 'blocked').length, used.length - 1);
+      for (const id of ['research', 'write', 'store']) assert.equal(stopped.steps.find(step => step.id === id)?.status, 'skipped', id);
 
       const result = await h.report(started.runId, 'report-rq-3');
       assert.equal(result.status, 'blocked'); assert.equal(result.stopReason, 'budget_exhausted');
       assert.equal(result.report, null); assert.equal(result.artifactDigest, null);
-      assert.deepEqual(result.budget, { spentMicros: 0, reservedMicros: 0, maxCostMicros: 3_500 });
+      assert.deepEqual(result.budget, { spentMicros: 0, reservedMicros: 0, maxCostMicros: 1_500 });
       assert.deepEqual(await h.artifactFiles(), []);
       // Nothing is retried: another worker cycle leaves the run exactly where it stopped.
       await h.host.runOnce();

@@ -252,7 +252,7 @@
       },
       "inspectWorkflows": {
         "kind": "function",
-        "declaration": "9ec7ca8821af99f8"
+        "declaration": "a1c0112da766b7b6"
       },
       "loadApplication": {
         "kind": "function",
@@ -340,7 +340,7 @@
       },
       "OperationalWorkflowIndexEntry": {
         "kind": "interface",
-        "declaration": "406f493cdddb250a"
+        "declaration": "3f09efb702f6755b"
       },
       "OperationalWorkflowIndexPage": {
         "kind": "interface",
@@ -3404,7 +3404,7 @@
       },
       "WorkflowLifecycleHumanNodeManifest": {
         "kind": "interface",
-        "declaration": "6281dcb0a1f65c58"
+        "declaration": "a06d805886cf21dc"
       },
       "WorkflowLifecycleHumanStep": {
         "kind": "interface",
@@ -3412,7 +3412,7 @@
       },
       "WorkflowLifecycleHumanStepStatus": {
         "kind": "type",
-        "declaration": "89c542461515ff64"
+        "declaration": "d9f999074d3d7a76"
       },
       "workflowLifecycleManifest": {
         "kind": "function",
@@ -3424,7 +3424,7 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "22c027e260c21110"
+        "declaration": "436d79318081c21d"
       },
       "workflowLifecycleOutputs": {
         "kind": "function",
@@ -3444,11 +3444,11 @@
       },
       "WorkflowLifecycleStep": {
         "kind": "type",
-        "declaration": "c734f7b6b7617a3b"
+        "declaration": "74ce089ecb32d658"
       },
       "WorkflowLifecycleTimerNodeManifest": {
         "kind": "interface",
-        "declaration": "105b1bafcf0bc5fa"
+        "declaration": "5b84909b402496fe"
       },
       "WorkflowLifecycleTimerStep": {
         "kind": "interface",
@@ -3456,7 +3456,15 @@
       },
       "WorkflowLifecycleTimerStepStatus": {
         "kind": "type",
-        "declaration": "6f8490d0544b5270"
+        "declaration": "8cd21fb697c205b0"
+      },
+      "WorkflowLifecycleToolStep": {
+        "kind": "type",
+        "declaration": "cf6ae1cf79179955"
+      },
+      "WorkflowLifecycleToolStepStatus": {
+        "kind": "type",
+        "declaration": "a2247e20578f9b07"
       },
       "WorkflowLoopBinding": {
         "kind": "type",
@@ -4290,7 +4298,7 @@
       },
       "WorkflowLifecycleHumanNodeManifest": {
         "kind": "interface",
-        "declaration": "6281dcb0a1f65c58"
+        "declaration": "a06d805886cf21dc"
       },
       "WorkflowLifecycleHumanStep": {
         "kind": "interface",
@@ -4298,7 +4306,7 @@
       },
       "WorkflowLifecycleHumanStepStatus": {
         "kind": "type",
-        "declaration": "89c542461515ff64"
+        "declaration": "d9f999074d3d7a76"
       },
       "workflowLifecycleManifest": {
         "kind": "function",
@@ -4310,7 +4318,7 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "22c027e260c21110"
+        "declaration": "436d79318081c21d"
       },
       "workflowLifecycleOutputs": {
         "kind": "function",
@@ -4330,11 +4338,11 @@
       },
       "WorkflowLifecycleStep": {
         "kind": "type",
-        "declaration": "c734f7b6b7617a3b"
+        "declaration": "74ce089ecb32d658"
       },
       "WorkflowLifecycleTimerNodeManifest": {
         "kind": "interface",
-        "declaration": "105b1bafcf0bc5fa"
+        "declaration": "5b84909b402496fe"
       },
       "WorkflowLifecycleTimerStep": {
         "kind": "interface",
@@ -4342,7 +4350,15 @@
       },
       "WorkflowLifecycleTimerStepStatus": {
         "kind": "type",
-        "declaration": "6f8490d0544b5270"
+        "declaration": "8cd21fb697c205b0"
+      },
+      "WorkflowLifecycleToolStep": {
+        "kind": "type",
+        "declaration": "cf6ae1cf79179955"
+      },
+      "WorkflowLifecycleToolStepStatus": {
+        "kind": "type",
+        "declaration": "a2247e20578f9b07"
       },
       "WorkflowLoopBinding": {
         "kind": "type",
@@ -5738,6 +5754,10 @@
         "kind": "function",
         "declaration": "68649d7959d1cc80"
       },
+      "fanOut": {
+        "kind": "function",
+        "declaration": "20f37b4a1e4f4c8b"
+      },
       "lifecycleManifest": {
         "kind": "function",
         "declaration": "2060514f1128bedd"
@@ -5816,11 +5836,11 @@
       },
       "WorkflowLifecycleHumanNode": {
         "kind": "interface",
-        "declaration": "9139d41df817748a"
+        "declaration": "4e8376173eb0e2c5"
       },
       "WorkflowLifecycleHumanNodeManifest": {
         "kind": "interface",
-        "declaration": "6281dcb0a1f65c58"
+        "declaration": "a06d805886cf21dc"
       },
       "WorkflowLifecycleHumanRegistration": {
         "kind": "interface",
@@ -5852,11 +5872,11 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "22c027e260c21110"
+        "declaration": "436d79318081c21d"
       },
       "WorkflowLifecycleNode": {
         "kind": "type",
-        "declaration": "f5473b88e3cf7cf0"
+        "declaration": "0d992b602f0a4e92"
       },
       "WorkflowLifecycleOptions": {
         "kind": "interface",
@@ -5888,11 +5908,11 @@
       },
       "WorkflowLifecycleTimerNode": {
         "kind": "interface",
-        "declaration": "b4caba280bc7b6cd"
+        "declaration": "cec09a3500a9ac51"
       },
       "WorkflowLifecycleTimerNodeManifest": {
         "kind": "interface",
-        "declaration": "105b1bafcf0bc5fa"
+        "declaration": "5b84909b402496fe"
       },
       "WorkflowLifecycleVerifiedActor": {
         "kind": "interface",

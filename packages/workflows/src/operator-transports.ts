@@ -173,7 +173,9 @@ const project = (format: 3 | 4 | 5, definition: Registered, snapshot: { readonly
     // Lifecycle and graph tool steps carry their own approval; a tree's approvals live in its child runs.
     const pending = format !== 4 && step.status === 'waiting' && step.approval ? step.approval as { readonly digest: string; readonly expiresAt: number } : null;
     const subject = pending ? subjects.get(node.id) : undefined;
-    return { id: node.id, kind: node.kind as WorkflowOperatorNodeKind, status: step.status as WorkflowOperatorStepStatus, ...(step.child?.runId ? { childRunId: step.child.runId } : {}),
+    // A lifecycle step whose condition did not hold shows as skipped: it never ran.
+    const status = (step.status === 'bypassed' ? 'skipped' : step.status) as WorkflowOperatorStepStatus;
+    return { id: node.id, kind: node.kind as WorkflowOperatorNodeKind, status, ...(step.child?.runId ? { childRunId: step.child.runId } : {}),
       ...(pending ? { approval: { digest: pending.digest, expiresAtMs: pending.expiresAt, ...(subject ? { subject } : {}) } } : {}) }; }),
 });
 const approval = (credential: WorkflowApprovalCredential | undefined, actorId: string): unknown => {

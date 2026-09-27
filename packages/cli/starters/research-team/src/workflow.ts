@@ -1,7 +1,7 @@
 import type { ArtifactReference, ArtifactScope, LocalArtifactStore } from '@mayura/artifacts';
 import { createRuntime, defineTool, type AgentDefinition, type InferInput, type InferOutput, type RuntimeLimits, type Schema,
   type ToolExecutionContext } from '@mayura/sdk';
-import { defineWorkflowLifecycle, type WorkflowLifecycleNode } from '@mayura/workflows/lifecycle';
+import { defineWorkflowLifecycle, fanOut, type WorkflowLifecycleNode } from '@mayura/workflows/lifecycle';
 import { z } from 'zod';
 import { MAX_RESEARCHERS, type ModelSettings } from './config.js';
 import { libraryTools, sourceId, type SourceLibrary } from './library/index.js';
@@ -19,9 +19,9 @@ export const MAX_REPORT_CHARS = 24_000;
 export const researchRequest = z.strictObject({ requestId: identifier, question });
 export type ResearchRequest = z.infer<typeof researchRequest>;
 
-const slot = z.strictObject({ question, subQuestion: subQuestion.nullable() });
-const planStepOutput = z.strictObject({ question, subQuestions: z.array(subQuestion).min(1).max(MAX_RESEARCHERS), slots: z.array(slot).length(MAX_RESEARCHERS) });
-const researchStepOutput = z.strictObject({ question, subQuestion: subQuestion.nullable(), findings: z.array(finding).max(8) });
+const assignment = z.strictObject({ question, subQuestion });
+const planStepOutput = z.strictObject({ question, assignments: z.array(assignment).min(1).max(MAX_RESEARCHERS) });
+const researchStepOutput = z.strictObject({ question, subQuestion, findings: z.array(finding).max(8) });
 export const citation = z.strictObject({ sourceId, title: z.string().max(200) });
 const writeStepOutput = z.strictObject({ question, title: z.string().min(1).max(200), markdown: z.string().min(1).max(MAX_REPORT_CHARS),
   citations: z.array(citation).min(1).max(16) });
@@ -42,11 +42,11 @@ export interface ResearchDependencies {
   readonly telemetry: Telemetry;
 }
 
-/** Research slot node ids, `research-1` .. `research-N`. */
-export const researchSlots = Array.from({ length: MAX_RESEARCHERS }, (_, index) => `research-${index + 1}`);
+/** Research slot node ids, `research.1` .. `research.N` (made by `fanOut`); `research` is the join that gathers them. */
+export const researchSlots = Array.from({ length: MAX_RESEARCHERS }, (_, index) => `research.${index + 1}`);
 
 /**
- * The research workflow: plan → up to N researchers in parallel → gather → write → store.
+ * The research workflow: plan → one researcher per sub-question, in parallel → write → store.
  *
  * It is a lifecycle workflow (format 5): a finite graph whose tool steps are journaled before they run, whose sibling
  * steps run in parallel, and whose run record carries ONE cost budget (`maxCostMicros` in services.ts) shared by every
@@ -54,9 +54,8 @@ export const researchSlots = Array.from({ length: MAX_RESEARCHERS }, (_, index) 
  * write that claims the step; if the budget cannot cover it, the step is `blocked` (code BUDGET_EXCEEDED), every
  * later step is skipped, and the run ends `blocked`. No report is written for a blocked run.
  *
- * The graph is static, so it has one node per possible researcher. When the planner uses fewer sub-questions the
- * spare slots finish at once without calling a model; they are still admitted and charged at their ceiling (see
- * README "Know the limits").
+ * `fanOut` gives the graph one slot per possible researcher. A slot runs only when the plan has an assignment for it;
+ * the others are bypassed, so they are never admitted and reserve nothing from the budget.
  */
 export function researchWorkflows(dependencies: ResearchDependencies) {
   const { library, telemetry } = dependencies; const ceiling = dependencies.stepCostMicros;
@@ -71,32 +70,26 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
       const planned = await runAgent(planner, { question: request.question, maxSubQuestions: MAX_RESEARCHERS },
         { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
       const subQuestions = [...new Set(planned.subQuestions)].slice(0, MAX_RESEARCHERS);
-      return { question: request.question, subQuestions,
-        slots: researchSlots.map((_, index) => ({ question: request.question, subQuestion: subQuestions[index] ?? null })) };
+      return { question: request.question, assignments: subQuestions.map(item => ({ question: request.question, subQuestion: item })) };
     }),
   });
 
   const investigate = defineTool({
     id: 'research.investigate', version: '1', effects: 'none', capabilities: ['research:investigate'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
     description: 'Run one researcher agent on one sub-question over the source library, returning cited findings.',
-    input: slot, output: researchStepOutput,
-    execute: async (assignment, context) => {
-      if (assignment.subQuestion === null) {
-        // A spare slot: nothing to research. It reports zero usage, but the run budget still charges its ceiling.
-        context.reportUsage({ knownCostMicros: 0, unknownCostMicros: 0 });
-        return { question: assignment.question, subQuestion: null, findings: [] };
-      }
-      const asked = assignment.subQuestion;
+    input: assignment, output: researchStepOutput,
+    execute: async (task, context) => {
+      const asked = task.subQuestion;
       return traced(telemetry, context, 'research.investigate', async span => {
         // Fresh tool instances per step record which documents this researcher actually read.
         const read = new Set<string>();
         const tools = libraryTools(library, id => read.add(id));
         const researcher = researcherAgent(dependencies.model, tools.tools);
         const found = await runAgent({ ...researcher, permissions: [...researcher.permissions, ...tools.permissions] },
-          { question: assignment.question, subQuestion: asked }, { context, span, ceiling, limits: { maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 } });
+          { question: task.question, subQuestion: asked }, { context, span, ceiling, limits: { maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 } });
         // Trust, then verify: a finding may cite only documents this researcher read through library.read.
         if (found.findings.some(item => item.sourceIds.some(id => !read.has(id)))) throw new Error('A finding cites a document its researcher did not read.');
-        return { question: assignment.question, subQuestion: asked, findings: found.findings };
+        return { question: task.question, subQuestion: asked, findings: found.findings };
       });
     },
   });
@@ -104,10 +97,12 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
   const write = defineTool({
     id: 'research.write', version: '1', effects: 'none', capabilities: ['research:write'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
     description: 'Run the writer agent over every researcher\'s findings and render the cited report.',
-    input: z.array(researchStepOutput).length(MAX_RESEARCHERS), output: writeStepOutput,
-    execute: (research, context) => traced(telemetry, context, 'research.write', async span => {
-      const asked = research[0]!.question;
-      const sections = research.flatMap(item => item.subQuestion === null ? [] : [{ subQuestion: item.subQuestion, findings: item.findings }]);
+    // The join's output: one entry per slot, `null` for a slot the plan did not use.
+    input: z.array(researchStepOutput.nullable()).length(MAX_RESEARCHERS), output: writeStepOutput,
+    execute: (slots, context) => traced(telemetry, context, 'research.write', async span => {
+      const research = slots.filter(item => item !== null);
+      const asked = research[0]?.question ?? (() => { throw new Error('No researcher ran.'); })();
+      const sections = research.map(item => ({ subQuestion: item.subQuestion, findings: item.findings }));
       const reported = new Set(sections.flatMap(section => section.findings.flatMap(item => item.sourceIds)));
       if (reported.size === 0) throw new Error('No researcher found a source for any sub-question; there is nothing to report.');
       const draft = await runAgent(writer, { question: asked, sections }, { context, span, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
@@ -145,12 +140,10 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
 
   const nodes: WorkflowLifecycleNode[] = [
     { kind: 'tool', id: 'plan', tool: plan, input: { kind: 'input', path: [] } },
-    // Every slot depends only on the plan, so the runtime dispatches them together in one wave.
-    ...researchSlots.map((id, index): WorkflowLifecycleNode =>
-      ({ kind: 'tool', id, tool: investigate, input: { kind: 'step', stepId: 'plan', path: ['slots', String(index)] }, dependsOn: ['plan'] })),
-    // A join's output is the list of its dependencies' outputs, in order: the writer's input.
-    { kind: 'join', id: 'gather', dependsOn: researchSlots },
-    { kind: 'tool', id: 'write', tool: write, input: { kind: 'step', stepId: 'gather', path: [] }, dependsOn: ['gather'] },
+    // Slot n runs `investigate` on the plan's assignment n, all in one wave; a slot with no assignment is bypassed.
+    // The join `research` then lists every slot's output in order (null for a bypassed slot): the writer's input.
+    ...fanOut({ id: 'research', items: { stepId: 'plan', path: ['assignments'] }, max: MAX_RESEARCHERS, tool: investigate }),
+    { kind: 'tool', id: 'write', tool: write, input: { kind: 'step', stepId: 'research', path: [] }, dependsOn: ['research'] },
     { kind: 'tool', id: 'store', tool: store, input: { kind: 'step', stepId: 'write', path: [] }, dependsOn: ['write'] },
   ];
   const latest = defineWorkflowLifecycle({ id: 'research.run', version: '1', input: researchRequest, output: researchResult, nodes,

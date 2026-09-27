@@ -234,7 +234,7 @@ The starters checkpoint added four complete starters and closed the gaps buildin
 - **Remote OpenAI-compatible providers** behind an explicit `remote` opt-in.
 - **Operator approvals over HTTP and in the console**: waiting tool steps carry their approval digest, and lifecycle runs show the exact, digest-verified tool call.
 - **Fixes found by the starters** (each with a regression test that fails without it): the agent server leaked finished runs and runtimes until it answered 429; durable budgets ignored reported tool usage; any exception from an effectful tool forced `outcome_unknown` (`ToolRefusal` now records a refused call as not started); the graph projector and operator transport types rejected the new approval data; plus smaller fixes (memory initialization error, webhook conflict type, named environment errors, MCP `_meta`, zero tool calls).
-Known gaps from this work: agent guards can allow or block but not rewrite (redaction runs in schemas); durable workflows have no optional or variable fan-out steps; there is no workflow-level root trace span. No provider has been qualified against a live account.
+Known gaps from this work: agent guards can allow or block but not rewrite (redaction runs in schemas); there is no workflow-level root trace span. No provider has been qualified against a live account.
 
 ### How to verify
 

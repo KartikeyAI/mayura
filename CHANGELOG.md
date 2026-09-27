@@ -49,6 +49,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - **Context and speculation.**
   - `createContextCache`, with admission-key caching, invalidation, change-feed following and prefetch.
   - `runtime.speculate`, for verified isolated branches under the shared budget.
+- **Optional steps and variable-width parallel work in lifecycle workflows.** Any lifecycle node can declare `when`, a binding over the input or a dependency's output; when it resolves to `null` or `false` the step is `bypassed`: never admitted or charged, with dependents seeing `null`. `fanOut({ id, items, max, tool })` in `@mayura/workflows/lifecycle` expands an array into up to `max` parallel slots plus a collecting join, so unused slots reserve nothing. Definitions without `when` keep their digest. The research-team starter uses it: the planner's unused research slots no longer take budget.
 - **Finished and unresolved workflow runs for operators.** The lifecycle fleet runtime keeps a bounded settled index (`runtime.settled()`: up to 64 runs per shard, 16,384 per scope). The oldest finished run is dropped first, and a run whose outcome is unknown is kept in preference because it still needs reconciling. `GET /v1/workflow-runs?view=settled`, `client.workflows({ view: 'settled' })`, `mayura workflow-list --settled` and a Finished tab in the console Workflows view list them with their `settledAtMs`. Operator targets gain an optional `settledPage`; graph and tree runs are not in the settled view yet.
 - **Guards that rewrite.** A guard can return `{ decision: 'rewrite', value }` as well as allow or block, for example to redact personal data. Agent guards run in declared order, each seeing the previous rewrite, and a rewritten input, output or tool result is validated again against its schema before use; streaming batch guards can rewrite a batch instead of withholding the rest. `pipelineGuard(id, pipeline)` in `@mayura/guardrails` turns any guardrails pipeline (such as `redactPII`) into a rewriting agent guard. Model-backed managed guards and tool-level guards still allow or block, and treat a rewrite as a block.
 - **`ToolRefusal`.** A tool with effects can throw `ToolRefusal` to state it refused the call before any external effect: the call is recorded as `not_started`, its outcome is `failed` rather than `outcome_unknown`, nothing is charged and durable runs need no reconciliation. It is ignored once the tool has reported usage. Found by the starters, where "not found" from a write tool otherwise needed reconciliation.
@@ -69,6 +70,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - A threat model, and a stable API, support and deprecation policy.
 
 ### Fixed
+
+- A lifecycle step refused for budget could stay pending when its write lost a race with a sibling step's write; it was then decided again only in a later wave, after the sibling may have released its reservation. The refusal is now re-decided on the latest state and always recorded while the budget is held.
 
 - Smaller fixes found while building the starters:
   - `RuntimeLimits.maxToolCalls` accepts 0 for agents without tools.

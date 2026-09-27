@@ -1,6 +1,7 @@
 export {
   assertWorkflowLifecycle,
   defineWorkflowLifecycle,
+  fanOut,
   lifecycleManifest,
   type AnyWorkflowLifecycle,
   type WorkflowLifecycleDefinition,

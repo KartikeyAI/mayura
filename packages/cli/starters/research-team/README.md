@@ -11,10 +11,10 @@ files. One environment switch uses OpenAI or Anthropic, another uses PostgreSQL,
 ```
 your app ──desk token──▶ server ──▶ research.desk ──▶ research.start ──▶ durable run (research.run v1)
                             │                                               │
-                            │                         worker: plan ─▶ research-1 ┐
-operator ──token──▶ console / operator API:                                ─▶ research-2 ├─▶ gather ─▶ write ─▶ store
-                     watch, pause, cancel,                                 ─▶ research-3 │                  (artifact)
-                     hold the fleet                                        ─▶ research-4 ┘
+                            │                         worker: plan ─▶ research.1 ┐
+operator ──token──▶ console / operator API:                                ─▶ research.2 ├─▶ research ─▶ write ─▶ store
+                     watch, pause, cancel,                                 ─▶ research.3 │  (join)          (artifact)
+                     hold the fleet                                        ─▶ research.4 ┘
             research.desk ──▶ research.report ──▶ run status, or the report read back from the artifact store
 ```
 
@@ -28,7 +28,7 @@ npm run dev
 `npm run dev` builds, starts the server and a worker in one process on `.data/research-team.sqlite`, asks the desk
 one demo question, waits for the report and prints the console URL, two fresh tokens and the finished run. Open the
 console, paste the **operator** token and open **Workflows**: the run shows `plan`, the four research slots (three
-used, one spare), `gather`, `write` and `store`.
+used; the fourth skipped because the plan did not need it), the `research` join, `write` and `store`.
 
 Ask your own question as your application:
 
@@ -96,10 +96,12 @@ completes, the run is charged what it reported spending and the rest of the rese
 budget cannot cover a step, that step is `blocked` with code `BUDGET_EXCEEDED`, every later step is skipped, and the
 run ends `blocked`: no model is called and no report is written. The desk reports it as
 `{ status: 'blocked', stopReason: 'budget_exhausted' }`. By default the budget is six step ceilings: plan, four
-research slots and write (storing costs nothing).
+research slots and write (storing costs nothing), enough for the largest plan.
 
-**Parallel research.** The graph is static, so it has one node per possible researcher (four). The planner fills as
-many as it needs (two to four); spare slots finish immediately without calling a model.
+**Parallel research.** `fanOut` from `@mayura/workflows/lifecycle` gives the graph one slot per possible researcher
+(four). The planner returns as many assignments as it needs (two to four); slot n runs the researcher on assignment n,
+and a slot without an assignment is bypassed: it never starts and reserves nothing from the budget. The `research`
+join lists every slot's output in order, `null` for a bypassed slot, and the writer reads that list.
 
 **Citations you can trust.** A researcher's tools are created per step and record which documents it read; a finding
 that cites anything else fails the step. The writer may cite only sources the researchers reported, and every cited id
@@ -160,8 +162,8 @@ from `.env`. The image builds from the npm registry, so it needs published Mayur
 - **Steps are admitted by ceiling, charged by use.** Before a step starts, its full ceiling must fit in what the run
   has left; once it completes, the run is charged what the step reported spending and the rest is released. So a run
   that is almost out of budget can stop at a step it could have afforded in practice; size `RESEARCH_BUDGET_MICROS`
-  with that headroom. Spare research slots are reported as spending nothing. Offline, the ceilings default to zero and
-  the budget never binds.
+  with that headroom. Research slots the plan does not use are bypassed and reserve nothing. Offline, the ceilings
+  default to zero and the budget never binds.
 - **Artifacts are local files.** `@mayura/artifacts` is a same-host store. With several machines, mount shared storage
   at `RESEARCH_ARTIFACTS_DIR` for the server and every worker, or replace the store with object storage. Artifact
   files are not deleted when runs are; plan retention yourself.

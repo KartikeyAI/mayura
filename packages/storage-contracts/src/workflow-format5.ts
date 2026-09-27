@@ -1,7 +1,7 @@
 import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowBinding, WorkflowManifestNode } from './scheduled-workflow-contracts.js';
-import { workflowManifest, workflowState, type WorkflowFormat2Step } from './workflow-format2.js';
+import { workflowManifest, workflowState, type WorkflowFormat2Step, type WorkflowFormat2StepStatus } from './workflow-format2.js';
 
 export type WorkflowLifecycleHumanKind = 'information' | 'correction' | 'plan_selection';
 
@@ -16,6 +16,7 @@ export interface WorkflowLifecycleHumanNodeManifest {
   readonly context: WorkflowBinding | null;
   readonly subjectDigest: WorkflowBinding | null;
   readonly deadlineAtMs: WorkflowBinding | null;
+  readonly when?: WorkflowBinding;
 }
 
 export interface WorkflowLifecycleTimerNodeManifest {
@@ -23,9 +24,15 @@ export interface WorkflowLifecycleTimerNodeManifest {
   readonly id: string;
   readonly dependsOn: readonly string[];
   readonly fireAtMs: WorkflowBinding;
+  readonly when?: WorkflowBinding;
 }
 
-export type WorkflowLifecycleManifestNode = WorkflowManifestNode
+/**
+ * Any lifecycle node may carry `when`: a binding over the input or a dependency's output. The node runs only when it
+ * resolves to a value other than `null` or `false`; otherwise it is `bypassed` without being admitted or charged.
+ * The key is present only when declared, so definitions without it keep their digest.
+ */
+export type WorkflowLifecycleManifestNode = (WorkflowManifestNode & { readonly when?: WorkflowBinding })
   | WorkflowLifecycleHumanNodeManifest
   | WorkflowLifecycleTimerNodeManifest;
 
@@ -39,8 +46,11 @@ export interface WorkflowLifecycleManifest {
 }
 
 export type WorkflowLifecycleStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
-export type WorkflowLifecycleHumanStepStatus = 'pending' | 'waiting' | 'succeeded' | 'timed_out' | 'skipped';
-export type WorkflowLifecycleTimerStepStatus = 'pending' | 'waiting' | 'succeeded' | 'skipped';
+export type WorkflowLifecycleHumanStepStatus = 'pending' | 'waiting' | 'succeeded' | 'timed_out' | 'skipped' | 'bypassed';
+export type WorkflowLifecycleTimerStepStatus = 'pending' | 'waiting' | 'succeeded' | 'skipped' | 'bypassed';
+/** `bypassed`: the step's `when` condition did not hold, so it never started. Dependents treat it like success with output `null`. */
+export type WorkflowLifecycleToolStepStatus = WorkflowFormat2StepStatus | 'bypassed';
+export type WorkflowLifecycleToolStep = Omit<WorkflowFormat2Step, 'status'> & { status: WorkflowLifecycleToolStepStatus };
 
 export interface WorkflowLifecycleHumanStep {
   readonly kind: 'human';
@@ -62,7 +72,7 @@ export interface WorkflowLifecycleTimerStep {
   firedAtMs: number | null;
 }
 
-export type WorkflowLifecycleStep = WorkflowFormat2Step | WorkflowLifecycleHumanStep | WorkflowLifecycleTimerStep;
+export type WorkflowLifecycleStep = WorkflowLifecycleToolStep | WorkflowLifecycleHumanStep | WorkflowLifecycleTimerStep;
 
 export interface WorkflowLifecycleState {
   readonly format: 5;
@@ -83,8 +93,10 @@ const schemaIdPattern = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 const humanKinds = new Set<WorkflowLifecycleHumanKind>(['information', 'correction', 'plan_selection']);
 const lifecycleStatuses = new Set<WorkflowLifecycleStatus>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const humanStepStatuses = new Set<WorkflowLifecycleHumanStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped']);
-const timerStepStatuses = new Set<WorkflowLifecycleTimerStepStatus>(['pending', 'waiting', 'succeeded', 'skipped']);
+const humanStepStatuses = new Set<WorkflowLifecycleHumanStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped', 'bypassed']);
+const timerStepStatuses = new Set<WorkflowLifecycleTimerStepStatus>(['pending', 'waiting', 'succeeded', 'skipped', 'bypassed']);
+/** Statuses a dependent step may build on. */
+const satisfied = new Set(['succeeded', 'bypassed']);
 
 function invalid(): never {
   throw new StorageError('INVALID_INPUT', 'Invalid bounded workflow lifecycle metadata.');
@@ -166,7 +178,10 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
 
     const projected = graph.map(raw => {
       const node = object(raw);
-      if (node['kind'] === 'tool' || node['kind'] === 'join') return node;
+      if (node['kind'] === 'tool' || node['kind'] === 'join') {
+        if (!Object.hasOwn(node, 'when')) return node;
+        const { when: _when, ...rest } = node; return rest;
+      }
       if (node['kind'] !== 'human' && node['kind'] !== 'timer') invalid();
       return { kind: 'join', id: node['id'], dependsOn: node['dependsOn'] };
     });
@@ -179,15 +194,18 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
       const id = typeof node['id'] === 'string' && idPattern.test(node['id']) ? node['id'] : invalid();
       const projectedNode = common.graph.find(item => item.id === id)!;
       const dependencies = projectedNode.dependsOn;
+      const conditional = Object.hasOwn(node, 'when');
+      if (conditional) binding(node['when'], ids, dependencies);
       if (node['kind'] === 'tool' || node['kind'] === 'join') continue;
+      const optional = conditional ? ['when'] : [];
       if (node['kind'] === 'timer') {
         timers += 1;
-        fields(node, ['kind', 'id', 'dependsOn', 'fireAtMs']);
+        fields(node, ['kind', 'id', 'dependsOn', 'fireAtMs', ...optional]);
         temporalBinding(node['fireAtMs'], ids, dependencies);
         continue;
       }
       humans += 1;
-      fields(node, ['kind', 'id', 'dependsOn', 'requestKind', 'schemaId', 'schemaDigest', 'prompt', 'context', 'subjectDigest', 'deadlineAtMs']);
+      fields(node, ['kind', 'id', 'dependsOn', 'requestKind', 'schemaId', 'schemaDigest', 'prompt', 'context', 'subjectDigest', 'deadlineAtMs', ...optional]);
       if (!humanKinds.has(node['requestKind'] as WorkflowLifecycleHumanKind)
         || typeof node['schemaId'] !== 'string' || !schemaIdPattern.test(node['schemaId'])
         || typeof node['schemaDigest'] !== 'string' || !hashPattern.test(node['schemaDigest'])
@@ -255,6 +273,10 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
       const step = object(raw);
       if (step['callId'] !== `step:${id}`) invalid();
       if (step['kind'] === 'tool' || step['kind'] === 'join') {
+        if (step['status'] === 'bypassed') {
+          if (step['output'] !== null || step['receipt'] !== null || step['approval'] !== null || step['costReserved'] !== 0 || step['candidateHash'] !== null) invalid();
+          common[id] = { ...step, status: 'skipped' }; continue;
+        }
         common[id] = step; computedReserved += integer(step['costReserved']);
         if (step['status'] === 'waiting') waiting += 1;
         continue;
@@ -270,7 +292,7 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
         if (step['status'] === 'waiting' && (step['requestDigest'] === null || step['responseDigest'] !== null || step['actorId'] !== null || step['output'] !== null)) invalid();
         if (step['status'] === 'succeeded' && (step['requestDigest'] === null || step['responseDigest'] === null || step['actorId'] === null)) invalid();
         if (step['status'] === 'timed_out' && (step['requestDigest'] === null || step['deadlineAtMs'] === null || step['responseDigest'] !== null || step['actorId'] !== null || step['output'] !== null)) invalid();
-        if (step['status'] === 'skipped' && (step['requestDigest'] !== null || step['responseDigest'] !== null || step['actorId'] !== null || step['deadlineAtMs'] !== null || step['output'] !== null)) invalid();
+        if ((step['status'] === 'skipped' || step['status'] === 'bypassed') && (step['requestDigest'] !== null || step['responseDigest'] !== null || step['actorId'] !== null || step['deadlineAtMs'] !== null || step['output'] !== null)) invalid();
         if (step['status'] === 'waiting') waiting += 1;
         continue;
       }
@@ -279,7 +301,7 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
         if (!timerStepStatuses.has(step['status'] as WorkflowLifecycleTimerStepStatus)) invalid();
         if (step['fireAtMs'] !== null) integer(step['fireAtMs']);
         if (step['firedAtMs'] !== null) integer(step['firedAtMs']);
-        if (step['status'] === 'pending' || step['status'] === 'skipped') {
+        if (step['status'] === 'pending' || step['status'] === 'skipped' || step['status'] === 'bypassed') {
           if (step['fireAtMs'] !== null || step['firedAtMs'] !== null || step['output'] !== null) invalid();
         } else if (step['status'] === 'waiting') {
           if (step['fireAtMs'] === null || step['firedAtMs'] !== null || step['output'] !== null) invalid();
@@ -299,7 +321,7 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
     } });
     if (state['status'] === 'waiting' && waiting === 0) invalid();
     if (!['running', 'waiting', 'paused'].includes(state['status'] as string) && waiting > 0) invalid();
-    if (state['status'] === 'succeeded' && entries.some(([, raw]) => object(raw)['status'] !== 'succeeded')) invalid();
+    if (state['status'] === 'succeeded' && entries.some(([, raw]) => !satisfied.has(object(raw)['status'] as string))) invalid();
     if (state['status'] !== 'succeeded' && state['output'] !== null) invalid();
     return state as unknown as WorkflowLifecycleState;
   } catch { return corrupt(); }
@@ -317,7 +339,9 @@ export function assertWorkflowLifecycleStateMatchesManifest(
     for (const node of manifest.graph) {
       const step = object(steps[node.id]);
       if (step['kind'] !== node.kind) invalid();
-      if (step['status'] === 'succeeded' && node.dependsOn.some(id => object(steps[id])['status'] !== 'succeeded')) invalid();
+      // A step is bypassed only when it declares a condition, and only after its dependencies were satisfied.
+      if (step['status'] === 'bypassed' && !Object.hasOwn(node, 'when')) invalid();
+      if (satisfied.has(step['status'] as string) && node.dependsOn.some(id => !satisfied.has(object(steps[id])['status'] as string))) invalid();
       if (node.kind === 'tool') {
         if (step['receipt'] !== null && object(step['receipt'])['toolId'] !== node.tool) invalid();
         if (integer(step['costReserved']) > node.costMicros) invalid();
@@ -327,13 +351,14 @@ export function assertWorkflowLifecycleStateMatchesManifest(
   } catch { return corrupt(); }
 }
 
-/** Return detached outputs only for successfully completed nodes. */
+/** Return detached outputs only for successfully completed nodes; a bypassed node's output is `null`. */
 export function workflowLifecycleOutputs(state: WorkflowLifecycleState): Record<string, JsonValue> {
   try {
     const steps = object(object(jsonValue(state))['steps']);
-    return Object.fromEntries(Object.entries(steps).filter(([, raw]) => object(raw)['status'] === 'succeeded')
+    return Object.fromEntries(Object.entries(steps).filter(([, raw]) => satisfied.has(object(raw)['status'] as string))
       .map(([id, raw]) => {
         const step = object(raw);
+        if (step['status'] === 'bypassed') return [id, null];
         if (step['kind'] === 'tool') {
           const evidence = object(step['receipt']);
           if (evidence['execution'] !== 'succeeded' || evidence['disclosure'] !== 'released'

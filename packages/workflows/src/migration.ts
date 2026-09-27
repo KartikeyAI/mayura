@@ -78,8 +78,10 @@ const unstarted = new Set(['pending']);
 const parked = new Set(['waiting', 'approved', 'forward_waiting', 'compensation_waiting']);
 /** Statuses with work possibly in flight or with an unresolved effect; never changed, removed or renamed. */
 const inFlight = new Set(['dispatching', 'unknown', 'leased', 'started', 'running']);
-/** Successfully settled statuses that dependent steps may build on. */
-const succeeded = new Set(['succeeded', 'compensated']);
+/** Successfully settled statuses that dependent steps may build on (a bypassed lifecycle step never ran; its output is null). */
+const succeeded = new Set(['succeeded', 'compensated', 'bypassed']);
+/** A step whose condition did not hold: it holds nothing, so a changed definition decides the condition again. */
+const reconsidered = new Set(['bypassed']);
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const nodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
@@ -158,7 +160,7 @@ export function planWorkflowMigration(input: {
       blockers.push({ node: node.id, reason: `Step "${from}" already started as a ${previous.kind} and cannot become a ${node.kind}.` }); carried.set(node.id, current); continue;
     }
     if (unstarted.has(current)) { entries.push({ action: 'update', target: node.id, source: from, status: current }); carried.set(node.id, 'pending'); continue; }
-    if (parked.has(current)) { entries.push({ action: 'reset', target: node.id, source: from, status: current }); carried.set(node.id, 'pending'); continue; }
+    if (parked.has(current) || reconsidered.has(current)) { entries.push({ action: 'reset', target: node.id, source: from, status: current }); carried.set(node.id, 'pending'); continue; }
     // Blocked nodes still count with their current status below, so dependents report only root causes.
     if (from !== node.id) { blockers.push({ node: node.id, reason: `Step "${from}" already settled (${current}); settled steps cannot be renamed.` }); carried.set(node.id, current); continue; }
     if (!accepted.has(node.id)) {
@@ -177,7 +179,7 @@ export function planWorkflowMigration(input: {
     if (kept || renamedSources.has(node.id)) continue;
     const current = status.get(node.id) ?? 'pending';
     if (inFlight.has(current)) blockers.push({ node: node.id, reason: `Step "${node.id}" is ${current} and cannot be removed.` });
-    else if (!unstarted.has(current) && !parked.has(current) && current !== 'skipped' && !removable.has(node.id)) {
+    else if (!unstarted.has(current) && !parked.has(current) && current !== 'skipped' && !reconsidered.has(current) && !removable.has(node.id)) {
       blockers.push({ node: node.id, reason: `Step "${node.id}" already settled (${current}); list it in acceptRemoved to drop its result.` });
     } else entries.push({ action: 'remove', source: node.id, status: current });
   }

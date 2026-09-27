@@ -6,7 +6,7 @@ import { StorageError, assertWorkflowLifecycleStateMatchesManifest, initialWorkf
   mergeWorkflowReceipt, workflowLifecycleOutputs, workflowLifecycleState,
   type AggregateStore, type StoredRecord, type WorkflowLifecycleState as State,
   type WorkflowLifecycleStatus, type WorkflowLifecycleStep } from '@mayura/storage-contracts';
-import { charged, digest, resolveBinding } from './definition.js';
+import { charged, digest, resolveBinding, type Binding } from './definition.js';
 import { assertWorkflowLifecycle, lifecycleManifest, type AnyWorkflowLifecycle,
   type WorkflowLifecycleNode } from './lifecycle-definition.js';
 import type { VerifiedHuman } from './runtime.js';
@@ -99,7 +99,9 @@ export interface WorkflowLifecycleRuntime {
 }
 
 const finalRunStatuses = new Set<WorkflowLifecycleStatus>(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const terminalStepStatuses = new Set(['succeeded', 'failed', 'blocked', 'unknown', 'timed_out', 'skipped']);
+const terminalStepStatuses = new Set(['succeeded', 'failed', 'blocked', 'unknown', 'timed_out', 'skipped', 'bypassed']);
+/** Statuses a dependent step may build on: success, or a condition that did not hold. */
+const satisfiedStepStatuses = new Set(['succeeded', 'bypassed']);
 const hashPattern = /^[a-f0-9]{64}$/;
 const nodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 
@@ -252,6 +254,19 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     return true;
   };
 
+  const bypass = (step: WorkflowLifecycleStep): boolean => {
+    if (step.status !== 'pending') return false;
+    step.status = 'bypassed'; return true;
+  };
+  /** Whether a `when` binding holds: it resolves to something other than `null` or `false`. */
+  const applies = (condition: Binding, state: State): boolean => {
+    let value: JsonValue;
+    try { value = resolveBinding(condition, state.input, outputs(state)); } catch (error) {
+      if (error instanceof MayuraError && error.code === 'INVALID_INPUT') return false; throw error;
+    }
+    return value !== null && value !== false;
+  };
+
   async function executeNode(id: string, definition: AnyWorkflowLifecycle, node: WorkflowLifecycleNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
     if (!step || step.kind !== node.kind || state.policy !== policy || !schedulable(state)) return;
@@ -259,10 +274,14 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     const advance = (transition: (current: State) => boolean, type: string, data: JsonObject): Promise<StoredRecord> =>
       mutate(id, current => schedulable(current) && transition(current), type, data);
     const dependencies = (node.dependsOn ?? []).map(key => state.steps[key]!);
-    if (dependencies.some(item => terminalStepStatuses.has(item.status) && item.status !== 'succeeded')) {
+    if (dependencies.some(item => terminalStepStatuses.has(item.status) && !satisfiedStepStatuses.has(item.status))) {
       await advance(current => skip(current.steps[node.id]!), 'lifecycle.step.skipped', { nodeId: node.id }); return;
     }
-    if (dependencies.some(item => item.status !== 'succeeded')) return;
+    if (dependencies.some(item => !satisfiedStepStatuses.has(item.status))) return;
+    // A condition is decided once, before the step starts; a started step is never re-evaluated.
+    if (node.when !== undefined && step.status === 'pending' && !applies(node.when, state)) {
+      await advance(current => bypass(current.steps[node.id]!), 'lifecycle.step.bypassed', { nodeId: node.id }); return;
+    }
 
     if (node.kind === 'human') {
       if (step.kind !== 'human' || !['pending', 'waiting'].includes(step.status)) return;
@@ -360,10 +379,15 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
       return;
     }
-    if (node.tool.costMicros > state.maxCostMicros - state.spentMicros - state.reservedMicros) {
-      step.status = 'blocked';
-      try { await save(record, state, 'lifecycle.step.blocked', { nodeId: node.id, code: 'BUDGET_EXCEEDED' }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+    const affordable = (current: State): boolean => node.tool.costMicros <= current.maxCostMicros - current.spentMicros - current.reservedMicros;
+    if (!affordable(state)) {
+      // Decided again on the latest state, so a concurrent write cannot drop the block while a sibling holds the budget;
+      // if the budget has been released meanwhile, the step stays pending for the next wave.
+      await advance(current => {
+        const target = current.steps[node.id];
+        if (!target || target.kind !== 'tool' || target.status !== step.status || affordable(current)) return false;
+        target.status = 'blocked'; return true;
+      }, 'lifecycle.step.blocked', { nodeId: node.id, code: 'BUDGET_EXCEEDED' });
       return;
     }
     step.status = 'dispatching'; step.candidateHash = candidateHash; step.costReserved = node.tool.costMicros;
@@ -492,7 +516,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const node = definition.nodes.find(candidate => candidate.id === nodeId);
       const step = state.steps[nodeId];
       if (!node || node.kind !== 'human' || !step || step.kind !== 'human') throw new MayuraError('NOT_FOUND', 'Lifecycle human request was not found.');
-      if (step.status === 'pending' || step.status === 'skipped') return undefined;
+      if (step.status === 'pending' || step.status === 'skipped' || step.status === 'bypassed') return undefined;
       const { requestDigest, deadlineAtMs, context, subjectDigest } = humanEvidence(definition, node, id, state);
       if (step.requestDigest !== requestDigest || step.deadlineAtMs !== deadlineAtMs) throw new MayuraError('CONFLICT', 'Persisted human request evidence does not match its definition.');
       return freezeJson(jsonValue({ runId: id, nodeId, status: step.status, kind: node.request.kind,
@@ -529,7 +553,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         const steps = Object.values(next.steps);
         if (!schedulable(next)) return publicSnapshot(after);
         if (steps.every(step => terminalStepStatuses.has(step.status))) {
-          if (steps.every(step => step.status === 'succeeded')) {
+          if (steps.every(step => satisfiedStepStatuses.has(step.status))) {
             try { next.output = jsonValue(await controlled(() => validate(definition.output,
               resolveBinding(definition.result, next.input, outputs(next)), 'output')), { maxBytes: maxOutputBytes }); next.status = 'succeeded'; }
             catch { next.status = 'failed'; }
