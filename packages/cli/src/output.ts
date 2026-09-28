@@ -200,6 +200,9 @@ export function help(p: Paint): string {
     row('workflow-list [--settled]', 'active runs, or finished and unresolved ones'),
     row('workflow-get, workflow-approve', ''), row('workflow-cancel, workflow-pause, workflow-resume, workflow-signal', ''),
     row('fleet-get, fleet-hold, fleet-release, fleet-sweep', ''), '',
+    p.bold('Options'),
+    row('--help, -h', 'show this help (also after any command)'), row('--version, -v', 'print the version'),
+    row('--json', 'always print JSON, even in a terminal'), '',
     p.dim('Output is readable in a terminal and JSON when piped; --json always prints JSON.'),
   ].map(line => line.trimEnd()).join('\n');
 }

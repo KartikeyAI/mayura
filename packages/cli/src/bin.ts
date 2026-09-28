@@ -17,6 +17,9 @@ const out = paint(human && colourEnabled(process.stdout));
 const err = paint(!json && colourEnabled(process.stderr));
 const shownPath = (path: string): string => { const inner = relative(process.cwd(), path); return !inner ? '.' : inner.startsWith('..') ? path : `./${inner.replaceAll('\\', '/')}`; };
 
+/** This CLI's version, from its own package.json (the workspace package, or lib/cli inside the published package). */
+const cliVersion = (): string => (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+
 /** A usage problem the CLI itself found; its fixed message is safe and useful to show. */
 const usage = (message: string): MayuraError => new MayuraError('INVALID_INPUT', message);
 
@@ -83,7 +86,9 @@ async function signalFile(path: string): Promise<JsonValue> {
 async function main(arguments_: readonly string[]): Promise<unknown> {
   const command = arguments_[0];
   if (command === undefined && human) return { status: 'help' };
-  if (command === 'help' || command === '--help' || command === '-h') { assertArguments(arguments_, []); return { status: 'help' }; }
+  if (command === '--version' || command === '-v' || command === 'version') { assertArguments(arguments_, []); return { status: 'succeeded', version: cliVersion() }; }
+  // Help wins anywhere on the line, so `mayura init --help` shows how to use init instead of an argument error.
+  if (command === 'help' || arguments_.includes('--help') || arguments_.includes('-h')) return { status: 'help' };
   // With no options, a person at a terminal chooses interactively; scripts keep the explicit flags.
   if (command === 'init' && arguments_.length === 1 && human && process.stdin.isTTY === true) {
     const { initWizard } = await import('./interactive.js');
@@ -252,6 +257,8 @@ try {
   const argumentsWithoutJson = rawArguments.filter(argument => argument !== '--json');
   const result = await main(argumentsWithoutJson) as { readonly status?: string; readonly rendered?: boolean };
   if (result?.status === 'help') console.log(help(json ? paint(false) : out));
+  // The version is printed plainly, as other CLIs do, so scripts can read it; --json gives the JSON document.
+  else if (typeof (result as { version?: unknown })?.version === 'string' && !json) console.log((result as { version: string }).version);
   else if (result?.rendered) { if (json) console.log(JSON.stringify({ status: result.status }, null, 2)); }
   else console.log(human ? render(argumentsWithoutJson[0] ?? '', result, out, shownPath) : JSON.stringify(result, null, 2));
 } catch (error) {

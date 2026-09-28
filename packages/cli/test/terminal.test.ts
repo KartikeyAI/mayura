@@ -30,6 +30,12 @@ describe('terminal output', () => {
     const unknown = await runBin(['sk-not-a-command-0123456789']);
     expect(unknown.stderr).toContain('Unknown command'); expect(unknown.stderr).not.toContain('sk-not-a-command');
     expect((await runBin(['--help'])).stdout).toContain('mayura <command> [options]');
+    // --help anywhere shows the help instead of an argument error; --version prints just the version.
+    const commandHelp = await runBin(['init', '--help']);
+    expect(commandHelp.code).toBe(0); expect(commandHelp.stdout).toContain('init --starter <name> --directory <dir>');
+    const { version } = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
+    for (const flag of ['--version', '-v', 'version']) expect((await runBin([flag])).stdout).toBe(`${version}\n`);
+    expect(JSON.parse((await runBin(['--version', '--json'])).stdout)).toEqual({ status: 'succeeded', version });
   });
 
   it('colours only a terminal that has not opted out', () => {

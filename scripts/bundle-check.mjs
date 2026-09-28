@@ -48,6 +48,7 @@ const missing = await probe(light, ['./storage-sqlite']);
 assert.match(String(missing['./storage-sqlite']), /ERR_MODULE_NOT_FOUND/u, 'storage-sqlite should need its optional peer.');
 const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);
 assert.match((await run([bin, '--help'], light)).stdout, /mayura <command>/u);
+assert.equal((await run([bin, '--version'], light)).stdout.trim(), manifest.version, 'mayura --version must print the package version.');
 const starters = JSON.parse((await run([bin, 'starters'], light)).stdout);
 assert.equal(starters.starters.length, 4);
 const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);

@@ -38,7 +38,8 @@ gracefully; press it again to force.
 In a terminal, commands print readable output: coloured statuses, wrapped descriptions, and next steps or the flag
 to add. Piped or redirected output, or any command with `--json`, prints the same JSON documents as before, so
 scripts and CI are unaffected. Errors follow the same rule on stderr. Colour honours `NO_COLOR`, `FORCE_COLOR` and
-`TERM=dumb`. `mayura --help` lists the commands. The CLI never prompts for a token: authenticated commands read it
+`TERM=dumb`. `mayura --help` lists the commands (`--help` also works after any command, such as `mayura init --help`), and
+`mayura --version` prints the version. The CLI never prompts for a token: authenticated commands read it
 from stdin (`--token-stdin`) only.
 
 `init` is plan-first. Without `--apply` it performs no writes and prints every path, operation, before/after digest and a bounded text diff for conflicts. A replacement requires a new invocation with `--apply --confirm <displayed-plan-digest>`. Application files changed after planning cause the whole preflight to fail before the first write. The library API additionally requires a genuine process-local plan handle so copied JSON cannot become write authority.
