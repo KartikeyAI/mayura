@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import { loadSkills } from 'mayura/skills';
 import { assistantInput, assistantOutput, workspaceAssistant } from '../src/assistant.js';
 import { main } from '../src/cli.js';
 import { bundledSkills, loadConfig } from '../src/config.js';
+import { resolveInWorkspace } from '../src/workspace.js';
 
 // Everything runs offline, on the rule-based stand-in model, in a temporary workspace folder.
 
@@ -50,6 +51,22 @@ describe('one-shot requests', () => {
     assert.doesNotMatch(found.out, /dependency/u, 'node_modules is not searched');
     const json = JSON.parse((await ask('--json', 'read', 'src/index.ts')).out) as { status: string; output: { reply: string }; spentMicros: number };
     assert.equal(json.status, 'succeeded'); assert.match(json.output.reply, /answer = 42/u); assert.equal(json.spentMicros, 0);
+  });
+
+  it('resolve a workspace named through a link or a short name as the folder it is (found by CI)', async () => {
+    // Windows runners name the temporary folder with an 8.3 short name, which realpathSync keeps and realpath expands.
+    const short = 'C:\\PROGRA~1';
+    if (process.platform === 'win32' && existsSync(short) && realpathSync(short) !== realpathSync.native(short)) {
+      assert.deepEqual(await resolveInWorkspace(short, '.'), { ok: true, absolute: short, path: '.' });
+    }
+    const link = join(outside, 'linked-workspace'); let linked = true;
+    try { await symlink(workspace, link, 'junction'); } catch { linked = false; }
+    if (linked) {
+      try {
+        assert.equal((await resolveInWorkspace(link, 'README.md')).ok, true);
+        assert.equal((await resolveInWorkspace(link, '../private.txt')).ok, false);
+      } finally { await rm(link, { recursive: true, force: true }); }
+    }
   });
 
   it('never leave the workspace or open secrets, even through a link', async () => {

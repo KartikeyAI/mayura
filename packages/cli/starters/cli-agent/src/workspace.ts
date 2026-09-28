@@ -39,7 +39,9 @@ export async function resolveInWorkspace(root: string, requested: string, forWri
   // The real location must still be inside the workspace: a symbolic link must not lead out of it.
   let existing = absolute;
   while (!existsSync(existing)) { if (!forWrite) return { ok: false, reason: `There is no ${path} in the workspace.` }; existing = dirname(existing); }
-  const real = await realpath(existing); const inside = relative(root, real);
+  // Both sides are resolved the same way, so a root named through a link or a Windows short name (C:\PROGRA~1, which
+  // only some realpath functions expand) is compared as the folder it really is.
+  const real = await realpath(existing); const inside = relative(await realpath(root), real);
   if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) return { ok: false, reason: 'That path leads outside the workspace folder.' };
   return { ok: true, absolute, path };
 }
