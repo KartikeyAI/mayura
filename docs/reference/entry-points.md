@@ -38,12 +38,12 @@ Most applications also install a schema validator. Zod is the reference choice; 
 
 | Entry point | What it is for | Key exports | Needs |
 |---|---|---|---|
-| `mayura` | The core SDK: agents, tools, the runtime and core types. Start here. | `defineAgent`, `defineTool`, `createRuntime`, `agentAsTool`, `MayuraError` | |
+| `mayura` | The core SDK: agents, tools, the runtime and core types. Start here. | `defineAgent`, `defineTool`, `createRuntime`, `agentAsTool`, `MayuraError`, `ModelProviderError`, `jsonSchemaOf` | |
 | `mayura/sdk` | The same exports as `mayura`. | as `mayura` | |
 | `mayura/core` | Core types and primitives only: errors, budgets, JSON values, validation. | `MayuraError`, `Budget`, `validate`, `jsonValue`, `publicError` | |
 | `mayura/tools` | Typed tools and calling them directly, including batches. | `defineTool`, `invokeTool`, `invokeBatch`, `ToolRefusal`, `withPreflight` | |
 | `mayura/runtime` | Agents, the runtime, model routing and lifecycle hooks. | `defineAgent`, `createRuntime`, `createModelRouter`, `defineHook`, `agentAsTool` | |
-| `mayura/testing` | A scripted model for tests and offline examples. | `scriptedModel` | |
+| `mayura/testing` | A scripted (and streaming) model, and a helper to test one tool. | `scriptedModel`, `testTool`, `toolGrants` | |
 
 ## Models
 
@@ -132,7 +132,7 @@ code. You do not need them to build agents or workflows.
 
 | Entry point | What it is for | Key exports |
 |---|---|---|
-| `mayura/core/host` | Host hooks for lifecycle evaluation, managed guards and model-call streaming. | `evaluateLifecycleControl`, `streamModelCall`, `readServerSentEvents`, `registerManagedGuardDefinition` |
+| `mayura/core/host` | For hosts and adapter authors: lifecycle evaluation, managed guards, model-call streaming, and strict schemas, tool names and HTTP failures for model adapters. | `evaluateLifecycleControl`, `streamModelCall`, `readServerSentEvents`, `checkStrictDefinition`, `modelToolNames`, `providerHttpFailure` |
 | `mayura/tools/host` | Binding a durable budget ticket to a tool call. | `bindToolBudgetTicket` |
 | `mayura/storage-sql/host` | The shared SQL engine behind the SQLite and PostgreSQL adapters. | `migrateCommand`, `createCommand`, `schedulerFacade`, `workflowTreeFacade` |
 

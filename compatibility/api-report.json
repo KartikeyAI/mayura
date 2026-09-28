@@ -24,7 +24,7 @@
       },
       "DockerQuickJsAdapterOptions": {
         "kind": "interface",
-        "declaration": "1c8ab3c93131aabc"
+        "declaration": "50f547883898d2bd"
       },
       "issueDockerImagePromotion": {
         "kind": "function",
@@ -58,7 +58,7 @@
       },
       "QuickJsProtocolAdapterOptions": {
         "kind": "interface",
-        "declaration": "4cc53fb0da87847c"
+        "declaration": "17620d80cdd904e7"
       },
       "QuickJsWorkerProcess": {
         "kind": "interface",
@@ -150,7 +150,7 @@
       },
       "ArtifactScope": {
         "kind": "interface",
-        "declaration": "6697626e2a3c71a2"
+        "declaration": "d7884761f5c3d65c"
       },
       "createLocalArtifactStore": {
         "kind": "function",
@@ -314,6 +314,10 @@
         "kind": "interface",
         "declaration": "fcfc0082dd5eef9b"
       },
+      "OperationalRequestError": {
+        "kind": "class",
+        "declaration": "1e48fcd169a9a6a6"
+      },
       "OperationalRun": {
         "kind": "interface",
         "declaration": "5dd2d5ef78ddfd35"
@@ -352,7 +356,7 @@
       },
       "OperationalWorkflowNodeKind": {
         "kind": "type",
-        "declaration": "54be137acc1ef0ad"
+        "declaration": "d0c4ed18822f808a"
       },
       "OperationalWorkflowStatus": {
         "kind": "type",
@@ -462,7 +466,11 @@
     "@mayura/client": {
       "ClientError": {
         "kind": "class",
-        "declaration": "276661373d5b1a83"
+        "declaration": "6214d1a89fe6b93e"
+      },
+      "ClientErrorDetails": {
+        "kind": "interface",
+        "declaration": "adc8facf55cb7e95"
       },
       "ClientEvent": {
         "kind": "interface",
@@ -474,7 +482,7 @@
       },
       "ClientOptions": {
         "kind": "interface",
-        "declaration": "448b0aa63ccb5ddf"
+        "declaration": "4c12ce47c7c2b7e7"
       },
       "ClientSchema": {
         "kind": "interface",
@@ -488,9 +496,21 @@
         "kind": "function",
         "declaration": "b9640c152e092387"
       },
+      "EventOptions": {
+        "kind": "interface",
+        "declaration": "6a644cc721af3da1"
+      },
+      "EventReconnect": {
+        "kind": "interface",
+        "declaration": "b955f46f21e77749"
+      },
       "MayuraClient": {
         "kind": "interface",
-        "declaration": "7f4d326da09d606e"
+        "declaration": "85fc3200a8d99eb1"
+      },
+      "RemoteFeature": {
+        "kind": "type",
+        "declaration": "b4f360322e076fa0"
       },
       "RemoteHumanRequest": {
         "kind": "interface",
@@ -510,7 +530,11 @@
       },
       "RemoteRun": {
         "kind": "interface",
-        "declaration": "598a1682f4fecd75"
+        "declaration": "ede90c299f032777"
+      },
+      "RemoteSession": {
+        "kind": "interface",
+        "declaration": "05d09d641554c552"
       },
       "RemoteSnapshot": {
         "kind": "interface",
@@ -678,7 +702,7 @@
       },
       "RunConnection": {
         "kind": "type",
-        "declaration": "78175a4a2a2fd946"
+        "declaration": "cddc58b36a72bdb1"
       }
     },
     "@mayura/client/workflows": {
@@ -748,7 +772,7 @@
       },
       "WorkflowViewNodeKind": {
         "kind": "type",
-        "declaration": "0ae9dbe95ebfb7ee"
+        "declaration": "e2da5eae52aa044e"
       },
       "WorkflowViewRunStatus": {
         "kind": "type",
@@ -862,7 +886,7 @@
       },
       "CodeExecutionOutcome": {
         "kind": "type",
-        "declaration": "a93a2554dc7a2d05"
+        "declaration": "9ffff321f94aa1bb"
       },
       "CodeExecutionUsage": {
         "kind": "interface",
@@ -883,6 +907,10 @@
       "CodeProgramDefinition": {
         "kind": "interface",
         "declaration": "93bffd1b873cbbc0"
+      },
+      "CodeProgramError": {
+        "kind": "interface",
+        "declaration": "9a359b6490cdf861"
       },
       "CodeProgramManifest": {
         "kind": "interface",
@@ -946,7 +974,11 @@
       },
       "SandboxExecutionResult": {
         "kind": "type",
-        "declaration": "8d4862ee9606140a"
+        "declaration": "40f16e7c7922efe9"
+      },
+      "SandboxFailureReason": {
+        "kind": "type",
+        "declaration": "aed955c6e4422892"
       },
       "SandboxQualification": {
         "kind": "type",
@@ -1383,6 +1415,10 @@
       "ManagedGuardLimits": {
         "kind": "interface",
         "declaration": "59b6e09faacb8f53"
+      },
+      "modelToolNames": {
+        "kind": "function",
+        "declaration": "e32fb5b14da575ed"
       },
       "providerHttpFailure": {
         "kind": "function",
@@ -2138,7 +2174,7 @@
       },
       "OpenAICompatibleChatOptions": {
         "kind": "interface",
-        "declaration": "6e9e9b4def437cb4"
+        "declaration": "0754d7ed665782bd"
       },
       "openAIEmbeddings": {
         "kind": "function",
@@ -2776,7 +2812,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "804dc473761fca86"
+        "declaration": "716ecd6808f893a5"
       },
       "createAgentServer": {
         "kind": "function",
@@ -2797,6 +2833,26 @@
       "RegisteredAgent": {
         "kind": "interface",
         "declaration": "0df06014648a2dbf"
+      },
+      "RunRecordClaim": {
+        "kind": "type",
+        "declaration": "d4f18b50ab9d8f3b"
+      },
+      "RunRecordStatus": {
+        "kind": "type",
+        "declaration": "7674725187ffe313"
+      },
+      "RunRecordStore": {
+        "kind": "interface",
+        "declaration": "9081f0cb40e1d5c3"
+      },
+      "RunRecordView": {
+        "kind": "interface",
+        "declaration": "520aa863481a4e0d"
+      },
+      "ServerErrorCode": {
+        "kind": "type",
+        "declaration": "aa996e8b56cf3de5"
       },
       "ServerIdentity": {
         "kind": "interface",
@@ -2868,7 +2924,7 @@
       },
       "WorkflowViewRecord": {
         "kind": "interface",
-        "declaration": "96ddc2cd9a388f1f"
+        "declaration": "0df07788071bb602"
       },
       "WorkflowViewTransport": {
         "kind": "interface",
@@ -2894,7 +2950,7 @@
       },
       "LocalServerOptions": {
         "kind": "interface",
-        "declaration": "06fd4082a6952088"
+        "declaration": "26540bdc8397e4e9"
       },
       "ProbeServer": {
         "kind": "interface",
@@ -2910,7 +2966,7 @@
       },
       "ProductionServerOptions": {
         "kind": "interface",
-        "declaration": "03a89902bf0569c8"
+        "declaration": "477df47a41424619"
       },
       "ServerIdentity": {
         "kind": "interface",
@@ -2956,6 +3012,10 @@
       }
     },
     "@mayura/storage": {
+      "AggregateRunRecordOptions": {
+        "kind": "interface",
+        "declaration": "9f3f809e2d351788"
+      },
       "AggregateStore": {
         "kind": "interface",
         "declaration": "4bb4d29f043b4c13"
@@ -2999,6 +3059,10 @@
       "CompleteJobCommand": {
         "kind": "interface",
         "declaration": "43291e3338c024ba"
+      },
+      "createAggregateRunRecords": {
+        "kind": "function",
+        "declaration": "c3f9fc7dc71c41c5"
       },
       "createAggregateSubmissionJournal": {
         "kind": "function",
@@ -3196,6 +3260,10 @@
         "kind": "function",
         "declaration": "47b4ff10e7d92d9c"
       },
+      "isStorageError": {
+        "kind": "function",
+        "declaration": "f8816d881e7886a6"
+      },
       "JobKey": {
         "kind": "interface",
         "declaration": "854a42dc50d86da4"
@@ -3308,6 +3376,22 @@
         "kind": "function",
         "declaration": "7dabd09a43a68419"
       },
+      "RunRecordClaim": {
+        "kind": "type",
+        "declaration": "d4f18b50ab9d8f3b"
+      },
+      "RunRecords": {
+        "kind": "interface",
+        "declaration": "56b2a9ae0d671eb2"
+      },
+      "RunRecordStatus": {
+        "kind": "type",
+        "declaration": "7674725187ffe313"
+      },
+      "RunRecordView": {
+        "kind": "interface",
+        "declaration": "520aa863481a4e0d"
+      },
       "ScheduledEnrollment": {
         "kind": "interface",
         "declaration": "0542ffd04c7b3fe4"
@@ -3356,6 +3440,10 @@
         "kind": "interface",
         "declaration": "0ea56aa8e0ff2d29"
       },
+      "schemaDigest": {
+        "kind": "function",
+        "declaration": "d5dfeb5b762830ea"
+      },
       "SqliteBackupReport": {
         "kind": "interface",
         "declaration": "90a8d7ad951f0e46"
@@ -3374,7 +3462,7 @@
       },
       "StorageError": {
         "kind": "class",
-        "declaration": "40771ff69c655d38"
+        "declaration": "b2967f12db7c3443"
       },
       "StorageErrorCode": {
         "kind": "type",
@@ -3550,11 +3638,23 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "436d79318081c21d"
+        "declaration": "7536f79140caa37c"
       },
       "workflowLifecycleOutputs": {
         "kind": "function",
         "declaration": "c1567e0fce49e1ed"
+      },
+      "WorkflowLifecycleSignalNodeManifest": {
+        "kind": "interface",
+        "declaration": "0ad169a08983a87a"
+      },
+      "WorkflowLifecycleSignalStep": {
+        "kind": "interface",
+        "declaration": "0f5a2ddb1a9e4332"
+      },
+      "WorkflowLifecycleSignalStepStatus": {
+        "kind": "type",
+        "declaration": "516e1f6e602a60fa"
       },
       "workflowLifecycleState": {
         "kind": "function",
@@ -3570,7 +3670,7 @@
       },
       "WorkflowLifecycleStep": {
         "kind": "type",
-        "declaration": "74ce089ecb32d658"
+        "declaration": "decad76ebe0ff97b"
       },
       "WorkflowLifecycleTimerNodeManifest": {
         "kind": "interface",
@@ -3886,6 +3986,10 @@
       }
     },
     "@mayura/storage-contracts": {
+      "AggregateRunRecordOptions": {
+        "kind": "interface",
+        "declaration": "9f3f809e2d351788"
+      },
       "AggregateStore": {
         "kind": "interface",
         "declaration": "4bb4d29f043b4c13"
@@ -3925,6 +4029,10 @@
       "CompleteJobCommand": {
         "kind": "interface",
         "declaration": "43291e3338c024ba"
+      },
+      "createAggregateRunRecords": {
+        "kind": "function",
+        "declaration": "c3f9fc7dc71c41c5"
       },
       "createAggregateSubmissionJournal": {
         "kind": "function",
@@ -4114,6 +4222,10 @@
         "kind": "function",
         "declaration": "47b4ff10e7d92d9c"
       },
+      "isStorageError": {
+        "kind": "function",
+        "declaration": "f8816d881e7886a6"
+      },
       "JobKey": {
         "kind": "interface",
         "declaration": "854a42dc50d86da4"
@@ -4214,6 +4326,22 @@
         "kind": "function",
         "declaration": "2611f73823dc58f4"
       },
+      "RunRecordClaim": {
+        "kind": "type",
+        "declaration": "d4f18b50ab9d8f3b"
+      },
+      "RunRecords": {
+        "kind": "interface",
+        "declaration": "56b2a9ae0d671eb2"
+      },
+      "RunRecordStatus": {
+        "kind": "type",
+        "declaration": "7674725187ffe313"
+      },
+      "RunRecordView": {
+        "kind": "interface",
+        "declaration": "520aa863481a4e0d"
+      },
       "ScheduledEnrollment": {
         "kind": "interface",
         "declaration": "0542ffd04c7b3fe4"
@@ -4262,13 +4390,17 @@
         "kind": "interface",
         "declaration": "0ea56aa8e0ff2d29"
       },
+      "schemaDigest": {
+        "kind": "function",
+        "declaration": "d5dfeb5b762830ea"
+      },
       "storageError": {
         "kind": "function",
         "declaration": "9b9c3ac207af53ba"
       },
       "StorageError": {
         "kind": "class",
-        "declaration": "40771ff69c655d38"
+        "declaration": "b2967f12db7c3443"
       },
       "StorageErrorCode": {
         "kind": "type",
@@ -4444,11 +4576,23 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "436d79318081c21d"
+        "declaration": "7536f79140caa37c"
       },
       "workflowLifecycleOutputs": {
         "kind": "function",
         "declaration": "c1567e0fce49e1ed"
+      },
+      "WorkflowLifecycleSignalNodeManifest": {
+        "kind": "interface",
+        "declaration": "0ad169a08983a87a"
+      },
+      "WorkflowLifecycleSignalStep": {
+        "kind": "interface",
+        "declaration": "0f5a2ddb1a9e4332"
+      },
+      "WorkflowLifecycleSignalStepStatus": {
+        "kind": "type",
+        "declaration": "516e1f6e602a60fa"
       },
       "workflowLifecycleState": {
         "kind": "function",
@@ -4464,7 +4608,7 @@
       },
       "WorkflowLifecycleStep": {
         "kind": "type",
-        "declaration": "74ce089ecb32d658"
+        "declaration": "decad76ebe0ff97b"
       },
       "WorkflowLifecycleTimerNodeManifest": {
         "kind": "interface",
@@ -5050,7 +5194,23 @@
     "@mayura/testing": {
       "scriptedModel": {
         "kind": "function",
-        "declaration": "74801cfb35ea13b3"
+        "declaration": "720a0be7ade9f527"
+      },
+      "testTool": {
+        "kind": "function",
+        "declaration": "856590983d6698a7"
+      },
+      "TestToolOptions": {
+        "kind": "interface",
+        "declaration": "0a916a20d1f55b56"
+      },
+      "TestToolResult": {
+        "kind": "interface",
+        "declaration": "9a3719e6f16c053b"
+      },
+      "toolGrants": {
+        "kind": "function",
+        "declaration": "13720981742fc5a0"
       }
     },
     "@mayura/tools": {
@@ -5544,7 +5704,7 @@
       },
       "WorkflowOperatorNodeKind": {
         "kind": "type",
-        "declaration": "33e10641f8f0fc04"
+        "declaration": "e2016ef481fe6e3e"
       },
       "WorkflowOperatorResult": {
         "kind": "type",
@@ -5564,7 +5724,7 @@
       },
       "WorkflowOperatorTarget": {
         "kind": "interface",
-        "declaration": "6803d8d0b575252b"
+        "declaration": "bedbd12130ef1c80"
       },
       "WorkflowOperatorTransportOptions": {
         "kind": "interface",
@@ -5572,7 +5732,7 @@
       },
       "WorkflowOperatorTransports": {
         "kind": "interface",
-        "declaration": "a8d9dc6af35acf59"
+        "declaration": "23c061f4d4e53d6e"
       },
       "WorkflowOperatorView": {
         "kind": "interface",
@@ -5970,6 +6130,22 @@
       }
     },
     "@mayura/workflows/lifecycle": {
+      "agentStep": {
+        "kind": "function",
+        "declaration": "06be088478c621c2"
+      },
+      "AgentStepFactoryOptions": {
+        "kind": "interface",
+        "declaration": "4abcab29fba75d74"
+      },
+      "AgentStepLimits": {
+        "kind": "type",
+        "declaration": "57e74ac59b595dd2"
+      },
+      "AgentStepOptions": {
+        "kind": "interface",
+        "declaration": "e1e41da99a3c5e40"
+      },
       "AnyWorkflowLifecycle": {
         "kind": "type",
         "declaration": "17a0a69299183b5e"
@@ -6017,6 +6193,10 @@
       "MigrationPlan": {
         "kind": "interface",
         "declaration": "e583daeca6aebcbe"
+      },
+      "schemaDigest": {
+        "kind": "function",
+        "declaration": "d5dfeb5b762830ea"
       },
       "WorkflowDrainOptions": {
         "kind": "interface",
@@ -6084,7 +6264,7 @@
       },
       "WorkflowLifecycleHumanNode": {
         "kind": "interface",
-        "declaration": "4e8376173eb0e2c5"
+        "declaration": "8018abdce536ba5c"
       },
       "WorkflowLifecycleHumanNodeManifest": {
         "kind": "interface",
@@ -6098,6 +6278,10 @@
         "kind": "interface",
         "declaration": "eed4a037075c6f39"
       },
+      "WorkflowLifecycleHumanRoute": {
+        "kind": "interface",
+        "declaration": "91b94462e84bf61d"
+      },
       "WorkflowLifecycleHumanTransport": {
         "kind": "interface",
         "declaration": "8ef8bc14c92baf09"
@@ -6108,7 +6292,7 @@
       },
       "WorkflowLifecycleHumanTransportOptions": {
         "kind": "interface",
-        "declaration": "e6670e2704bd621e"
+        "declaration": "6b9941f3122ac545"
       },
       "WorkflowLifecycleHumanTransportRecord": {
         "kind": "interface",
@@ -6120,11 +6304,11 @@
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
-        "declaration": "436d79318081c21d"
+        "declaration": "7536f79140caa37c"
       },
       "WorkflowLifecycleNode": {
         "kind": "type",
-        "declaration": "0d992b602f0a4e92"
+        "declaration": "63f52b0245dcdf59"
       },
       "WorkflowLifecycleOptions": {
         "kind": "interface",
@@ -6140,7 +6324,7 @@
       },
       "WorkflowLifecycleRuntime": {
         "kind": "interface",
-        "declaration": "1d670425c70f3825"
+        "declaration": "adc3558fb5d9a383"
       },
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",
@@ -6153,6 +6337,18 @@
       "WorkflowLifecycleSettledPage": {
         "kind": "interface",
         "declaration": "df1cba8a99a369a2"
+      },
+      "WorkflowLifecycleSignalCommand": {
+        "kind": "interface",
+        "declaration": "f4c35b3e6f1c2b8e"
+      },
+      "WorkflowLifecycleSignalNode": {
+        "kind": "interface",
+        "declaration": "f34cf1779c392de4"
+      },
+      "WorkflowLifecycleSignalNodeManifest": {
+        "kind": "interface",
+        "declaration": "0ad169a08983a87a"
       },
       "WorkflowLifecycleSnapshot": {
         "kind": "interface",
@@ -6510,7 +6706,7 @@
       },
       "HumanRequestDefinition": {
         "kind": "interface",
-        "declaration": "353190205066af5e"
+        "declaration": "2758dbbc4d5934fd"
       },
       "HumanRequestKind": {
         "kind": "type",
@@ -6535,6 +6731,10 @@
       "HumanWorkStreamOptions": {
         "kind": "interface",
         "declaration": "2dd9c48ce6079a89"
+      },
+      "schemaDigest": {
+        "kind": "function",
+        "declaration": "d5dfeb5b762830ea"
       }
     },
     "@mayura/workstream/timers": {
@@ -6572,6 +6772,10 @@
         "kind": "function",
         "declaration": "9d5d430c6961537f"
       },
+      "schemaDigest": {
+        "kind": "function",
+        "declaration": "d5dfeb5b762830ea"
+      },
       "WebhookDeliverySnapshot": {
         "kind": "interface",
         "declaration": "afed47a72659edd3"
@@ -6602,7 +6806,7 @@
       },
       "WebhookTriggerOptions": {
         "kind": "interface",
-        "declaration": "13aecc056798652b"
+        "declaration": "bbbab4ccb6c41af2"
       }
     }
   }
