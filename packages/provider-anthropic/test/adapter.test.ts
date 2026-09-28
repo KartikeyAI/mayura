@@ -78,7 +78,8 @@ describe('Anthropic Messages adapter', () => {
       { role: 'assistant', calls: [{ id: 'call_1', toolId: 'value/read', input: { value: 1 } }] },
       { role: 'tool', callId: 'call_1', toolId: 'value/read', result: { value: 2 } },
     ] }));
-    expect(result).toEqual({ type: 'tool_calls', calls: [{ id: 'call_2', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1 } });
+    expect(result).toEqual({ type: 'tool_calls', calls: [{ id: 'call_2', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1 },
+      continuation: { provider: 'anthropic.messages.v1', model: 'claude-fixture', assistants: [[{ type: 'tool_use', id: 'call_2', name: 'value_read', input: { value: 2 } }]] } });
     const body = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string);
     expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'value_read', input: { value: 1 } }] });
     expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '{"value":2}' }] });

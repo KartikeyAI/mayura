@@ -203,7 +203,8 @@ at. Providers that differ from OpenAI in known ways are configured with these op
 **Thinking models.** Some providers return the model's reasoning with a tool call and require it back on the next
 request (DeepSeek answers 400 without it). The adapter keeps each such turn, reasoning included, in the run's private
 state and sends it back, so thinking models can use tools. The reasoning is never released as output or put in
-events.
+events. `anthropicMessages` does the same for Claude's signed `thinking` and `redacted_thinking` blocks, which Claude
+models may return before a tool call or an answer.
 
 **DeepSeek.** It offers JSON mode but not JSON Schema output, and strict tool calls on its beta endpoint:
 

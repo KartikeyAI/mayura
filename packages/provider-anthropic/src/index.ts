@@ -128,7 +128,32 @@ function mediaBlocks(item: Media): JsonValue[] {
   return item.name === undefined || item.mediaType === 'application/pdf' ? [block] : [{ type: 'text', text: `Image: ${item.name}` }, block];
 }
 
-function messagesForAnthropic(messages: readonly ModelMessage[], aliases: ReadonlyMap<string, string>): JsonValue[] {
+/**
+ * A thinking model's content blocks worth keeping from a tool-call turn: its thinking (with the signature Anthropic
+ * checks) and its tool calls, in order. Narration text is dropped. Anthropic requires the thinking back, unchanged, on
+ * the next request of the run.
+ */
+function ownTurn(content: readonly JsonValue[]): JsonObject[] {
+  const kept: JsonObject[] = [];
+  for (const raw of content) {
+    const block = object(raw);
+    if (block['type'] === 'thinking' && typeof block['thinking'] === 'string' && typeof block['signature'] === 'string') {
+      kept.push({ type: 'thinking', thinking: block['thinking'], signature: block['signature'] });
+    } else if (block['type'] === 'redacted_thinking' && typeof block['data'] === 'string') kept.push({ type: 'redacted_thinking', data: block['data'] });
+    else if (block['type'] === 'tool_use') kept.push({ type: 'tool_use', id: block['id'] as JsonValue, name: block['name'] as JsonValue, input: block['input'] as JsonValue });
+  }
+  return kept;
+}
+/** Blocks a response may carry besides text and tool calls: the model's thinking, which is never released as output. */
+const isThinking = (block: JsonObject): boolean => (block['type'] === 'thinking' && typeof block['thinking'] === 'string')
+  || (block['type'] === 'redacted_thinking' && typeof block['data'] === 'string');
+
+/**
+ * The conversation as Anthropic messages. `assistants` are the provider's own earlier tool-call turns in this run (from
+ * the continuation), in order; each must hold exactly the calls Mayura recorded for that turn.
+ */
+function messagesForAnthropic(messages: readonly ModelMessage[], aliases: ReadonlyMap<string, string>, assistants: readonly JsonObject[][] = []): JsonValue[] {
+  let turn = 0;
   return messages.map(message => {
     if (message.role === 'user') {
       return { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }, ...(message.media ?? []).flatMap(mediaBlocks)] };
@@ -140,14 +165,16 @@ function messagesForAnthropic(messages: readonly ModelMessage[], aliases: Readon
       const result = images.length === 0 ? JSON.stringify(message.result) : [{ type: 'text', text: JSON.stringify(message.result) }, ...images.flatMap(mediaBlocks)];
       return { role: 'user', content: [{ type: 'tool_result', tool_use_id: message.callId, content: result }, ...documents.flatMap(mediaBlocks)] };
     }
-    return {
-      role: 'assistant',
-      content: message.calls.map(call => {
-        const name = aliases.get(call.toolId);
-        if (!name) return failed();
-        return { type: 'tool_use', id: call.id, name, input: call.input };
-      }),
-    };
+    const calls = message.calls.map(call => {
+      const name = aliases.get(call.toolId);
+      if (!name) return failed();
+      return { type: 'tool_use', id: call.id, name, input: call.input };
+    });
+    const own = assistants[turn++];
+    if (!own) return { role: 'assistant', content: calls };
+    const ownCalls = own.filter(block => block['type'] === 'tool_use');
+    if (ownCalls.length !== calls.length || ownCalls.some((block, index) => block['id'] !== calls[index]!.id)) return failed();
+    return { role: 'assistant', content: own };
   });
 }
 
@@ -188,7 +215,14 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
       try {
         const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
-        if (request.continuation !== undefined) return failed();
+        // The run's private state: the model's own earlier tool-call turns, thinking included, for this model only.
+        let assistants: JsonObject[][] = [];
+        if (request.continuation !== undefined) {
+          const previous = object(request.continuation);
+          if (previous['provider'] !== 'anthropic.messages.v1' || previous['model'] !== model || !Array.isArray(previous['assistants'])) return failed();
+          assistants = previous['assistants'].map(turn => Array.isArray(turn) ? turn.map(block => object(block)) : failed());
+        }
+        if (assistants.length > request.messages.filter(message => message.role === 'assistant').length) return failed();
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
         const aliases = new Map(modelToolNames(request.tools.map(tool => tool.id)));
         const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
@@ -202,7 +236,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           model,
           max_tokens: request.maxOutputTokens,
           system: request.instructions,
-          messages: messagesForAnthropic(request.messages, aliases),
+          messages: messagesForAnthropic(request.messages, aliases, assistants),
           stream: onDelta !== undefined,
           output_config: { format: { type: 'json_schema', schema: outputSchema } },
         };
@@ -238,8 +272,8 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           for (const raw of payload['content']) {
             const block = object(raw);
             // Claude often says what it is about to do before calling a tool. That text is narration, not an answer:
-            // it is dropped, never passed on. Any other block type is still refused.
-            if (block['type'] === 'text' && typeof block['text'] === 'string') continue;
+            // it is dropped, never passed on. Its thinking is kept only for the next request. Other blocks are refused.
+            if ((block['type'] === 'text' && typeof block['text'] === 'string') || isThinking(block)) continue;
             const callId = block['id'];
             const alias = block['name'];
             if (block['type'] !== 'tool_use' || typeof callId !== 'string'
@@ -249,13 +283,15 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
             calls.push({ id: callId, toolId: ids.get(alias)!, input: jsonValue(block['input']) });
           }
           if (calls.length === 0) return failed();
-          return { type: 'tool_calls', calls, usage: accounting };
+          const continuation = jsonValue({ provider: 'anthropic.messages.v1', model, assistants: [...assistants, ownTurn(payload['content'])] }, { maxBytes: maxRequestBytes });
+          return { type: 'tool_calls', calls, usage: accounting, continuation };
         }
         if (payload['stop_reason'] === 'refusal' || payload['stop_reason'] === 'max_tokens') return failed('refused');
         if (payload['stop_reason'] !== 'end_turn') return failed();
         const text: string[] = [];
         for (const raw of payload['content']) {
           const block = object(raw);
+          if (isThinking(block)) continue; // the model's thinking is never output
           if (block['type'] !== 'text' || typeof block['text'] !== 'string') return failed();
           text.push(block['text']);
         }
@@ -277,7 +313,8 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
    */
   const assembledMessage = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
     let message: JsonObject | undefined; let stopped = false; let stopReason: JsonValue = null; let usage: JsonObject = {};
-    const list: ({ type: 'text'; text: string } | { type: 'tool_use'; id: JsonValue; name: JsonValue; json: string })[] = [];
+    const list: ({ type: 'text'; text: string } | { type: 'tool_use'; id: JsonValue; name: JsonValue; json: string }
+      | { type: 'thinking'; thinking: string; signature: string } | { type: 'redacted_thinking'; data: string })[] = [];
     for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
       if (stopped) return failed();
       const data = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
@@ -294,12 +331,17 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         if (index !== list.length || list.length >= 256) return failed();
         if (block['type'] === 'text') list.push({ type: 'text', text: typeof block['text'] === 'string' ? block['text'] : '' });
         else if (block['type'] === 'tool_use') list.push({ type: 'tool_use', id: block['id'] ?? null, name: block['name'] ?? null, json: '' });
+        else if (block['type'] === 'thinking') list.push({ type: 'thinking', thinking: typeof block['thinking'] === 'string' ? block['thinking'] : '', signature: typeof block['signature'] === 'string' ? block['signature'] : '' });
+        else if (block['type'] === 'redacted_thinking' && typeof block['data'] === 'string') list.push({ type: 'redacted_thinking', data: block['data'] });
         else return failed();
       } else if (type === 'content_block_delta') {
         const block = list[integer(data['index'])]; const delta = object(data['delta']);
         if (!block) return failed();
         if (delta['type'] === 'text_delta' && block.type === 'text' && typeof delta['text'] === 'string') { block.text += delta['text']; onDelta(delta['text']); }
         else if (delta['type'] === 'input_json_delta' && block.type === 'tool_use' && typeof delta['partial_json'] === 'string') block.json += delta['partial_json'];
+        // Thinking is assembled for the next request, never reported as output text.
+        else if (delta['type'] === 'thinking_delta' && block.type === 'thinking' && typeof delta['thinking'] === 'string') block.thinking += delta['thinking'];
+        else if (delta['type'] === 'signature_delta' && block.type === 'thinking' && typeof delta['signature'] === 'string') block.signature += delta['signature'];
         else return failed();
       } else if (type === 'message_delta') {
         const delta = object(data['delta']); stopReason = delta['stop_reason'] ?? null;
@@ -309,7 +351,9 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
     }
     if (!message || !stopped) return failed();
     const content = list.map(block => block.type === 'text' ? { type: 'text', text: block.text }
-      : { type: 'tool_use', id: block.id, name: block.name, input: jsonValue(JSON.parse(block.json || '{}'), { maxBytes: maxResponseBytes }) });
+      : block.type === 'thinking' ? { type: 'thinking', thinking: block.thinking, signature: block.signature }
+        : block.type === 'redacted_thinking' ? { type: 'redacted_thinking', data: block.data }
+          : { type: 'tool_use', id: block.id, name: block.name, input: jsonValue(JSON.parse(block.json || '{}'), { maxBytes: maxResponseBytes }) });
     return { ...message, content, stop_reason: stopReason, usage } as JsonObject;
   };
   return Object.freeze({
