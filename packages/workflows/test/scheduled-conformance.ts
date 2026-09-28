@@ -747,7 +747,10 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const renewing = deferred<void>(); const finalReceipt = deferred<void>(); const releaseRenewal = deferred<void>();
       let effects = 0; let completions = 0; let receipts = 0; let renewalSettled = false;
       const definition = single(tool({ execute: async input => { effects++; await renewing.promise; return input; } }));
-      const engine = runtime({ leaseMs: 1_000, store: wrapped({
+      // The renewal is held while both receipts are written, which must finish inside one lease. With 1 s, a slow CI
+      // PostgreSQL let the lease lapse first (the runtime then rightly reports outcome_unknown); this test is about
+      // ordering, not expiry, so it uses the 3 s lease of the renewal test above.
+      const engine = runtime({ leaseMs: 3_000, store: wrapped({
         async renew(command) {
           renewing.resolve(); await releaseRenewal.promise;
           const claim = await store.workflows.renew(command); renewalSettled = true; return claim;
