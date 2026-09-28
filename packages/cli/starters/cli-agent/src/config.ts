@@ -28,6 +28,9 @@ const schema = z.object({
   compatibleStrictTools: z.enum(['true', 'false']).default('false'),
   // The field for the output-token limit: OpenAI's newer models (also through a gateway) take only max_completion_tokens.
   compatibleTokenLimitField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
+  // The images and PDFs a compatible provider's model can see, comma-separated (OpenAI and Anthropic models see all).
+  compatibleMedia: z.string().regex(/^(?:image\/(?:png|jpeg|webp|gif)|application\/pdf)(?:,(?:image\/(?:png|jpeg|webp|gif)|application\/pdf))*$/u,
+    'List media types such as image/png,image/jpeg.').optional(),
   gatewayToken: z.string().min(1).optional(),
   modelName: z.string().min(1).max(128).optional(),
   inputMicrosPerMillionTokens: micros.optional(),
@@ -44,6 +47,7 @@ export type ModelSettings =
     readonly endpoint: string; readonly providerId: string; readonly auth: 'bearer' | 'api-key';
     readonly output: 'json_schema' | 'json_object'; readonly strictTools: boolean; readonly gatewayToken: string | undefined;
     readonly tokenLimitField: 'max_tokens' | 'max_completion_tokens' | undefined;
+    readonly media: readonly ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'application/pdf')[];
     readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number } };
 
 export interface Config {
@@ -67,7 +71,7 @@ export async function loadConfig(source: Readonly<Record<string, string | undefi
       root: 'ASSISTANT_ROOT', skills: 'ASSISTANT_SKILLS',
       modelProvider: 'MAYURA_MODEL_PROVIDER', openaiApiKey: 'OPENAI_API_KEY', anthropicApiKey: 'ANTHROPIC_API_KEY',
       compatibleEndpoint: 'MAYURA_MODEL_ENDPOINT', compatibleId: 'MAYURA_MODEL_PROVIDER_ID', compatibleAuth: 'MAYURA_MODEL_AUTH', compatibleApiKey: 'MAYURA_MODEL_API_KEY',
-      compatibleOutput: 'MAYURA_MODEL_OUTPUT', compatibleStrictTools: 'MAYURA_MODEL_STRICT_TOOLS', compatibleTokenLimitField: 'MAYURA_MODEL_TOKEN_LIMIT_FIELD', gatewayToken: 'MAYURA_MODEL_GATEWAY_TOKEN', modelName: 'MAYURA_MODEL',
+      compatibleOutput: 'MAYURA_MODEL_OUTPUT', compatibleStrictTools: 'MAYURA_MODEL_STRICT_TOOLS', compatibleTokenLimitField: 'MAYURA_MODEL_TOKEN_LIMIT_FIELD', compatibleMedia: 'MAYURA_MODEL_MEDIA', gatewayToken: 'MAYURA_MODEL_GATEWAY_TOKEN', modelName: 'MAYURA_MODEL',
       inputMicrosPerMillionTokens: 'MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS', outputMicrosPerMillionTokens: 'MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS',
       maxCallCostMicros: 'MAYURA_MODEL_MAX_CALL_COST_MICROS', maxRunCostMicros: 'MAYURA_MAX_RUN_COST_MICROS',
     },
@@ -102,6 +106,7 @@ function modelSettings(value: z.infer<typeof schema>): ModelSettings {
   if (value.modelProvider === 'compatible') return { provider: 'compatible', apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros,
     endpoint: value.compatibleEndpoint!, providerId: value.compatibleId!, auth: value.compatibleAuth, pricing,
     output: value.compatibleOutput, strictTools: value.compatibleStrictTools === 'true', gatewayToken: value.gatewayToken,
-    tokenLimitField: value.compatibleTokenLimitField };
+    tokenLimitField: value.compatibleTokenLimitField,
+    media: (value.compatibleMedia?.split(',') ?? []) as ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'application/pdf')[] };
   return { provider: value.modelProvider, apiKey: apiKey!, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros, pricing };
 }

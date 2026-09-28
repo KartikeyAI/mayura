@@ -30,8 +30,11 @@ export interface Assistant {
 export function workspaceAssistant(options: AssistantOptions): Assistant {
   const files = workspaceTools(options.root);
   const model = options.modelOverride ?? selectModel(options.model, offlineAssistant());
+  // With a model that can see, `assistant --attach shot.png "what is wrong here?"` sends the file along.
+  const sees = model.capabilities.media?.types ?? [];
   const agent = defineAgent(withSkills(options.skills, {
     id: assistantId, version: '1', input: assistantInput, output: assistantOutput, model,
+    ...(sees.length > 0 ? { media: { accept: sees, maxItems: 8 } } : {}),
     tools: [...files.tools, askPersonTool],
     // Real models stream the reply as they write it; the offline stand-in answers in one piece.
     stream: { field: ['reply'], guards: [] },
@@ -41,6 +44,7 @@ export function workspaceAssistant(options: AssistantOptions): Assistant {
       'Write a file only when the person asks you to. The person confirms every write; if they decline, do not try again.',
       'If the request is ambiguous and you cannot continue, ask the person one clear question with person.ask.',
       'You cannot open .env files, .git or node_modules, and you cannot leave the workspace folder.',
+      'When the person attaches images or PDFs, look at them to answer.',
       'Reply in plain text, briefly. Mention the files you used.',
     ].join('\n'),
   }));

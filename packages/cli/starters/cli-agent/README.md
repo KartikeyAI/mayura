@@ -40,6 +40,10 @@ echo "read package.json" | npm run ask
 
 The exit code is 0 when the request succeeded and 1 otherwise. `--json` prints `{ status, output, spentMicros }`.
 
+With a model that can see (OpenAI, Anthropic, or a compatible provider with `MAYURA_MODEL_MEDIA`), attach images or
+PDFs with `--attach`, as many times as needed: `npm run ask -- --attach screenshot.png what is wrong on this screen?`.
+The file's type is read from its bytes; the offline stand-in cannot see, so it refuses attachments.
+
 ### Use it in any folder
 
 The assistant works on the folder you run it from (or `ASSISTANT_ROOT`). To have an `assistant` command everywhere:

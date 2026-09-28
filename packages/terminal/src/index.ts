@@ -1,9 +1,10 @@
 // Terminal front ends for agents: an interactive chat (`runTerminalChat`) and one-shot commands whose flags come from
 // the agent's input (`runAgentCommand`). A person at the terminal can confirm actions before they run
 // (`confirmBeforeRunning`) and answer the agent's questions (`askPersonTool`); with nobody there, both refuse.
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { MayuraError, publicError, type InferInput, type InferOutput, type JsonObject, type JsonValue, type Schema } from '@mayura/core';
+import { MayuraError, media, publicError, sniffMediaType, type InferInput, type InferOutput, type JsonObject, type JsonValue, type Media, type Schema } from '@mayura/core';
 import type { AgentDefinition, Runtime } from '@mayura/runtime';
 import { defineTool, ToolRefusal, withPreflight, type AnyTool } from '@mayura/tools';
 
@@ -159,28 +160,42 @@ export interface AgentCommandOptions<I extends Schema, O extends Schema> {
 }
 
 type Property = { readonly type?: string; readonly description?: string };
-/** Usage text for a command: flags from the schema, or free text. */
-export function agentCommandHelp(name: string, schema?: JsonObject): string {
+/** Usage text for a command: flags from the schema, or free text; `attachments` when the agent accepts media. */
+export function agentCommandHelp(name: string, schema?: JsonObject, options: { readonly attachments?: boolean } = {}): string {
   const properties = (schema?.['properties'] ?? {}) as Record<string, Property>; const required = new Set((schema?.['required'] ?? []) as string[]);
   const flags = Object.entries(properties).filter(([, property]) => ['string', 'number', 'integer', 'boolean'].includes(String(property.type)));
   return [
     `Usage: ${name} ${flags.length ? '[options]' : '<text>'}`, '',
     ...(flags.length ? ['Options:', ...flags.map(([key, property]) => `  --${key}${property.type === 'boolean' ? '' : ` <${property.type}>`}${required.has(key) ? ' (required)' : ''}${property.description ? `  ${property.description}` : ''}`), ''] : []),
-    'Input:', '  --input <json>       the whole input as JSON', '  --input-file <path>  read it from a JSON file', '  (or pipe text to stdin)', '',
+    'Input:', '  --input <json>       the whole input as JSON', '  --input-file <path>  read it from a JSON file', '  (or pipe text to stdin)',
+    ...(options.attachments ? ['  --attach <path>      attach an image or PDF for the agent to see (repeatable)'] : []), '',
     'Output:', '  --json               print {"status", "output", "spentMicros"}', '  --help, -h           show this help',
   ].join('\n');
 }
 
 /** Parse the command line into the agent's input. */
-export async function parseAgentCommand(argv: readonly string[], schema?: JsonObject, stdin?: Readable & { isTTY?: boolean }):
-  Promise<{ readonly help: boolean; readonly json: boolean; readonly input: unknown }> {
+export async function parseAgentCommand(argv: readonly string[], schema?: JsonObject, stdin?: Readable & { isTTY?: boolean },
+  options: { readonly attachments?: boolean } = {}):
+  Promise<{ readonly help: boolean; readonly json: boolean; readonly input: unknown; readonly media: readonly Media[] }> {
   const properties = (schema?.['properties'] ?? {}) as Record<string, Property>; const values: Record<string, JsonValue> = {}; const words: string[] = [];
-  let json = false; let help = false; let whole: unknown; let hasWhole = false;
+  let json = false; let help = false; let whole: unknown; let hasWhole = false; const attached: Media[] = [];
   const fail = (message: string): never => { throw new MayuraError('INVALID_INPUT', message); };
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]!;
     if (argument === '--help' || argument === '-h') { help = true; continue; }
     if (argument === '--json') { json = true; continue; }
+    // An input field named `attach` keeps its flag; otherwise --attach adds an image or PDF.
+    if (argument === '--attach' && !properties['attach']) {
+      if (!options.attachments) fail('This command does not take attachments.');
+      const path = argv[++index]; if (path === undefined) fail('--attach needs a file path.');
+      let bytes: Uint8Array | undefined;
+      try { if ((await stat(path!)).size > 67_108_864) fail(`${path} is larger than 64 MiB.`); bytes = await readFile(path!); }
+      catch (error) { if (error instanceof MayuraError) throw error; fail(`Could not read ${path}.`); }
+      const mediaType = sniffMediaType(bytes!);
+      if (!mediaType) fail(`${path} is not a PNG, JPEG, WebP, GIF or PDF file.`);
+      attached.push(media(bytes!, mediaType!, { name: basename(path!) }));
+      continue;
+    }
     if (argument === '--input' || argument === '--input-file') {
       const value = argv[++index]; if (value === undefined) fail(`${argument} needs a value.`);
       try { whole = JSON.parse(argument === '--input' ? value! : await readFile(value!, 'utf8')); } catch { fail(`${argument} must be valid JSON.`); }
@@ -199,14 +214,15 @@ export async function parseAgentCommand(argv: readonly string[], schema?: JsonOb
     }
     words.push(argument);
   }
-  if (help) return { help, json, input: undefined };
-  if (hasWhole) { if (Object.keys(values).length || words.length) fail('Use --input on its own.'); return { help, json, input: whole }; }
-  if (Object.keys(values).length) { if (words.length) fail(`Unexpected ${words[0]}; pass values with their --option.`); return { help, json, input: values }; }
-  if (words.length) return { help, json, input: words.join(' ') };
+  const files = Object.freeze(attached);
+  if (help) return { help, json, input: undefined, media: files };
+  if (hasWhole) { if (Object.keys(values).length || words.length) fail('Use --input on its own.'); return { help, json, input: whole, media: files }; }
+  if (Object.keys(values).length) { if (words.length) fail(`Unexpected ${words[0]}; pass values with their --option.`); return { help, json, input: values, media: files }; }
+  if (words.length) return { help, json, input: words.join(' '), media: files };
   if (stdin && !stdin.isTTY) {
     const chunks: Buffer[] = []; let size = 0;
     for await (const chunk of stdin) { const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += bytes.byteLength; if (size > 1_048_576) fail('Standard input is larger than 1 MiB.'); chunks.push(bytes); }
-    const text = Buffer.concat(chunks).toString('utf8').trim(); if (text) return { help, json, input: text };
+    const text = Buffer.concat(chunks).toString('utf8').trim(); if (text) return { help, json, input: text, media: files };
   }
   return fail('No input. Pass text, options, --input or pipe it in; run with --help.');
 }
@@ -218,11 +234,13 @@ export async function runAgentCommand<I extends Schema, O extends Schema>(option
   // Flags come from the given schema, or from the agent's own input when its validator can describe itself.
   const schema = options.inputJsonSchema ?? options.agent.inputJsonSchema;
   let parsed: Awaited<ReturnType<typeof parseAgentCommand>>;
-  try { parsed = await parseAgentCommand(options.argv ?? process.argv.slice(2), schema, io.stdin ?? process.stdin); }
+  // An agent that accepts media takes --attach <file>.
+  const attachments = options.agent.media !== undefined;
+  try { parsed = await parseAgentCommand(options.argv ?? process.argv.slice(2), schema, io.stdin ?? process.stdin, { attachments }); }
   catch (error) { stderr.write(`${publicError(error, 'INVALID_INPUT').message}\n`); return 1; }
-  if (parsed.help) { stdout.write(`${agentCommandHelp(name, schema)}\n`); return 0; }
+  if (parsed.help) { stdout.write(`${agentCommandHelp(name, schema, { attachments })}\n`); return 0; }
   const human = !parsed.json && stdout.isTTY === true; let handle: ReturnType<Runtime['submit']>;
-  try { handle = options.runtime.submit(options.agent, { input: parsed.input as InferInput<I> }); }
+  try { handle = options.runtime.submit(options.agent, { input: parsed.input as InferInput<I>, ...(parsed.media.length > 0 ? { media: parsed.media } : {}) }); }
   catch (error) { const failure = publicError(error, 'INVALID_INPUT'); stderr.write(parsed.json ? `${JSON.stringify({ status: 'failed', error: failure })}\n` : `${failure.message}\n`); return 1; }
   // Confirmations and questions need someone at a terminal; piped or scheduled runs refuse them.
   const stdinTTY = (io.stdin ?? process.stdin).isTTY === true;

@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { after, before, describe, it } from 'node:test';
-import { defineAgent } from 'mayura';
+import { createRuntime, defineAgent } from 'mayura';
+import { runAgentCommand } from 'mayura/terminal';
+import { scriptedModel, testImage } from 'mayura/testing';
 import { anthropicMessages } from 'mayura/provider-anthropic';
 import { openAICompatibleChat, openAIResponses } from 'mayura/provider-openai';
-import { loadSkills } from 'mayura/skills';
+import { createSkillSet, loadSkills } from 'mayura/skills';
 import { assistantInput, assistantOutput, workspaceAssistant } from '../src/assistant.js';
 import { main } from '../src/cli.js';
 import { bundledSkills, loadConfig } from '../src/config.js';
@@ -155,6 +157,29 @@ describe('real model providers', () => {
       assert.ok(agent.outputJsonSchema, `${model.id} receives the output schema`);
       assert.doesNotThrow(() => defineAgent({ id: 'check', version: '1', instructions: 'x', input: assistantInput, output: assistantOutput, tools: agent.tools, model }));
     }
+  });
+});
+
+describe('attachments', () => {
+  it('send attached images to a model that can see, and are refused offline', async () => {
+    const png = join(outside, 'shot.png'); await writeFile(png, (testImage() as { data: Uint8Array }).data);
+    const offline = await ask('--attach', png, 'what is this?');
+    assert.equal(offline.code, 1); assert.match(offline.err, /does not take attachments/u);
+    let seen: readonly { readonly mediaType: string; readonly name?: string }[] = [];
+    const model = scriptedModel([request => {
+      const first = request.messages[0]; seen = first && first.role === 'user' ? first.media ?? [] : [];
+      return { type: 'final', output: { reply: 'A single pixel.' }, usage: { costMicros: 0 } };
+    }]);
+    const { agent, permissions } = workspaceAssistant({ root: workspace, skills: createSkillSet([]), model: { provider: 'offline' }, modelOverride: model });
+    const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: permissions } });
+    let out = '';
+    const stdout = Object.assign(new Writable({ write(chunk, _encoding, done) { out += String(chunk); done(); } }), { isTTY: false });
+    const stdin = Object.assign(new PassThrough(), { isTTY: false }); stdin.end();
+    try {
+      assert.equal(await runAgentCommand({ agent, runtime, name: 'assistant', argv: ['--attach', png, 'what is this?'], io: { stdin, stdout, stderr: new Writable({ write(_c, _e, done) { done(); } }) } }), 0);
+    } finally { await runtime.close(); }
+    assert.match(out, /A single pixel\./u);
+    assert.deepEqual(seen.map(item => [item.mediaType, item.name]), [['image/png', 'shot.png']]);
   });
 });
 

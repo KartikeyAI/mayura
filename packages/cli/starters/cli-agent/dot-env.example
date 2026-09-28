@@ -21,6 +21,8 @@ MAYURA_MODEL_PROVIDER=offline
 # MAYURA_MODEL_STRICT_TOOLS=true
 # OpenAI's newer models (directly or as openai/... through a gateway) take only max_completion_tokens:
 # MAYURA_MODEL_TOKEN_LIMIT_FIELD=max_completion_tokens
+# A compatible provider's model that can see images (OpenAI and Anthropic models see them already), for --attach:
+# MAYURA_MODEL_MEDIA=image/png,image/jpeg,image/webp
 # Cloudflare AI Gateway: https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions, models named
 # provider/model, and the gateway token of an authenticated gateway (the API key may stay in the gateway):
 # MAYURA_MODEL_GATEWAY_TOKEN=
