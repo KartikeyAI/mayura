@@ -77,10 +77,13 @@ const leaf=defineWorkflow({id:`tree-process.leaf.${scenario}`,version:'1',input:
 const definition = childScenario ? defineWorkflowTree({
   id:`tree-process.${scenario}`,version:'1',input:value,output:value,nodes:[{kind:'child',id:'child',workflow:leaf,input:{kind:'input',path:[]},policy:{permissions:['tool:tree-process.write','effect:write'],maxCostMicros:1,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:120_000},resources:{write:[]}}],result:{kind:'step',stepId:'child',path:[]},
 }) : defineWorkflowTree({id:`tree-process.${scenario}`,version:'1',input:value,output:value,nodes:[{kind:'tool',id:'write',tool,input:{kind:'input',path:[]},approval:approvalScenario}],result:{kind:'step',stepId:'write',path:[]}});
+// Long enough that a slow CI runner never loses the lease mid-dispatch (a lost lease correctly withholds the result),
+// short enough that the expiry scenario below can wait it out.
+const leaseMs = 3_000;
 const runtime = createWorkflowTreeRuntime({
   store, scope: { principalId: 'test-operator', projectId: 'tree-process-recovery' },
   permissions: { allow: ['tool:tree-process.write', 'effect:write'] }, policyVersion: 'tree-process-policy-1',
-  maxCostMicros: 10, maxCalls: 1, workerId: `tree-process-${action}`, leaseMs: 1_000, approvalTtlMs: 120_000,
+  maxCostMicros: 10, maxCalls: 1, workerId: `tree-process-${action}`, leaseMs, approvalTtlMs: 120_000,
   verifyHuman: async credential => {
     if (credential !== 'fixture-human-credential') throw new Error('Invalid fixture human.');
     return { id: 'verified-reviewer', projectId: 'tree-process-recovery', canApprove: true };
@@ -113,7 +116,7 @@ try {
       else {if (before.steps.write.approval?.digest !== reviewedDigest) throw new Error('The persisted review digest changed.');await runtime.approve({ id: existingRunId, nodeId: 'write', digest: reviewedDigest, credential: 'fixture-human-credential' });}
     } else {
       phase='recover-wait';
-      await new Promise(resolveTimeout => setTimeout(resolveTimeout, 1_100));
+      await new Promise(resolveTimeout => setTimeout(resolveTimeout, leaseMs + 100));
       phase='recover-expired';
       await runtime.recoverExpired(existingRunId);
     }
