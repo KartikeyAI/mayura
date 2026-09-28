@@ -146,6 +146,18 @@ their own, for building a different front end.
 - These helpers are for a person at a terminal. For approvals in a web app or a long-running workflow, see
   [Approvals and human input](approvals-and-human-input.md).
 
+## Start from a complete project
+
+The `cli-agent` starter is a working command-line assistant built from these pieces: a chat and one-shot requests,
+file tools confined to one folder, writes confirmed with `confirmBeforeRunning`, `askPersonTool`, skills and an
+offline stand-in model, with tests for each.
+
+```bash
+npx mayura init --starter cli-agent --directory my-assistant --apply
+```
+
+See [mayura init](../cli/init.md).
+
 ## Related
 
 - [Streaming](streaming.md)

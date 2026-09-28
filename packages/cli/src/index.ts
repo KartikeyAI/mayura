@@ -49,7 +49,7 @@ export const PEER_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */
-export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation'] as const);
+export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent'] as const);
 export type StarterName = typeof STARTER_NAMES[number];
 
 const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze({
@@ -57,6 +57,7 @@ const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze
   'support-agent': 'Customer support chat: a streaming agent with order tools scoped to the signed-in customer, per-customer native memory, PII redaction, a React chat UI and the operator console.',
   'research-team': 'Multi-agent research: a planner, parallel researchers over a source library and a writer as one durable workflow under a shared budget, with cited reports stored as content-addressed artifacts and optional OpenTelemetry traces.',
   'event-automation': 'Signed webhooks start durable workflows in which a triage agent acts through MCP tools under explicit capability grants; forged, stale and replayed deliveries are refused.',
+  'cli-agent': 'Command-line assistant: chat or one-shot requests about the folder you run it in, with file tools confined to that folder, writes you confirm, skills and streaming replies.',
 });
 
 const id = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;

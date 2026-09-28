@@ -50,7 +50,7 @@ const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);
 assert.match((await run([bin, '--help'], light)).stdout, /mayura <command>/u);
 assert.equal((await run([bin, '--version'], light)).stdout.trim(), manifest.version, 'mayura --version must print the package version.');
 const starters = JSON.parse((await run([bin, 'starters'], light)).stdout);
-assert.equal(starters.starters.length, 4);
+assert.equal(starters.starters.length, 5);
 const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);
 assert(plan.plan.changes.some(change => change.path === 'src/workflow.ts'), 'The CLI in the bundle must find its starters.');
 

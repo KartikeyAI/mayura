@@ -1,0 +1,24 @@
+# Copy to .env. `npm run chat` and `npm run ask` load it; real environment variables win. Every setting is validated at
+# startup (src/config.ts). With none of these set, the assistant runs offline in the folder you run it from.
+
+# The folder the assistant may read and write (default: the folder you run it from). It never leaves this folder and
+# never opens .env files, .git or node_modules.
+# ASSISTANT_ROOT=.
+# SKILL.md folders to load (default: this project's skills/).
+# ASSISTANT_SKILLS=skills
+
+# Model: offline (default, rule-based, no network), openai, anthropic, or compatible (any OpenAI-compatible endpoint).
+MAYURA_MODEL_PROVIDER=offline
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# For compatible: the chat-completions URL, a short id for the provider, and its key (Azure OpenAI uses MAYURA_MODEL_AUTH=api-key).
+# MAYURA_MODEL_ENDPOINT=https://api.groq.com/openai/v1/chat/completions
+# MAYURA_MODEL_PROVIDER_ID=groq
+# MAYURA_MODEL_AUTH=bearer
+# MAYURA_MODEL_API_KEY=
+# MAYURA_MODEL=
+# Prices in micro-dollars per million tokens, and the most one model call and one turn may cost.
+# MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=
+# MAYURA_MODEL_MAX_CALL_COST_MICROS=
+# MAYURA_MAX_RUN_COST_MICROS=

@@ -5,8 +5,9 @@ description: "Create a Mayura project from a starter or a template with mayura i
 
 `mayura init` creates a new project. You choose between two kinds of starting point:
 
-- A **starter** is a complete application you can run, test and deploy: a server and a worker, configuration read
-  from the environment, tests, a Dockerfile, a compose file and CI. Start here for a real project.
+- A **starter** is a complete application you can run, test and ship: configuration read from the environment,
+  tests and CI. Four are servers, with a worker, a Dockerfile and a compose file; `cli-agent` is a command-line
+  assistant. Start here for a real project.
 - A **template** is one small file that shows one feature, with a `package.json` and `tsconfig.json` around it. Start
   here to learn a single idea.
 
@@ -114,8 +115,8 @@ actually have.
 
 ## Starters
 
-`mayura starters` lists them. Each one runs offline with `npm run dev` and `npm test`, uses SQLite locally and
-PostgreSQL when `DATABASE_URL` is set, and ends its README with what it does not do.
+`mayura starters` lists them. Each one runs offline with `npm run dev` and `npm test`, and ends its README with what
+it does not do. The server starters use SQLite locally and PostgreSQL when `DATABASE_URL` is set.
 
 | Starter | What it is |
 |---|---|
@@ -123,6 +124,7 @@ PostgreSQL when `DATABASE_URL` is set, and ends its README with what it does not
 | `support-agent` | Customer support chat with a React UI and streamed replies. Order tools act only for the signed-in customer, memory is kept per customer, card numbers, emails and phone numbers are redacted, and opening a return starts a durable follow-up workflow. |
 | `research-team` | Multi-agent research as one durable workflow: a planner, up to four parallel researchers over a source library and a writer whose citations are checked, under one shared budget. The report is stored as a content-addressed artifact, with optional OpenTelemetry traces. |
 | `event-automation` | Signed webhooks start durable workflow runs in which a triage agent acts on a ticket tracker through MCP tools under explicit permissions. Forged, stale and replayed deliveries start nothing, and assigning an urgent ticket waits for operator approval. |
+| `cli-agent` | A command-line assistant: `assistant chat`, or one request such as `assistant list files in src`, about the folder you run it in. File tools stay inside that folder and never open `.env` files, you confirm every write, skills load from `skills/`, and replies stream. `npm run dev` starts the chat. |
 
 Browse the source at
 [packages/cli/starters](https://github.com/KartikeyAI/mayura/blob/main/packages/cli/starters).

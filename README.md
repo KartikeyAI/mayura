@@ -126,9 +126,10 @@ npx mayura init --starter support-agent --directory my-agent
 npx mayura init --starter support-agent --directory my-agent --apply
 ```
 
-`init` always shows its plan first and writes only with `--apply`. The four starters are complete projects with a
-server, a worker, tests and deployment files: `support-agent`, `approval-workflow`, `research-team` and
-`event-automation`. There are also eight small single-file templates (`mayura templates`).
+`init` always shows its plan first and writes only with `--apply`. Four starters are complete server projects with a
+worker, tests and deployment files: `support-agent`, `approval-workflow`, `research-team` and `event-automation`. The
+fifth, `cli-agent`, is a command-line assistant you chat with in a terminal. There are also eight small single-file
+templates (`mayura templates`).
 
 Inside a project:
 

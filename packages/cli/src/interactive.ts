@@ -21,7 +21,7 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
   prompts.intro(p.bold(' Create a Mayura project '), io);
 
   const kind = await prompts.select({ ...io, message: 'Start from', options: [
-    { value: 'starter' as const, label: 'A starter', hint: 'a complete app: server, worker, operator console, tests' },
+    { value: 'starter' as const, label: 'A starter', hint: 'a complete project with tests: a server app or a command-line assistant' },
     { value: 'template' as const, label: 'A template', hint: 'one small, single-purpose example' },
   ] });
   if (prompts.isCancel(kind)) return cancelled();

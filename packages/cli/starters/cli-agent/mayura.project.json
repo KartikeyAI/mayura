@@ -1,0 +1,15 @@
+{
+  "format": "mayura.project.v1",
+  "name": "cli-agent",
+  "template": "cli-agent",
+  "definitions": [
+    { "kind": "agent", "id": "workspace.assistant", "version": "1", "source": "src/assistant.ts" }
+  ],
+  "tools": [
+    { "id": "files.list", "version": "1", "effects": "read", "capabilities": [] },
+    { "id": "files.read", "version": "1", "effects": "read", "capabilities": [] },
+    { "id": "files.search", "version": "1", "effects": "read", "capabilities": [] },
+    { "id": "files.write", "version": "1", "effects": "write", "capabilities": ["files:write"] },
+    { "id": "person.ask", "version": "1", "effects": "none", "capabilities": ["person:ask"] }
+  ]
+}

@@ -196,6 +196,22 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/cli/starters/cli-agent:
+    dependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../../mayura
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/cli/starters/event-automation:
     dependencies:
       better-sqlite3:

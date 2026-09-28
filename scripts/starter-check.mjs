@@ -3,6 +3,7 @@
 //   2. As a user gets it: `mayura init --starter` into a fresh directory, install offline from packed archives of the
 //      workspace's exact packages (no registry), build, run its tests, then boot `migrate`, `serve` and `worker` and
 //      probe them.
+//      A command-line starter (a `bin`, no application module) runs its command offline instead.
 // Web UI toolchains (Vite, Tailwind) are verified in step 1 only; step 2 installs the server's dependencies.
 //   node scripts/starter-check.mjs [--only <starter>] [--skip-packed]
 import assert from 'node:assert/strict';
@@ -105,8 +106,23 @@ function archivePaths(bytes) {
   return paths;
 }
 
+/**
+ * A command-line starter (a `bin` and no application module) has nothing to serve: run its command the way a person
+ * would, offline, and check that it answers and says what it can do.
+ */
+async function bootCommand(starter, directory, manifest) {
+  const [name, entry] = Object.entries(manifest.bin)[0]; const command = join(directory, entry);
+  const help = await run([command, '--help'], directory);
+  assert.match(help.stdout, new RegExp(`Usage: ${name}`, 'u'), `${starter} --help did not describe the command.`);
+  const answered = JSON.parse((await run([command, '--json', 'list', 'files'], directory, { env: { ASSISTANT_ROOT: directory } })).stdout);
+  assert.equal(answered.status, 'succeeded', `${starter} did not answer a request offline.`);
+  return { command: name, request: answered.status };
+}
+
 /** Boot the application the way production does: migrate, then serve and worker as separate processes. */
 async function boot(starter, directory) {
+  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+  if (manifest.bin && !existsSync(join(directory, 'dist', 'src', 'app.js'))) return bootCommand(starter, directory, manifest);
   const bin = join(directory, 'node_modules', 'mayura', 'lib', 'cli', 'dist', 'bin.js'); const app = join(directory, 'dist', 'src', 'app.js');
   const token = randomBytes(32).toString('hex'); const port = await freePort(); const probe = await freePort();
   const env = { MAYURA_ENV: 'development', PORT: String(port), MAYURA_SQLITE_PATH: join(directory, '.data', 'boot.sqlite'),

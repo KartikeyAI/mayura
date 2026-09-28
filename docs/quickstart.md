@@ -14,8 +14,8 @@ npx mayura init
 
 The wizard asks three things:
 
-1. **A starter or a template.** Starters are complete projects with a server, a worker, a UI, tests and deployment
-   files. Templates are single files that show one feature.
+1. **A starter or a template.** Starters are complete projects with tests: four are servers with a worker, a UI and
+   deployment files, and one (`cli-agent`) is an assistant you run in your terminal. Templates are single files that show one feature.
 2. **A model provider.** Offline (no key needed; rule-based stand-in models), OpenAI, Anthropic, an
    OpenAI-compatible provider such as Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together or Fireworks, Azure
    OpenAI, or any other compatible endpoint.

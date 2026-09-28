@@ -76,7 +76,7 @@ describe('@mayura/cli starters', () => {
   const version = async () => (JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string }).version;
 
   it('lists the starters as an immutable catalog', () => {
-    expect(starters().map(starter => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation']);
+    expect(starters().map(starter => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent']);
     expect(Object.isFrozen(starters())).toBe(true);
   });
 
@@ -122,7 +122,7 @@ describe('@mayura/cli starters', () => {
     expect((await run(['init', '--starter', 'unknown', '--directory', target])).code).toBe(1);
     const planned = await run(['init', '--starter', 'approval-workflow', '--directory', target]);
     expect(planned.code).toBe(0); expect(JSON.parse(planned.stdout)).toMatchObject({ status: 'planned', plan: { starter: 'approval-workflow' } });
-    expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation']);
+    expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent']);
   });
 });
 
