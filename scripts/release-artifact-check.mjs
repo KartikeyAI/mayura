@@ -95,6 +95,8 @@ assert.deepEqual(Object.keys(packedManifest.peerDependencies).sort(), ['@jitl/qu
   'mayura gained an unreviewed peer dependency.');
 assert(Object.values(packedManifest.peerDependenciesMeta).every(meta => meta.optional === true), 'Every peer of mayura must be optional.');
 assert.equal(packedManifest.peerDependencies.react, '>=18.3.0 <20', 'React peer contract changed.');
+// A project may already have another compatible version of an optional peer; an exact pin would make npm refuse it.
+for (const [name, range] of Object.entries(packedManifest.peerDependencies)) assert(!/^\d/u.test(range), `mayura pins its optional peer ${name} to one exact version.`);
 assert(Object.keys(packedManifest.exports).length >= 40 && packedManifest.exports['.'] && packedManifest.exports['./workflows/lifecycle'], 'mayura entry points are incomplete.');
 assert([...files.keys()].some(path => path.startsWith('lib/cli/starters/research-team/src/')), 'The CLI is missing its starters.');
 for (const path of ['docs/README.md', 'docs/quickstart.md', 'llms.txt', 'llms-full.txt']) assert(files.has(path), `mayura is missing its documentation: ${path}`);

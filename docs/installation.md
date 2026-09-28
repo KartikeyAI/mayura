@@ -47,14 +47,15 @@ Importing an entry point loads only that part. See [Entry points](reference/entr
 ## Optional packages
 
 Parts that need a native module or a large library declare it as an optional peer dependency. Install it only if you
-use that part. Mayura is tested with the exact versions below, so install those:
+use that part. Mayura is tested with better-sqlite3 13.0.3, pg 8.23.0 and QuickJS 0.32.0, and accepts later versions
+in the same major line (for QuickJS, the same minor), so an existing compatible install is not a conflict:
 
 | You use | Install |
 |---|---|
-| `mayura/storage-sqlite` | `npm install better-sqlite3@13.0.3` |
-| `mayura/storage-postgres` | `npm install pg@8.23.0` |
+| `mayura/storage-sqlite` | `npm install better-sqlite3@13` |
+| `mayura/storage-postgres` | `npm install pg@8` |
 | `mayura/storage` (both adapters) | both of the above |
-| `mayura/adapter-code-quickjs` | `npm install quickjs-emscripten-core@0.32.0 @jitl/quickjs-wasmfile-release-sync@0.32.0` |
+| `mayura/adapter-code-quickjs` | `npm install quickjs-emscripten-core@0.32 @jitl/quickjs-wasmfile-release-sync@0.32` |
 | `mayura/client-react`, `mayura/client-react/components` | `npm install react` (React 18.3 or 19) |
 
 Everything else, including the CLI, the HTTP server and the terminal chat, installs with `mayura` itself. The Docker

@@ -65,6 +65,9 @@ export async function bundle(output) {
     }
     for (const [dependency, range] of Object.entries(manifest.peerDependencies ?? {})) peers[dependency] = range;
   }
+  // The workspace pins exact versions (what CI tests). A project installs optional peers itself and may already have
+  // another compatible version, so the published peers accept the same major (0.x: the same minor) from that version.
+  for (const [dependency, range] of Object.entries(peers)) if (/^\d+\.\d+\.\d+$/u.test(range)) peers[dependency] = `^${range}`;
   // Rewrite every @mayura/... specifier in JavaScript and declarations to a relative path.
   const rewrite = (file, text) => text.replace(/((?:from|import)\s*\(?\s*)(['"])(@mayura\/[^'"]+)\2/gu, (whole, prefix, quote, specifier) => {
     const parsed = parseSpecifier(specifier); assert(parsed, `Unexpected specifier ${specifier} in ${file}.`);
