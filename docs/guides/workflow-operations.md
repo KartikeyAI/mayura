@@ -15,7 +15,8 @@ operations through a dedicated fleet control.
 ## Serve the operator API
 
 `createWorkflowOperatorTransports` builds all the server-side workflow operations over your runtimes: listing,
-run views, cancel, approve, pause, resume, the fleet hold and migrations. Spread its result into the server options.
+run views, cancel, approve, signals, pause, resume, the fleet hold and migrations. Spread its result into the server
+options.
 
 ```ts
 import { createAgentServer } from 'mayura/server';
@@ -129,11 +130,27 @@ do { cursor = (await fleet.sweepResume([lifecycleFleetTarget(host.runtime)], { c
 
 ## Signals
 
-The server has a route for delivering a named signal with a small JSON value to a run
-(`client.signalWorkflow`, `mayura workflow-signal`, capability `workflows:control`). Mayura does not implement what a
-signal means: you provide a `workflowSignals.deliver` adapter to the server that records the signal and journals the
-command id, for example in a `createWorkStream` stream from `mayura/workstream`. Lifecycle workflows have no signal
-step, so to make a run react to an outside event, see the patterns in [Durable workflows](durable-workflows.md).
+A lifecycle run waiting at a `signal` step (see [Durable workflows](durable-workflows.md#signals)) takes its signal
+over the operator API. `createWorkflowOperatorTransports` includes `workflowSignals`, which delivers it to the step
+whose `name` is the signal name. It needs the `workflows:control` capability, the run's current revision and a command
+id, like every other command:
+
+```ts
+const view = await client.workflow(runId);
+await client.signalWorkflow(runId, {
+  revision: view.revision, signalName: 'payment.received', signalId: 'payment-7731', value: { amountCents: 4_200 },
+}, { commandId: 'payment-7731' });
+```
+
+On the CLI: `mayura workflow-signal --id <run id> --revision <n> --command-id <id> --signal-id <id> --signal-name <name>
+--value-file <file>`. See [Operations commands](../cli/operations.md).
+
+- The value (at most 4 KiB of JSON) is validated with the step's payload schema. A value it rejects, a second signal
+  for a step that already has one, or a stale revision answers `409`; an unknown run or signal name answers `404`.
+- Retrying with the same command id returns the recorded result. The step also remembers the signal id, so the same
+  signal delivered again under a new command id changes nothing.
+- The sender is the authenticated caller; its id is recorded in the run's event log with the signal.
+- Graph and tree runs have no signal steps: a signal to one of them answers `404`.
 
 ## Ship a new version of a workflow
 

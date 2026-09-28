@@ -172,24 +172,50 @@ After any restore, work that happened after the backup is missing from the store
 that window (sent an email, charged a card), reconcile them from the external system rather than replaying the run.
 Test your restores on a schedule: a backup you have never restored is not a backup yet.
 
-## Custom adapters
+## Errors
 
-`mayura/storage-contracts` holds the driver-free contracts: the `AggregateStore` interface (`initialize`, `create`,
-`read`, `update`, `events`, `close`, optional `migrate`), the per-feature capability interfaces, their validators and
-`StorageError`. Import types and `StorageError` from here when your code should not depend on a specific database.
+Stores throw `StorageError`, which is a `MayuraError`: one `catch (error) { if (error instanceof MayuraError) ... }`
+handles storage and workflow failures alike. `code` is the general code every Mayura API uses, and `storageCode` names
+the exact storage condition. Messages never contain driver text, SQL or credentials.
+
+| `storageCode` | `code` | What happened, and what to do |
+|---|---|---|
+| `CONFLICT` | `CONFLICT` | The record changed after it was read, or an id or idempotency key already holds other content. Read it again and retry, or use a new key. |
+| `NOT_FOUND` | `NOT_FOUND` | No such record in this scope. |
+| `INVALID_INPUT` | `INVALID_INPUT` | The command was malformed or out of bounds. |
+| `STORE_NOT_INITIALIZED` | `INVALID_CONFIG` | Call `await store.initialize()` before using the store. |
+| `STORE_CLOSED` | `STORAGE_UNAVAILABLE` | The store was closed. Open a new one. |
+| `QUEUE_FULL`, `LIMIT_EXCEEDED` | `LIMIT_EXCEEDED` | Too much at once. Retry with backoff. |
+| `STALE_CLAIM` | `CONFLICT` | A worker's lease on a job expired or moved to another worker. |
+| `SCHEDULED_WRITER_REQUIRED` | `CONFLICT` | The run belongs to its scheduled workflow writer; change it through that runtime. |
+| `STORAGE_UNAVAILABLE` | `STORAGE_UNAVAILABLE` | The database could not confirm the operation. Check the run before retrying anything with effects. |
 
 ```ts
-import { StorageError } from 'mayura/storage-contracts';
+import { MayuraError } from 'mayura';
+import { isStorageError } from 'mayura/storage-contracts';
 
 try {
   await store.initialize();
 } catch (error) {
-  if (error instanceof StorageError && error.code === 'STORAGE_UNAVAILABLE') {
-    // The database is unreachable. Driver messages and credentials are never included.
+  if (isStorageError(error, 'STORAGE_UNAVAILABLE')) {
+    // The database is unreachable.
+  } else if (error instanceof MayuraError) {
+    console.error(error.code, error.message);
   }
   throw error;
 }
 ```
+
+Workflow runtimes keep these codes. They report a race they lost as `CONFLICT` (read the run and retry), pass a closed,
+uninitialized or busy store through unchanged, and report any other storage failure as `STORAGE_UNAVAILABLE`, telling
+you to inspect the run before retrying.
+
+## Custom adapters
+
+`mayura/storage-contracts` holds the driver-free contracts: the `AggregateStore` interface (`initialize`, `create`,
+`read`, `update`, `events`, `close`, optional `migrate`), the per-feature capability interfaces, their validators and
+`StorageError`. Import types and `StorageError` from here when your code should not depend on a specific database. An
+adapter throws `new StorageError(storageCode, message)` with one of the storage codes above.
 
 A new adapter must implement every capability the features you use rely on (durable workflows need the scheduler and
 workflow capabilities, native memory needs `memory`), with the same transactional guarantees. That is a substantial
@@ -208,7 +234,7 @@ migration: the same file or schema works with either import.
 - Storage methods are application APIs. Never expose them directly to a model or an untrusted client.
 - If a SQLite worker stops unexpectedly, pending calls fail with `STORAGE_UNAVAILABLE`. Reopen the store and check any
   writes whose result you did not see.
-- Calls after `close()` fail with `STORE_CLOSED`; PostgreSQL calls before `initialize()` fail with
+- Calls after `close()` fail with `storageCode` `STORE_CLOSED`; calls before `initialize()` fail with
   `STORE_NOT_INITIALIZED`.
 
 ## Related

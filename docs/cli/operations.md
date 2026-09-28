@@ -172,7 +172,8 @@ printf '%s' "$TOKEN" | mayura workflow-signal --url https://agents.example.com -
 ```
 
 `--signal-name` is the name the workflow waits for, `--signal-id` a stable id for this signal, and `--value-file` a
-JSON file of at most 4096 bytes. See [Durable workflows](../guides/durable-workflows.md).
+JSON file of at most 4096 bytes, checked against the signal step's payload schema. See
+[Durable workflows](../guides/durable-workflows.md#signals).
 
 ## The workflow fleet
 

@@ -116,8 +116,7 @@ const pickPlan: WorkflowLifecycleNode = {
   kind: 'human', id: 'pick-plan', dependsOn: ['propose'],
   request: {
     kind: 'plan_selection',
-    schemaId: 'migrations.plan-choice',
-    schemaDigest: planChoiceDigest,
+    schemaId: 'migrations.plan-choice', // schemaDigest is derived from the Zod response below
     prompt: 'Choose how to run the database migration.',
     response: z.object({ plan: z.enum(['online', 'maintenance-window']) }),
     context: { kind: 'step', stepId: 'propose', path: ['options'] },
@@ -129,7 +128,7 @@ const pickPlan: WorkflowLifecycleNode = {
 | Field | Meaning |
 |---|---|
 | `kind` | `information` (a fact or note), `correction` (a fix to a specific thing) or `plan_selection` (a choice). |
-| `schemaId`, `schemaDigest` | A stable name and a 64-hex SHA-256 for your response contract, for example a hash of its JSON Schema. Forms and clients use them to show the right fields. |
+| `schemaId`, `schemaDigest` | A stable name and a 64-hex SHA-256 of your response contract. Forms and clients use them to show the right fields. Leave `schemaDigest` out to derive it from `response` (see [Schema digests](#schema-digests)). |
 | `prompt` | What the person sees, up to 1 KiB. |
 | `response` | The schema the answer must pass. |
 | `context` | Optional binding to JSON shown with the request. It is stored, so include only what the responder may see. |
@@ -147,6 +146,23 @@ if (request?.status === 'waiting') {
   });
 }
 ```
+
+### Schema digests
+
+A schema digest pins the response contract into the request, so a form built for another version of it cannot answer.
+When the `response` validator can describe itself as JSON Schema (Zod 4.2 and later can), leave `schemaDigest` out and
+the definition derives it. For a validator that cannot, pass the digest yourself; `schemaDigest` computes it from a
+JSON Schema object, and gives your UI the same value:
+
+```ts
+import { schemaDigest } from 'mayura/workflows/lifecycle';
+
+const planChoiceDigest = schemaDigest(planChoiceJsonSchema); // 64 hex characters
+```
+
+A derived digest follows the JSON Schema the validator produces. If a library upgrade changes that JSON Schema, the
+digest changes too, and with it the definition's digest: register the new definition as a new `version`, as for any
+other change, or pass the digest explicitly to keep it fixed.
 
 `respond` checks the credential with `verifyHuman` (it does not need `canApprove`). If you have already authenticated
 the person yourself, `respondVerified` takes `actor: { id, projectId }` instead of a credential. Repeating the same
@@ -171,15 +187,20 @@ if (step?.approval) {
 }
 ```
 
-**Human requests** are served by `createWorkflowLifecycleHumanTransport`. Register each waiting run with it and pass
-`controller.transport` to the server as `humanRequests`. Listing needs `humans:read`, answering needs
-`humans:respond`, and the verified caller becomes the responder.
+**Human requests** are served by `createWorkflowLifecycleHumanTransport`. Give it the fleet runtime and the
+definitions whose requests it serves, and pass `controller.transport` to the server as `humanRequests`. It finds
+pending requests in storage through the fleet index, so nothing is registered and a restart loses nothing. Listing
+needs `humans:read`, answering needs `humans:respond`, and the verified caller becomes the responder.
 
 ```ts
-import { createWorkflowLifecycleHumanTransport } from 'mayura/workflows/lifecycle';
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHumanTransport } from 'mayura/workflows/lifecycle';
 
-const humans = createWorkflowLifecycleHumanTransport({ scope });
-humans.register({ agentId: 'planner', definition, runtime, runId });
+const runtime = createWorkflowLifecycleFleetRuntime(options);
+const humans = createWorkflowLifecycleHumanTransport({
+  scope: options.scope, runtime,
+  // Every version with runs in flight, and the agent whose callers may see and answer its requests.
+  definitions: [{ agentId: 'planner', definition }],
+});
 // Pass humans.transport to the server as `humanRequests`.
 
 const page = await client.humanRequests();
@@ -187,8 +208,14 @@ const pending = page.items.find(item => item.status === 'waiting');
 if (pending) await client.respondHumanRequest(pending.id, pending.digest, { plan: 'online' }, { commandId: crypto.randomUUID() });
 ```
 
-Registration lives in memory: register again after a restart, and call `unregister(runId)` when a run finishes. The
-`agentId` decides which callers see the request (those whose identity lists that agent).
+- A caller sees a request only in the transport's scope, and only if its identity lists the request's `agentId`.
+- The transport lists the requests of active runs (running, waiting or paused), including answered and timed-out ones.
+  A run that has finished leaves the index, and its requests with it.
+- The runtime must serve the same scope as the transport; a mismatch is refused with `INVALID_CONFIG`.
+- Request ids are opaque 64-hex strings, stable for a run and step.
+- Without a fleet runtime, create the transport with only `scope` and call `register({ agentId, definition, runtime,
+  runId })` for each run instead. Those registrations live in memory: register again after a restart, and call
+  `unregister(runId)` when a run finishes.
 
 - **CLI.** `mayura workflow-approve`, `mayura human-list`, `mayura human-get` and `mayura human-respond`. See
   [Operations commands](../cli/operations.md).
@@ -217,7 +244,7 @@ await humans.initialize();
 
 const fixAddress = {
   id: 'order-1001-address', kind: 'correction' as const,
-  schemaId: 'orders.address', schemaDigest: addressSchemaDigest,
+  schemaId: 'orders.address', // schemaDigest is derived from the Zod response below
   prompt: 'The courier rejected this address. Please correct it.',
   response: z.object({ line1: z.string(), postcode: z.string() }),
   subjectDigest: rejectedAddressDigest,

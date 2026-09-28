@@ -157,8 +157,8 @@ child runs. See [Costs and budgets](../concepts/costs-and-budgets.md).
 
 ## Approvals and waits inside a saga or loop
 
-Human requests, approvals and timers belong to the child lifecycle run. Both runtimes expose that runtime as
-`lifecycle`, so you answer the child directly and then continue the parent:
+Human requests, approvals, timers and signals belong to the child lifecycle run. Both runtimes expose that runtime as
+`lifecycle`, so you answer (or signal) the child directly and then continue the parent:
 
 ```ts
 const waiting = await sagas.runUntilSettled(placeOrder, sagaRunId);

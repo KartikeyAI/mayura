@@ -30,8 +30,7 @@ const trigger = defineWebhookTrigger({
   version: '1',
   secretId: 'tracker',
   schemaId: 'tickets.created.v1',
-  schemaDigest: '4b2c7e4c0b1f3d9e8a6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a493827160', // pins your payload contract
-  input: ticketCreated,
+  input: ticketCreated, // its JSON Schema's digest is pinned into every stored delivery
   // Runs once per new delivery, after verification. `commandId` is stable for the delivery.
   dispatch: async (event, { commandId }) => {
     console.log('new ticket', event.ticket.id);
@@ -140,7 +139,7 @@ delivery by the `id` in its snapshot.
 |---|---|
 | `id`, `version` | The trigger's identity. Change `version` when the payload contract changes. |
 | `secretId` | Passed to `resolveSecret`, so one runtime can serve several senders. |
-| `schemaId`, `schemaDigest` | A name and a 64-hex SHA-256 that pin the payload contract into every stored delivery. |
+| `schemaId`, `schemaDigest` | A name and a 64-hex SHA-256 that pin the payload contract into every stored delivery. Leave `schemaDigest` out to derive it from `input` when that validator can describe itself as JSON Schema (Zod 4.2 and later can); `schemaDigest(jsonSchema)` from `mayura/workstream/webhooks` computes it for any other. |
 | `input` | The schema the parsed body must pass. `dispatch` receives the validated value. |
 | `dispatch` | Your handler. Receives the input and `{ deliveryId, commandId, signal }`, returns JSON. |
 

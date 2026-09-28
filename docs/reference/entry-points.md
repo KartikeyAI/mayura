@@ -80,7 +80,7 @@ Most applications also install a schema validator. Zod is the reference choice; 
 | Entry point | What it is for | Key exports | Needs |
 |---|---|---|---|
 | `mayura/workflows` | Durable workflows of tool steps and joins, workers, leadership, fleet control and in-flight migrations. | `defineWorkflow`, `createScheduledWorkflowRuntime`, `createWorkflowWorker`, `createWorkflowLeadership`, `defineWorkflowMigration` | a storage adapter |
-| `mayura/workflows/lifecycle` | Workflows with human steps and timers. | `defineWorkflowLifecycle`, `createWorkflowLifecycleRuntime`, `createWorkflowLifecycleHost`, `fanOut` | a storage adapter |
+| `mayura/workflows/lifecycle` | Workflows with agent steps, human steps, timers and signals. | `defineWorkflowLifecycle`, `createWorkflowLifecycleRuntime`, `createWorkflowLifecycleHost`, `agentStep`, `fanOut`, `schemaDigest` | a storage adapter |
 | `mayura/workflows/sagas` | Sequential steps with reverse compensation. | `defineWorkflowSaga`, `createWorkflowSagaRuntime` | a storage adapter |
 | `mayura/workflows/loops` | Bounded conditional iteration. | `defineWorkflowLoop`, `createWorkflowLoopRuntime` | a storage adapter |
 | `mayura/workflows/graphs` | Workflows that wait for other runs to finish. | `defineWorkflowGraph`, `createWorkflowGraphRuntime`, `createWorkflowGraphCoordinator` | a storage adapter |
@@ -101,7 +101,7 @@ Most applications also install a schema validator. Zod is the reference choice; 
 | `mayura/storage-sqlite` | SQLite storage, with online backup and verified restore. | `createSqliteStore`, `backupSqliteStore`, `restoreSqliteBackup` | `better-sqlite3` |
 | `mayura/storage-postgres` | PostgreSQL storage. | `createPostgresStore` | `pg` |
 | `mayura/storage` | Both adapters and the storage contracts from one import. Prefer the specific adapter. | `createSqliteStore`, `createPostgresStore`, `StorageError` | `better-sqlite3` and `pg` |
-| `mayura/storage-contracts` | The interfaces a storage adapter implements, for writing your own. | `AggregateStore` (type), `StorageError`, `storageError` | |
+| `mayura/storage-contracts` | The interfaces a storage adapter implements, for writing your own. | `AggregateStore` (type), `StorageError`, `isStorageError`, `storageError`, `schemaDigest` | |
 
 ## Server, client and UI
 

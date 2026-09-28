@@ -57,8 +57,9 @@ export const payInvoice = defineWorkflowLifecycle({
 The pieces:
 
 - **Nodes** are the steps. A `tool` node runs a tool, a `join` node collects the outputs of its dependencies into an
-  array, and durable workflows add `human` nodes (wait for a typed answer from a person) and `timer` nodes (wait until
-  an absolute time).
+  array, and durable workflows add `human` nodes (wait for a typed answer from a person), `timer` nodes (wait until
+  an absolute time) and `signal` nodes (wait for an event from another system). A tool node can run an agent through
+  `agentStep`.
 - **Bindings** say where a step's input comes from: `{ kind: 'input', path }` reads the workflow input,
   `{ kind: 'step', stepId, path }` reads an earlier step's output, and `{ kind: 'literal', value }` is a fixed JSON
   value. A path is a list of property names; `[]` means the whole value.

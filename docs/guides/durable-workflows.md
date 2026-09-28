@@ -95,10 +95,10 @@ parallel, and stores each result. It returns a snapshot when there is nothing le
 | Status | Meaning |
 |---|---|
 | `running` | Work remains; call `runUntilSettled` again. |
-| `waiting` | Waiting for an approval, a person or a timer. `nextWakeAtMs` is the earliest deadline or due time. |
+| `waiting` | Waiting for an approval, a person, a timer or a signal. `nextWakeAtMs` is the earliest deadline or due time. |
 | `paused` | An operator paused it. Nothing runs until it is resumed. |
 | `succeeded` | Every step is done and `output` holds the validated result. |
-| `failed` | A step failed, a human request timed out, or the result did not match the output schema. |
+| `failed` | A step failed, a human request or signal timed out, or the result did not match the output schema. |
 | `blocked` | A step lacked a permission or the run budget could not cover it. |
 | `cancelled` | Cancelled with `runtime.cancel(runId)`. |
 | `outcome_unknown` | A step with effects may or may not have happened. See [Unknown outcomes](#unknown-outcomes). |
@@ -128,44 +128,58 @@ order id, to your provider as an idempotency key.
 
 ## Agent steps
 
-A step runs a model by wrapping an agent in a tool. The tool starts an in-process runtime, runs the agent, and reports
-what it spent, so the run budget stays accurate. This is how the `mayura init` starters do it:
+`agentStep` turns an agent into a tool for a step. Each time the step runs, it runs the agent in its own in-process
+runtime with the run's scope, and charges the run what the agent actually spent:
 
 ```ts
-import { createRuntime, defineTool } from 'mayura';
+import { agentStep } from 'mayura/workflows/lifecycle';
 
-const summarize = defineTool({
-  id: 'tickets.summarize', version: '1', description: 'Run the summary agent on one ticket.',
-  input: ticketSchema, output: summarySchema,
-  effects: 'none', capabilities: ['tickets:summarize'],
-  costMicros: 50_000, // reserved from the run budget: the most this step may spend
-  timeoutMs: 90_000,
-  execute: async (ticket, context) => {
-    const runtime = createRuntime({
-      profile: 'ephemeral',
-      scope: context.scope,
-      permissions: { allow: ['model:openai.responses'] },
-      limits: { maxCostMicros: 50_000, maxDurationMs: 60_000 },
-    });
-    try {
-      const run = runtime.submit(summarizer, { input: ticket });
-      const outcome = await run.result();
-      const spent = runtime.inspect(run).budget.spentMicros;
-      context.reportUsage({ knownCostMicros: typeof spent === 'number' ? spent : 50_000, unknownCostMicros: 0 });
-      if (outcome.status !== 'succeeded') throw new Error(`The agent ended ${outcome.status}.`);
-      return outcome.output;
-    } finally {
-      await runtime.close();
-    }
-  },
+const summarize = agentStep(summarizer, {
+  id: 'tickets.summarize',              // the workflow grants tool:tickets.summarize
+  capabilities: ['tickets:summarize'],  // and each of these
+  permissions: ['model:openai.responses'], // what the agent itself may use
+  limits: { maxCostMicros: 50_000, maxDurationMs: 60_000 }, // the step reserves 50,000 from the run budget
+});
+
+const nodes = [{ kind: 'tool' as const, id: 'summarize', tool: summarize, input: { kind: 'input' as const, path: [] } }];
+```
+
+The agent's grants are separate from the workflow's: the workflow grants the step (`tool:tickets.summarize`, its
+`capabilities`, and `effect:<kind>` when the agent's tools have effects); the agent gets only `permissions`. The step's
+outcome follows the agent's:
+
+| Agent outcome | Step | Charged |
+|---|---|---|
+| `succeeded` | succeeds with the agent's output | what the agent spent |
+| `failed`, `blocked`, `cancelled` | fails; its dependents are skipped | what the agent spent |
+| `outcome_unknown` | `unknown`: the run ends `outcome_unknown` and is left for you to reconcile | its ceiling stays reserved |
+
+Cancelling the run or reaching the step's timeout cancels the agent. If the agent's tools can change things (`write`
+or `host` effects), the interrupted step is `unknown`, because the agent may have been in the middle of one. The step's
+timeout defaults to the agent's `maxDurationMs` plus 15 seconds, so the agent's own limit fires first.
+
+| Option | Meaning |
+|---|---|
+| `id`, `version`, `description` | The step tool's identity. `version` defaults to the agent's. |
+| `permissions` | Grants for the agent's own model and tool calls. |
+| `limits` | The agent's runtime limits. `maxCostMicros` is the step's ceiling (0 for a model that costs nothing). |
+| `capabilities` | Extra grants the workflow needs to run the step. |
+| `input`, `output`, `prepare`, `finish` | Give the step its own schemas: `prepare` turns the step input into the agent input, and `finish` turns the agent output into the step output, or throws to fail the step (for example after checking citations). |
+| `onRun` | Called with the agent's run handle, for example to trace it. A function it returns is awaited when the run settles. Neither can fail the step. |
+| `timeoutMs` | The step's deadline. |
+
+To build the agent for each run, for example with tools that record what this run read, pass a function instead of
+the agent. It then needs `input`, `output`, and `effects`, the strongest effect its tools may have:
+
+```ts
+const investigate = agentStep((task: { question: string }) => researcherFor(task.question), {
+  id: 'research.investigate', input: taskSchema, output: findingsSchema, effects: 'read',
+  permissions: researcherGrants, limits: { maxCostMicros: 20_000 },
 });
 ```
 
-The agent's own grants are separate from the workflow's: the workflow grants `tool:tickets.summarize` and
-`tickets:summarize`; the agent gets only what the inner runtime allows. Keep `effects: 'none'` when the agent only
-reads and thinks. If the agent calls tools that change things, declare `effects: 'write'`, so a failure part-way is
-recorded as unknown rather than as a clean failure. The model loop inside a step is not checkpointed: a crash
-mid-step does not resume the agent.
+The model loop inside a step is not checkpointed: a crash mid-step does not resume the agent (see
+[Restarts and unknown outcomes](#restarts-and-unknown-outcomes)).
 
 ## Optional steps
 
@@ -239,8 +253,7 @@ const review: WorkflowLifecycleNode = {
   kind: 'human', id: 'review', dependsOn: ['draft'],
   request: {
     kind: 'information',
-    schemaId: 'posts.review',
-    schemaDigest: reviewSchemaDigest, // 64-hex SHA-256 that pins your response contract
+    schemaId: 'posts.review', // with a Zod response, the schema digest is derived from it
     prompt: 'Is this post ready to publish?',
     response: z.object({ publish: z.boolean(), note: z.string().optional() }),
     context: { kind: 'step', stepId: 'draft', path: [] },
@@ -252,9 +265,54 @@ const review: WorkflowLifecycleNode = {
 Responding, verifying who may answer, and the HTTP, CLI and UI surfaces are covered in
 [Approvals and human input](approvals-and-human-input.md).
 
-A durable workflow has no dedicated step for events from other systems. Two patterns work well: start a new run when
-the event arrives (see [Webhooks](webhooks.md)), or model the wait as a `human` step that your own code answers with
-`runtime.respondVerified`, passing a service identity as the actor.
+## Signals
+
+A `signal` step waits for an event from another system, such as a payment arriving. The run is `waiting` and holds
+nothing while it waits. The signal's payload is validated with `payload` and becomes the step's output, which later
+steps bind to like any other output:
+
+```ts
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
+import { z } from 'zod';
+
+const checkout = defineWorkflowLifecycle({
+  id: 'orders.checkout', version: '1', input: order, output: z.object({ messageId: z.string() }),
+  nodes: [
+    { kind: 'tool', id: 'reserve', tool: reserve, input: { kind: 'input', path: [] } },
+    { kind: 'signal', id: 'paid', name: 'payment.received', dependsOn: ['reserve'],
+      payload: z.object({ amountCents: z.number().int().positive() }),
+      deadlineAtMs: { kind: 'input', path: ['payBy'] } },
+    { kind: 'tool', id: 'ship', tool: ship, dependsOn: ['paid'], input: { kind: 'step', stepId: 'paid', path: ['amountCents'] } },
+  ],
+  result: { kind: 'step', stepId: 'ship', path: [] },
+});
+```
+
+Deliver a signal from code with the runtime (use the fleet runtime in production, so the worker sees the change):
+
+```ts
+await runtime.signal(checkout, {
+  id: runId, name: 'payment.received', signalId: 'payment-7731', payload: { amountCents: 4_200 },
+});
+```
+
+Operators and other services can deliver it over HTTP with `client.signalWorkflow` or `mayura workflow-signal`; see
+[Operating workflows](workflow-operations.md#signals). Either way:
+
+- **Idempotent.** `signalId` identifies the signal. Delivering the same id and payload again changes nothing, so a
+  sender can retry freely. The same id with another payload, or a second signal for a step that already has one, is
+  refused with `CONFLICT`: a signal step takes exactly one signal.
+- **Validated.** A payload the schema rejects is refused with `INVALID_INPUT` and the step keeps waiting. An unknown
+  signal name is `NOT_FOUND`.
+- **Early signals are kept.** A signal that arrives before the step starts (its dependencies are still running) is
+  stored with the step and completes it as soon as it starts. If the step is bypassed or the run is cancelled first,
+  the signal is dropped with it.
+- **Deadlines.** With `deadlineAtMs`, a step with no signal by then is `timed_out`, the run fails, and later signals
+  are refused. A kept early signal counts only if it arrived before the deadline.
+- `name` defaults to the node id and is unique within a definition. The run continues on its next `runUntilSettled`;
+  the worker host does this for you.
+
+To start a new run for each event instead, see [Webhooks](webhooks.md).
 
 ## Storage
 
@@ -386,9 +444,12 @@ const runtime = createWorkflowLifecycleFleetRuntime({
   [Changing runtime settings](#changing-runtime-settings).
 - **Never edit a definition that has runs in flight.** Changing any step changes the definition's digest, and runs
   pinned to the old one stop. Add a new `version` instead; see [Operating workflows](workflow-operations.md).
-- **Use the fleet runtime everywhere in production.** Approving, responding or pausing through a plain runtime leaves
-  the worker's index stale.
-- **Limits.** At most 128 steps, 32 human steps and 64 timers per definition; prompts up to 1 KiB.
+- **Use the fleet runtime everywhere in production.** Approving, responding, signalling or pausing through a plain
+  runtime leaves the worker's index stale.
+- **Errors.** Every error the runtimes and stores throw is a `MayuraError` with a stable `code`. Reusing an
+  idempotency key with other input, another definition version or other runtime settings is `CONFLICT`; resubmit the
+  identical request to get the existing run. See [Storage](storage.md#errors).
+- **Limits.** At most 128 steps, 32 human steps, 64 timers and 64 signal steps per definition; prompts up to 1 KiB.
 - `runUntilSettled` runs steps in the calling process. A plain runtime starts no background timers; waiting runs move
   only when something calls it again.
 

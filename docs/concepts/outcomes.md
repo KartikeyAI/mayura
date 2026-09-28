@@ -104,8 +104,9 @@ your tool if you need them. The one exception is `ToolRefusal`, whose reason you
 | `STORAGE_UNAVAILABLE` | Storage could not be reached. |
 | `INTEGRITY_VIOLATION` | Stored or packaged data failed an integrity check. |
 
-Storage adapters report their own failures as `StorageError`, with codes such as `CONFLICT` and `STORE_CLOSED`. See
-[Storage](../guides/storage.md).
+Storage adapters report their own failures as `StorageError`, a `MayuraError` whose `code` is one of the codes above
+and whose `storageCode` names the exact storage condition, such as `STORE_CLOSED`. See
+[Storage](../guides/storage.md#errors).
 
 ## Retries
 
