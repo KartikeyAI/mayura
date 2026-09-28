@@ -2853,6 +2853,44 @@
         "declaration": "e0fbf3de0a4592e5"
       }
     },
+    "@mayura/skills": {
+      "createSkillSet": {
+        "kind": "function",
+        "declaration": "89ffb6b30e9f190e"
+      },
+      "defineSkill": {
+        "kind": "function",
+        "declaration": "e1967e7dfda6a8b3"
+      },
+      "loadSkills": {
+        "kind": "function",
+        "declaration": "83c5facf85709615"
+      },
+      "parseSkillFile": {
+        "kind": "function",
+        "declaration": "515ad3f5ec93e86b"
+      },
+      "Skill": {
+        "kind": "interface",
+        "declaration": "4bb34e3ab9d7e590"
+      },
+      "SkillFile": {
+        "kind": "interface",
+        "declaration": "eb5c08ba128974fb"
+      },
+      "SkillLimits": {
+        "kind": "interface",
+        "declaration": "84d31ea88c85a301"
+      },
+      "SkillSet": {
+        "kind": "interface",
+        "declaration": "12c1c77ce716e23d"
+      },
+      "withSkills": {
+        "kind": "function",
+        "declaration": "ced1721daef30a1a"
+      }
+    },
     "@mayura/storage": {
       "AggregateStore": {
         "kind": "interface",

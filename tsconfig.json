@@ -6,6 +6,7 @@
     { "path": "packages/mayura" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
+    { "path": "packages/skills" },
     { "path": "packages/runtime" },
     { "path": "packages/testing" },
     { "path": "packages/storage-contracts" },

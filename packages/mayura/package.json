@@ -125,6 +125,10 @@
       "types": "./dist/server-node.d.ts",
       "import": "./dist/server-node.js"
     },
+    "./skills": {
+      "types": "./dist/skills.d.ts",
+      "import": "./dist/skills.js"
+    },
     "./storage": {
       "types": "./dist/storage.d.ts",
       "import": "./dist/storage.js"
@@ -238,6 +242,7 @@
     "@mayura/sdk": "workspace:*",
     "@mayura/server": "workspace:*",
     "@mayura/server-node": "workspace:*",
+    "@mayura/skills": "workspace:*",
     "@mayura/storage": "workspace:*",
     "@mayura/storage-contracts": "workspace:*",
     "@mayura/storage-postgres": "workspace:*",

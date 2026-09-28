@@ -510,6 +510,9 @@ importers:
       '@mayura/server-node':
         specifier: workspace:*
         version: link:../server-node
+      '@mayura/skills':
+        specifier: workspace:*
+        version: link:../skills
       '@mayura/storage':
         specifier: workspace:*
         version: link:../storage
@@ -622,6 +625,19 @@ importers:
       hono:
         specifier: 4.13.9
         version: 4.13.9
+
+  packages/skills:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@mayura/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/storage:
     dependencies:

@@ -30,6 +30,7 @@
     "@mayura/sdk",
     "@mayura/server",
     "@mayura/server-node",
+    "@mayura/skills",
     "@mayura/storage",
     "@mayura/storage-contracts",
     "@mayura/storage-postgres",

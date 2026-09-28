@@ -78,6 +78,9 @@
       "path": "../server-node"
     },
     {
+      "path": "../skills"
+    },
+    {
       "path": "../storage"
     },
     {
