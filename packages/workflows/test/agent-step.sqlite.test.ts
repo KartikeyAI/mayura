@@ -4,6 +4,7 @@ import { defineAgent, type AgentDefinition } from '@mayura/runtime';
 import { defineTool, type AnyTool } from '@mayura/tools';
 import { agentStep, createWorkflowLifecycleRuntime, defineWorkflowLifecycle, type WorkflowLifecycleRuntime } from '../src/lifecycle.js';
 import { sqliteFixture, type WorkflowFixture } from './fixtures.js';
+import { testImage } from '../../testing/src/index.js';
 
 const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'agent-step-test', validate: value => ({ value: value as JsonValue }) } };
 const text: Schema<string> = { '~standard': { version: 1, vendor: 'agent-step-test',
@@ -45,6 +46,22 @@ describe('agentStep', () => {
     const { settle } = await run(step, ['tool:writer.step', 'effect:read']);
     expect(await settle()).toMatchObject({ status: 'succeeded', output: 'a summary', budget: { spentMicros: 12, reservedMicros: 0 } });
     expect(seenScope).toEqual(scope);
+  });
+
+  it('gives the agent media found when the step runs, while the workflow keeps only its JSON input', async () => {
+    const seen: ModelRequest[] = [];
+    const eyes = defineAgent({ id: 'fixture.eyes', version: '1', instructions: 'Look.', input: any, output: text, tools: [], media: { accept: ['image/png'] },
+      model: { ...model([request => { seen.push(request); return final('a cat'); }]), capabilities: { tools: true, structuredOutput: true, media: { types: ['image/png'], urls: false } } } });
+    const resolved: JsonValue[] = [];
+    const step = agentStep(eyes, { id: 'eyes.step', permissions: ['model:fixture.model'], limits: { maxCostMicros: 100 },
+      media: input => { resolved.push(input); return [testImage({ name: 'photo.png' })]; } });
+    const { settle } = await run(step, ['tool:eyes.step'], { photo: 'artifact-ref-1' });
+    expect(await settle()).toMatchObject({ status: 'succeeded', output: 'a cat' });
+    expect(resolved).toEqual([{ photo: 'artifact-ref-1' }]);
+    expect((seen[0]!.messages[0] as { media: readonly { name?: string }[] }).media.map(item => item.name)).toEqual(['photo.png']);
+    // A media resolver that fails refuses the step before the agent runs, charging nothing.
+    const broken = agentStep(eyes, { id: 'eyes.step', permissions: ['model:fixture.model'], limits: { maxCostMicros: 100 }, media: () => { throw new Error('gone'); } });
+    expect(await (await run(broken, ['tool:eyes.step'], { photo: 'missing' })).settle()).toMatchObject({ status: 'failed', budget: { spentMicros: 0, reservedMicros: 0 } });
   });
 
   it('fails the step when the agent fails or is blocked, charging what it spent', async () => {

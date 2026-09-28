@@ -82,6 +82,8 @@ export interface ClientOptions {
   readonly token: () => string | Promise<string>;
   readonly fetch?: typeof globalThis.fetch;
   readonly maxResponseBytes?: number;
+  /** The most media one run submission may carry, base64-encoded (default 16 MiB, the server's default). */
+  readonly maxMediaBytes?: number;
   readonly maxEventBytes?: number;
   /** How long a request may take (default 30 s). For event streams it bounds only connecting, not the stream. */
   readonly requestTimeoutMs?: number;
@@ -128,7 +130,11 @@ export interface MayuraClient {
   /** What the token may do: its scope, agents, capabilities, expiry and the optional APIs the server offers it. */
   session(options?: { readonly signal?: AbortSignal }): Promise<RemoteSession>;
   agents(options?: { readonly signal?: AbortSignal }): Promise<readonly { readonly id: string; readonly version: string }[]>;
-  submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal }): Promise<RemoteRun>;
+  /**
+   * Start a run. `media` holds images or PDFs for an agent that accepts them: bytes (such as `media(...)` from mayura,
+   * or a file's bytes), an https URL, or a stored artifact reference.
+   */
+  submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[] }): Promise<RemoteRun>;
   run(id: string): RemoteRun;
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
@@ -180,6 +186,36 @@ export interface ClientErrorDetails {
  * (`TIMEOUT`, `ABORTED`, `TRANSPORT_FAILED`, `INVALID_RESPONSE`, `HTTP_ERROR` for a non-Mayura error answer, ...).
  * `message` is the server's fixed, data-free explanation, checked to be short printable text, or a client message.
  */
+/** An image or PDF sent with a run: its bytes, an https URL the model provider fetches, or a stored artifact reference. */
+export type ClientMedia =
+  | { readonly mediaType: string; readonly data: Uint8Array; readonly name?: string }
+  | { readonly mediaType: string; readonly url: string; readonly name?: string }
+  | { readonly artifact: Readonly<Record<string, unknown>>; readonly name?: string };
+
+/** Base64 of bytes, without depending on Node.js. */
+function base64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 32_768) binary += String.fromCharCode(...bytes.subarray(index, index + 32_768));
+  return btoa(binary);
+}
+/** The JSON form of submitted media, and its size once encoded. */
+function mediaBody(items: readonly ClientMedia[], maxBytes: number): { readonly body: ClientJson[]; readonly bytes: number } {
+  const refuse = (message: string): never => { throw new ClientError('INVALID_MEDIA', undefined, { message }); };
+  if (!Array.isArray(items) || items.length > 32) return refuse('media must be a list of at most 32 items.');
+  let bytes = 0; const body: ClientJson[] = [];
+  for (const [index, item] of items.entries()) {
+    const name = item?.name === undefined ? {} : { name: item.name };
+    if (item && 'artifact' in item) { body.push({ artifact: item.artifact as ClientJson, ...name }); bytes += 4_096; continue; }
+    if (!item || typeof item.mediaType !== 'string') return refuse(`media ${index + 1} needs a mediaType.`);
+    if ('data' in item && item.data instanceof Uint8Array) {
+      const data = base64(item.data); bytes += data.length + 256; body.push({ mediaType: item.mediaType, data, ...name });
+    } else if ('url' in item && typeof item.url === 'string') { bytes += item.url.length + 256; body.push({ mediaType: item.mediaType, url: item.url, ...name }); }
+    else return refuse(`media ${index + 1} needs data (bytes), a url or an artifact reference.`);
+    if (bytes > maxBytes) refuse(`the media is larger than this client sends (maxMediaBytes, ${maxBytes} bytes encoded).`);
+  }
+  return { body, bytes };
+}
+
 export class ClientError extends Error {
   readonly retryAfterMs?: number;
   readonly details: Readonly<ClientErrorDetails>;
@@ -205,6 +241,7 @@ const clientMessages: Readonly<Record<string, string>> = Object.freeze({
   STREAM_LIMIT: 'An event frame or chunk was larger than the client allows.',
   OBSERVATION_FAILED: 'The server could not follow the run\'s events from the requested position.',
   INVALID_CONFIG: 'The client options are invalid.',
+  INVALID_MEDIA: 'The media could not be sent: each item needs a mediaType and bytes, a url or an artifact reference.',
   INVALID_CREDENTIAL: 'The token callback returned something that is not a valid bearer token.',
   INVALID_REQUEST: 'The request arguments are invalid.',
   INVALID_OUTPUT: 'The run\'s output did not match the schema.',
@@ -215,7 +252,7 @@ const clientMessages: Readonly<Record<string, string>> = Object.freeze({
  */
 const serverErrorCodes: ReadonlySet<string> = new Set(['AUTH_REQUIRED', 'AUTH_INVALID', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT',
   'IDENTITY_INVALID', 'CAPABILITY_REQUIRED', 'ORIGIN_DENIED', 'PREFLIGHT_DENIED', 'INVALID_DESTINATION', 'INVALID_QUERY', 'INVALID_CURSOR',
-  'INVALID_JSON', 'INVALID_REQUEST', 'IDEMPOTENCY_KEY_REQUIRED', 'UNSUPPORTED_MEDIA_TYPE', 'BODY_TOO_LARGE', 'ROUTE_NOT_FOUND', 'METHOD_NOT_ALLOWED',
+  'INVALID_JSON', 'INVALID_REQUEST', 'INVALID_MEDIA', 'IDEMPOTENCY_KEY_REQUIRED', 'UNSUPPORTED_MEDIA_TYPE', 'BODY_TOO_LARGE', 'ROUTE_NOT_FOUND', 'METHOD_NOT_ALLOWED',
   'NOT_ENABLED', 'AGENT_NOT_FOUND', 'RUN_NOT_FOUND', 'HUMAN_REQUEST_NOT_FOUND', 'WORKFLOW_RUN_NOT_FOUND', 'MIGRATION_NOT_FOUND', 'REQUEST_TIMEOUT',
   'IDEMPOTENCY_CONFLICT', 'SUBMISSION_IN_PROGRESS', 'SUBMISSION_OUTCOME_UNKNOWN', 'RUN_EXPIRED', 'WORKFLOW_CONFLICT', 'FLEET_CONFLICT',
   'MIGRATION_REFUSED', 'REQUEST_LIMIT', 'STREAM_LIMIT', 'RUN_LIMIT', 'RUNTIME_LIMIT', 'HUMAN_LIMIT', 'WORKFLOW_LIMIT', 'SERVER_CLOSED',
@@ -481,7 +518,9 @@ export function createClient(options: ClientOptions): MayuraClient {
   if (base.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new ClientError('INVALID_CONFIG');
   if (typeof options.token !== 'function') throw new ClientError('INVALID_CONFIG');
   const token = options.token; const transport = options.fetch ?? globalThis.fetch.bind(globalThis);
-  const maxBytes = options.maxResponseBytes ?? 4_194_304; const frameBytes = options.maxEventBytes ?? 16_384; const timeout = options.requestTimeoutMs ?? 30_000;
+  const maxBytes = options.maxResponseBytes ?? 4_194_304; const maxMediaBytes = options.maxMediaBytes ?? 16_777_216;
+  if (!Number.isSafeInteger(maxMediaBytes) || maxMediaBytes < 1) throw new ClientError('INVALID_CONFIG');
+  const frameBytes = options.maxEventBytes ?? 16_384; const timeout = options.requestTimeoutMs ?? 30_000;
   const idleTimeout = options.eventIdleTimeoutMs ?? 45_000; const reconnectDelay = options.reconnectDelayMs ?? 250; const maxAttempts = options.maxReconnectAttempts ?? 8;
   if ([maxBytes, frameBytes, timeout, idleTimeout, reconnectDelay].some(value => !Number.isSafeInteger(value) || value < 1 || value > 16_777_216)
     || !Number.isSafeInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 1_000) throw new ClientError('INVALID_CONFIG');
@@ -738,9 +777,11 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!Array.isArray(raw['agents']) || raw['agents'].length > 256) return fail();
       return Object.freeze(raw['agents'].map(value => { const item = record(value); return Object.freeze({ id: text(item['id']), version: text(item['version']) }); }));
     },
-    async submit(agentId: string, input: unknown, settings: { readonly idempotencyKey: string; readonly signal?: AbortSignal }) {
+    async submit(agentId: string, input: unknown, settings: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[] }) {
       if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(settings.idempotencyKey)) throw new ClientError('INVALID_IDEMPOTENCY_KEY');
-      const raw = await command('/v1/runs', 'POST', settings.signal, json({ agentId, input }, maxBytes), settings.idempotencyKey);
+      const media = settings.media === undefined || settings.media.length === 0 ? undefined : mediaBody(settings.media, maxMediaBytes);
+      const payload = media ? json({ agentId, input, media: media.body }, maxBytes + media.bytes) : json({ agentId, input }, maxBytes);
+      const raw = await command('/v1/runs', 'POST', settings.signal, payload, settings.idempotencyKey);
       if (raw['profile'] !== 'ephemeral') return fail(); return run(runId(raw['id']));
     },
     async humanRequests(settings?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }) {

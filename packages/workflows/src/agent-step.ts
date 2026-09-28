@@ -1,4 +1,4 @@
-import { MayuraError, type Effect, type InferInput, type InferOutput, type RunHandle, type Schema } from '@mayura/core';
+import { MayuraError, type Effect, type InferInput, type InferOutput, type Media, type RunHandle, type Schema } from '@mayura/core';
 import { assertAgent, createRuntime, type AgentDefinition, type RuntimeLimits } from '@mayura/runtime';
 import { defineTool, ToolRefusal, type AnyTool, type ToolDefinition, type ToolExecutionContext } from '@mayura/tools';
 
@@ -26,6 +26,12 @@ interface AgentStepCommon<SI extends Schema, SO extends Schema, AI, AO> {
   readonly timeoutMs?: number;
   /** Turn the step's input into the agent's input. Default: the step input is the agent input. */
   readonly prepare?: (input: InferOutput<SI>, context: ToolExecutionContext) => AI | Promise<AI>;
+  /**
+   * Images or PDFs for the agent to see, found when the step runs: for example read from an artifact store with
+   * `mediaFromArtifact`, using a reference in the step's input. The workflow keeps only that JSON input, never media
+   * bytes. A failure here is a refusal, like `prepare`.
+   */
+  readonly media?: (input: InferOutput<SI>, context: ToolExecutionContext) => readonly Media[] | Promise<readonly Media[]>;
   /**
    * Turn a successful agent output into the step's output, or throw to fail the step (for example after checking the
    * output). Default: the agent output is the step output.
@@ -126,12 +132,15 @@ export function agentStep(agent: AgentDefinition | ((input: unknown, context: To
     execute: async (input, context) => {
       const refuse = (stage: string): never => { throw new ToolRefusal(`The agent step "${options.id}" ${stage}.`); };
       // Until the agent starts, nothing has run or been spent: a failure here is a refusal, charged nothing.
-      let definition: AgentDefinition | undefined; let agentInput: unknown;
+      let definition: AgentDefinition | undefined; let agentInput: unknown; let agentMedia: readonly Media[] = [];
       try {
         definition = built ? agent(input, context) : agent;
         assertAgent(definition);
         if (rank[effectsOf(definition.tools)] > rank[effects]) definition = undefined;
-        else agentInput = options.prepare ? await options.prepare(input, context) : input;
+        else {
+          agentInput = options.prepare ? await options.prepare(input, context) : input;
+          if (options.media) agentMedia = await options.media(input, context);
+        }
       } catch { definition = undefined; }
       if (!definition) return refuse('could not prepare its agent');
       const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions, limits });
@@ -162,7 +171,7 @@ export function agentStep(agent: AgentDefinition | ((input: unknown, context: To
       try {
         if (context.signal.aborted) return refuse('was cancelled before its agent started');
         let current: RunHandle<unknown>;
-        try { current = runtime.submit(definition, { input: agentInput as never }); }
+        try { current = runtime.submit(definition, { input: agentInput as never, ...(agentMedia.length > 0 ? { media: agentMedia } : {}) }); }
         catch { return refuse('could not start its agent'); }
         run = current;
         let finished: (() => void | Promise<void>) | void = undefined;

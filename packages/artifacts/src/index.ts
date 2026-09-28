@@ -1,3 +1,4 @@
+export { mediaFromArtifact } from './media.js';
 export { createLocalArtifactStore } from './local-store.js';
 export type {
   ArtifactClassification,

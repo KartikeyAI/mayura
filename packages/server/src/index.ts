@@ -1,4 +1,5 @@
-import { freezeJson, jsonValue, type JsonObject, type JsonValue, type Outcome, type Permissions, type RunEvent, type RunHandle, type Scope } from '@mayura/core';
+import { freezeJson, jsonValue, MayuraError, MEDIA_TYPES, mediaFromBase64, mediaUrl, type JsonObject, type JsonValue, type Media, type MediaType, type Outcome, type Permissions, type RunEvent, type RunHandle, type Scope } from '@mayura/core';
+import { admitMedia } from '@mayura/core/host';
 import { inspectorAsset } from './inspector.js';
 import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type RuntimeLimits } from '@mayura/runtime';
 
@@ -202,6 +203,12 @@ export interface AgentServerOptions {
    */
   readonly submissionJournal?: SubmissionJournal;
   /**
+   * Resolve `{ artifact: reference }` media in a run submission: read the stored bytes for the caller's scope and
+   * return them as media, for example `(reference, scope) => mediaFromArtifact(store, reference, scope)` with
+   * `mediaFromArtifact` from mayura/artifacts. Without it, artifact media is refused with NOT_ENABLED.
+   */
+  readonly mediaArtifacts?: (reference: JsonObject, scope: Scope, signal: AbortSignal) => Promise<Media>;
+  /**
    * Durable agent run records (`createAggregateRunRecords(store)` from mayura/storage-contracts). With them, several
    * replicas sharing one store can each read, stream, wait for and cancel any run, and a run whose replica dies ends as
    * `outcome_unknown` after its lease instead of disappearing. They also make submission idempotency durable.
@@ -212,6 +219,11 @@ export interface AgentServerOptions {
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
+    /**
+     * The body limit of a run submission when a registered agent accepts media (images and PDFs are sent as base64,
+     * about a third larger than their bytes). Default 16 MiB; other requests keep maxBodyBytes.
+     */
+    readonly maxMediaBodyBytes?: number;
     readonly maxHealthOperations?: number; readonly maxHumanOperations?: number; readonly maxWorkflowOperations?: number;
     readonly requestTimeoutMs?: number; readonly streamDurationMs?: number;
     /**
@@ -271,6 +283,7 @@ const errorMessages = Object.freeze({
   INVALID_CURSOR: 'The after or limit query parameter is invalid. Use a cursor the server returned and a limit from 1 to 100.',
   INVALID_JSON: 'The request body is not valid UTF-8 JSON.',
   INVALID_REQUEST: 'The request body does not have exactly the fields and types this route expects.',
+  INVALID_MEDIA: 'The run\'s media was refused (see message): each item needs a supported mediaType and base64 data, an https url or an artifact reference, and the agent must accept it within its limits.',
   IDEMPOTENCY_KEY_REQUIRED: 'POST /v1/runs needs an Idempotency-Key header of 1-128 letters, digits, ".", "_", ":" or "-" starting with a letter or digit. Use one key per user action and reuse it only to retry that action.',
   UNSUPPORTED_MEDIA_TYPE: 'Send the request body as Content-Type: application/json, without Content-Encoding.',
   BODY_TOO_LARGE: 'The request body is larger than the server accepts (see limitBytes).',
@@ -513,9 +526,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   if (options.inspector !== undefined && typeof options.inspector !== 'boolean') throw new Error('The inspector setting must be a boolean.');
   if (options.mounted !== undefined && typeof options.mounted !== 'boolean') throw new Error('The mounted setting must be a boolean.');
   const limits = Object.freeze({ maxRuns: 512, maxRuntimes: 128, maxRequests: 64, maxStreams: 64,
-    maxBodyBytes: 1_048_576, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32, maxWorkflowOperations: 32,
+    maxBodyBytes: 1_048_576, maxMediaBodyBytes: 16_777_216, maxResponseBytes: 4_194_304, maxHealthOperations: 32, maxHumanOperations: 32, maxWorkflowOperations: 32,
     requestTimeoutMs: 10_000, streamDurationMs: 30_000, runRetentionMs: 600_000, runLeaseMs: 30_000, runRecordPollMs: 500, streamHeartbeatMs: 15_000, ...options.limits });
-  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'maxWorkflowOperations', 'requestTimeoutMs', 'streamDurationMs', 'runRetentionMs', 'runLeaseMs', 'runRecordPollMs', 'streamHeartbeatMs'].includes(key))) throw new Error('Unknown server limit.');
+  if (Object.keys(limits).some(key => !['maxRuns', 'maxRuntimes', 'maxRequests', 'maxStreams', 'maxBodyBytes', 'maxMediaBodyBytes', 'maxResponseBytes', 'maxHealthOperations', 'maxHumanOperations', 'maxWorkflowOperations', 'requestTimeoutMs', 'streamDurationMs', 'runRetentionMs', 'runLeaseMs', 'runRecordPollMs', 'streamHeartbeatMs'].includes(key))) throw new Error('Unknown server limit.');
   for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 1 || value > 16_777_216) throw new Error('Server limits must be bounded positive integers.');
   const healthChecks: readonly HealthCheck[] = (() => {
     const supplied = options.healthChecks ?? [];
@@ -617,6 +630,55 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     void check.close();
     registry.set(config.agent.id, Object.freeze({ agent: config.agent, permissions, limits: settings }));
   }
+  // Run submissions may carry media only when some agent accepts it; otherwise they keep the ordinary body limit.
+  const runBodyBytes = [...registry.values()].some(config => config.agent.media) ? Math.max(limits.maxBodyBytes, limits.maxMediaBodyBytes) : limits.maxBodyBytes;
+  const mediaArtifacts = options.mediaArtifacts;
+  if (mediaArtifacts !== undefined && typeof mediaArtifacts !== 'function') throw new Error('mediaArtifacts must be a function.');
+  /** Media items of a run submission, as Mayura media: base64 bytes, an https URL, or a stored artifact. */
+  const submittedMedia = async (value: JsonValue | undefined, scope: Scope, signal: AbortSignal): Promise<readonly Media[]> => {
+    if (value === undefined) return [];
+    const refuse = (message: string): never => { throw new HttpFailure(400, 'INVALID_MEDIA', { message }); };
+    if (!Array.isArray(value) || value.length > 32) return refuse('media must be a list of at most 32 items.');
+    const items: Media[] = [];
+    for (const [index, raw] of value.entries()) {
+      const label = `media ${index + 1}`;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return refuse(`${label} must be an object.`);
+      const keys = Object.keys(raw).sort().join(',');
+      const name = raw['name']; const mediaType = raw['mediaType'];
+      if (name !== undefined && typeof name !== 'string') refuse(`${label}: name must be text.`);
+      const options = name === undefined ? {} : { name: name as string };
+      try {
+        if (keys === 'artifact' || keys === 'artifact,name') {
+          if (!mediaArtifacts) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'mediaArtifacts' });
+          const reference = raw['artifact'];
+          if (!reference || typeof reference !== 'object' || Array.isArray(reference)) return refuse(`${label}: artifact must be an artifact reference.`);
+          let item: Media;
+          try { item = await bounded(Promise.resolve().then(() => mediaArtifacts(reference, scope, signal)), signal); }
+          catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; return refuse(`${label}: the artifact could not be read for this caller.`); }
+          items.push(item);
+          continue;
+        }
+        if (typeof mediaType !== 'string' || !(MEDIA_TYPES as readonly string[]).includes(mediaType)) return refuse(`${label}: mediaType must be one of ${MEDIA_TYPES.join(', ')}.`);
+        if (keys === 'data,mediaType' || keys === 'data,mediaType,name') {
+          if (typeof raw['data'] !== 'string') return refuse(`${label}: data must be base64 text.`);
+          items.push(mediaFromBase64(raw['data'], mediaType as MediaType, options));
+        } else if (keys === 'mediaType,url' || keys === 'mediaType,name,url') {
+          if (typeof raw['url'] !== 'string') return refuse(`${label}: url must be text.`);
+          items.push(mediaUrl(raw['url'], mediaType as MediaType, options));
+        } else return refuse(`${label} must have mediaType with data (base64) or url, or an artifact reference, and optionally a name.`);
+      } catch (error) {
+        if (error instanceof MayuraError) return refuse(`${label}: ${error.message}`);
+        throw error;
+      }
+    }
+    return items;
+  };
+  /** A digest of each media item for the idempotency key: its bytes' SHA-256, or its URL. */
+  const mediaDigests = async (items: readonly Media[]): Promise<JsonValue> => Promise.all(items.map(async item => {
+    if (!('data' in item)) return { mediaType: item.mediaType, url: item.url, name: item.name ?? null };
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(item.data)));
+    return { mediaType: item.mediaType, sha256: [...digest].map(byte => byte.toString(16).padStart(2, '0')).join(''), name: item.name ?? null };
+  }));
   const toolCatalog = Object.freeze([...registry.values()].flatMap(config => config.agent.tools.map(tool => Object.freeze({
     agentId: config.agent.id, agentVersion: config.agent.version, id: tool.id, version: tool.version,
     effects: tool.effects, capabilities: tool.capabilities, timeoutMs: tool.timeoutMs, costMicros: tool.costMicros,
@@ -742,10 +804,10 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (!identity.capabilities.includes(capability)) throw new HttpFailure(403, 'CAPABILITY_REQUIRED', { capability });
     if (identity.expiresAtMs <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
   };
-  const body = async (request: Request, signal: AbortSignal): Promise<JsonObject> => {
+  const body = async (request: Request, signal: AbortSignal, maxBodyBytes = limits.maxBodyBytes): Promise<JsonObject> => {
     if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('content-type') ?? '') || request.headers.has('content-encoding')) throw new HttpFailure(415, 'UNSUPPORTED_MEDIA_TYPE');
     const declared = request.headers.get('content-length');
-    if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > limits.maxBodyBytes)) throw new HttpFailure(413, 'BODY_TOO_LARGE', { limitBytes: limits.maxBodyBytes });
+    if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maxBodyBytes)) throw new HttpFailure(413, 'BODY_TOO_LARGE', { limitBytes: maxBodyBytes });
     const reader = request.body?.getReader();
     if (!reader) throw new HttpFailure(400, 'INVALID_JSON', { message: 'This request needs a JSON body.' });
     const chunks: Uint8Array[] = []; let total = 0; let complete = false;
@@ -754,14 +816,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         const item = await bounded(reader.read(), signal);
         if (item.done) { complete = true; break; }
         total += item.value.byteLength;
-        if (total > limits.maxBodyBytes) throw new HttpFailure(413, 'BODY_TOO_LARGE', { limitBytes: limits.maxBodyBytes });
+        if (total > maxBodyBytes) throw new HttpFailure(413, 'BODY_TOO_LARGE', { limitBytes: maxBodyBytes });
         chunks.push(item.value);
       }
       const data = new Uint8Array(total); let offset = 0;
       for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
       let parsed: unknown;
       try { parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data)); } catch { throw new HttpFailure(400, 'INVALID_JSON'); }
-      try { return object(parsed, limits.maxBodyBytes); }
+      try { return object(parsed, maxBodyBytes); }
       catch { throw new HttpFailure(400, 'INVALID_REQUEST', { message: 'The body must be a JSON object within the server\'s depth and size limits.' }); }
     } finally { if (!complete) void reader.cancel().catch(() => {}); reader.releaseLock(); }
   };
@@ -1231,11 +1293,16 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       requireCapability(identity, 'runs:submit');
       const key = request.headers.get('idempotency-key') ?? '';
       if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key)) throw new HttpFailure(400, 'IDEMPOTENCY_KEY_REQUIRED');
-      const data = await body(request, signal); exact(data, ['agentId', 'input']);
+      const data = await body(request, signal, runBodyBytes); exact(data, 'media' in data ? ['agentId', 'input', 'media'] : ['agentId', 'input']);
       const agentId = data['agentId'];
       if (typeof agentId !== 'string' || !identity.agentIds.includes(agentId) || !registry.has(agentId)) throw new HttpFailure(404, 'AGENT_NOT_FOUND');
       const config = registry.get(agentId)!;
-      const digestBytes = await crypto.subtle.digest('SHA-256', encoder.encode(canonical({ agentId, version: config.agent.version, input: data['input']! })));
+      // Media is checked here against the agent's policy and limits, so a refusal says exactly why.
+      const media = await submittedMedia(data['media'], identity.scope, signal);
+      try { admitMedia(media, config.agent.media, config.limits?.maxMediaBytes ?? 20_971_520, 'INVALID_INPUT', `Agent ${agentId}`); }
+      catch (error) { throw new HttpFailure(400, 'INVALID_MEDIA', { message: error instanceof MayuraError ? error.message : 'The media was refused.' }); }
+      const digestBytes = await crypto.subtle.digest('SHA-256', encoder.encode(canonical({ agentId, version: config.agent.version, input: data['input']!,
+        ...(media.length > 0 ? { media: await mediaDigests(media) } : {}) })));
       const digest = [...new Uint8Array(digestBytes)].map(value => value.toString(16).padStart(2, '0')).join('');
       assertActive(signal); requireCapability(identity, 'runs:submit');
       if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
@@ -1295,7 +1362,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
             runtimes.set(runtimeKey, runtime);
           }
           claimed = false;
-          const handle = runtime.submit(config.agent, { input: data['input'] });
+          const handle = runtime.submit(config.agent, { input: data['input'], ...(media.length > 0 ? { media } : {}) });
           const entry: Entry = { owner, agentId, digest, handle, runtime, runtimeKey, submissionKey };
           runs.set(handle.id, entry); submissions.set(submissionKey, entry);
           retained.set(runtimeKey, (retained.get(runtimeKey) ?? 0) + 1);
