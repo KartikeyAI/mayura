@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelMessage, type ModelRequest } from '@mayura/core';
+import { MayuraError, ModelInvocationError, ModelProviderError, type JsonObject, type JsonValue, type ModelMessage, type ModelRequest } from '@mayura/core';
 import { openAIResponses, type OpenAIResponsesOptions } from '../src/index.js';
 
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
@@ -33,6 +33,31 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async () => { throw new Error('Live HTTP is disabled in this fixture.'); }));
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('schemas from the agent, and failure reasons', () => {
+  it('uses the output schema the runtime sends when the adapter has none, and checks an agent before its first call', async () => {
+    const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
+    const { outputJsonSchema: _given, ...withoutOutput } = options({ fetch: transport });
+    const adapter = openAIResponses(withoutOutput);
+    await adapter.generate(request({ outputJsonSchema: outputSchema }));
+    expect(transmittedBody(transport)['text']).toMatchObject({ format: { schema: outputSchema, strict: true } });
+    await expect(adapter.generate(request())).rejects.toMatchObject({ code: 'INVALID_CONFIG', reason: 'configuration' });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(() => adapter.checkDefinition!({ tools: [{ id: 'math/add.v1', description: 'Add.', inputJsonSchema: inputSchema }], outputJsonSchema: outputSchema })).not.toThrow();
+    expect(() => adapter.checkDefinition!({ tools: [], outputJsonSchema: { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: false } }))
+      .toThrow('The output schema: property "a" is optional');
+    expect(() => adapter.checkDefinition!({ tools: [] })).toThrow(/no output JSON Schema/u);
+  });
+
+  it('reports why a call failed: unreachable, unavailable, refused', async () => {
+    const reason = async (transport: typeof globalThis.fetch): Promise<unknown> => (await openAIResponses(options({ fetch: transport })).generate(request()).catch((error: unknown) => error) as { reason?: unknown }).reason;
+    expect(await reason(async () => { throw new TypeError('fetch failed'); })).toBe('unavailable');
+    expect(await reason(async () => response({ error: 'PRIVATE' }, { status: 503 }))).toBe('unavailable');
+    expect(await reason(async () => response({ error: 'PRIVATE' }, { status: 404 }))).toBe('rejected');
+    expect(await reason(async () => response({ ...payload(), status: 'incomplete' }))).toBe('refused');
+    expect(await reason(async () => response(payload([message('not json')])))).toBe('invalid_response');
+  });
+});
 
 describe('Responses request contract', () => {
   it('sends a function without inputs, as schema generators write it, with its empty required list stated', async () => {
@@ -104,8 +129,8 @@ describe('Responses request contract', () => {
   it('requires every exposed tool to carry a strict portable schema before HTTP', async () => {
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
     const adapter = openAIResponses(options({ fetch: transport }));
-    await expect(adapter.generate(request({ tools: [{ id: 'missing', description: 'No schema.' }] }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
-    await expect(adapter.generate(request({ tools: [{ id: 'invalid', description: 'Loose schema.', inputJsonSchema: { type: 'object', properties: {}, required: [], additionalProperties: true } }] }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
+    await expect(adapter.generate(request({ tools: [{ id: 'missing', description: 'No schema.' }] }))).rejects.toMatchObject({ code: 'INVALID_CONFIG', reason: 'configuration' });
+    await expect(adapter.generate(request({ tools: [{ id: 'invalid', description: 'Loose schema.', inputJsonSchema: { type: 'object', properties: {}, required: [], additionalProperties: true } }] }))).rejects.toMatchObject({ code: 'INVALID_CONFIG', reason: 'configuration' });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -115,7 +140,7 @@ describe('Responses request contract', () => {
     const supplied = request().tools[0]!;
     await expect(adapter.generate(request({ tools: [supplied, supplied] }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
     await expect(adapter.generate(request({ tools: Array.from({ length: 129 }, (_, index) => ({ ...supplied, id: `tool-${index}` })) }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
-    await expect(adapter.generate(request({ maxOutputTokens: 0 }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
+    await expect(adapter.generate(request({ maxOutputTokens: 0 }))).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
     await expect(adapter.generate(request({ instructions: 'x'.repeat(3000) }))).rejects.toMatchObject({ code: 'MODEL_FAILED' });
     expect(transport).not.toHaveBeenCalled();
   });
@@ -133,9 +158,9 @@ describe('HTTP boundaries and cancellation', () => {
   });
 
   it.each([
-    [401, 'Model provider authentication or model authorization failed. Verify the configured credential and model access.'],
-    [403, 'Model provider authentication or model authorization failed. Verify the configured credential and model access.'],
-    [429, 'The model provider rate limit was reached. Retry only under the application retry and budget policy.'],
+    [401, 'The model provider refused the credentials or access to this model (HTTP 401). Check the API key and that it may use this model.'],
+    [403, 'The model provider refused the credentials or access to this model (HTTP 403). Check the API key and that it may use this model.'],
+    [429, "The model provider's rate limit or quota was reached (HTTP 429). Try again later, or raise the limit with the provider."],
   ] as const)('returns an actionable safe diagnostic for HTTP %s', async (status, message) => {
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: 'PRIVATE' }, { status }));
     await expect(openAIResponses(options({ fetch: transport })).generate(request())).rejects.toMatchObject({ code: 'MODEL_FAILED', message });
@@ -337,7 +362,7 @@ describe('confirmed usage on rejected provider output', () => {
     const adapter = openAIResponses(options({ fetch: transport, maxCostMicros: 1,
       pricing: { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 1_000_000 } }));
     const error: unknown = await adapter.generate(request()).catch((value: unknown) => value);
-    expect(error).toBeInstanceOf(ModelInvocationError);
+    expect(error).toBeInstanceOf(ModelProviderError);
     expect(error).toMatchObject({ code: 'MODEL_FAILED', costMicros: 12 });
     expect(Object.isFrozen(error)).toBe(true);
     expect(JSON.stringify(error)).not.toContain('PRIVATE');
@@ -351,7 +376,7 @@ describe('confirmed usage on rejected provider output', () => {
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(payload([reasoning, functionCall()])));
     const adapter = openAIResponses(options({ fetch: transport, maxRequestBytes: 2048 }));
     const error: unknown = await adapter.generate(request()).catch((value: unknown) => value);
-    expect(error).toBeInstanceOf(ModelInvocationError);
+    expect(error).toBeInstanceOf(ModelProviderError);
     expect(error).toMatchObject({ code: 'MODEL_FAILED', costMicros: 1 });
     expect(JSON.stringify(error)).not.toContain('PRIVATE');
     expect(transport).toHaveBeenCalledTimes(1);

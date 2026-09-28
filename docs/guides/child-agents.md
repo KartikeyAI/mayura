@@ -14,34 +14,30 @@ There are three ways to start one:
 - **`runtime.speculate`**: your code runs a few alternative children and keeps at most one verified answer.
 
 ```ts
-import { agentAsTool, createRuntime, defineAgent, type JsonObject } from 'mayura';
+import { agentAsTool, createRuntime, defineAgent } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
 import { z } from 'zod';
 
-const openai = (outputJsonSchema: JsonObject) => openAIResponses({
-  apiKey: process.env.OPENAI_API_KEY!, model: process.env.OPENAI_MODEL!, outputJsonSchema,
+const openai = openAIResponses({
+  apiKey: process.env.OPENAI_API_KEY!, model: process.env.OPENAI_MODEL!,
   maxCostMicros: 20_000, pricing: { inputMicrosPerMillionTokens: 400_000, outputMicrosPerMillionTokens: 1_600_000 },
 });
 
-const SummaryInput = z.object({ text: z.string() });
-const Summary = z.object({ summary: z.string() });
 const summarizer = defineAgent({
   id: 'summarizer', version: '1', instructions: 'Summarize the text in two sentences.',
-  model: openai(jsonSchema(Summary)), tools: [], input: SummaryInput, output: Summary,
+  model: openai, tools: [], input: z.object({ text: z.string() }), output: z.object({ summary: z.string() }),
 });
 
 const summarize = agentAsTool(summarizer, {
   id: 'text.summarize',
   description: 'Summarize a long text in two sentences.',
-  inputJsonSchema: jsonSchema(SummaryInput), // providers need every tool's JSON Schema
   permissions: { allow: ['model:openai.responses'] },
   limits: { maxCostMicros: 40_000 },
 });
 
-const Reply = z.object({ reply: z.string() });
 const assistant = defineAgent({
   id: 'assistant', version: '1', instructions: 'Help the user. Summarize long documents before answering.',
-  model: openai(jsonSchema(Reply)), tools: [summarize], input: z.object({ message: z.string() }), output: Reply,
+  model: openai, tools: [summarize], input: z.object({ message: z.string() }), output: z.object({ reply: z.string() }),
 });
 
 const runtime = createRuntime({
@@ -51,7 +47,8 @@ const runtime = createRuntime({
 });
 ```
 
-`jsonSchema` is the Zod-to-JSON-Schema helper from [Model providers](model-providers.md).
+One adapter serves both agents: Mayura sends each agent's own output schema with its calls, and the parent's model
+sees the child's input schema as the tool's input.
 
 ## Agents as tools
 
@@ -63,7 +60,7 @@ model sees an ordinary tool; the child's output is the tool result.
 | `id`, `description` | The tool's id and the description the parent's model reads. |
 | `permissions` | Required. What the child may do: `{ allow: [...] }`. |
 | `limits` | Optional ceilings for the child, such as `maxCostMicros`. |
-| `inputJsonSchema` | The child input's JSON Schema. Required with real model providers. |
+| `inputJsonSchema` | The input the parent's model sees. The default is the child's own input schema. |
 
 The runtime must grant `agent:delegate` (to start children at all), `tool:<id>` (to call this tool) and everything the
 child itself needs. If the child fails, the tool call fails and the parent run ends with the child's failure.

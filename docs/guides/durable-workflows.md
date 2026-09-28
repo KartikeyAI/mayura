@@ -84,6 +84,7 @@ process until it finishes, waits or is paused.
 | `verifyHuman` | for approvals and `respond` | Turns a credential into a verified person. See [Approvals and human input](approvals-and-human-input.md). |
 | `approvalTtlMs` | no | How long an approval request stays valid. Default 1 hour. |
 | `maxOutputBytes` | no | Largest input, step output or result a run stores. Default 1 MiB. |
+| `previousPolicies` | no | The settings of earlier releases (up to 16), so runs they started can finish. See [Changing runtime settings](#changing-runtime-settings). |
 | `now` | no | The clock, for tests. Timers and deadlines use it. |
 
 ## How a run advances
@@ -115,8 +116,9 @@ remaining budget cannot cover it, the step is `blocked`. After the step, the run
 
 How a thrown error is recorded depends on the tool's `effects`:
 
-- A tool with `effects: 'none'` that throws simply fails the step.
-- A tool with any other effect that throws is recorded as `unknown`, because it may have acted before failing. The run
+- A `none` or `read` tool that throws simply fails the step: it changed nothing outside, so there is nothing to
+  reconcile.
+- A `write` or `host` tool that throws is recorded as `unknown`, because it may have acted before failing. The run
   ends `outcome_unknown`.
 - Throw `ToolRefusal` (from `mayura`) when the tool decided not to act, for example because the order does not exist.
   The step fails cleanly, its reserved cost is released, and there is nothing to reconcile.
@@ -341,12 +343,47 @@ await traces.track(runId);
 Spans carry names, ids, times, statuses and budget numbers, never inputs, outputs or prompts. See
 [Observability](observability.md).
 
+## Changing runtime settings
+
+Every run records the settings it started with: `scope`, `permissions`, `policyVersion`, `maxCostMicros`,
+`maxOutputBytes` and `approvalTtlMs`. A runtime continues a run only if those are its own settings or are listed in
+`previousPolicies`; any other run stops with `CONFLICT`. So when a release changes a setting, for example to grant a
+tool that a new workflow version calls, list the settings the previous release ran with:
+
+```ts
+import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecyclePolicy } from 'mayura/workflows/lifecycle';
+
+// Exactly what release 1 passed. Keep it listed until release 1's runs have finished.
+const release1: WorkflowLifecyclePolicy = {
+  permissions: { allow: ['tool:orders.reserve', 'inventory:reserve', 'effect:write'] },
+  policyVersion: '1',
+  maxCostMicros: 500_000,
+};
+
+const runtime = createWorkflowLifecycleFleetRuntime({
+  store,
+  scope,
+  permissions: { allow: ['tool:orders.reserve', 'inventory:reserve', 'tool:orders.confirm', 'email:send', 'effect:write'] },
+  policyVersion: '2',
+  maxCostMicros: 500_000,
+  previousPolicies: [release1],
+});
+```
+
+- **A run keeps its own settings until it finishes.** Its steps are checked against the permissions it started with,
+  and it keeps its own budget, output limit and approval lifetime. A grant added later is never given to it: a step
+  that needs one ends `blocked`. An approval requested before the deploy can still be approved.
+- **New runs use the current settings.** A child that a saga or loop starts later uses its parent's settings.
+- **To move a run onto the new settings, migrate it** to a new definition version; see
+  [Operating workflows](workflow-operations.md). This also works for a run whose settings are no longer listed.
+- `maxOutputBytes` and `approvalTtlMs` default as they do for the runtime, so copy exactly what the old release
+  passed. Remove an entry once no active run uses it. Sagas, loops, fleet runtimes and hosts take the same option.
+
 ## Good to know
 
-- **Keep settings identical.** `scope`, `permissions`, `policyVersion`, `maxCostMicros`, `maxOutputBytes` and
-  `approvalTtlMs` are recorded with every run. A process with different values refuses to continue existing runs
-  (`CONFLICT`). Use the same options object for the server and the worker, and grant up front the permissions later
-  versions will need.
+- **Use the same settings everywhere.** Give the server and the worker the same options object. When a release
+  changes the settings, list the old ones in `previousPolicies`; see
+  [Changing runtime settings](#changing-runtime-settings).
 - **Never edit a definition that has runs in flight.** Changing any step changes the definition's digest, and runs
   pinned to the old one stop. Add a new `version` instead; see [Operating workflows](workflow-operations.md).
 - **Use the fleet runtime everywhere in production.** Approving, responding or pausing through a plain runtime leaves

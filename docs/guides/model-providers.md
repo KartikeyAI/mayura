@@ -21,13 +21,6 @@ const Answer = z.object({ answer: z.string() });
 const model = openAIResponses({
   apiKey: process.env.OPENAI_API_KEY!,
   model: process.env.OPENAI_MODEL!,
-  // What the provider must return: the JSON Schema of the agent's output.
-  outputJsonSchema: {
-    type: 'object',
-    properties: { answer: { type: 'string' } },
-    required: ['answer'],
-    additionalProperties: false,
-  },
   maxCostMicros: 20_000, // at most $0.02 per model call
   // Use your model's current prices, in micros per million tokens ($0.40 = 400_000).
   pricing: { inputMicrosPerMillionTokens: 400_000, outputMicrosPerMillionTokens: 1_600_000 },
@@ -76,7 +69,6 @@ import { anthropicMessages } from 'mayura/provider-anthropic';
 const claude = anthropicMessages({
   apiKey: process.env.ANTHROPIC_API_KEY!,
   model: process.env.ANTHROPIC_MODEL!,
-  outputJsonSchema,
   maxCostMicros: 30_000,
   pricing: { inputMicrosPerMillionTokens: 3_000_000, outputMicrosPerMillionTokens: 15_000_000 },
 });
@@ -91,7 +83,7 @@ is optional.
 |---|---|---|
 | `apiKey` | yes | The provider credential. Sent only in the request header. |
 | `model` | yes | The provider's model id (up to 128 characters). |
-| `outputJsonSchema` | yes | JSON Schema of the final output. The root must be an object; see the strict rules below. |
+| `outputJsonSchema` | no | JSON Schema of the final output. Leave it out: the runtime sends each agent's own (see below). |
 | `maxCostMicros` | yes | The most one model call may cost. Reserved from the run budget before each call. |
 | `pricing` | yes | `inputMicrosPerMillionTokens` and `outputMicrosPerMillionTokens`, as non-negative integers. |
 | `timeoutMs` | no | Deadline for one call. Default 30,000. |
@@ -109,35 +101,31 @@ run stops with `BUDGET_EXCEEDED`. The runtime also sends `limits.maxOutputTokens
 output-token limit, so pick a bound that covers your largest prompt plus that many output tokens. See
 [Costs and budgets](../concepts/costs-and-budgets.md).
 
-## Strict JSON Schemas
+## JSON Schemas
 
-Adapters ask the provider for strict structured output and strict tool calls. So the output schema, and the
-`inputJsonSchema` of every tool the agent has, must follow the strict rules:
+A provider needs the agent's output, and every tool's input, as JSON Schema. You don't write them: `defineAgent` and
+`defineTool` generate them from your Zod schemas (any validator that implements Standard JSON Schema works; Zod 4.2
+and later does), and the runtime sends the agent's output schema with every call. So one adapter can serve many agents.
+Give `outputJsonSchema` to the adapter, or to `defineAgent`, only when your validator cannot describe itself.
+
+Adapters ask the provider for strict structured output and strict tool calls, so the schemas must follow the strict
+rules:
 
 - the root is `type: 'object'`;
 - every object lists all of its properties in `required` and sets `additionalProperties: false` (an object with no
   properties, such as the input of a tool that takes none, may leave `required` out).
 
-For an optional field, make it nullable instead (`z.string().nullable()`). A tool without an `inputJsonSchema`, or with
-a schema that breaks these rules, makes every model call of that agent fail with `MODEL_FAILED`.
+In Zod terms: make a field the model may leave empty `.nullable()`, not `.optional()` or `.default()`, and avoid
+`z.record`. Transforms are fine; the schema describes what the model writes. `defineAgent` checks every tool and the
+output against these rules with the adapter you give it, and throws `INVALID_CONFIG` with the field and the fix:
 
-With Zod 4 you can generate the schema from the same Zod object the agent validates with. This is the helper the
-`mayura init` starters use:
-
-```ts
-import type { JsonObject } from 'mayura';
-import { z } from 'zod';
-
-/** A Zod schema as the plain JSON Schema object a provider or tool takes. */
-export function jsonSchema(schema: z.ZodType): JsonObject {
-  const { $schema: _dialect, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema))) as JsonObject;
-  return plain;
-}
+```text
+Agent support: The output schema: the object at /properties/tags must set additionalProperties to false; model
+providers accept no open objects, records or maps.
 ```
 
-`z.object()` already produces `additionalProperties: false` and lists every non-optional field as required. Pass the
-plain schema, not one with `.transform()`: transforms cannot be written as JSON Schema. The agent's `output`
-validator still checks the provider's answer after it arrives, so it may be stricter than the JSON Schema.
+The agent's `output` validator still checks the provider's answer after it arrives, so it may be stricter than the
+JSON Schema.
 
 Mayura sends tools to the provider under neutral names (`tool_0`, `tool_1`, ...) and maps them back, so the model
 identifies a tool by its `description`. Write descriptions that say what the tool does and when to use it.
@@ -155,7 +143,6 @@ import { openAICompatibleChat } from 'mayura/provider-openai';
 const local = openAICompatibleChat({
   endpoint: 'http://127.0.0.1:11434/v1/chat/completions', // for example, Ollama's default port
   model: 'my-local-model',
-  outputJsonSchema,
   maxCostMicros: 0,
   pricing: { inputMicrosPerMillionTokens: 0, outputMicrosPerMillionTokens: 0 },
 });
@@ -175,7 +162,6 @@ const groq = openAICompatibleChat({
   remote: { id: 'groq' },
   apiKey: process.env.GROQ_API_KEY!,
   model: process.env.GROQ_MODEL!,
-  outputJsonSchema,
   maxCostMicros: 10_000,
   pricing: { inputMicrosPerMillionTokens: 100_000, outputMicrosPerMillionTokens: 300_000 },
 });
@@ -211,7 +197,6 @@ const vertex = openAICompatibleChat({
   remote: { id: 'vertex' },
   token: () => getAccessToken(), // for example from google-auth-library
   model: process.env.VERTEX_MODEL!,
-  outputJsonSchema,
   maxCostMicros: 20_000,
   pricing,
 });
@@ -222,9 +207,20 @@ continuation; use `openAIResponses` for OpenAI itself.
 
 ## Errors
 
-A failed call ends the run with `MODEL_FAILED` (see [Outcomes](../concepts/outcomes.md)). This covers a rejected key,
-a rate limit, a timeout, a malformed or refused answer, and an output that is not valid JSON. Provider error bodies
-and your key never appear in outcomes or events. Cancelling a run aborts the request in flight, but cannot prove the
+A failed call ends the run with `MODEL_FAILED` and a message that says why (see [Outcomes](../concepts/outcomes.md)):
+
+| Reason | For example | Message begins |
+|---|---|---|
+| `authentication` | HTTP 401 or 403 | The model provider refused the credentials or access to this model (HTTP 401). |
+| `rate_limited` | HTTP 429, or 402 for quota | The model provider's rate limit or quota was reached (HTTP 429). |
+| `unavailable` | HTTP 5xx or 408, Anthropic's 529, or no connection | The model provider was unavailable. |
+| `timeout` | no answer within `timeoutMs` | The model provider did not answer in time. |
+| `rejected` | any other HTTP error, such as 404 for an unknown model | The model provider rejected the request (HTTP 404). |
+| `refused` | the model refused, or stopped at its token limit | The model refused to answer, or stopped before finishing. |
+| `invalid_response` | an answer that is not the required JSON, or no token usage | The model provider returned a response Mayura could not use. |
+| `configuration` | a schema the provider refuses (code `INVALID_CONFIG`) | The model adapter could not send this request. |
+
+The messages are Mayura's own. Provider error bodies and your key never appear in outcomes or events. Cancelling a run aborts the request in flight, but cannot prove the
 provider did no work, so an unconfirmed call keeps its full reservation.
 
 ## Writing your own adapter
@@ -257,8 +253,13 @@ export const myModel: ModelAdapter = {
 
 - `generate` returns either tool calls (each with its own `id`, the Mayura `toolId` and the input) or a final output,
   with the call's cost in micros. Mayura validates both before using them.
-- If a call fails after the provider reported usage, throw `new ModelInvocationError(costMicros)` so the known cost is
-  charged; otherwise the call keeps its full `maxCostMicros` reservation.
+- To say why a call failed, throw `new ModelProviderError(reason, { httpStatus, costMicros })` with one of the reasons
+  above: the outcome then carries Mayura's message for that reason. Pass `costMicros` when the provider reported
+  usage before failing, so the known cost is charged; otherwise the call keeps its full `maxCostMicros` reservation.
+  Any other error is reported with a generic message, since an adapter's own text never reaches an outcome.
+- An optional `checkDefinition(definition)` method lets `defineAgent` check the agent's tools and output schema once,
+  so a problem shows when the agent is defined. `checkStrictDefinition` from `mayura/core/host` implements the strict
+  rules above.
 - An optional `stream(request)` method yields `{ type: 'output.delta', text }` fragments of the final output's JSON
   text, then exactly one `{ type: 'response', response }`. See [Streaming](streaming.md).
 - `continuation` on a response is opaque state the runtime hands back on the next call of the same run.

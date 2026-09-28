@@ -25,7 +25,6 @@ const createIssue = defineMcpTool({
   remoteName: 'create_issue',  // the tool's name on the MCP server
   input: IssueInput,
   output: IssueOutput,
-  inputJsonSchema: jsonSchema(IssueInput),
   effects: 'write',
   capabilities: ['tracker:write'],
   timeoutMs: 15_000,
@@ -47,8 +46,6 @@ const runtime = createRuntime({
 });
 ```
 
-`jsonSchema` is the Zod-to-JSON-Schema helper from [Model providers](model-providers.md).
-
 ## What you declare
 
 `defineMcpTool` takes the same options as `defineTool`, minus `execute`, plus `remoteName` and `client`:
@@ -58,7 +55,7 @@ const runtime = createRuntime({
 | `id`, `version`, `description` | The Mayura tool. The model reads `description`, so write your own; the server's is not used. |
 | `remoteName` | The tool's name on the MCP server (letters, digits and `._/-`, up to 128 characters). |
 | `input`, `output` | Validators for the arguments and the result. The input must be a JSON object. |
-| `inputJsonSchema` | The input's JSON Schema, which model providers need for every tool. |
+| `inputJsonSchema` | The input the model sees. Generated from `input` when the validator can describe itself (Zod 4.2 and later). |
 | `effects` | `none`, `read`, `write` or `host`: what calling this tool can change. |
 | `capabilities` | Extra permission strings the runtime must grant, such as `tracker:write`. |
 | `client` | An object with a `callTool(request)` method (below). |

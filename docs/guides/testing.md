@@ -191,6 +191,21 @@ assert.deepEqual(response.usage, { costMicros: 1_200 }); // 1,000 x $0.40/M + 50
 This checks your configuration and Mayura's handling of the provider's format, not the provider itself. Before
 relying on a provider, run the agent against it once with a small budget.
 
+## Check that a provider accepts your schemas
+
+Tests usually run on a scripted model, which accepts any schema. To catch a schema a real provider would refuse (an
+`.optional()` field, a `z.record`), define the agent once with a real adapter in a test. `defineAgent` checks every
+tool and the output against the provider's rules and throws with the field to fix; nothing is sent.
+
+```ts
+import { defineAgent } from 'mayura';
+import { anthropicMessages } from 'mayura/provider-anthropic';
+
+const offline = anthropicMessages({ apiKey: 'not-used', model: 'not-used', maxCostMicros: 0,
+  pricing: { inputMicrosPerMillionTokens: 0, outputMicrosPerMillionTokens: 0 } });
+defineAgent({ id: 'support', version: '1', instructions, input, output, tools, model: offline }); // throws if a schema is refused
+```
+
 ## Good to know
 
 - Scripted responses are fixtures, not a model: they show that your tools, schemas, permissions and guards behave,

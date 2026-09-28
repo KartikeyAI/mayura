@@ -19,13 +19,6 @@ export const lookupOrder = defineTool({
   version: '1',
   description: 'Look up one order by id. Returns found=false when there is no such order.',
   input: z.object({ orderId: z.string().min(1).max(64) }),
-  // What the model sees. Real providers require it (see below).
-  inputJsonSchema: {
-    type: 'object',
-    properties: { orderId: { type: 'string', minLength: 1, maxLength: 64 } },
-    required: ['orderId'],
-    additionalProperties: false,
-  },
   output: z.object({
     found: z.boolean(),
     orderId: z.string(),
@@ -54,7 +47,7 @@ list to let the model use it.
 | `description` | required | What the tool does and returns, written for the model. Up to 4096 characters. |
 | `input` | required | Standard Schema validator for the input. `execute` receives the validated value. |
 | `output` | required | Standard Schema validator for the result. The result is checked before anyone sees it. |
-| `inputJsonSchema` | none | The input as a JSON Schema object, sent to the model. |
+| `inputJsonSchema` | generated | The input as JSON Schema, which the model reads. Generated from `input` when the validator can describe itself (Zod 4.2 and later); give it otherwise. |
 | `effects` | required | `'none'`, `'read'`, `'write'` or `'host'`. |
 | `capabilities` | required | Extra permission names a caller must hold, for example `['payments:refund']`. Pass `[]` for none. |
 | `costMicros` | `0` | The most one call can cost, in micros (millionths of a dollar). |
@@ -64,26 +57,22 @@ list to let the model use it.
 
 ## Input schemas for real models
 
-`input` is what Mayura enforces. `inputJsonSchema` is what the model reads to know how to call the tool. Mayura does
-not convert one into the other, and the OpenAI and Anthropic adapters refuse a tool without `inputJsonSchema`: the
-model call fails with `MODEL_FAILED`. The scripted test model does not need it.
+`input` is what Mayura enforces. The model also needs to know how to call the tool, as JSON Schema: Mayura generates
+it from `input` (validators that implement Standard JSON Schema can describe themselves, as Zod 4.2 and later do), and
+you can see it as `tool.inputJsonSchema`. Pass `inputJsonSchema` yourself only when your validator cannot describe
+itself, or to tell the model something narrower.
 
-The providers use strict mode, so every object in the schema must list all of its properties in `required` and set
-`additionalProperties: false`. With Zod 4 you can generate it; use `.nullable()` rather than `.optional()` for fields
-the model may leave empty:
+Model providers accept only strict schemas: every field present, no extra keys. So for a field the model may leave
+empty, use `.nullable()` rather than `.optional()` or `.default()`, and avoid open records (`z.record`). You don't have
+to remember this: when you pass the tool to `defineAgent` with a real model, it checks every tool and throws an error
+that names the field and the fix, for example:
 
-```ts
-import type { JsonObject } from 'mayura';
-import { z } from 'zod';
-
-/** A Zod schema as the plain JSON Schema object Mayura and the providers accept. */
-export function jsonSchema(schema: z.ZodType): JsonObject {
-  const { $schema: _dialect, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema))) as JsonObject;
-  return plain;
-}
+```text
+Agent support: Tool "orders.find" input schema: property "query" is optional, but model providers require every
+property. Make it nullable instead (with Zod, .nullable() rather than .optional() or .default()).
 ```
 
-Then write `input: lookupInput, inputJsonSchema: jsonSchema(lookupInput)`.
+The scripted test model accepts any schema.
 
 ## Effects and capabilities
 
@@ -99,9 +88,10 @@ Then write `input: lookupInput, inputJsonSchema: jsonSchema(lookupInput)`.
 `capabilities` are names you invent for finer control, such as `payments:refund` or `email:send`. A caller needs
 every one of them. See [Permissions](./permissions.md).
 
-The effect also changes what Mayura reports when something goes wrong. If a tool with `effects: 'none'` throws, the
-call simply failed. If a tool with any other effect throws or times out after it started, Mayura cannot know whether
-the change happened, so the call ends as `outcome_unknown`. See [Outcomes and errors](./outcomes.md).
+The effect also changes what Mayura reports when something goes wrong. If a `none` or `read` tool throws, the call
+simply failed: it changed nothing outside, so there is nothing to check (its declared `costMicros` is still charged,
+since a paid lookup may have been billed). If a `write` or `host` tool throws or times out after it started, Mayura
+cannot know whether the change happened, so the call ends as `outcome_unknown`. See [Outcomes and errors](./outcomes.md).
 
 ## The execute context
 
@@ -120,8 +110,8 @@ If you never call `reportUsage`, a successful call is charged its full `costMicr
 
 ## Return "not found", don't throw it
 
-Inside a run, a tool call that does not succeed ends the whole run. And a thrown error from a `read`, `write` or
-`host` tool is reported as `outcome_unknown`, which asks a person to check what happened. So for ordinary answers the
+Inside a run, a tool call that does not succeed ends the whole run. And a thrown error from a `write` or `host` tool
+is reported as `outcome_unknown`, which asks a person to check what happened. So for ordinary answers the
 model should act on, such as "no such order", "not eligible" or "already done", return a structured result and
 describe it in the tool's description. The model reads it and continues.
 
@@ -142,14 +132,11 @@ description.
 import { ToolRefusal, defineTool, withPreflight } from 'mayura';
 import { z } from 'zod';
 
-const refundInput = z.object({ orderId: z.string().min(1).max(64) });
-
 const refundOrder = defineTool({
   id: 'orders.refund',
   version: '1',
   description: 'Refund a delivered order in full. Safe to repeat: an order is never refunded twice.',
-  input: refundInput,
-  inputJsonSchema: jsonSchema(refundInput),
+  input: z.object({ orderId: z.string().min(1).max(64) }),
   output: z.object({ status: z.enum(['refunded', 'already_refunded', 'not_found', 'not_eligible']) }),
   effects: 'write',
   capabilities: ['payments:refund'],

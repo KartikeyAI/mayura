@@ -47,7 +47,8 @@ export function agentAsTool<I extends Schema, O extends Schema>(
     id: options.id, version: agent.version, description: options.description, input, output,
     effects: 'none', capabilities: ['agent:delegate'], costMicros: 0,
     timeoutMs: options.limits?.maxDurationMs ?? 2_147_483_647,
-    ...(options.inputJsonSchema === undefined ? {} : { inputJsonSchema: options.inputJsonSchema }),
+    // A parent model is told the child's input: as given, or the child's own input as JSON Schema.
+    ...(options.inputJsonSchema !== undefined ? { inputJsonSchema: options.inputJsonSchema } : agent.inputJsonSchema !== undefined ? { inputJsonSchema: agent.inputJsonSchema } : {}),
     execute: async (input, context) => {
       const gateway = childGateway.get(context);
       if (!gateway) throw new MayuraError('PERMISSION_DENIED', 'Agent composition requires a live owning runtime.');

@@ -1,5 +1,6 @@
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent, Schema } from '@mayura/core';
 import { createRuntime, defineAgent } from '@mayura/runtime';
 import { defineTool } from '@mayura/tools';
@@ -100,6 +101,34 @@ describe('terminal chat', () => {
   });
 });
 
+describe('terminal chat defaults', () => {
+  it('remember earlier turns, and show the final answer when it differs from what streamed', async () => {
+    const requests: ModelRequest[] = []; let turn = 0;
+    const model: ModelAdapter = { id: 'fixture', capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0,
+      async generate() { throw new Error('unused'); },
+      async *stream(request): AsyncIterable<ModelStreamEvent> {
+        requests.push(request);
+        if (turn++ === 0) { yield { type: 'response', response: final({ reply: 'Paris is lovely in May.' }) }; return; }
+        // The streamed draft is not what the run returns (as when a guard or the output schema changes the answer).
+        for (const piece of ['{"reply":"A draft ', 'that changes"}']) yield { type: 'output.delta', text: piece };
+        yield { type: 'response', response: final({ reply: 'The final, checked answer.' }) };
+      } };
+    const agent = defineAgent({ id: 'travel', version: '1', instructions: 'Help.', input: any, output: any, tools: [], model,
+      stream: { field: ['reply'], guards: [], batch: { minChars: 1, maxChars: 64 } } });
+    const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:fixture'] } });
+    const t = terminal();
+    try {
+      const chat = runTerminalChat({ agent, runtime, io: t.io });
+      await t.say(1, 'Where should I go?'); await t.waitFor(() => t.screen().includes('Paris is lovely'), 'first reply');
+      await t.say(2, 'When?'); await t.waitFor(() => t.screen().includes('The final, checked answer.'), 'final answer');
+      expect(requests[0]!.messages[0]).toEqual({ role: 'user', content: 'Where should I go?' });
+      expect(requests[1]!.messages[0]).toEqual({ role: 'user', content:
+        'The conversation so far:\nPerson: Where should I go?\nYou: Paris is lovely in May.\n\nThe person\'s new message:\nWhen?' });
+      await t.say(3, '/exit'); await chat;
+    } finally { await runtime.close(); }
+  });
+});
+
 describe('agent commands', () => {
   const schema = { type: 'object', required: ['city'], properties: { city: { type: 'string', description: 'Where to go.' }, days: { type: 'integer' }, budget: { type: 'boolean' } } };
   const capture = () => { let text = ''; return { stream: Object.assign(new Writable({ write(chunk, _encoding, done) { text += String(chunk); done(); } }), { isTTY: false }), text: () => text }; };
@@ -136,6 +165,20 @@ describe('agent commands', () => {
       const err = capture();
       expect(await runAgentCommand({ agent, runtime, inputJsonSchema: schema, argv: ['--unknown', 'x'], io: { stderr: err.stream } })).toBe(1);
       expect(err.text()).toContain('Unknown option --unknown');
+    } finally { await runtime.close(); }
+  });
+
+  it('take flags from the agent\'s own input schema when none is given', async () => {
+    const requests: ModelRequest[] = [];
+    const agent = defineAgent({ id: 'planner', version: '1', instructions: 'Plan.', input: z.object({ city: z.string().describe('Where to go.'), days: z.number().int() }),
+      output: z.object({ reply: z.string() }), tools: [], model: scripted([() => final({ reply: 'planned' })], requests) });
+    const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:fixture'] } });
+    try {
+      const out = capture();
+      expect(await runAgentCommand({ agent, runtime, argv: ['--city', 'Paris', '--days', '3'], io: { stdout: out.stream } })).toBe(0);
+      expect(requests[0]!.messages[0]).toEqual({ role: 'user', content: { city: 'Paris', days: 3 } });
+      const help = capture(); await runAgentCommand({ agent, runtime, name: 'plan', argv: ['--help'], io: { stdout: help.stream } });
+      expect(help.text()).toContain('--city <string> (required)  Where to go.');
     } finally { await runtime.close(); }
   });
 

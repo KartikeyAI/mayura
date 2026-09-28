@@ -27,12 +27,6 @@ const agent = defineAgent({
   model: openAIResponses({
     apiKey: process.env.OPENAI_API_KEY ?? '',
     model: 'gpt-5-mini',
-    outputJsonSchema: {
-      type: 'object',
-      properties: { summary: { type: 'string' } },
-      required: ['summary'],
-      additionalProperties: false,
-    },
     // Your model's real prices, in micros per million tokens. $0.25 per million = 250_000.
     pricing: { inputMicrosPerMillionTokens: 250_000, outputMicrosPerMillionTokens: 2_000_000 },
     maxCostMicros: 20_000, // one call may cost at most $0.02

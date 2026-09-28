@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelRequest, type ModelStreamEvent } from '@mayura/core';
+import { MayuraError, ModelProviderError, type JsonObject, type JsonValue, type ModelRequest, type ModelStreamEvent } from '@mayura/core';
 import { openAIResponses, type OpenAIResponsesOptions } from '../src/index.js';
 
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false };
@@ -45,7 +45,7 @@ describe('Responses streaming', () => {
     }
     await expect(collect(openAIResponses(options(async () => new Response('{}', { headers: { 'Content-Type': 'application/json' } }))).stream!(request()))).rejects.toBeInstanceOf(MayuraError);
     const invalid = await collect(openAIResponses(options(async () => sse([completed('not json')]))).stream!(request())).catch(error => error);
-    expect(invalid).toBeInstanceOf(ModelInvocationError); expect(invalid.costMicros).toBe(1);
+    expect(invalid).toBeInstanceOf(ModelProviderError); expect(invalid.costMicros).toBe(1);
   });
 
   it('aborts the request when the consumer stops reading', async () => {

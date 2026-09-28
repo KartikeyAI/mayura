@@ -1,10 +1,14 @@
-import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
-import { readServerSentEvents, streamModelCall } from '@mayura/core/host';
+import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
+import { checkStrictDefinition, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 export interface OpenAIResponsesOptions {
   readonly apiKey: string;
   readonly model: string;
-  readonly outputJsonSchema: JsonObject;
+  /**
+   * The output as strict JSON Schema. Optional: without it, the adapter uses the schema the runtime sends with each
+   * request, which `defineAgent` generates from the agent's output validator (or takes from its `outputJsonSchema`).
+   */
+  readonly outputJsonSchema?: JsonObject;
   readonly maxCostMicros: number;
   readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number };
   readonly maxRequestBytes?: number;
@@ -29,7 +33,11 @@ export interface OpenAICompatibleChatOptions {
   /** Short-lived credential source (for example a Google OAuth access token), called for each request; not with `apiKey`. */
   readonly token?: () => string | Promise<string>;
   readonly model: string;
-  readonly outputJsonSchema: JsonObject;
+  /**
+   * The output as strict JSON Schema. Optional: without it, the adapter uses the schema the runtime sends with each
+   * request, which `defineAgent` generates from the agent's output validator (or takes from its `outputJsonSchema`).
+   */
+  readonly outputJsonSchema?: JsonObject;
   readonly maxCostMicros: number;
   readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number };
   readonly maxRequestBytes?: number;
@@ -37,10 +45,19 @@ export interface OpenAICompatibleChatOptions {
   readonly timeoutMs?: number;
   readonly fetch?: typeof globalThis.fetch;
 }
-class ProviderFailure extends MayuraError {
-  constructor(message = 'The model provider returned an unavailable, refused or invalid response.') { super('MODEL_FAILED', message); }
+/** A failed call, for a reason Mayura reports in its own words. The default is a response the adapter cannot use. */
+const failed = (reason: ModelFailureReason = 'invalid_response'): never => { throw new ModelProviderError(reason); };
+/** The reason a caught failure carries, for charging known usage without losing why the call failed. */
+const reasonOf = (error: unknown): ModelFailureReason => error instanceof ModelProviderError ? error.reason : 'invalid_response';
+/** The adapter's own output schema, or the one sent with the request. */
+function outputSchemaFor(fixed: JsonObject | undefined, requested: JsonObject | undefined): JsonObject {
+  if (fixed !== undefined) return fixed;
+  return requested === undefined ? failed('configuration') : strictJsonSchema(requested, 'The output schema');
 }
-const failed = (message?: string): never => { throw new ProviderFailure(message); };
+function toolSchema(tool: { readonly id: string; readonly inputJsonSchema?: JsonObject }): JsonObject {
+  if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', `Tool "${tool.id}" has no inputJsonSchema.`);
+  return strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`);
+}
 function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failed();
   return value;
@@ -49,29 +66,6 @@ function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return failed();
   return value;
 }
-function strictSchema(schema: JsonObject): JsonObject {
-  const copy = jsonValue(schema) as JsonObject;
-  if (copy['type'] !== 'object') throw new MayuraError('INVALID_CONFIG', 'Provider schemas require a root JSON object.');
-  const visit = (item: JsonObject): void => {
-    if (item['type'] === 'object' || (Array.isArray(item['type']) && item['type'].includes('object'))) {
-      // An object without properties is strict as it stands; schema generators (Zod's among them) leave out its
-      // empty `properties` or `required`, so the copy sent to the provider states them.
-      if (item['properties'] === undefined && item['required'] === undefined) item['properties'] = {};
-      const properties = object(item['properties']);
-      if (item['required'] === undefined && Object.keys(properties).length === 0) item['required'] = [];
-      const required = item['required'];
-      if (item['additionalProperties'] !== false || !Array.isArray(required) || required.some(key => typeof key !== 'string') || new Set(required).size !== required.length || Object.keys(properties).length !== required.length || Object.keys(properties).some(key => !required.includes(key))) {
-        throw new MayuraError('INVALID_CONFIG', 'Strict object schemas must require every property and prohibit additional properties.');
-      }
-      for (const child of Object.values(properties)) visit(object(child));
-    }
-    if (item['items'] !== undefined) visit(object(item['items']));
-    for (const key of ['anyOf', 'allOf', 'oneOf']) if (Array.isArray(item[key])) for (const child of item[key]) visit(object(child));
-    for (const key of ['$defs', 'definitions']) if (item[key] !== undefined) for (const child of Object.values(object(item[key]))) visit(object(child));
-  };
-  visit(copy); return freezeJson(copy);
-}
-
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void operation.catch(() => undefined); throw new MayuraError('CANCELLED', 'Provider request was cancelled.'); }
   let abort: (() => void) | undefined;
@@ -88,12 +82,8 @@ async function responseBody(response: Response, limit: number, signal: AbortSign
   if (!response.ok || response.redirected || !response.body) {
     // Rejected responses still own a stream; release it without reading or exposing its contents.
     void response.body?.cancel().catch(() => undefined);
-    if (!response.redirected && [401, 403].includes(response.status)) {
-      return failed('Model provider authentication or model authorization failed. Verify the configured credential and model access.');
-    }
-    if (!response.redirected && response.status === 429) {
-      return failed('The model provider rate limit was reached. Retry only under the application retry and budget policy.');
-    }
+    if (response.redirected) return failed('rejected');
+    if (!response.ok) throw providerHttpFailure(response.status);
     return failed();
   }
   const length = response.headers.get('content-length');
@@ -134,7 +124,7 @@ function messagesToInput(messages: readonly ModelMessage[], hasContinuation: boo
 export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
   if (typeof options.apiKey !== 'string' || !options.apiKey.trim() || /[\r\n]/.test(options.apiKey) || options.apiKey.length > 4096 || typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A model ID and bounded API key are required.');
   const apiKey = options.apiKey; const model = options.model;
-  const outputSchema = strictSchema(options.outputJsonSchema);
+  const fixedOutput = options.outputJsonSchema === undefined ? undefined : strictJsonSchema(options.outputJsonSchema, `The adapter's outputJsonSchema`);
   const priceInput = options.pricing.inputMicrosPerMillionTokens;
   const priceOutput = options.pricing.outputMicrosPerMillionTokens;
   for (const amount of [options.maxCostMicros, priceInput, priceOutput]) if (!Number.isSafeInteger(amount) || amount < 0) throw new MayuraError('INVALID_CONFIG', 'Configured costs must be non-negative safe integers.');
@@ -167,10 +157,8 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         }
         const additions = messagesToInput(request.messages.slice(consumed), request.continuation !== undefined, aliases);
         const input = [...history, ...additions];
-        const tools = request.tools.map(tool => {
-          if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires an explicit portable JSON Schema.');
-          return { type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: strictSchema(tool.inputJsonSchema), strict: true };
-        });
+        const tools = request.tools.map(tool => ({ type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool), strict: true }));
+        const outputSchema = outputSchemaFor(fixedOutput, request.outputJsonSchema);
         const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input, tools,
           store: false, stream: onDelta !== undefined, include: ['reasoning.encrypted_content'], parallel_tool_calls: true,
           max_output_tokens: request.maxOutputTokens,
@@ -179,7 +167,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         const response = await abortable(transport('https://api.openai.com/v1/responses', {
           method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body, signal, redirect: 'error',
-        }), signal);
+        }).catch((): never => failed('unavailable')), signal);
         const payload = onDelta ? await completedStream(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
         const usage = object(payload['usage']);
         const inputTokens = integer(usage['input_tokens']); const outputTokens = integer(usage['output_tokens']);
@@ -187,6 +175,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         const computedCost = (numerator + 999_999n) / 1_000_000n;
         if (computedCost > BigInt(Number.MAX_SAFE_INTEGER)) return failed();
         knownCost = Number(computedCost);
+        if (payload['status'] === 'incomplete') return failed('refused');
         if (payload['status'] !== 'completed' || !Array.isArray(payload['output']) || payload['output'].length > 256) return failed();
         const calls: ModelToolCall[] = []; const callIds = new Set<string>(); const text: string[] = [];
         for (const rawItem of payload['output']) {
@@ -202,6 +191,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
             if (item['role'] !== 'assistant' || !Array.isArray(item['content'])) return failed();
             for (const rawContent of item['content']) {
               const content = object(rawContent);
+              if (content['type'] === 'refusal') return failed('refused');
               if (content['type'] !== 'output_text' || typeof content['text'] !== 'string') return failed();
               text.push(content['text']);
             }
@@ -216,9 +206,11 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         return { type: 'final', output: jsonValue(JSON.parse(text.join('')), { maxBytes: maxResponseBytes }), usage: accounting };
       } catch (error) {
         // HTTP status/body, credentials, model output and arbitrary transport exceptions are private.
-        if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
+        if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
         if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
-        if (error instanceof ProviderFailure) throw error;
+        if (error instanceof ModelProviderError) throw error;
+        // A schema the provider would refuse, or no output schema at all, is the agent's configuration.
+        if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') return failed('configuration');
         return failed();
       } finally { clearTimeout(timer); }
   };
@@ -235,12 +227,14 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
       const type = data['type'];
       if (type === 'response.output_text.delta') { if (typeof data['delta'] !== 'string') return failed(); onDelta(data['delta']); }
       else if (type === 'response.completed') completed = object(data['response']);
-      else if (type === 'response.failed' || type === 'response.incomplete' || type === 'error') return failed();
+      else if (type === 'response.incomplete') return failed('refused');
+      else if (type === 'response.failed' || type === 'error') return failed('unavailable');
     }
     return completed ?? failed();
   };
   return Object.freeze({
     id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });
@@ -288,7 +282,8 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
     throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers require an apiKey or a token source.');
   }
   if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A bounded local model ID is required.');
-  const url = endpoint.href; const apiKey = options.apiKey; const tokenSource = options.token; const model = options.model; const outputSchema = strictSchema(options.outputJsonSchema);
+  const url = endpoint.href; const apiKey = options.apiKey; const tokenSource = options.token; const model = options.model;
+  const fixedOutput = options.outputJsonSchema === undefined ? undefined : strictJsonSchema(options.outputJsonSchema, `The adapter's outputJsonSchema`);
   const authHeader = remote?.auth === 'api-key' ? 'api-key' : 'Authorization';
   const credential = async (): Promise<string | undefined> => {
     const value = tokenSource ? await tokenSource() : apiKey;
@@ -314,17 +309,15 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
         const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
         const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
         if (aliases.size !== request.tools.length || aliases.size > 128) return failed();
-        const tools = request.tools.map(tool => {
-          if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires an explicit portable JSON Schema.');
-          return { type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: strictSchema(tool.inputJsonSchema) } };
-        });
+        const tools = request.tools.map(tool => ({ type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool) } }));
+        const outputSchema = outputSchemaFor(fixedOutput, request.outputJsonSchema);
         const body = JSON.stringify(jsonValue({ model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}), messages: [{ role: 'system', content: request.instructions }, ...compatibleMessages(request.messages, aliases)],
           tools, parallel_tool_calls: true, max_tokens: request.maxOutputTokens,
           response_format: { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
         }, { maxBytes: maxRequestBytes }));
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         const authorization = await credential(); if (authorization !== undefined) headers[authHeader] = authorization;
-        const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }), signal);
+        const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }).catch((): never => failed('unavailable')), signal);
         const payload = onDelta ? await assembledCompletion(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
         const usage = object(payload['usage']);
         const inputTokens = integer(usage['prompt_tokens']); const outputTokens = integer(usage['completion_tokens']);
@@ -343,12 +336,15 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           });
           return { type: 'tool_calls', calls, usage: { costMicros: knownCost } };
         }
+        if (choice['finish_reason'] === 'length' || choice['finish_reason'] === 'content_filter' || typeof message['refusal'] === 'string') return failed('refused');
         if (choice['finish_reason'] !== 'stop' || typeof message['content'] !== 'string') return failed();
         return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost } };
       } catch (error) {
-        if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
+        if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
         if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
-        if (error instanceof ProviderFailure) throw error;
+        if (error instanceof ModelProviderError) throw error;
+        // A schema the provider would refuse, or no output schema at all, is the agent's configuration.
+        if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') return failed('configuration');
         return failed();
       } finally { clearTimeout(timer); }
   };
@@ -391,6 +387,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
     return { choices: [{ message, finish_reason: finish }], usage };
   };
   return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });
@@ -457,7 +454,7 @@ export function openAIEmbeddings(options: OpenAIEmbeddingsOptions): {
         return vectors;
       } catch (error) {
         if (error instanceof MayuraError) throw error;
-        throw new ProviderFailure();
+        return failed(error instanceof TypeError ? 'unavailable' : 'invalid_response');
       } finally { clearTimeout(timer); }
     },
   });

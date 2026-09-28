@@ -72,6 +72,21 @@ interface Account {
   closed: boolean;
 }
 
+/**
+ * Say which limit stopped a call, with the numbers (costs and counts, never content), and how to raise a budget of 0,
+ * the default for an agent run.
+ */
+function exhausted(path: readonly Account[], calls: number, bound: bigint): MayuraError {
+  const full = path.find(ancestor => calls > ancestor.maxCalls - ancestor.calls - ancestor.heldCalls);
+  if (full) return new MayuraError('BUDGET_EXCEEDED', `The budget's call limit of ${full.maxCalls} is used up; no new call was started.`);
+  const short = path.find(ancestor => bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved) ?? path[0]!;
+  const left = BigInt(short.maxCostMicros) - short.spent - short.reserved;
+  const hint = short.maxCostMicros === 0
+    ? ' The budget is 0, so nothing that costs money can run: for an agent run, set limits.maxCostMicros in createRuntime; for a workflow, its runtime\'s maxCostMicros.'
+    : '';
+  return new MayuraError('BUDGET_EXCEEDED', `The call may cost up to ${bound} micros, but only ${left < 0n ? 0n : left} of the budget's ${short.maxCostMicros} micros are left; no new call was started.${hint}`);
+}
+
 interface TicketState {
   readonly account: Account;
   readonly path: readonly Account[];
@@ -298,7 +313,7 @@ export class Budget {
     assertOpen(account, path);
     const bound = BigInt(maxMicros);
     if (path.some(ancestor => ancestor.heldCalls >= ancestor.maxCalls - ancestor.calls || bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved)) {
-      throw new MayuraError('BUDGET_EXCEEDED', 'Execution budget exhausted; no new call was dispatched.');
+      throw exhausted(path, 1, bound);
     }
     // No callback or await can interleave ancestor validation and commit.
     for (const ancestor of path) { ancestor.calls++; ancestor.reserved += bound; }
@@ -328,7 +343,7 @@ export class Budget {
     }
     if (path.some(ancestor => config.length > ancestor.maxCalls - ancestor.calls - ancestor.heldCalls
       || bound > BigInt(ancestor.maxCostMicros) - ancestor.spent - ancestor.reserved)) {
-      throw new MayuraError('BUDGET_EXCEEDED', 'Execution budget exhausted; no future call was admitted.');
+      throw exhausted(path, config.length, bound);
     }
     const states: TicketState[] = [];
     const handles = config.map(operation => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelRequest, type ModelStreamEvent } from '@mayura/core';
+import { MayuraError, ModelProviderError, type JsonObject, type JsonValue, type ModelRequest, type ModelStreamEvent } from '@mayura/core';
 import { anthropicMessages, type AnthropicMessagesOptions } from '../src/index.js';
 
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false };
@@ -45,6 +45,6 @@ describe('Messages streaming', () => {
       await expect(collect(anthropicMessages(options(async () => sse(body))).stream!(request()))).rejects.toBeInstanceOf(MayuraError);
     }
     const refused = await collect(anthropicMessages(options(async () => sse(textMessage(['no'], 'refusal')))).stream!(request())).catch(error => error);
-    expect(refused).toBeInstanceOf(ModelInvocationError);
+    expect(refused).toBeInstanceOf(ModelProviderError);
   });
 });

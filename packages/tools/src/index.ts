@@ -4,6 +4,7 @@ import {
   assertBudget,
   Budget,
   freezeJson,
+  jsonSchemaOf,
   jsonValue,
   MayuraError,
   validate,
@@ -205,7 +206,9 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'timeoutMs exceeds the supported timer range.');
   const costMicros = options.costMicros ?? 0;
   if (!Number.isSafeInteger(costMicros) || costMicros < 0) throw new MayuraError('INVALID_CONFIG', 'costMicros must be a non-negative safe integer.');
-  const inputJsonSchema = options.inputJsonSchema === undefined ? undefined : freezeJson(jsonValue(options.inputJsonSchema));
+  // What a model is told the input looks like: as given, or generated from the input validator when it can describe
+  // itself (Zod 4.2 and later can).
+  const inputJsonSchema = options.inputJsonSchema === undefined ? jsonSchemaOf(options.input) : freezeJson(jsonValue(options.inputJsonSchema));
   if (inputJsonSchema !== undefined && (inputJsonSchema === null || Array.isArray(inputJsonSchema) || typeof inputJsonSchema !== 'object')) {
     throw new MayuraError('INVALID_CONFIG', 'inputJsonSchema must be a JSON object.');
   }

@@ -1,19 +1,20 @@
 import {
   assertPositiveInteger,
-  freezeJson,
   jsonValue,
   MayuraError,
-  ModelInvocationError,
+  ModelProviderError,
   type JsonObject,
   type JsonValue,
   type ModelAdapter,
+  type ModelDefinitionCheck,
+  type ModelFailureReason,
   type ModelMessage,
   type ModelRequest,
   type ModelResponse,
   type ModelStreamEvent,
   type ModelToolCall,
 } from '@mayura/core';
-import { readServerSentEvents, streamModelCall } from '@mayura/core/host';
+import { checkStrictDefinition, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -21,7 +22,11 @@ const API_VERSION = '2023-06-01';
 export interface AnthropicMessagesOptions {
   readonly apiKey: string;
   readonly model: string;
-  readonly outputJsonSchema: JsonObject;
+  /**
+   * The output as strict JSON Schema. Optional: without it, the adapter uses the schema the runtime sends with each
+   * request, which `defineAgent` generates from the agent's output validator (or takes from its `outputJsonSchema`).
+   */
+  readonly outputJsonSchema?: JsonObject;
   readonly maxCostMicros: number;
   readonly pricing: {
     readonly inputMicrosPerMillionTokens: number;
@@ -34,13 +39,10 @@ export interface AnthropicMessagesOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 
-class ProviderFailure extends MayuraError {
-  constructor(message = 'The model provider returned an unavailable, refused or invalid response.') {
-    super('MODEL_FAILED', message);
-  }
-}
-
-const failed = (message?: string): never => { throw new ProviderFailure(message); };
+/** A failed call, for a reason Mayura reports in its own words. The default is a response the adapter cannot use. */
+const failed = (reason: ModelFailureReason = 'invalid_response'): never => { throw new ModelProviderError(reason); };
+/** The reason a caught failure carries, for charging known usage without losing why the call failed. */
+const reasonOf = (error: unknown): ModelFailureReason => error instanceof ModelProviderError ? error.reason : 'invalid_response';
 
 function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failed();
@@ -51,36 +53,6 @@ function integer(value: unknown, fallback?: number): number {
   if (value === undefined && fallback !== undefined) return fallback;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return failed();
   return value;
-}
-
-function strictSchema(schema: JsonObject): JsonObject {
-  const copy = jsonValue(schema) as JsonObject;
-  if (copy['type'] !== 'object') throw new MayuraError('INVALID_CONFIG', 'Provider schemas require a root JSON object.');
-  const visit = (item: JsonObject): void => {
-    if (item['type'] === 'object' || (Array.isArray(item['type']) && item['type'].includes('object'))) {
-      // An object without properties is strict as it stands; schema generators (Zod's among them) leave out its
-      // empty `properties` or `required`, so the copy sent to the provider states them.
-      if (item['properties'] === undefined && item['required'] === undefined) item['properties'] = {};
-      const properties = object(item['properties']);
-      if (item['required'] === undefined && Object.keys(properties).length === 0) item['required'] = [];
-      const required = item['required'];
-      if (item['additionalProperties'] !== false || !Array.isArray(required)
-        || required.some(key => typeof key !== 'string') || new Set(required).size !== required.length
-        || Object.keys(properties).length !== required.length || Object.keys(properties).some(key => !required.includes(key))) {
-        throw new MayuraError('INVALID_CONFIG', 'Strict object schemas must require every property and prohibit additional properties.');
-      }
-      for (const child of Object.values(properties)) visit(object(child));
-    }
-    if (item['items'] !== undefined) visit(object(item['items']));
-    for (const key of ['anyOf', 'allOf', 'oneOf']) {
-      if (Array.isArray(item[key])) for (const child of item[key]) visit(object(child));
-    }
-    for (const key of ['$defs', 'definitions']) {
-      if (item[key] !== undefined) for (const child of Object.values(object(item[key]))) visit(object(child));
-    }
-  };
-  visit(copy);
-  return freezeJson(copy);
 }
 
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -103,12 +75,9 @@ async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise
 async function responseBody(response: Response, limit: number, signal: AbortSignal): Promise<JsonObject> {
   if (!response.ok || response.redirected || !response.body) {
     void response.body?.cancel().catch(() => undefined);
-    if (!response.redirected && [401, 403].includes(response.status)) {
-      return failed('Model provider authentication or model authorization failed. Verify the configured credential and model access.');
-    }
-    if (!response.redirected && response.status === 429) {
-      return failed('The model provider rate limit was reached. Retry only under the application retry and budget policy.');
-    }
+    if (response.redirected) return failed('rejected');
+    // Anthropic answers 529 when it is overloaded; like any 5xx, the provider is unavailable.
+    if (!response.ok) throw providerHttpFailure(response.status);
     return failed();
   }
   const length = response.headers.get('content-length');
@@ -167,7 +136,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
   }
   const apiKey = options.apiKey;
   const model = options.model;
-  const outputSchema = strictSchema(options.outputJsonSchema);
+  const fixedOutput = options.outputJsonSchema === undefined ? undefined : strictJsonSchema(options.outputJsonSchema, `The adapter's outputJsonSchema`);
   const inputPrice = options.pricing.inputMicrosPerMillionTokens;
   const outputPrice = options.pricing.outputMicrosPerMillionTokens;
   const maxCostMicros = options.maxCostMicros;
@@ -198,9 +167,10 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
         if (aliases.size !== request.tools.length || aliases.size > 128) return failed();
         const tools = request.tools.map(tool => {
-          if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires an explicit portable JSON Schema.');
-          return { name: aliases.get(tool.id)!, description: tool.description, input_schema: strictSchema(tool.inputJsonSchema), strict: true };
+          if (!tool.inputJsonSchema) throw new MayuraError('INVALID_CONFIG', `Tool "${tool.id}" has no inputJsonSchema.`);
+          return { name: aliases.get(tool.id)!, description: tool.description, input_schema: strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`), strict: true };
         });
+        const outputSchema = fixedOutput ?? (request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema'));
         const requestObject: JsonObject = {
           model,
           max_tokens: request.maxOutputTokens,
@@ -220,7 +190,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           body,
           signal,
           redirect: 'error',
-        }), signal);
+        }).catch((): never => failed('unavailable')), signal);
         const payload = onDelta ? await assembledMessage(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
         const usage = object(payload['usage']);
         const inputTokens = integer(usage['input_tokens']);
@@ -253,6 +223,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           if (calls.length === 0) return failed();
           return { type: 'tool_calls', calls, usage: accounting };
         }
+        if (payload['stop_reason'] === 'refusal' || payload['stop_reason'] === 'max_tokens') return failed('refused');
         if (payload['stop_reason'] !== 'end_turn') return failed();
         const text: string[] = [];
         for (const raw of payload['content']) {
@@ -262,9 +233,11 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         }
         return { type: 'final', output: jsonValue(JSON.parse(text.join('')), { maxBytes: maxResponseBytes }), usage: accounting };
       } catch (error) {
-        if (knownCost !== undefined) throw new ModelInvocationError(knownCost);
+        if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
         if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
-        if (error instanceof ProviderFailure) throw error;
+        if (error instanceof ModelProviderError) throw error;
+        // A schema the provider would refuse, or no output schema at all, is the agent's configuration.
+        if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') return failed('configuration');
         return failed();
       } finally {
         clearTimeout(timer);
@@ -282,7 +255,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
       const data = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
       const type = data['type'];
       if (type === 'ping') continue;
-      if (type === 'error') return failed();
+      if (type === 'error') return failed('unavailable');
       if (type === 'message_start') {
         if (message) return failed();
         message = object(data['message']); usage = { ...object(message['usage']) }; continue;
@@ -315,6 +288,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
     id: 'anthropic.messages',
     capabilities: Object.freeze({ tools: true, structuredOutput: true }),
     maxCostMicros,
+    checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
   });

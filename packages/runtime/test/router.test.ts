@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MayuraError, ModelInvocationError, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Schema } from '@mayura/core';
+import { MayuraError, ModelInvocationError, ModelProviderError, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Schema } from '@mayura/core';
 import { defineTool } from '@mayura/tools';
 import { createModelRouter, createRuntime, defineAgent, type ModelRouterAttempt } from '../src/index.js';
 
@@ -51,16 +51,28 @@ describe('createModelRouter', () => {
   it('does not fail over after a configuration or authorization error, which every route would repeat', async () => {
     const misconfigured = adapter('primary', 5, () => { throw new MayuraError('INVALID_CONFIG', 'Every provider-exposed tool requires a schema.'); });
     const backup = adapter('backup', 5, () => final('b'));
-    await expect(createModelRouter({ id: 'router.main', routes: [misconfigured, backup] }).generate(request())).rejects.toMatchObject({ code: 'MODEL_FAILED' });
+    await expect(createModelRouter({ id: 'router.main', routes: [misconfigured, backup] }).generate(request())).rejects.toMatchObject({ code: 'INVALID_CONFIG', reason: 'configuration' });
     expect(backup.requests).toHaveLength(0);
+  });
+
+  it('fails over when a provider refuses a route\'s credentials, says why, and fails with the last reason when every route fails', async () => {
+    const attempts: ModelRouterAttempt[] = [];
+    const revoked = adapter('revoked', 5, () => { throw new ModelProviderError('authentication', { httpStatus: 401 }); });
+    const backup = adapter('backup', 5, () => final('b'));
+    const router = createModelRouter({ id: 'router.keys', routes: [revoked, backup], onAttempt: attempt => attempts.push(attempt) });
+    expect((await router.generate(request())).type).toBe('final');
+    expect(attempts.map(attempt => [attempt.modelId, attempt.outcome, attempt.failure])).toEqual([['revoked', 'failed', 'authentication'], ['backup', 'succeeded', undefined]]);
+    const limited = adapter('limited', 5, () => { throw new ModelProviderError('rate_limited', { httpStatus: 429, costMicros: 0 }); });
+    await expect(createModelRouter({ id: 'router.all', routes: [revoked, limited] }).generate(request()))
+      .rejects.toMatchObject({ code: 'MODEL_FAILED', reason: 'rate_limited', message: expect.stringContaining('rate limit') });
   });
 
   it('reports the total confirmed cost when every route fails with a known cost, and fails closed when any cost is unknown', async () => {
     const a = adapter('a', 5, () => { throw new ModelInvocationError(2); }); const b = adapter('b', 5, () => { throw new ModelInvocationError(3); });
     const error = await createModelRouter({ id: 'router.known', routes: [a, b] }).generate(request()).catch(value => value);
-    expect(error).toBeInstanceOf(ModelInvocationError); expect(error.costMicros).toBe(5);
+    expect(error).toBeInstanceOf(ModelProviderError); expect(error.costMicros).toBe(5);
     await expect(createModelRouter({ id: 'router.unknown', routes: [adapter('c', 5, unavailable), adapter('d', 5, () => { throw new ModelInvocationError(1); })] })
-      .generate(request())).rejects.not.toBeInstanceOf(ModelInvocationError);
+      .generate(request())).rejects.not.toHaveProperty('costMicros');
   });
 
   it('opens a circuit after repeated failures, skips the route while it cools down, then tries it once', async () => {

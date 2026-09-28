@@ -1,4 +1,4 @@
-import { assertSchema, jsonValue, MayuraError, type Guard, type ManagedGuardDefinition, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
+import { assertSchema, freezeJson, jsonSchemaOf, jsonValue, MayuraError, type Guard, type JsonObject, type ManagedGuardDefinition, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
 import { readManagedGuardDefinition, snapshotLocalGuards } from '@mayura/core/host';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { snapshotHooks, type HookDefinition } from './hooks.js';
@@ -17,6 +17,10 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly guards: { readonly input: readonly AgentGuard[]; readonly output: readonly AgentGuard[] };
   readonly hooks: readonly HookDefinition[];
   readonly stream?: AgentStreamPolicy;
+  /** The input as JSON Schema, when the input validator can describe itself; `agentAsTool` shows it to a parent model. */
+  readonly inputJsonSchema?: JsonObject;
+  /** The output as JSON Schema, sent with every model request: given in the options or generated from `output`. */
+  readonly outputJsonSchema?: JsonObject;
 }
 
 /**
@@ -49,6 +53,11 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
   readonly guards?: { readonly input?: readonly AgentGuard[]; readonly output?: readonly AgentGuard[] };
   readonly hooks?: readonly HookDefinition[];
   readonly stream?: AgentStreamPolicy;
+  /**
+   * The output as JSON Schema, for model providers. Leave it out to generate it from `output` (Zod 4.2 and later
+   * validators can describe themselves); give it when yours cannot, or to tell the model something narrower.
+   */
+  readonly outputJsonSchema?: JsonObject;
 }
 
 const definitions = new WeakSet<object>();
@@ -139,6 +148,23 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   if (!model.capabilities.structuredOutput || (options.tools.length > 0 && !model.capabilities.tools)) {
     throw new MayuraError('INVALID_CONFIG', 'The model does not support the agent required capabilities.');
   }
+  let outputJsonSchema: JsonObject | undefined;
+  if (options.outputJsonSchema === undefined) outputJsonSchema = jsonSchemaOf(options.output);
+  else {
+    const given = jsonValue(options.outputJsonSchema, { maxBytes: 262_144 });
+    if (!given || typeof given !== 'object' || Array.isArray(given)) throw new MayuraError('INVALID_CONFIG', 'outputJsonSchema must be a JSON Schema object.');
+    outputJsonSchema = freezeJson(given) as JsonObject;
+  }
+  const inputJsonSchema = jsonSchemaOf(options.input);
+  // The adapter checks now what it would otherwise refuse on the first call, such as a schema its provider rejects.
+  if (typeof model.checkDefinition === 'function') {
+    const tools = options.tools.map(tool => Object.freeze({ id: tool.id, description: tool.description, ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: tool.inputJsonSchema }) }));
+    try { model.checkDefinition(Object.freeze({ tools: Object.freeze(tools), ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }) })); }
+    catch (error) {
+      if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: ${error.message}`);
+      throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: the model adapter refused this agent's tools or output schema.`);
+    }
+  }
   const definition: AgentDefinition<I, O> = Object.freeze({
     id: options.id,
     version: options.version,
@@ -156,6 +182,8 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     guards: Object.freeze({ input: snapshotGuards(options.guards?.input ?? []), output: snapshotGuards(options.guards?.output ?? []) }),
     hooks: agentHooks(options),
     ...(options.stream === undefined ? {} : { stream: streamPolicy(options.stream) }),
+    ...(inputJsonSchema === undefined ? {} : { inputJsonSchema }),
+    ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }),
   });
   definitions.add(definition);
   return definition;

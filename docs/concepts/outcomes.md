@@ -94,7 +94,7 @@ your tool if you need them. The one exception is `ToolRefusal`, whose reason you
 | `CANCELLED` | The work was cancelled. |
 | `TIMEOUT` | A deadline passed: the run's `maxDurationMs` or a tool's `timeoutMs`. |
 | `TOOL_FAILED` | A tool threw (for a tool with `effects: 'none'`), refused with `ToolRefusal`, or a child agent did not succeed. |
-| `MODEL_FAILED` | The model call failed: provider error, rate limit, bad credentials, or an unusable response. |
+| `MODEL_FAILED` | The model call failed. The message says why: refused credentials, a rate limit, the provider unavailable or too slow, a rejected request, a refusal, or an unusable answer. See [Model providers](../guides/model-providers.md). |
 | `GUARD_BLOCKED` | A guard or hook blocked the content or the action. |
 | `GUARD_UNAVAILABLE` | A guard or required hook could not decide, for example because it threw or timed out. |
 | `OUTCOME_UNKNOWN` | An external effect may have happened and could not be confirmed. |
@@ -111,7 +111,9 @@ Storage adapters report their own failures as `StorageError`, with codes such as
 
 Mayura never retries a run or a tool call by itself. Whether a retry is safe depends on the error:
 
-- `failed` with `MODEL_FAILED` or `TIMEOUT` is often temporary. Submit the run again. To fail over between model
+- `failed` with `MODEL_FAILED` for a rate limit, an unavailable provider or a timeout, or with `TIMEOUT`, is usually
+  temporary: submit the run again. Refused credentials or a rejected request repeat until you fix the configuration.
+  `BUDGET_EXCEEDED` messages give the call's cost and what the budget had left. To fail over between model
   providers inside one run, use a model router; see [Model routing](../guides/model-routing.md).
 - `failed` with `INVALID_OUTPUT` means the model answered in the wrong shape. A retry may work; if it keeps
   happening, tighten the instructions or the provider's output schema.
@@ -123,7 +125,7 @@ For retrying your own operations inside a tool, `retry` from `mayura/helpers` as
 
 ## Reconciling outcome_unknown
 
-`outcome_unknown` means a tool that changes things outside (`effects` of `read`, `write` or `host`) started, and then
+`outcome_unknown` means a tool that changes things outside (`effects` of `write` or `host`) started, and then
 something went wrong before Mayura got a clear answer: the tool threw, timed out, was cancelled mid-call, or reported
 a cost it could not settle. The payment may have been taken, or not. The email may have been sent, or not.
 

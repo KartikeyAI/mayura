@@ -101,35 +101,27 @@ Four things happened:
 
 ### Use a real model
 
-Swap the scripted model for a provider. Real models need a JSON Schema for each tool's input and for the agent's
-output (Zod converts its schemas), your model's prices, and cost caps: a run is allowed to spend nothing until you
-set `limits.maxCostMicros`. Costs are in **micros**, millionths of a dollar.
+Swap the scripted model for a provider. A real model needs your model's prices and cost caps: a run is allowed to
+spend nothing until you set `limits.maxCostMicros`. Costs are in **micros**, millionths of a dollar.
 
 ```ts
 import { createRuntime, defineAgent, defineTool } from 'mayura';
 import { anthropicMessages } from 'mayura/provider-anthropic';
 import { z } from 'zod';
 
-const jsonSchema = (schema: z.ZodType) => {
-  const { $schema, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema)));
-  return plain;
-};
-
-const addInput = z.object({ left: z.number(), right: z.number() });
 const add = defineTool({
   id: 'math.add', version: '1', description: 'Add two numbers.',
-  input: addInput, inputJsonSchema: jsonSchema(addInput),
+  input: z.object({ left: z.number(), right: z.number() }),
   output: z.object({ sum: z.number() }),
   effects: 'none', capabilities: [],
   execute: ({ left, right }) => ({ sum: left + right }),
 });
 
-const output = z.object({ answer: z.number() });
 const agent = defineAgent({
   id: 'calculator', version: '1', instructions: 'Use the addition tool to answer.',
-  input: z.object({ request: z.string() }), output, tools: [add],
+  input: z.object({ request: z.string() }), output: z.object({ answer: z.number() }), tools: [add],
   model: anthropicMessages({
-    apiKey: process.env.ANTHROPIC_API_KEY!, model: 'claude-sonnet-5', outputJsonSchema: jsonSchema(output),
+    apiKey: process.env.ANTHROPIC_API_KEY!, model: 'claude-sonnet-5',
     pricing: { inputMicrosPerMillionTokens: 3_000_000, outputMicrosPerMillionTokens: 15_000_000 }, // check your model's prices
     maxCostMicros: 50_000, // at most 5 cents per model call
   }),
@@ -142,7 +134,12 @@ const runtime = createRuntime({
 });
 ```
 
-The rest of the program is unchanged. OpenAI (`openAIResponses`) and OpenAI-compatible providers
+The rest of the program is unchanged. The provider needs the tool's input and the agent's output as JSON Schema;
+Mayura generates both from your Zod schemas (Zod 4.2 or later). Providers accept only strict schemas, where every
+field is present, so use `.nullable()` rather than `.optional()` for a field the model may leave empty.
+`defineAgent` checks this and tells you exactly which field to change.
+
+OpenAI (`openAIResponses`) and OpenAI-compatible providers
 (`openAICompatibleChat`) work the same way; each is granted as `model:` followed by its adapter id. See
 [Model providers](guides/model-providers.md). Mayura never reads API keys from the environment by itself: you pass
 them in, so where they come from is up to you.

@@ -1,4 +1,4 @@
-import { jsonValue, MayuraError, ModelInvocationError, type JsonObject, type JsonValue, type ModelResponse } from '@mayura/core';
+import { isModelFailureReason, jsonValue, MayuraError, ModelInvocationError, modelFailureMessage, ModelProviderError, type JsonObject, type JsonValue, type ModelResponse } from '@mayura/core';
 import { isIdentifier } from './agent.js';
 
 const invalid = (): never => { throw new MayuraError('MODEL_FAILED', 'The model returned an invalid response envelope.'); };
@@ -6,10 +6,28 @@ const invalid = (): never => { throw new MayuraError('MODEL_FAILED', 'The model 
 /** Read only independently known failure usage; exception accessors/proxies cannot supply public text. */
 export function modelFailureCost(error: unknown): number | undefined {
   try {
-    const descriptor = error instanceof ModelInvocationError ? Object.getOwnPropertyDescriptor(error, 'costMicros') : undefined;
+    const descriptor = error instanceof ModelInvocationError || error instanceof ModelProviderError ? Object.getOwnPropertyDescriptor(error, 'costMicros') : undefined;
     const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   } catch { return undefined; }
+}
+
+const own = (error: object, key: string): unknown => { const descriptor = Object.getOwnPropertyDescriptor(error, key); return descriptor && 'value' in descriptor ? descriptor.value : undefined; };
+/**
+ * The public error for a failed model call. A `ModelProviderError` names a reason, and the message is Mayura's own for
+ * that reason; an adapter's own time limit reads as a timeout; anything else stays generic, since adapter text is not
+ * trusted. `cancelled` says the run itself was cancelled, which is reported as such elsewhere.
+ */
+export function modelFailure(error: unknown, cancelled: boolean): MayuraError {
+  try {
+    if (error instanceof ModelProviderError) {
+      const reason = own(error, 'reason'); const status = own(error, 'httpStatus');
+      if (isModelFailureReason(reason) && (status === undefined || (typeof status === 'number' && Number.isSafeInteger(status) && status >= 100 && status <= 599))) {
+        return new MayuraError(reason === 'configuration' ? 'INVALID_CONFIG' : 'MODEL_FAILED', modelFailureMessage(reason, status as number | undefined));
+      }
+    } else if (!cancelled && error instanceof MayuraError && own(error, 'code') === 'CANCELLED') return new MayuraError('MODEL_FAILED', modelFailureMessage('timeout'));
+  } catch { /* Hostile exception objects cannot control diagnostics. */ }
+  return new MayuraError('MODEL_FAILED', 'The model adapter failed to produce a response.');
 }
 
 function object(value: JsonValue | undefined): JsonObject {

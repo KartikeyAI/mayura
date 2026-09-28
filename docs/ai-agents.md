@@ -26,8 +26,8 @@ Every project `mayura init` creates has an `AGENTS.md` that tells assistants:
 
 - where the documentation is (`node_modules/mayura/docs/` and `llms-full.txt`);
 - what the project is and which `npm run` scripts it has;
-- the rules assistants most often get wrong: import paths, explicit permissions, cost limits in micros, JSON Schemas
-  for real models, checking `result.status`, keeping keys out of code, and testing offline.
+- the rules assistants most often get wrong: import paths, explicit permissions, cost limits in micros, strict
+  schemas for real models (`.nullable()`, not `.optional()`), checking `result.status`, keeping keys out of code, and testing offline.
 
 It also has a `CLAUDE.md` that imports `AGENTS.md`, for assistants that read that file instead. Edit both freely; they
 are yours.

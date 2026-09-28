@@ -72,9 +72,11 @@ The same file is in the repository as
 | `guards` | no | `{ input, output }` lists of guards that can allow, block or rewrite content. At most 32 per list. |
 | `hooks` | no | Lifecycle hooks created with `defineHook`. |
 | `stream` | no | Stream one text field of the final answer while it is written. |
+| `outputJsonSchema` | no | The output as JSON Schema for model providers. Generated from `output` when the validator can describe itself (Zod 4.2 and later). |
 
-`defineAgent` throws a `MayuraError` with code `INVALID_CONFIG` if anything is wrong, for example a duplicate tool id or
-a model that cannot call tools while `tools` is not empty.
+`defineAgent` throws a `MayuraError` with code `INVALID_CONFIG` if anything is wrong, for example a duplicate tool id,
+a model that cannot call tools while `tools` is not empty, or a tool or output schema the model provider would refuse.
+The message says what to fix.
 
 ## Ids and versions
 
@@ -105,8 +107,12 @@ Mayura validates at every boundary:
 Values must be plain JSON: strings, finite numbers, booleans, `null`, arrays and plain objects. Dates, class instances,
 `undefined` and `bigint` are rejected. Size limits come from the runtime (`maxInputBytes`, `maxOutputBytes`).
 
-Real model providers also need the output shape as JSON Schema, which you pass to the adapter (see below). Keep the
-two in sync; the Zod schema is what Mayura enforces.
+Real model providers also need the output shape as JSON Schema. Mayura generates it from `output` (validators that
+implement Standard JSON Schema can describe themselves, as Zod 4.2 and later do) and sends it with every model call;
+you can see it as `agent.outputJsonSchema`. Providers accept only strict schemas, so use `.nullable()` rather than
+`.optional()` for fields the model may leave empty; `defineAgent` checks this with the model you give it. Pass
+`outputJsonSchema` yourself only when your validator cannot describe itself. The validator is still what Mayura
+enforces on the answer.
 
 ## The model
 
@@ -129,13 +135,6 @@ const answerer = defineAgent({
   model: openAIResponses({
     apiKey: process.env.OPENAI_API_KEY ?? '',
     model: 'gpt-5-mini',
-    // The provider needs the output shape as strict JSON Schema.
-    outputJsonSchema: {
-      type: 'object',
-      properties: { answer: { type: 'string' } },
-      required: ['answer'],
-      additionalProperties: false,
-    },
     maxCostMicros: 20_000, // at most $0.02 per model call
     pricing: { inputMicrosPerMillionTokens: 250_000, outputMicrosPerMillionTokens: 2_000_000 },
     timeoutMs: 30_000,

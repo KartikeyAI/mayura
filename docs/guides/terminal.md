@@ -46,14 +46,15 @@ At the prompt, `/help` lists commands, `/clear` forgets the conversation, `/cost
 | Option | Meaning |
 |---|---|
 | `agent`, `runtime` | Required. The runtime's permissions and limits apply to every turn. |
-| `toInput(message, history)` | Builds the agent's input. The default passes the message text alone. |
+| `toInput(message, history)` | Builds the agent's input. The default is `chatTranscript` (below). |
 | `toText(output)` | Turns the agent's output into what the person reads. The default is `outputText`. |
 | `title` | Shown at the top. The default is the agent id. |
 | `io` | `{ input, output }` streams to use instead of the process's terminal. |
 
-**The agent has no memory of earlier turns unless you pass it.** `history` holds the earlier turns of this chat as
-`{ role: 'person' | 'agent', text }`; use `toInput` to put them into the input, and give the agent an input schema that
-accepts them. `/clear` empties it.
+**The chat remembers the conversation.** For an agent whose input is text, the default `toInput` (`chatTranscript`,
+also exported) sends the first message as it is and, after that, the last 20 turns as a transcript followed by the new
+message. For an agent with structured input, write `toInput`: `history` holds the earlier turns as
+`{ role: 'person' | 'agent', text }`, as in the example above. `/clear` starts a new conversation.
 
 `outputText(output)` returns the output if it is a string, otherwise its first string field among `reply`, `message`,
 `text`, `answer`, `content` and `response`, otherwise the output as indented JSON.
@@ -94,18 +95,8 @@ command, refuses them, so a confirmed tool can never run unconfirmed there. The 
 ```ts
 import { runAgentCommand } from 'mayura/terminal';
 
-process.exitCode = await runAgentCommand({
-  agent, runtime, name: 'plan-trip',
-  inputJsonSchema: {
-    type: 'object',
-    required: ['city'],
-    properties: {
-      city: { type: 'string', description: 'Where to go.' },
-      days: { type: 'integer' },
-      budget: { type: 'boolean' },
-    },
-  },
-});
+// The agent's input is z.object({ city: z.string().describe('Where to go.'), days: z.number().int(), budget: z.boolean() }).
+process.exitCode = await runAgentCommand({ agent, runtime, name: 'plan-trip' });
 await runtime.close();
 ```
 
@@ -121,8 +112,9 @@ The input comes from exactly one of these:
 
 1. **`--input <json>`** or **`--input-file <path>`**: the whole input as JSON. It cannot be combined with flags or
    words.
-2. **Flags**, from the top-level `string`, `number`, `integer` and `boolean` properties of `inputJsonSchema`, collected
-   into an object. Booleans take no value and also accept `--no-<name>`. Numbers are checked.
+2. **Flags**, from the top-level `string`, `number`, `integer` and `boolean` properties of the agent's input schema
+   (or of `inputJsonSchema` when you give one), collected into an object. A Zod `.describe()` text becomes the flag's
+   help. Booleans take no value and also accept `--no-<name>`. Numbers are checked.
 3. **Words** on the command line, joined with spaces into one string (only without flags).
 4. **Standard input**, when nothing else is given and it is piped (up to 1 MiB of text).
 
@@ -133,7 +125,7 @@ The agent's `input` schema still validates whatever arrives; the JSON Schema onl
 | `agent`, `runtime` | Required. |
 | `name` | The command name in `--help`. The default is the agent id. |
 | `argv` | The arguments. The default is `process.argv.slice(2)`. |
-| `inputJsonSchema` | The input's JSON Schema, for flags and `--help`. |
+| `inputJsonSchema` | The input's JSON Schema, for flags and `--help`. The default is the agent's own input schema. |
 | `toText(output)` | What to print for a successful output. The default is `outputText`. |
 | `io` | `{ stdin, stdout, stderr }` streams to use instead of the process's. |
 
@@ -147,10 +139,9 @@ their own, for building a different front end.
 
 ## Good to know
 
-- When a reply was streamed, the chat and commands show the streamed text and do not print the final output again.
-  Streamed text is the model's raw field: if a batch guard stopped the stream partway, or your output schema rewrites
-  the answer (for example to redact it), what the person saw differs from the run's output. For such agents, leave
-  out `stream` when you use these front ends.
+- Streamed text is a preview: it is the model's raw field. When the final answer differs from it, because a batch
+  guard stopped the stream partway or your output schema rewrote the answer (for example to redact it), the chat and
+  commands print the final answer after it, so the last thing the person reads is the answer that counts.
 - Costs shown are from the runtime's budget for each run; see [Costs and budgets](../concepts/costs-and-budgets.md).
 - These helpers are for a person at a terminal. For approvals in a web app or a long-running workflow, see
   [Approvals and human input](approvals-and-human-input.md).

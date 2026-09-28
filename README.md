@@ -55,28 +55,20 @@ import { createRuntime, defineAgent, defineTool } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
 import { z } from 'zod';
 
-// Model providers take plain JSON Schema; Zod converts its own schemas.
-const jsonSchema = (schema: z.ZodType) => {
-  const { $schema, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema)));
-  return plain;
-};
-
-const weatherInput = z.object({ city: z.string() });
 const getWeather = defineTool({
   id: 'weather.get', version: '1', description: 'Current weather for a city.',
-  input: weatherInput, inputJsonSchema: jsonSchema(weatherInput),
+  input: z.object({ city: z.string() }),
   output: z.object({ celsius: z.number(), sky: z.string() }),
   effects: 'read', capabilities: [],
   execute: async ({ city }) => ({ celsius: 21, sky: 'clear' }), // call your weather API here
 });
 
-const answer = z.object({ reply: z.string() });
 const agent = defineAgent({
   id: 'weather-assistant', version: '1',
   instructions: 'Answer questions about the weather. Use the weather tool.',
-  input: z.object({ question: z.string() }), output: answer, tools: [getWeather],
+  input: z.object({ question: z.string() }), output: z.object({ reply: z.string() }), tools: [getWeather],
   model: openAIResponses({
-    apiKey: process.env.OPENAI_API_KEY!, model: 'gpt-5-mini', outputJsonSchema: jsonSchema(answer),
+    apiKey: process.env.OPENAI_API_KEY!, model: 'gpt-5-mini',
     // Your model's prices, in micros (millionths of a dollar) per million tokens, and a cap per model call.
     pricing: { inputMicrosPerMillionTokens: 250_000, outputMicrosPerMillionTokens: 2_000_000 },
     maxCostMicros: 20_000,
@@ -95,6 +87,10 @@ if (result.status === 'succeeded') console.log(result.output.reply);
 else console.error(result.status, result.error.message);
 await runtime.close();
 ```
+
+Mayura turns your Zod schemas into the JSON Schema the model provider needs. If a schema can't be sent to the
+provider (for example a field is `.optional()`; use `.nullable()`), `defineAgent` tells you which field and how to fix
+it before anything runs.
 
 No API key yet? Swap the model for a scripted one and everything else runs offline, which is also how you test
 agents:

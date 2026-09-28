@@ -1,4 +1,4 @@
-import { MayuraError, ModelInvocationError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent } from '@mayura/core';
+import { isModelFailureReason, MayuraError, ModelProviderError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelDefinitionCheck, type ModelFailureReason, type ModelRequest, type ModelResponse, type ModelStreamEvent } from '@mayura/core';
 import { streamModelCall } from '@mayura/core/host';
 import { isIdentifier } from './agent.js';
 import { modelCost, modelFailureCost } from './response.js';
@@ -10,6 +10,11 @@ export interface ModelRouterAttempt {
   readonly outcome: 'succeeded' | 'failed' | 'skipped';
   /** Why an attempt failed or was skipped. */
   readonly reason?: 'timeout' | 'failed' | 'circuit_open';
+  /**
+   * For a failed attempt whose adapter said why: for example `authentication` when the provider refused this route's
+   * credentials, or `rate_limited`. The router still fails over (another route has its own key), so watch for it.
+   */
+  readonly failure?: ModelFailureReason;
   /** Confirmed cost of this attempt; null when unknown (then the attempt's full bound is charged). */
   readonly costMicros: number | null;
 }
@@ -37,14 +42,25 @@ export interface ModelRouter extends ModelAdapter {
   status(): readonly ModelRouterRouteStatus[];
 }
 
+/** The reason a genuine `ModelProviderError` names; exception accessors cannot supply one. */
+function failureReason(error: unknown): ModelFailureReason | undefined {
+  try {
+    const descriptor = error instanceof ModelProviderError ? Object.getOwnPropertyDescriptor(error, 'reason') : undefined;
+    const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return isModelFailureReason(value) ? value : undefined;
+  } catch { return undefined; }
+}
+
 interface Circuit { failures: number; openUntil: number | null; trial: boolean }
 const noFailover = new Set(['INVALID_CONFIG', 'PERMISSION_DENIED', 'INVALID_INPUT']);
 
 /**
  * A model adapter that tries other adapters in priority order when one is unavailable.
  *
- * - Fails over after a timeout, a provider or transport failure, a rate limit or an unusable response; never after the
- *   caller cancels, and never after a configuration or authorization error, which would repeat on every route.
+ * - Fails over after a timeout, a provider or transport failure, a rate limit, a provider refusing the route's own
+ *   credentials, or an unusable response; never after the caller cancels, and never after a configuration error or a
+ *   Mayura permission denial, which would repeat on every route. Each failed attempt reports why (`failure`).
+ * - When every route fails, the call fails with the last route's reason.
  * - Accounting stays conservative: the router's per-call bound is the sum of the bounds of the routes it may try, a
  *   failed attempt with a confirmed cost is charged that cost, and one with an unknown cost is charged its full bound.
  * - A run stays on the route that holds its provider continuation. If that route fails, the call moves to another
@@ -104,8 +120,8 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
     if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
     const pin = pinned(request.continuation);
     const order = pin ? [pin.route, ...routes.map((_, index) => index).filter(index => index !== pin.route)] : routes.map((_, index) => index);
-    let spent = 0; let unknown = false; let attempts = 0;
-    const stop = (): never => { throw unknown ? new MayuraError('MODEL_FAILED', 'The model router could not complete the call.') : new ModelInvocationError(spent); };
+    let spent = 0; let unknown = false; let attempts = 0; let last: ModelFailureReason = 'unavailable';
+    const stop = (): never => { throw new ModelProviderError(last, unknown ? {} : { costMicros: spent }); };
     for (const index of order) {
       if (attempts >= maxAttempts) break;
       const adapter = routes[index]!;
@@ -121,16 +137,17 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
         if (known === undefined) { unknown = true; spent += adapter.maxCostMicros; } else spent += known;
         failed(index);
         const final = (error instanceof MayuraError && noFailover.has(error.code)) || committed();
-        observe({ route: index, modelId: adapter.id, outcome: 'failed',
-          reason: !final && error instanceof MayuraError && error.code === 'CANCELLED' ? 'timeout' : 'failed', costMicros: known ?? null });
+        const timedOut = !final && error instanceof MayuraError && error.code === 'CANCELLED';
+        last = timedOut ? 'timeout' : failureReason(error) ?? (error instanceof MayuraError && error.code === 'INVALID_CONFIG' ? 'configuration' : 'invalid_response');
+        observe({ route: index, modelId: adapter.id, outcome: 'failed', reason: timedOut ? 'timeout' : 'failed', failure: last, costMicros: known ?? null });
         if (final) return stop();
         continue;
       }
       let cost: number;
       try { cost = modelCost(response); }
       catch {
-        unknown = true; spent += adapter.maxCostMicros; failed(index);
-        observe({ route: index, modelId: adapter.id, outcome: 'failed', reason: 'failed', costMicros: null });
+        unknown = true; spent += adapter.maxCostMicros; failed(index); last = 'invalid_response';
+        observe({ route: index, modelId: adapter.id, outcome: 'failed', reason: 'failed', failure: last, costMicros: null });
         if (committed()) return stop();
         continue;
       }
@@ -152,6 +169,8 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
       return Object.freeze({ route: index, modelId: adapter.id, consecutiveFailures: circuit.failures, openUntilMs: circuit.openUntil,
         state: !open ? 'closed' as const : now() < circuit.openUntil! && !circuit.trial ? 'open' as const : 'half_open' as const });
     })),
+    /** Every route must be able to serve the agent, since any of them may answer. */
+    checkDefinition: (definition: ModelDefinitionCheck): void => { for (const adapter of routes) adapter.checkDefinition?.(definition); },
     generate: (request: ModelRequest): Promise<ModelResponse> => route(request, (adapter, inner) => adapter.generate(inner), () => false),
     /**
      * Streams from the first available route. It can fail over only until the first delta has been released: after

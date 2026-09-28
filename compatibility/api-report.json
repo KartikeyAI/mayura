@@ -1194,6 +1194,10 @@
         "kind": "type",
         "declaration": "4e0ffb7cb82cf24d"
       },
+      "isModelFailureReason": {
+        "kind": "function",
+        "declaration": "d9379c082a04f45a"
+      },
       "JsonLimits": {
         "kind": "interface",
         "declaration": "d951b63b1f6c1370"
@@ -1205,6 +1209,10 @@
       "JsonPrimitive": {
         "kind": "type",
         "declaration": "fafe7063a3b51122"
+      },
+      "jsonSchemaOf": {
+        "kind": "function",
+        "declaration": "a07942395fa15329"
       },
       "jsonValue": {
         "kind": "function",
@@ -1252,7 +1260,19 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "dbae6243febc6b20"
+        "declaration": "4da0b8511d54c413"
+      },
+      "ModelDefinitionCheck": {
+        "kind": "interface",
+        "declaration": "b53c10a601b2523b"
+      },
+      "modelFailureMessage": {
+        "kind": "function",
+        "declaration": "880bf6fde0647535"
+      },
+      "ModelFailureReason": {
+        "kind": "type",
+        "declaration": "98685b0ded7b1871"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -1262,9 +1282,13 @@
         "kind": "type",
         "declaration": "fe6bc01ce052e687"
       },
+      "ModelProviderError": {
+        "kind": "class",
+        "declaration": "94afc59f4285a84a"
+      },
       "ModelRequest": {
         "kind": "interface",
-        "declaration": "42f2375210f9c852"
+        "declaration": "82f94952a8231006"
       },
       "ModelResponse": {
         "kind": "type",
@@ -1332,6 +1356,10 @@
         "kind": "function",
         "declaration": "30d6d9284b80dcb7"
       },
+      "checkStrictDefinition": {
+        "kind": "function",
+        "declaration": "a1fe980db09af895"
+      },
       "evaluateLifecycleControl": {
         "kind": "function",
         "declaration": "66d9d1c3e22b336f"
@@ -1355,6 +1383,10 @@
       "ManagedGuardLimits": {
         "kind": "interface",
         "declaration": "59b6e09faacb8f53"
+      },
+      "providerHttpFailure": {
+        "kind": "function",
+        "declaration": "fc80d0debedd2e6a"
       },
       "readManagedGuardDefinition": {
         "kind": "function",
@@ -1387,6 +1419,10 @@
       "streamModelCall": {
         "kind": "function",
         "declaration": "7549e5e318f21229"
+      },
+      "strictJsonSchema": {
+        "kind": "function",
+        "declaration": "45e30eebb603388a"
       }
     },
     "@mayura/exporter-otlp": {
@@ -2092,7 +2128,7 @@
       },
       "AnthropicMessagesOptions": {
         "kind": "interface",
-        "declaration": "cfe527ec67148f51"
+        "declaration": "4ceb334e2fefce82"
       }
     },
     "@mayura/provider-openai": {
@@ -2102,7 +2138,7 @@
       },
       "OpenAICompatibleChatOptions": {
         "kind": "interface",
-        "declaration": "ce7d913f908187d8"
+        "declaration": "6e9e9b4def437cb4"
       },
       "openAIEmbeddings": {
         "kind": "function",
@@ -2118,7 +2154,7 @@
       },
       "OpenAIResponsesOptions": {
         "kind": "interface",
-        "declaration": "df3f1e4a4c760e5d"
+        "declaration": "3513b9e7ed5194f0"
       }
     },
     "@mayura/runtime": {
@@ -2128,7 +2164,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "2896cb76f3eeb9f9"
+        "declaration": "954680309d0d7f93"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2136,7 +2172,7 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "baf37d65f35c425c"
+        "declaration": "c92f7f8790abacef"
       },
       "AgentOutput": {
         "kind": "type",
@@ -2208,7 +2244,7 @@
       },
       "ModelRouterAttempt": {
         "kind": "interface",
-        "declaration": "869ca695c7c1e464"
+        "declaration": "3055bab47f0b363a"
       },
       "ModelRouterOptions": {
         "kind": "interface",
@@ -2254,7 +2290,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "2896cb76f3eeb9f9"
+        "declaration": "954680309d0d7f93"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2262,7 +2298,7 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "baf37d65f35c425c"
+        "declaration": "c92f7f8790abacef"
       },
       "AgentOutput": {
         "kind": "type",
@@ -2488,6 +2524,10 @@
         "kind": "interface",
         "declaration": "6ce45f030685b12c"
       },
+      "isModelFailureReason": {
+        "kind": "function",
+        "declaration": "d9379c082a04f45a"
+      },
       "JsonLimits": {
         "kind": "interface",
         "declaration": "d951b63b1f6c1370"
@@ -2499,6 +2539,10 @@
       "JsonPrimitive": {
         "kind": "type",
         "declaration": "fafe7063a3b51122"
+      },
+      "jsonSchemaOf": {
+        "kind": "function",
+        "declaration": "a07942395fa15329"
       },
       "jsonValue": {
         "kind": "function",
@@ -2546,7 +2590,19 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "dbae6243febc6b20"
+        "declaration": "4da0b8511d54c413"
+      },
+      "ModelDefinitionCheck": {
+        "kind": "interface",
+        "declaration": "b53c10a601b2523b"
+      },
+      "modelFailureMessage": {
+        "kind": "function",
+        "declaration": "880bf6fde0647535"
+      },
+      "ModelFailureReason": {
+        "kind": "type",
+        "declaration": "98685b0ded7b1871"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -2556,9 +2612,13 @@
         "kind": "type",
         "declaration": "fe6bc01ce052e687"
       },
+      "ModelProviderError": {
+        "kind": "class",
+        "declaration": "94afc59f4285a84a"
+      },
       "ModelRequest": {
         "kind": "interface",
-        "declaration": "42f2375210f9c852"
+        "declaration": "82f94952a8231006"
       },
       "ModelResponse": {
         "kind": "type",
@@ -2570,7 +2630,7 @@
       },
       "ModelRouterAttempt": {
         "kind": "interface",
-        "declaration": "869ca695c7c1e464"
+        "declaration": "3055bab47f0b363a"
       },
       "ModelRouterOptions": {
         "kind": "interface",
@@ -4954,6 +5014,10 @@
         "kind": "const",
         "declaration": "426b3b4012baf103"
       },
+      "chatTranscript": {
+        "kind": "function",
+        "declaration": "e4ccd1c92c58fef9"
+      },
       "ChatTurn": {
         "kind": "interface",
         "declaration": "0c02986466bff163"
@@ -6070,13 +6134,17 @@
         "kind": "type",
         "declaration": "83b969282c3cb4e8"
       },
+      "WorkflowLifecyclePolicy": {
+        "kind": "interface",
+        "declaration": "ae17f812b854b128"
+      },
       "WorkflowLifecycleRuntime": {
         "kind": "interface",
         "declaration": "1d670425c70f3825"
       },
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",
-        "declaration": "7579f0d1cc603aa3"
+        "declaration": "329e6b6686114614"
       },
       "WorkflowLifecycleSettledEntry": {
         "kind": "interface",

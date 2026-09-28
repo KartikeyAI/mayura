@@ -8,7 +8,7 @@ import { invokeTool, type AnyTool } from '@mayura/tools';
 import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
-import { modelCost, modelFailureCost, modelResponse } from './response.js';
+import { modelCost, modelFailure as publicModelFailure, modelFailureCost, modelResponse } from './response.js';
 import { createBatcher, createFieldExtractor } from './stream.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
 import { OperationPermits } from './permits.js';
@@ -692,7 +692,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const modelTools = agent.tools.map((tool) => Object.freeze({ id: tool.id, description: tool.description,
           ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: freezeJson(jsonValue(tool.inputJsonSchema)) as typeof tool.inputJsonSchema }),
         }));
-        const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
+        const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }), ...(agent.outputJsonSchema === undefined ? {} : { outputJsonSchema: agent.outputJsonSchema }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
         const primaryBundle = operationBundle('model', agent.model.maxCostMicros);
         try {
           // A content-only projection: private instructions and provider continuation never
@@ -710,7 +710,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             catch (error) {
               const cost = modelFailureCost(error);
               if (cost !== undefined) reservation.settle(cost);
-              throw new MayuraError('MODEL_FAILED', 'The model adapter failed to produce a response.');
+              // Only Mayura's own message for a known reason reaches the outcome, never the adapter's text.
+              throw publicModelFailure(error, controller.signal.aborted);
             }
             // Account independently validated usage even when the content envelope is malformed.
             // The callback may complete after cooperative cancellation; it cannot re-open disclosure.
@@ -753,7 +754,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           }
           const ledger = budget.snapshot();
           if (typeof ledger.spentMicros !== 'number' || batchCost > limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) {
-            throw new MayuraError('BUDGET_EXCEEDED', 'The complete tool batch cannot be admitted within the budget.');
+            const left = typeof ledger.spentMicros === 'number' ? Math.max(0, limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) : 0;
+            throw new MayuraError('BUDGET_EXCEEDED', `The tool calls the model asked for may cost up to ${batchCost} micros, but only ${left} of the run's limits.maxCostMicros (${limits.maxCostMicros}) are left.`);
           }
           for (const call of response.calls) callIds.add(call.id);
           messages.push({ role: 'assistant', calls: response.calls });

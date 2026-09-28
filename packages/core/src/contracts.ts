@@ -75,13 +75,60 @@ export interface ModelRequest {
   readonly maxOutputTokens: number;
   /** Opaque bounded provider protocol state; private to this run and never a public output. */
   readonly continuation?: JsonValue;
+  /**
+   * The agent's output as JSON Schema: what the final answer must look like. The runtime sends it when the agent has
+   * one (given, or generated from its output validator); an adapter configured with its own output schema uses that.
+   */
+  readonly outputJsonSchema?: JsonObject;
 }
+/** What `defineAgent` asks an adapter to check once, before any run: the tools and output schema it would be sent. */
+export interface ModelDefinitionCheck { readonly tools: readonly ModelTool[]; readonly outputJsonSchema?: JsonObject }
 export interface ModelUsage { readonly costMicros: number }
 /** A failed provider invocation may still have confirmed billable usage. No raw failure text is accepted. */
 export class ModelInvocationError extends MayuraError {
   constructor(readonly costMicros: number) {
     super('MODEL_FAILED', 'The model invocation failed after reporting known usage.');
     if (!Number.isSafeInteger(costMicros) || costMicros < 0) throw new MayuraError('INVALID_CONFIG', 'Known model usage must be a nonnegative safe integer.');
+    Object.freeze(this);
+  }
+}
+/**
+ * Why a model call failed, in words Mayura can show safely. An adapter picks the reason; the message is Mayura's own,
+ * so no provider text or credential can reach an outcome through it.
+ */
+export type ModelFailureReason = 'authentication' | 'rate_limited' | 'unavailable' | 'timeout' | 'rejected' | 'invalid_response' | 'refused' | 'configuration';
+const modelFailureReasons: readonly ModelFailureReason[] = ['authentication', 'rate_limited', 'unavailable', 'timeout', 'rejected', 'invalid_response', 'refused', 'configuration'];
+export function isModelFailureReason(value: unknown): value is ModelFailureReason { return modelFailureReasons.includes(value as ModelFailureReason); }
+/** The fixed public message for a failure reason, with the provider's HTTP status when there is one. */
+export function modelFailureMessage(reason: ModelFailureReason, httpStatus?: number): string {
+  const status = httpStatus === undefined ? '' : ` (HTTP ${httpStatus})`;
+  switch (reason) {
+    case 'authentication': return `The model provider refused the credentials or access to this model${status}. Check the API key and that it may use this model.`;
+    case 'rate_limited': return `The model provider's rate limit or quota was reached${status}. Try again later, or raise the limit with the provider.`;
+    case 'unavailable': return `The model provider was unavailable${status}. Try again later.`;
+    case 'timeout': return `The model provider did not answer in time. Try again, or raise the adapter's timeoutMs.`;
+    case 'rejected': return `The model provider rejected the request${status}. Check the model name and the adapter's settings.`;
+    case 'invalid_response': return 'The model provider returned a response Mayura could not use, for example an answer that is not the required JSON or no token usage.';
+    case 'refused': return 'The model refused to answer, or stopped before finishing (for example at its token limit).';
+    case 'configuration': return `The model adapter could not send this request: a tool's input schema or the output schema breaks the provider's rules, or no output schema was given.`;
+  }
+}
+/** A model call that failed for a known reason. `costMicros`, when given, is usage the provider confirmed before failing. */
+export class ModelProviderError extends MayuraError {
+  readonly reason: ModelFailureReason;
+  /** Present only when the provider answered with an HTTP error status. */
+  declare readonly httpStatus?: number;
+  /** Present only when the provider confirmed usage before the failure. */
+  declare readonly costMicros?: number;
+  constructor(reason: ModelFailureReason, options: { readonly httpStatus?: number; readonly costMicros?: number } = {}) {
+    if (!isModelFailureReason(reason)) throw new MayuraError('INVALID_CONFIG', 'Unknown model failure reason.');
+    const { httpStatus, costMicros } = options;
+    if (httpStatus !== undefined && (!Number.isSafeInteger(httpStatus) || httpStatus < 100 || httpStatus > 599)) throw new MayuraError('INVALID_CONFIG', 'An HTTP status must be between 100 and 599.');
+    if (costMicros !== undefined && (!Number.isSafeInteger(costMicros) || costMicros < 0)) throw new MayuraError('INVALID_CONFIG', 'Known model usage must be a nonnegative safe integer.');
+    super(reason === 'configuration' ? 'INVALID_CONFIG' : 'MODEL_FAILED', modelFailureMessage(reason, httpStatus));
+    this.reason = reason;
+    if (httpStatus !== undefined) Object.defineProperty(this, 'httpStatus', { value: httpStatus, enumerable: true });
+    if (costMicros !== undefined) Object.defineProperty(this, 'costMicros', { value: costMicros, enumerable: true });
     Object.freeze(this);
   }
 }
@@ -104,4 +151,10 @@ export interface ModelAdapter {
   generate(request: ModelRequest): Promise<ModelResponse>;
   /** Optional streamed form of `generate`, used only for agents that opt into streaming. */
   stream?(request: ModelRequest): AsyncIterable<ModelStreamEvent>;
+  /**
+   * Optional: called by `defineAgent` with the agent's tools and output schema. Throw INVALID_CONFIG, with a message
+   * that says what to fix, when this adapter could never send them (for example a schema its provider refuses), so the
+   * mistake shows when the agent is defined instead of on its first call.
+   */
+  checkDefinition?(definition: ModelDefinitionCheck): void;
 }

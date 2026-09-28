@@ -18,16 +18,16 @@ const model = createModelRouter({
   id: 'router.support',
   routes: [
     anthropicMessages({
-      apiKey: process.env.ANTHROPIC_API_KEY!, model: process.env.ANTHROPIC_MODEL!, outputJsonSchema,
+      apiKey: process.env.ANTHROPIC_API_KEY!, model: process.env.ANTHROPIC_MODEL!,
       maxCostMicros: 20_000, pricing: claudePrices,
     }),
     openAIResponses({
-      apiKey: process.env.OPENAI_API_KEY!, model: process.env.OPENAI_MODEL!, outputJsonSchema,
+      apiKey: process.env.OPENAI_API_KEY!, model: process.env.OPENAI_MODEL!,
       maxCostMicros: 20_000, pricing: openAIPrices,
     }),
   ],
   circuit: { failureThreshold: 3, cooldownMs: 30_000 },
-  onAttempt: attempt => console.log(attempt.modelId, attempt.outcome, attempt.reason ?? '', attempt.costMicros),
+  onAttempt: attempt => console.log(attempt.modelId, attempt.outcome, attempt.failure ?? attempt.reason ?? '', attempt.costMicros),
 });
 
 const agent = defineAgent({ id: 'support', version: '1', instructions, model, tools, input, output });
@@ -52,15 +52,17 @@ const runtime = createRuntime({
 
 ## When it fails over
 
-The router moves to the next route after a timeout, a transport or provider failure, a rate limit, or a response it
-cannot use. It does **not** fail over when:
+The router moves to the next route after a timeout, a transport or provider failure, a rate limit, a provider refusing
+the route's key, or a response it cannot use. It does **not** fail over when:
 
 - the caller cancels the run: the call ends as cancelled;
-- an adapter throws a `MayuraError` with code `INVALID_CONFIG`, `PERMISSION_DENIED` or `INVALID_INPUT`. These are
-  errors every route would repeat, so the call fails. Use these codes in your own adapters for such errors.
+- an adapter throws a `MayuraError` with code `INVALID_CONFIG`, `PERMISSION_DENIED` or `INVALID_INPUT`, such as a
+  schema the provider refuses. These are errors every route would repeat, so the call fails.
 
-The built-in provider adapters report every failure as `MODEL_FAILED`, including a rejected key (HTTP 401 or 403), so a
-route with a wrong key fails over to the next one rather than stopping the call. Watch `onAttempt` to notice it.
+A rejected key (HTTP 401 or 403) fails over, because the next route has its own key: the call keeps working, and the
+attempt reports `failure: 'authentication'`. Watch `onAttempt` for it, since a route that keeps failing that way needs
+a new key. When every route fails, the call fails with the last route's reason, for example
+"The model provider's rate limit or quota was reached (HTTP 429)".
 
 The router does not retry the same route, and adapters never retry. For more attempts, add routes: a second region or
 deployment of the same model is a route too.
@@ -92,6 +94,7 @@ processes, or separate router instances, keep separate state.
 | `modelId` | The route's adapter id, for example `anthropic.messages`. |
 | `outcome` | `succeeded`, `failed` or `skipped`. |
 | `reason` | For failed or skipped attempts: `timeout`, `failed` or `circuit_open`. |
+| `failure` | For failed attempts, why: `authentication`, `rate_limited`, `unavailable`, `timeout`, `rejected`, `invalid_response`, `refused` or `configuration`. |
 | `costMicros` | The attempt's confirmed cost, or `null` when unknown. |
 
 ## Accounting
@@ -122,8 +125,8 @@ history; one provider's state is never sent to another.
 ## Choosing routes
 
 - **Granting the router grants every route.** Put only destinations in a router that you would grant one by one.
-- **Give every route the same contract**: the same `outputJsonSchema`, and models that support strict tool calls and
-  structured output. Different models can still answer differently; failover keeps the agent available, it does not
+- **Give every route the same contract**: models that support strict tool calls and structured output. Each route
+  receives the agent's output schema with every call, and `defineAgent` checks the agent against every route. Different models can still answer differently; failover keeps the agent available, it does not
   make answers identical.
 - **A fallback may cost more.** Its bound counts toward every reservation even when it is never used.
 

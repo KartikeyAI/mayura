@@ -7,7 +7,7 @@ Rules that matter when writing Mayura code:
 - Import from `mayura` or `mayura/<entry point>`, never from `@mayura/...`.
 - Nothing is allowed by default: grant `model:<adapter id>`, `tool:<tool id>`, `effect:<read|write|host>` and each tool capability in `createRuntime({ permissions: { allow } })`.
 - Costs are in micros (1,000,000 = 1 US dollar). A run may spend nothing until `limits.maxCostMicros` is set; model adapters need prices and a per-call `maxCostMicros`.
-- Tools that a real model calls need `inputJsonSchema`; model adapters need the agent's `outputJsonSchema` (strict JSON Schema).
+- Mayura generates the JSON Schemas providers need from Zod schemas; providers accept only strict ones, so use `.nullable()`, not `.optional()`, for fields a model may leave empty.
 - Check `result.status` before reading `result.output`; `outcome_unknown` means reconcile, not retry.
 - Test offline with `scriptedModel` from `mayura/testing`.
 

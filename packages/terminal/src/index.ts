@@ -62,10 +62,26 @@ const spent = (runtime: Runtime, handle: Parameters<Runtime['inspect']>[0]): num
 };
 
 export interface ChatTurn { readonly role: 'person' | 'agent'; readonly text: string }
+
+/**
+ * The default chat input: the message alone for the first turn, and afterwards the last 20 turns as a transcript
+ * followed by the new message, so an agent that takes text remembers the conversation.
+ */
+export function chatTranscript(message: string, history: readonly ChatTurn[]): string {
+  if (history.length === 0) return message;
+  const earlier = history.slice(-20).map(turn => `${turn.role === 'person' ? 'Person' : 'You'}: ${turn.text}`).join('\n');
+  return `The conversation so far:\n${earlier}\n\nThe person's new message:\n${message}`;
+}
+
+/** Whether a streamed preview differs from the final answer, which then has to be shown in full. */
+const differs = (streamed: string, final: string): boolean => streamed.trim() !== final.trim();
 export interface TerminalChatOptions<I extends Schema, O extends Schema> {
   readonly agent: AgentDefinition<I, O>;
   readonly runtime: Runtime;
-  /** The agent's input for a message; the default passes the message text. `history` holds the earlier turns. */
+  /**
+   * The agent's input for a message; `history` holds the earlier turns. The default (`chatTranscript`) passes the
+   * message text, with the recent conversation before it after the first turn.
+   */
   readonly toInput?: (message: string, history: readonly ChatTurn[]) => InferInput<I>;
   /** What to show for the agent's output; the default is `outputText`. */
   readonly toText?: (output: InferOutput<O>) => string;
@@ -77,7 +93,7 @@ export interface TerminalChatOptions<I extends Schema, O extends Schema> {
 /** Run an interactive chat with an agent until the person types /exit (or presses Ctrl+C at the prompt). */
 export async function runTerminalChat<I extends Schema, O extends Schema>(options: TerminalChatOptions<I, O>): Promise<{ readonly turns: number; readonly spentMicros: number }> {
   const prompts = await import('@clack/prompts'); const io = options.io ?? {}; const out = io.output ?? process.stdout;
-  const toText = options.toText ?? (value => outputText(value)); const toInput = options.toInput ?? ((message: string) => message as InferInput<I>);
+  const toText = options.toText ?? (value => outputText(value)); const toInput = options.toInput ?? ((message: string, earlier: readonly ChatTurn[]) => chatTranscript(message, earlier) as InferInput<I>);
   const history: ChatTurn[] = []; let turns = 0; let total = 0;
   prompts.intro(options.title ?? ` ${options.agent.id} `, io);
   prompts.log.message('Type a message. /help lists commands.', io);
@@ -91,7 +107,7 @@ export async function runTerminalChat<I extends Schema, O extends Schema>(option
     let handle: ReturnType<Runtime['submit']>;
     try { handle = options.runtime.submit(options.agent, { input: toInput(text, history) }); }
     catch (error) { const failure = publicError(error, 'INVALID_INPUT'); prompts.log.error(`${failure.message} (${failure.code})`, io); continue; }
-    const spinner = prompts.spinner(io.output ? { output: io.output } : {}); let spinning = true; let streamed = false; spinner.start('Thinking');
+    const spinner = prompts.spinner(io.output ? { output: io.output } : {}); let spinning = true; let streamed = false; let preview = ''; let withheld = false; spinner.start('Thinking');
     const pause = (): void => { if (spinning) { spinner.stop(); spinning = false; } };
     const resume = (label: string): void => { if (!spinning && !streamed) { spinner.start(label); spinning = true; } };
     people.set(handle.id, {
@@ -105,8 +121,8 @@ export async function runTerminalChat<I extends Schema, O extends Schema>(option
         if (event.type === 'tool.started' && !streamed) { if (spinning) spinner.message(`Using ${String(event.metadata['toolId'])}`); }
         else if (event.type === 'output.delta') {
           if (!streamed) { pause(); streamed = true; out.write('\n'); }
-          out.write(String(event.metadata['text'] ?? ''));
-        }
+          const text = String(event.metadata['text'] ?? ''); preview += text; out.write(text);
+        } else if (event.type === 'output.withheld') withheld = true;
       }
     })().catch(() => {});
     const outcome = await handle.result(); await watching; people.delete(handle.id); pause();
@@ -115,6 +131,9 @@ export async function runTerminalChat<I extends Schema, O extends Schema>(option
     if (outcome.status === 'succeeded') {
       const reply = toText(outcome.output as InferOutput<O>);
       if (!streamed) prompts.log.message(reply, { ...io, symbol: '◆' });
+      // A guard stopped the stream, or the output schema changed the answer (for example redacted it): show the final
+      // answer, which is the one that counts.
+      else if (withheld || differs(preview, reply)) prompts.log.message(reply, { ...io, symbol: '◆' });
       if (cost > 0) prompts.log.message(`${dollars(cost)} this turn`, io);
       history.push({ role: 'person', text }, { role: 'agent', text: reply });
     } else prompts.log.error(`${outcome.error.message} (${outcome.status})`, io);
@@ -130,7 +149,10 @@ export interface AgentCommandOptions<I extends Schema, O extends Schema> {
   readonly name?: string;
   /** Arguments after the command; the default is `process.argv.slice(2)`. */
   readonly argv?: readonly string[];
-  /** The agent input's JSON Schema: its top-level properties become flags, and `--help` lists them. */
+  /**
+   * The agent input's JSON Schema: its top-level properties become flags, and `--help` lists them. The default is the
+   * agent's own input schema, when its validator can describe itself (Zod 4.2 and later).
+   */
   readonly inputJsonSchema?: JsonObject;
   readonly toText?: (output: InferOutput<O>) => string;
   readonly io?: { readonly stdin?: Readable & { isTTY?: boolean }; readonly stdout?: Writable & { isTTY?: boolean }; readonly stderr?: Writable };
@@ -193,10 +215,12 @@ export async function parseAgentCommand(argv: readonly string[], schema?: JsonOb
 export async function runAgentCommand<I extends Schema, O extends Schema>(options: AgentCommandOptions<I, O>): Promise<number> {
   const io = options.io ?? {}; const stdout = io.stdout ?? process.stdout; const stderr = io.stderr ?? process.stderr;
   const name = options.name ?? options.agent.id; const toText = options.toText ?? (value => outputText(value));
+  // Flags come from the given schema, or from the agent's own input when its validator can describe itself.
+  const schema = options.inputJsonSchema ?? options.agent.inputJsonSchema;
   let parsed: Awaited<ReturnType<typeof parseAgentCommand>>;
-  try { parsed = await parseAgentCommand(options.argv ?? process.argv.slice(2), options.inputJsonSchema, io.stdin ?? process.stdin); }
+  try { parsed = await parseAgentCommand(options.argv ?? process.argv.slice(2), schema, io.stdin ?? process.stdin); }
   catch (error) { stderr.write(`${publicError(error, 'INVALID_INPUT').message}\n`); return 1; }
-  if (parsed.help) { stdout.write(`${agentCommandHelp(name, options.inputJsonSchema)}\n`); return 0; }
+  if (parsed.help) { stdout.write(`${agentCommandHelp(name, schema)}\n`); return 0; }
   const human = !parsed.json && stdout.isTTY === true; let handle: ReturnType<Runtime['submit']>;
   try { handle = options.runtime.submit(options.agent, { input: parsed.input as InferInput<I> }); }
   catch (error) { const failure = publicError(error, 'INVALID_INPUT'); stderr.write(parsed.json ? `${JSON.stringify({ status: 'failed', error: failure })}\n` : `${failure.message}\n`); return 1; }
@@ -209,10 +233,10 @@ export async function runAgentCommand<I extends Schema, O extends Schema>(option
       ask: async question => { const answer = await prompts.text({ message: question }); return prompts.isCancel(answer) ? undefined : answer; },
     });
   }
-  let streamed = false;
+  let streamed = false; let preview = '';
   const watching = (async () => {
     for await (const event of handle.observe()) {
-      if (human && event.type === 'output.delta') { streamed = true; stdout.write(String(event.metadata['text'] ?? '')); }
+      if (human && event.type === 'output.delta') { const text = String(event.metadata['text'] ?? ''); streamed = true; preview += text; stdout.write(text); }
       else if (human && event.type === 'tool.started') stderr.write(`· ${String(event.metadata['toolId'])}\n`);
     }
   })().catch(() => {});
@@ -221,7 +245,11 @@ export async function runAgentCommand<I extends Schema, O extends Schema>(option
   if (parsed.json) {
     const document = outcome.status === 'succeeded' ? { status: outcome.status, output: outcome.output, spentMicros: cost } : { status: outcome.status, error: outcome.error, spentMicros: cost };
     stdout.write(`${JSON.stringify(document, null, 2)}\n`);
-  } else if (outcome.status === 'succeeded') stdout.write(streamed ? '\n' : `${toText(outcome.output as InferOutput<O>)}\n`);
+  } else if (outcome.status === 'succeeded') {
+    const reply = toText(outcome.output as InferOutput<O>);
+    // The streamed text is a preview: when the final answer differs (a guard or the output schema changed it), print it.
+    stdout.write(!streamed ? `${reply}\n` : differs(preview, reply) ? `\n${reply}\n` : '\n');
+  }
   else stderr.write(`${outcome.error.message} (${outcome.status})\n`);
   return outcome.status === 'succeeded' ? 0 : 1;
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ModelInvocationError, type JsonObject, type ModelRequest } from '@mayura/core';
+import { ModelProviderError, type JsonObject, type ModelRequest } from '@mayura/core';
 import { openAICompatibleChat, type OpenAICompatibleChatOptions } from '../src/index.js';
 
 const schema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
@@ -51,7 +51,7 @@ describe('loopback OpenAI-compatible chat adapter', () => {
       { prompt_tokens: 2, completion_tokens: 1 }));
     const error: unknown = await openAICompatibleChat(options({ fetch, pricing: { inputMicrosPerMillionTokens: 1_000_000,
       outputMicrosPerMillionTokens: 1_000_000 } })).generate(request()).catch(value => value);
-    expect(error).toBeInstanceOf(ModelInvocationError); expect(error).toMatchObject({ costMicros: 3 }); expect(JSON.stringify(error)).not.toContain('PRIVATE');
+    expect(error).toBeInstanceOf(ModelProviderError); expect(error).toMatchObject({ costMicros: 3 }); expect(JSON.stringify(error)).not.toContain('PRIVATE');
   });
 
   it('uses only an explicitly supplied bounded credential', async () => {

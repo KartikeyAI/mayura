@@ -84,6 +84,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - The `mayura` package ships it (`docs/`), with `llms.txt` and a one-file `llms-full.txt`, so assistants read the docs of the installed version.
   - `mayura init` writes an `AGENTS.md` (and a `CLAUDE.md` that imports it) into every new project, pointing assistants at those docs and at the rules they most often get wrong.
   - `pnpm docs:check` type-checks every documentation snippet against the real entry points, checks links and headings, checks CLI commands, and keeps `llms.txt` current.
+- **JSON Schemas are generated from your validators.** `defineTool` fills in `inputJsonSchema`, and `defineAgent` a new `outputJsonSchema`, from any validator that can describe itself (Standard JSON Schema; Zod 4.2 and later). `jsonSchemaOf(schema)` does the same for your own use.
+  - The runtime sends the agent's output schema with every model request (`ModelRequest.outputJsonSchema`), so the adapters' `outputJsonSchema` option is now optional and one adapter can serve many agents.
+  - `agentAsTool` shows the child's own input schema to the parent's model, and `runAgentCommand` takes its flags from the agent's input schema.
+  - Model adapters can implement `checkDefinition`; the built-in ones do, so `defineAgent` refuses a tool or output schema the provider would refuse, naming the field and the fix (for example an `.optional()` field, which must be `.nullable()`), instead of the first call failing with `MODEL_FAILED`. `checkStrictDefinition`, `strictJsonSchema` and `providerHttpFailure` in `mayura/core/host` help custom adapters do the same.
+- **Model failures say why.** `ModelProviderError(reason, { httpStatus, costMicros })` names one of `authentication`, `rate_limited`, `unavailable`, `timeout`, `rejected`, `invalid_response`, `refused` or `configuration`, and the outcome carries Mayura's own message for that reason, such as "The model provider refused the credentials or access to this model (HTTP 401)". The built-in adapters use it; an adapter's own text still never reaches an outcome. The router reports each failed attempt's `failure`, and when every route fails the call fails with the last route's reason.
+- **Durable runs survive a changed runtime.** `createWorkflowLifecycleRuntime` (and the saga and loop runtimes) take `previousPolicies`: the settings of earlier deployments. A run started under one of them continues under exactly those settings instead of failing with `CONFLICT` after a deploy that adds a permission or changes a limit; new runs use the current settings.
+- **Terminal.** The chat remembers the conversation by default (`chatTranscript` sends the recent turns with each message), and the chat and commands print the final answer when it differs from what was streamed.
 
 ### Fixed
 
@@ -115,6 +122,11 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - Two process-recovery tests could race a child that had already exited.
 
 ### Changed
+
+- A `read` tool that throws, times out or is cancelled now ends as `failed` (or `cancelled`), not `outcome_unknown`: a read changes nothing outside, so there is nothing to reconcile. Its declared cost is still charged, and its evidence still records that the call's completion is unknown. Only `write` and `host` tools make an uncertain failure `outcome_unknown`.
+- A budget that stops a call says which limit and by how much ("The call may cost up to 1000 micros, but only 0 of the budget's 0 micros are left"), and how to raise a budget of 0. A tool batch that does not fit names the run's `limits.maxCostMicros`.
+- The package's optional peers accept later versions in the same major line (`better-sqlite3@^13.0.3`, `pg@^8.23.0`, QuickJS `^0.32.0`) instead of one exact version, so an existing compatible install is not a conflict.
+- Calls that fail after the provider confirmed usage throw `ModelProviderError` with `costMicros` from the built-in adapters and the router, instead of `ModelInvocationError`; both are still accepted from custom adapters.
 
 - Saga and loop statuses gain `paused`. Graph and tree discovery candidates can have status `paused`: coordinators skip them with the outcome reason `paused`, and `graphFleetTarget` and `treeFleetTarget` take `{ includePaused }` so inventories count them. Exhaustive switches over these unions need a `paused` case.
 - `graphFleetTarget` and `treeFleetTarget` cap discovery pages at 32, the discovery bound. Larger inventory pages previously failed.

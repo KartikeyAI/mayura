@@ -22,7 +22,7 @@ const noCardNumbers: Guard = {
 
 const agent = defineAgent({
   id: 'support', version: '1', instructions: 'Answer the customer briefly.',
-  model: openAIResponses({ apiKey, model: modelId, outputJsonSchema, maxCostMicros: 20_000, pricing }),
+  model: openAIResponses({ apiKey, model: modelId, maxCostMicros: 20_000, pricing }),
   tools: [],
   input: z.object({ message: z.string() }),
   output: z.object({ reply: z.string() }),

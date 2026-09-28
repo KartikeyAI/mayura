@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ModelInvocationError, type JsonObject, type ModelRequest } from '@mayura/core';
+import { ModelProviderError, type JsonObject, type ModelRequest } from '@mayura/core';
 import { anthropicMessages, type AnthropicMessagesOptions } from '../src/index.js';
 
 const schema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
@@ -17,6 +17,26 @@ const response = (content: JsonObject[], stopReason = 'end_turn', usage: JsonObj
   new Response(JSON.stringify({ type: 'message', role: 'assistant', content, stop_reason: stopReason, usage }));
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('Anthropic schemas from the agent, and failure reasons', () => {
+  it('uses the output schema the runtime sends when the adapter has none, and checks an agent before its first call', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":1}' }]));
+    const { outputJsonSchema: _given, ...withoutOutput } = options({ fetch });
+    const adapter = anthropicMessages(withoutOutput);
+    await adapter.generate(request({ outputJsonSchema: schema }));
+    expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string).output_config).toEqual({ format: { type: 'json_schema', schema } });
+    await expect(adapter.generate(request())).rejects.toMatchObject({ code: 'INVALID_CONFIG', reason: 'configuration' });
+    expect(() => adapter.checkDefinition!({ tools: [{ id: 'value/read', description: 'Read.' }], outputJsonSchema: schema })).toThrow(/Tool "value\/read" has no inputJsonSchema/u);
+  });
+
+  it('reports overload, missing credentials and refusals as reasons', async () => {
+    const reason = async (fetch: typeof globalThis.fetch): Promise<unknown> => (await anthropicMessages(options({ fetch })).generate(request()).catch((error: unknown) => error) as { reason?: unknown }).reason;
+    expect(await reason(async () => new Response('{}', { status: 529 }))).toBe('unavailable');
+    expect(await reason(async () => new Response('{}', { status: 401 }))).toBe('authentication');
+    expect(await reason(async () => { throw new TypeError('fetch failed'); })).toBe('unavailable');
+    expect(await reason(async () => response([{ type: 'text', text: '{}' }], 'refusal'))).toBe('refused');
+  });
+});
 
 describe('Anthropic Messages adapter', () => {
   it('uses the fixed destination, explicit headers and strict schemas', async () => {
@@ -73,7 +93,7 @@ describe('Anthropic Messages adapter', () => {
 
   it.each(['max_tokens', 'refusal', 'pause_turn', 'model_context'])('rejects nonterminal stop reason %s', async stopReason => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":1}' }], stopReason));
-    await expect(anthropicMessages(options({ fetch })).generate(request())).rejects.toBeInstanceOf(ModelInvocationError);
+    await expect(anthropicMessages(options({ fetch })).generate(request())).rejects.toBeInstanceOf(ModelProviderError);
   });
 
   it('accepts text before a tool call and drops it, but rejects unknown blocks after preserving confirmed usage', async () => {
@@ -90,7 +110,7 @@ describe('Anthropic Messages adapter', () => {
     ]) {
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(content, 'tool_use', { input_tokens: 2, output_tokens: 1 }));
       const error: unknown = await anthropicMessages(options({ fetch, pricing })).generate(request()).catch(value => value);
-      expect(error).toBeInstanceOf(ModelInvocationError);
+      expect(error).toBeInstanceOf(ModelProviderError);
       expect(error).toMatchObject({ costMicros: 3 });
       expect(JSON.stringify(error)).not.toContain('PRIVATE');
     }
