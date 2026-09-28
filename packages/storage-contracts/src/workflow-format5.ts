@@ -28,13 +28,28 @@ export interface WorkflowLifecycleTimerNodeManifest {
 }
 
 /**
+ * Waits for one named signal delivered from outside the run. `name` is what a sender addresses (unique among the
+ * definition's signal nodes); `deadlineAtMs`, when set, times the step out if no signal arrived by then. The payload
+ * validator is code, like a tool's validators, and is not part of this material.
+ */
+export interface WorkflowLifecycleSignalNodeManifest {
+  readonly kind: 'signal';
+  readonly id: string;
+  readonly dependsOn: readonly string[];
+  readonly name: string;
+  readonly deadlineAtMs: WorkflowBinding | null;
+  readonly when?: WorkflowBinding;
+}
+
+/**
  * Any lifecycle node may carry `when`: a binding over the input or a dependency's output. The node runs only when it
  * resolves to a value other than `null` or `false`; otherwise it is `bypassed` without being admitted or charged.
  * The key is present only when declared, so definitions without it keep their digest.
  */
 export type WorkflowLifecycleManifestNode = (WorkflowManifestNode & { readonly when?: WorkflowBinding })
   | WorkflowLifecycleHumanNodeManifest
-  | WorkflowLifecycleTimerNodeManifest;
+  | WorkflowLifecycleTimerNodeManifest
+  | WorkflowLifecycleSignalNodeManifest;
 
 /** Immutable data-only definition material for explicit lifecycle suspension nodes. */
 export interface WorkflowLifecycleManifest {
@@ -48,6 +63,7 @@ export interface WorkflowLifecycleManifest {
 export type WorkflowLifecycleStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type WorkflowLifecycleHumanStepStatus = 'pending' | 'waiting' | 'succeeded' | 'timed_out' | 'skipped' | 'bypassed';
 export type WorkflowLifecycleTimerStepStatus = 'pending' | 'waiting' | 'succeeded' | 'skipped' | 'bypassed';
+export type WorkflowLifecycleSignalStepStatus = 'pending' | 'waiting' | 'succeeded' | 'timed_out' | 'skipped' | 'bypassed';
 /** `bypassed`: the step's `when` condition did not hold, so it never started. Dependents treat it like success with output `null`. */
 export type WorkflowLifecycleToolStepStatus = WorkflowFormat2StepStatus | 'bypassed';
 export type WorkflowLifecycleToolStep = Omit<WorkflowFormat2Step, 'status'> & { status: WorkflowLifecycleToolStepStatus };
@@ -72,7 +88,22 @@ export interface WorkflowLifecycleTimerStep {
   firedAtMs: number | null;
 }
 
-export type WorkflowLifecycleStep = WorkflowLifecycleToolStep | WorkflowLifecycleHumanStep | WorkflowLifecycleTimerStep;
+/**
+ * A signal step. A signal delivered before the step starts is kept on the `pending` step (`signalId` set) and
+ * completes it as soon as it starts, provided it arrived before the deadline. `output` is the validated payload.
+ */
+export interface WorkflowLifecycleSignalStep {
+  readonly kind: 'signal';
+  status: WorkflowLifecycleSignalStepStatus;
+  readonly callId: string;
+  output: JsonValue;
+  signalId: string | null;
+  payloadDigest: string | null;
+  receivedAtMs: number | null;
+  deadlineAtMs: number | null;
+}
+
+export type WorkflowLifecycleStep = WorkflowLifecycleToolStep | WorkflowLifecycleHumanStep | WorkflowLifecycleTimerStep | WorkflowLifecycleSignalStep;
 
 export interface WorkflowLifecycleState {
   readonly format: 5;
@@ -95,6 +126,9 @@ const humanKinds = new Set<WorkflowLifecycleHumanKind>(['information', 'correcti
 const lifecycleStatuses = new Set<WorkflowLifecycleStatus>(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const humanStepStatuses = new Set<WorkflowLifecycleHumanStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped', 'bypassed']);
 const timerStepStatuses = new Set<WorkflowLifecycleTimerStepStatus>(['pending', 'waiting', 'succeeded', 'skipped', 'bypassed']);
+const signalStepStatuses = new Set<WorkflowLifecycleSignalStepStatus>(['pending', 'waiting', 'succeeded', 'timed_out', 'skipped', 'bypassed']);
+/** Signal names and ids: what the operator API accepts for `signalName` and `signalId`. */
+const signalPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 /** Statuses a dependent step may build on. */
 const satisfied = new Set(['succeeded', 'bypassed']);
 
@@ -182,12 +216,12 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
         if (!Object.hasOwn(node, 'when')) return node;
         const { when: _when, ...rest } = node; return rest;
       }
-      if (node['kind'] !== 'human' && node['kind'] !== 'timer') invalid();
+      if (node['kind'] !== 'human' && node['kind'] !== 'timer' && node['kind'] !== 'signal') invalid();
       return { kind: 'join', id: node['id'], dependsOn: node['dependsOn'] };
     });
     const common = workflowManifest({ id: manifest['id'], version: manifest['version'], graph: projected, result: manifest['result'] });
     const ids = new Set(common.graph.map(node => node.id));
-    let humans = 0; let timers = 0;
+    let humans = 0; let timers = 0; const signals = new Set<string>();
 
     for (const raw of graph) {
       const node = object(raw);
@@ -204,6 +238,13 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
         temporalBinding(node['fireAtMs'], ids, dependencies);
         continue;
       }
+      if (node['kind'] === 'signal') {
+        fields(node, ['kind', 'id', 'dependsOn', 'name', 'deadlineAtMs', ...optional]);
+        if (typeof node['name'] !== 'string' || !signalPattern.test(node['name']) || signals.has(node['name'])) invalid();
+        signals.add(node['name']);
+        if (node['deadlineAtMs'] !== null) temporalBinding(node['deadlineAtMs'], ids, dependencies);
+        continue;
+      }
       humans += 1;
       fields(node, ['kind', 'id', 'dependsOn', 'requestKind', 'schemaId', 'schemaDigest', 'prompt', 'context', 'subjectDigest', 'deadlineAtMs', ...optional]);
       if (!humanKinds.has(node['requestKind'] as WorkflowLifecycleHumanKind)
@@ -216,7 +257,7 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
       if (node['subjectDigest'] !== null) digestBinding(node['subjectDigest'], ids, dependencies);
       if (node['deadlineAtMs'] !== null) temporalBinding(node['deadlineAtMs'], ids, dependencies);
     }
-    if (humans > 32 || timers > 64) invalid();
+    if (humans > 32 || timers > 64 || signals.size > 64) invalid();
     return freezeJson(manifest) as unknown as WorkflowLifecycleManifest;
   } catch {
     return invalid();
@@ -243,6 +284,9 @@ export function initialWorkflowLifecycleState(
           : node.kind === 'timer'
             ? { kind: 'timer', status: 'pending', callId: `step:${node.id}`, output: null,
                 fireAtMs: null, firedAtMs: null }
+            : node.kind === 'signal'
+              ? { kind: 'signal', status: 'pending', callId: `step:${node.id}`, output: null,
+                  signalId: null, payloadDigest: null, receivedAtMs: null, deadlineAtMs: null }
             : { kind: node.kind, status: 'pending', callId: `step:${node.id}`, output: null,
                 receipt: null, approval: null, costReserved: 0, candidateHash: null },
       ])),
@@ -312,6 +356,24 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
         }
         continue;
       }
+      if (step['kind'] === 'signal') {
+        fields(step, ['kind', 'status', 'callId', 'output', 'signalId', 'payloadDigest', 'receivedAtMs', 'deadlineAtMs']);
+        if (!signalStepStatuses.has(step['status'] as WorkflowLifecycleSignalStepStatus)) invalid();
+        if (step['signalId'] !== null && (typeof step['signalId'] !== 'string' || !signalPattern.test(step['signalId']))) invalid();
+        if (step['payloadDigest'] !== null) hash(step['payloadDigest']);
+        if (step['receivedAtMs'] !== null) integer(step['receivedAtMs']);
+        if (step['deadlineAtMs'] !== null) integer(step['deadlineAtMs']);
+        // A signal is recorded completely or not at all.
+        const received = step['signalId'] !== null;
+        if ([step['payloadDigest'], step['receivedAtMs']].some(value => (value !== null) !== received) || (!received && step['output'] !== null)) invalid();
+        if (step['status'] === 'pending' && step['deadlineAtMs'] !== null) invalid();
+        if (step['status'] === 'succeeded' && !received) invalid();
+        if (step['status'] === 'waiting' && received) invalid();
+        if (step['status'] === 'timed_out' && (received || step['deadlineAtMs'] === null)) invalid();
+        if ((step['status'] === 'skipped' || step['status'] === 'bypassed') && (received || step['deadlineAtMs'] !== null)) invalid();
+        if (step['status'] === 'waiting') waiting += 1;
+        continue;
+      }
       invalid();
     }
     if (computedReserved !== reservedMicros) invalid();
@@ -346,7 +408,7 @@ export function assertWorkflowLifecycleStateMatchesManifest(
         if (step['receipt'] !== null && object(step['receipt'])['toolId'] !== node.tool) invalid();
         if (integer(step['costReserved']) > node.costMicros) invalid();
       }
-      if (node.kind === 'human' && step['deadlineAtMs'] !== null && node.deadlineAtMs === null) invalid();
+      if ((node.kind === 'human' || node.kind === 'signal') && step['deadlineAtMs'] !== null && node.deadlineAtMs === null) invalid();
     }
   } catch { return corrupt(); }
 }
@@ -368,6 +430,8 @@ export function workflowLifecycleOutputs(state: WorkflowLifecycleState): Record<
         } else if (step['kind'] === 'timer') {
           const fireAtMs = integer(step['fireAtMs']); const firedAtMs = integer(step['firedAtMs']);
           if (firedAtMs < fireAtMs || canonical(step['output']!) !== canonical(jsonValue({ fireAtMs, firedAtMs }))) invalid();
+        } else if (step['kind'] === 'signal') {
+          if (typeof step['signalId'] !== 'string') invalid(); hash(step['payloadDigest']); integer(step['receivedAtMs']);
         } else if (step['kind'] !== 'join') invalid();
         return [id, step['output']!];
       }));

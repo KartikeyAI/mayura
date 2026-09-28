@@ -313,6 +313,9 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
     respondVerified: async (definition: AnyWorkflowLifecycle, command: Parameters<WorkflowLifecycleRuntime['respondVerified']>[1]) => {
       const snapshot = await runtime.respondVerified(definition, command); await write(snapshot, definition.digest); return snapshot;
     },
+    signal: async (definition: AnyWorkflowLifecycle, command: Parameters<WorkflowLifecycleRuntime['signal']>[1]) => {
+      const snapshot = await runtime.signal(definition, command); await write(snapshot, definition.digest); return snapshot;
+    },
     pause: async (id: string) => { const snapshot = await runtime.pause(id); await write(snapshot); return snapshot; },
     resume: async (id: string) => { const snapshot = await runtime.resume(id); await write(snapshot); return snapshot; },
     cancel: async (id: string) => { const snapshot = await runtime.cancel(id); await write(snapshot); return snapshot; },

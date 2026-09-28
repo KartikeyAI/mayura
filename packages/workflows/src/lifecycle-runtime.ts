@@ -39,6 +39,22 @@ export interface WorkflowLifecycleHumanRequest {
   readonly deadlineAtMs: number | null;
 }
 
+/**
+ * A signal for a waiting (or not yet started) `signal` step. `signalId` makes delivery idempotent: the same id with the
+ * same payload is accepted once and every repeat returns the run unchanged; the same id with another payload, or a
+ * second signal for a step that already has one, is refused with CONFLICT.
+ */
+export interface WorkflowLifecycleSignalCommand {
+  readonly id: string;
+  /** The signal node's `name` (its id unless it names one). */
+  readonly name: string;
+  /** 1–128 letters, digits, `.`, `_`, `/` or `-`, starting with a letter or digit. */
+  readonly signalId: string;
+  readonly payload: unknown;
+  /** Who sent it, recorded in the run's event log. */
+  readonly actorId?: string;
+}
+
 /** What an operator approves: the exact tool call the approval digest binds, reconstructed and digest-verified. */
 export interface WorkflowLifecycleApprovalRequest {
   readonly runId: string;
@@ -102,6 +118,11 @@ export interface WorkflowLifecycleRuntime {
     readonly requestDigest: string; readonly commandId: string; readonly credential: unknown; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
   respondVerified(definition: AnyWorkflowLifecycle, command: { readonly id: string; readonly nodeId: string;
     readonly requestDigest: string; readonly commandId: string; readonly actor: WorkflowLifecycleVerifiedActor; readonly value: unknown }): Promise<WorkflowLifecycleSnapshot>;
+  /**
+   * Deliver a signal to the run's `signal` step named `command.name`. The payload is validated with the step's
+   * `payload` schema (INVALID_INPUT otherwise). The run continues on its next `runUntilSettled`, as after a response.
+   */
+  signal(definition: AnyWorkflowLifecycle, command: WorkflowLifecycleSignalCommand): Promise<WorkflowLifecycleSnapshot>;
   pause(id: string): Promise<WorkflowLifecycleSnapshot>;
   resume(id: string): Promise<WorkflowLifecycleSnapshot>;
   /**
@@ -122,6 +143,7 @@ const terminalStepStatuses = new Set(['succeeded', 'failed', 'blocked', 'unknown
 const satisfiedStepStatuses = new Set(['succeeded', 'bypassed']);
 const hashPattern = /^[a-f0-9]{64}$/;
 const nodePattern = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+const signalPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 
 async function bounded<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -154,7 +176,7 @@ function receipt(previous: ExecutionReceipt | null, incoming: ExecutionReceipt):
 
 function nextWake(state: State): number | null {
   const deadlines = Object.values(state.steps).flatMap(step => step.kind === 'timer' && step.status === 'waiting' && step.fireAtMs !== null
-    ? [step.fireAtMs] : step.kind === 'human' && step.status === 'waiting' && step.deadlineAtMs !== null
+    ? [step.fireAtMs] : (step.kind === 'human' || step.kind === 'signal') && step.status === 'waiting' && step.deadlineAtMs !== null
       ? [step.deadlineAtMs] : step.kind === 'tool' && step.status === 'waiting' && step.approval !== null ? [step.approval.expiresAt] : []);
   return deadlines.length === 0 ? null : Math.min(...deadlines);
 }
@@ -317,12 +339,19 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       step.actorId = null; step.deadlineAtMs = null;
     } else if (step.kind === 'timer') {
       step.status = 'skipped'; step.output = null; step.fireAtMs = null; step.firedAtMs = null;
+    } else if (step.kind === 'signal') {
+      step.status = 'skipped'; clearSignal(step); step.deadlineAtMs = null;
     } else step.status = 'skipped';
     return true;
+  };
+  // A signal kept for a step that never runs is dropped with it.
+  const clearSignal = (step: Extract<WorkflowLifecycleStep, { kind: 'signal' }>): void => {
+    step.output = null; step.signalId = null; step.payloadDigest = null; step.receivedAtMs = null;
   };
 
   const bypass = (step: WorkflowLifecycleStep): boolean => {
     if (step.status !== 'pending') return false;
+    if (step.kind === 'signal') clearSignal(step);
     step.status = 'bypassed'; return true;
   };
   /** Whether a `when` binding holds: it resolves to something other than `null` or `false`. */
@@ -384,6 +413,38 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         current.status = target.status === 'waiting' ? 'waiting' : 'running'; return true;
       }, deadlineAtMs !== null && observedAtMs >= deadlineAtMs ? 'lifecycle.human.timed_out' : 'lifecycle.human.requested',
       { nodeId: node.id, requestDigest });
+      return;
+    }
+
+    if (node.kind === 'signal') {
+      if (step.kind !== 'signal' || !['pending', 'waiting'].includes(step.status)) return;
+      if (step.status === 'waiting') {
+        const observedAtMs = now();
+        if (step.deadlineAtMs === null || observedAtMs < step.deadlineAtMs) return;
+        await advance(current => {
+          const target = current.steps[node.id];
+          if (!target || target.kind !== 'signal' || target.status !== 'waiting' || target.deadlineAtMs === null || observedAtMs < target.deadlineAtMs) return false;
+          target.status = 'timed_out'; current.status = 'running'; return true;
+        }, 'lifecycle.signal.timed_out', { nodeId: node.id, observedAtMs });
+        return;
+      }
+      let deadlineAtMs: number | null = null;
+      try { if (node.deadlineAtMs) deadlineAtMs = exactTimestamp(resolveBinding(node.deadlineAtMs, state.input, outputs(state))); }
+      catch { await advance(current => skip(current.steps[node.id]!), 'lifecycle.signal.invalid', { nodeId: node.id }); return; }
+      const observedAtMs = now();
+      // A signal kept from before the step started counts if it arrived before the deadline.
+      const decide = (target: Extract<WorkflowLifecycleStep, { kind: 'signal' }>): 'succeeded' | 'timed_out' | 'waiting' =>
+        target.signalId !== null ? (deadlineAtMs === null || target.receivedAtMs! < deadlineAtMs ? 'succeeded' : 'timed_out')
+          : deadlineAtMs !== null && observedAtMs >= deadlineAtMs ? 'timed_out' : 'waiting';
+      const next = decide(step);
+      await advance(current => {
+        const target = current.steps[node.id];
+        // A signal delivered since the read changes the decision: leave it to the next wave.
+        if (!target || target.kind !== 'signal' || target.status !== 'pending' || decide(target) !== next) return false;
+        target.deadlineAtMs = deadlineAtMs; target.status = next;
+        if (next === 'timed_out') clearSignal(target);
+        current.status = next === 'waiting' ? 'waiting' : 'running'; return true;
+      }, next === 'succeeded' ? 'lifecycle.signal.received' : `lifecycle.signal.${next}`, { nodeId: node.id });
       return;
     }
 
@@ -683,6 +744,48 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       return respondAs(definition, command, { id: human.id, projectId: human.projectId });
     },
     respondVerified: (definition, command) => respondAs(definition, command, command.actor),
+    signal: async (definition, command) => {
+      ensureOpen(); assertWorkflowLifecycle(definition);
+      if (!command || typeof command.id !== 'string' || !hashPattern.test(command.id) || typeof command.name !== 'string' || !signalPattern.test(command.name)
+        || typeof command.signalId !== 'string' || !signalPattern.test(command.signalId)
+        || (command.actorId !== undefined && (typeof command.actorId !== 'string' || command.actorId.length < 1 || command.actorId.length > 256))) {
+        throw new MayuraError('INVALID_INPUT', 'A signal needs a run id, a signal name and a signal id (1–128 letters, digits, ".", "_", "/" or "-").');
+      }
+      const node = definition.nodes.find(candidate => candidate.kind === 'signal' && candidate.name === command.name);
+      if (!node || node.kind !== 'signal') throw new MayuraError('NOT_FOUND', `This workflow has no signal step named "${command.name}".`);
+      const before = await load(command.id); const run = verifyDefinition(definition, before, stateFrom(before));
+      let payload: JsonValue;
+      try { payload = jsonValue(await controlled(() => validate(node.payload, command.payload, 'input')), { maxBytes: run.maxOutputBytes }); }
+      catch (error) {
+        if (error instanceof MayuraError && ['TIMEOUT', 'LIMIT_EXCEEDED'].includes(error.code)) throw error;
+        throw new MayuraError('INVALID_INPUT', `The payload of signal "${command.name}" does not match the step's payload schema.`);
+      }
+      const payloadDigest = digest('mayura:workflow-signal:v1', { runId: command.id, nodeId: node.id, signalId: command.signalId, payload });
+      const receivedAtMs = now();
+      return publicSnapshot(await mutate(command.id, state => {
+        const step = state.steps[node.id];
+        if (!step || step.kind !== 'signal') throw new MayuraError('CONFLICT', 'Stored lifecycle steps do not match the pinned definition.');
+        if (step.signalId !== null) {
+          // Idempotent on the signal id: the same signal again changes nothing.
+          if (step.signalId === command.signalId && step.payloadDigest === payloadDigest) return false;
+          throw new MayuraError('CONFLICT', step.signalId === command.signalId
+            ? `Signal "${command.signalId}" was already delivered with a different payload.`
+            : `Signal step "${node.id}" already received signal "${step.signalId}"; a signal step accepts one signal.`);
+        }
+        if (finalRunStatuses.has(state.status)) throw new MayuraError('CONFLICT', `The run is ${state.status}; it no longer accepts signals.`);
+        if (step.status !== 'pending' && step.status !== 'waiting') {
+          throw new MayuraError('CONFLICT', `Signal step "${node.id}" is ${step.status}; it no longer accepts signals.`);
+        }
+        if (step.status === 'waiting' && step.deadlineAtMs !== null && receivedAtMs >= step.deadlineAtMs) {
+          throw new MayuraError('CONFLICT', `Signal step "${node.id}" passed its deadline; it no longer accepts signals.`);
+        }
+        step.signalId = command.signalId; step.payloadDigest = payloadDigest; step.receivedAtMs = receivedAtMs; step.output = payload;
+        // A step that has not started keeps the signal until it starts.
+        if (step.status === 'waiting') { step.status = 'succeeded'; if (state.status !== 'paused') state.status = 'running'; }
+        return true;
+      }, 'lifecycle.signal.delivered', { nodeId: node.id, signalId: command.signalId, payloadDigest,
+        ...(command.actorId === undefined ? {} : { actorId: command.actorId }) }));
+    },
     pause: async id => publicSnapshot(await mutate(id, state => {
       if (state.status === 'paused') return false;
       if (finalRunStatuses.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal lifecycle workflow cannot be paused.');
@@ -710,7 +813,9 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const steps: Record<string, WorkflowLifecycleStep> = {};
       for (const entry of plan.entries) {
         if (!entry.target) continue;
-        steps[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
+        const source = entry.source === undefined ? undefined : state.steps[entry.source];
+        steps[entry.target] = entry.action === 'keep' || entry.action === 'accept'
+          || (entry.action === 'update' && source?.kind === 'signal' && fresh.steps[entry.target]!.kind === 'signal') ? source! : fresh.steps[entry.target]!;
       }
       const next: State = { ...state, definition: migration.to.digest, policy, maxCostMicros,
         steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, steps[node.id]!])) };

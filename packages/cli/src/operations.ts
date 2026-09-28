@@ -36,7 +36,7 @@ export interface OperationalRun {
   readonly evidence: readonly OperationalRunReceipt[];
 }
 export type OperationalWorkflowFormat = 2 | 3 | 4 | 5;
-export type OperationalWorkflowNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+export type OperationalWorkflowNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal';
 export type OperationalWorkflowStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type OperationalWorkflowStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface OperationalWorkflowNode { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly dependsOn: readonly string[] }
@@ -233,7 +233,7 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
     || !Array.isArray(item['nodes']) || item['nodes'].length < 1 || item['nodes'].length > 128
     || !Array.isArray(item['steps']) || item['steps'].length !== item['nodes'].length) return fail();
   const allowedKinds: Readonly<Record<OperationalWorkflowFormat, ReadonlySet<OperationalWorkflowNodeKind>>> = {
-    2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']), 4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']),
+    2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']), 4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer', 'signal']),
   };
   const nodes = new Map<string, OperationalWorkflowNode>(); let edges = 0;
   for (const raw of item['nodes']) {
@@ -260,8 +260,8 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
     const stepId = source['id']; const kind = source['kind'] as OperationalWorkflowNodeKind; const status = source['status'] as OperationalWorkflowStepStatus;
     const node = typeof stepId === 'string' ? nodes.get(stepId) : undefined; const childRunId = source['childRunId'];
     if (!node || steps.has(stepId as string) || kind !== node.kind || !statuses.has(status)
-      || (kind === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(status))
-      || (kind === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(status)) || (status === 'timed_out' && kind !== 'human')
+      || ((kind === 'human' || kind === 'signal') && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(status))
+      || (kind === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(status)) || (status === 'timed_out' && kind !== 'human' && kind !== 'signal')
       || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !workflowRunIdentifier.test(childRunId)))
       || (source['approval'] !== undefined && (kind !== 'tool' || status !== 'waiting'))) return fail();
     const approval = source['approval'] === undefined ? undefined : pendingApproval(source['approval']);

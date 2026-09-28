@@ -36,10 +36,10 @@ export interface WorkflowMigration<F = unknown, T = unknown> {
  */
 export interface MigrationNode { readonly id: string; readonly kind: string; readonly dependsOn: readonly string[]; readonly fingerprint: string; readonly evidence?: string }
 
-/** Evidence of a manifest node: the tool a receipt must name, or whether a human request carries a deadline. */
+/** Evidence of a manifest node: the tool a receipt must name, or whether a human request or signal step carries a deadline. */
 export function nodeEvidence(node: { readonly kind: string; readonly tool?: unknown; readonly deadlineAtMs?: unknown }): string | undefined {
   if (node.kind === 'tool' && typeof node.tool === 'string') return `tool:${node.tool}`;
-  if (node.kind === 'human') return node.deadlineAtMs === null || node.deadlineAtMs === undefined ? 'human' : 'human:deadline';
+  if (node.kind === 'human' || node.kind === 'signal') return node.deadlineAtMs === null || node.deadlineAtMs === undefined ? node.kind : `${node.kind}:deadline`;
   return undefined;
 }
 /** The run's current state of one source step, normalized across formats. */

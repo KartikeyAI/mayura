@@ -114,7 +114,7 @@ export function createWorkflowCommandJournal(options: WorkflowCommandJournalOpti
 
 /** Structural copies of the agent server's workflow transport records. */
 export type WorkflowOperatorStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
-export type WorkflowOperatorNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+export type WorkflowOperatorNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal';
 export type WorkflowOperatorStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowOperatorView {
   readonly format: 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string; readonly revision: number;
@@ -152,9 +152,15 @@ export interface WorkflowOperatorTarget {
   resume(runId: string): Promise<unknown>;
   cancel(runId: string): Promise<unknown>;
   approve(runId: string, command: { readonly nodeId: string; readonly digest: string; readonly childRunId: string | null; readonly actorId: string }): Promise<unknown>;
+  /** Deliver a signal to the run's signal step named `signalName` (lifecycle runs). Targets without signal steps omit it. */
+  signal?(runId: string, command: WorkflowOperatorSignal): Promise<unknown>;
+  /** Whether the run's signal step named `signalName` already holds the signal `signalId`. */
+  signalled?(runId: string, command: Pick<WorkflowOperatorSignal, 'signalName' | 'signalId'>): Promise<boolean>;
   migrate(migration: WorkflowMigration, command: MigrationCommand): Promise<{ readonly plan: MigrationPlan; readonly snapshot?: unknown }>;
   readonly fleet: WorkflowFleetTarget;
 }
+/** A signal as the operator API delivers it: the verified operator is its sender. */
+export interface WorkflowOperatorSignal { readonly signalName: string; readonly signalId: string; readonly value: JsonValue; readonly actorId: string }
 interface Registered { readonly id: string; readonly version: string; readonly digest: string; readonly nodes: readonly { readonly id: string; readonly kind: string; readonly dependsOn?: readonly string[] }[] }
 /** Maps the authenticated operator to the credential the runtime's `verifyHuman` accepts; without it approvals are unavailable. */
 export type WorkflowApprovalCredential = (actorId: string) => unknown;
@@ -191,6 +197,12 @@ export function lifecycleOperatorTarget(options: { readonly runtime: WorkflowLif
   readonly definitions: readonly AnyWorkflowLifecycle[]; readonly approvalCredential?: WorkflowApprovalCredential; readonly name?: string }): WorkflowOperatorTarget {
   const { runtime, store, scope } = options; const definitions = catalog(options.definitions);
   const scopeKey = digest('mayura:scope:v1', { principalId: scope.principalId, projectId: scope.projectId });
+  /** The registered definition a run is pinned to; NOT_FOUND when the run is missing or its version is not registered. */
+  const pinned = async (runId: string): Promise<AnyWorkflowLifecycle> => {
+    const hash = await pinnedDefinitionHash(store, scope, runId); const definition = hash === undefined ? undefined : definitions.get(hash);
+    if (!definition) throw new MayuraError('NOT_FOUND', 'The run was not found, or its definition version is not registered with this target.');
+    return definition;
+  };
   return Object.freeze<WorkflowOperatorTarget>({ name: options.name ?? 'lifecycle',
     async page(after, limit) {
       // Cursor string: `<shard>` or `<shard>.<afterId>` over the 256 index shards.
@@ -229,6 +241,16 @@ export function lifecycleOperatorTarget(options: { readonly runtime: WorkflowLif
     },
     pause: id => runtime.pause(id), resume: id => runtime.resume(id), cancel: id => runtime.cancel(id),
     approve: (id, command) => runtime.approve({ id, nodeId: command.nodeId, digest: command.digest, credential: approval(options.approvalCredential, command.actorId) }),
+    async signal(id, command) {
+      const definition = await pinned(id);
+      return runtime.signal(definition, { id, name: command.signalName, signalId: command.signalId, payload: command.value, actorId: command.actorId });
+    },
+    async signalled(id, command) {
+      const definition = await pinned(id);
+      const node = definition.nodes.find(candidate => candidate.kind === 'signal' && candidate.name === command.signalName);
+      const step = node ? (await runtime.inspect(id)).steps[node.id] : undefined;
+      return step?.kind === 'signal' && step.signalId === command.signalId;
+    },
     migrate: (migration, command) => runtime.migrate(migration as never, command),
     fleet: lifecycleFleetTarget(runtime, options.name ?? 'lifecycle'),
   });
@@ -306,6 +328,8 @@ export interface WorkflowOperatorTransports {
     approve(input: ControlInput & { readonly nodeId: string; readonly approvalDigest: string; readonly childRunId: string | null }): Promise<WorkflowOperatorResult>;
   };
   readonly workflowPauses: { pause(input: ControlInput): Promise<WorkflowOperatorResult> };
+  /** Signals for lifecycle signal steps. A run whose target has no signal steps answers `not_found`. */
+  readonly workflowSignals: { deliver(input: ControlInput & { readonly signalId: string; readonly signalName: string; readonly value: JsonValue }): Promise<WorkflowOperatorResult> };
   readonly workflowResumes: { resume(input: ControlInput): Promise<WorkflowOperatorResult> };
   readonly workflowFleet?: {
     inspect(input: ScopedInput): Promise<WorkflowFleetHoldState>; hold(input: ScopedInput): Promise<WorkflowFleetHoldState>; release(input: ScopedInput): Promise<WorkflowFleetHoldState>;
@@ -318,7 +342,10 @@ export interface WorkflowOperatorTransports {
       | { readonly status: 'refused'; readonly plan: MigrationPlan } | { readonly status: 'conflict' } | { readonly status: 'not_found' }>;
   };
 }
-/** Server transports (`workflowIndex`, `workflowViews`, `workflowControls`, `workflowPauses`, `workflowResumes`, and optionally `workflowFleet` and `workflowMigrations`). */
+/**
+ * Server transports (`workflowIndex`, `workflowViews`, `workflowControls`, `workflowSignals`, `workflowPauses`,
+ * `workflowResumes`, and optionally `workflowFleet` and `workflowMigrations`).
+ */
 export function createWorkflowOperatorTransports(options: WorkflowOperatorTransportOptions): WorkflowOperatorTransports {
   const { targets, journal } = options;
   if (!Array.isArray(targets) || targets.length < 1 || targets.length > 16 || new Set(targets.map(target => target.name)).size !== targets.length
@@ -338,11 +365,14 @@ export function createWorkflowOperatorTransports(options: WorkflowOperatorTransp
   const conflicts = (error: unknown): WorkflowCommandOutcome | undefined => isCode(error, 'CONFLICT') ? 'conflict' : isCode(error, 'NOT_FOUND') ? 'not_found' : undefined;
   /** Revision-checked, journaled command. The runtimes guard state themselves; the revision check is the operator's review point. */
   const command = async (input: ControlInput, action: string, request: JsonValue, observe: (view: WorkflowOperatorView) => boolean,
-    operate: (target: WorkflowOperatorTarget) => Promise<unknown>): Promise<Result> => {
+    operate: (target: WorkflowOperatorTarget) => Promise<unknown>, happened?: () => Promise<boolean>): Promise<Result> => {
     if (!inScope(input)) return { status: 'not_found' };
     const found = await locate(input.runId); if (!found) return { status: 'not_found' };
     const { outcome } = await journal.run({ runId: input.runId, action, commandId: input.commandId, request: { revision: input.revision, request },
-      observe: async () => { const current = await found.target.view(input.runId); return current !== null && observe(current); },
+      observe: async () => {
+        if (happened) return happened();
+        const current = await found.target.view(input.runId); return current !== null && observe(current);
+      },
       apply: async () => {
         const current = await found.target.view(input.runId); if (!current) return { outcome: 'not_found' };
         if (current.revision !== input.revision) return { outcome: 'conflict' };
@@ -379,6 +409,20 @@ export function createWorkflowOperatorTransports(options: WorkflowOperatorTransp
           target => target.approve(input.runId, { nodeId: input.nodeId, digest: input.approvalDigest, childRunId: input.childRunId, actorId: input.actorId })),
     },
     workflowPauses: { pause: (input: ControlInput) => command(input, 'pause', null, view => view.status === 'paused', target => target.pause(input.runId)) },
+    workflowSignals: { deliver: async (input: ControlInput & { readonly signalId: string; readonly signalName: string; readonly value: JsonValue }) => {
+      const found = inScope(input) ? await locate(input.runId) : null;
+      if (!found?.target.signal || !found.target.signalled) return { status: 'not_found' as const };
+      const target = found.target as Required<Pick<WorkflowOperatorTarget, 'signal' | 'signalled'>>;
+      const signal: WorkflowOperatorSignal = { signalName: input.signalName, signalId: input.signalId, value: input.value, actorId: input.actorId };
+      // Delivery is idempotent on the signal id, so an attempt that died after delivering is recognised, not repeated.
+      // A payload the step's schema refuses is answered like any refused command (conflict), not as unavailable storage.
+      const deliver = async (): Promise<unknown> => {
+        try { return await target.signal(input.runId, signal); }
+        catch (error) { if (isCode(error, 'INVALID_INPUT')) throw new MayuraError('CONFLICT', 'The signal payload does not match the step.'); throw error; }
+      };
+      return command(input, 'signal', { signalName: input.signalName, signalId: input.signalId, value: input.value }, () => false,
+        deliver, () => target.signalled(input.runId, signal));
+    } },
     workflowResumes: { resume: (input: ControlInput) => command(input, 'resume', null, view => view.status !== 'paused',
       async target => { if ((await target.view(input.runId))?.status === 'paused') await target.resume(input.runId); }) },
     ...(options.fleet ? { workflowFleet: fleetTransport(options.fleet, targets.map(target => target.fleet), inScope) } : {}),

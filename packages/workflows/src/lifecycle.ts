@@ -9,8 +9,11 @@ export {
   type WorkflowLifecycleNode,
   type WorkflowLifecycleOptions,
   type WorkflowLifecycleOutput,
+  type WorkflowLifecycleSignalNode,
   type WorkflowLifecycleTimerNode,
 } from './lifecycle-definition.js';
+export { agentStep, type AgentStepFactoryOptions, type AgentStepLimits, type AgentStepOptions } from './agent-step.js';
+export { schemaDigest } from '@mayura/storage-contracts';
 export {
   createWorkflowLifecycleRuntime,
   type WorkflowLifecycleRuntime,
@@ -18,12 +21,14 @@ export {
   type WorkflowLifecyclePolicy,
   type WorkflowLifecycleHumanRequest,
   type WorkflowLifecycleApprovalRequest,
+  type WorkflowLifecycleSignalCommand,
   type WorkflowLifecycleSnapshot,
   type WorkflowLifecycleVerifiedActor,
 } from './lifecycle-runtime.js';
 export {
   createWorkflowLifecycleHumanTransport,
   type WorkflowLifecycleHumanRegistration,
+  type WorkflowLifecycleHumanRoute,
   type WorkflowLifecycleHumanTransport,
   type WorkflowLifecycleHumanTransportController,
   type WorkflowLifecycleHumanTransportOptions,
@@ -54,6 +59,7 @@ export type {
   WorkflowLifecycleHumanNodeManifest,
   WorkflowLifecycleManifest,
   WorkflowLifecycleManifestNode,
+  WorkflowLifecycleSignalNodeManifest,
   WorkflowLifecycleTimerNodeManifest,
 } from '@mayura/storage-contracts';
 export { defineWorkflowMigration, type WorkflowMigration, type MigrationPlan, type MigrationCommand } from './migration.js';

@@ -1,5 +1,5 @@
 import { assertSchema, MayuraError, type InferInput, type InferOutput, type Schema } from '@mayura/core';
-import { workflowLifecycleManifest, type WorkflowLifecycleHumanKind, type WorkflowLifecycleManifest } from '@mayura/storage-contracts';
+import { schemaDigest, workflowLifecycleManifest, type WorkflowLifecycleHumanKind, type WorkflowLifecycleManifest } from '@mayura/storage-contracts';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { digest, type Binding, type WorkflowNode } from './definition.js';
 
@@ -10,7 +10,11 @@ export interface WorkflowLifecycleHumanNode<S extends Schema = Schema> {
   readonly request: {
     readonly kind: WorkflowLifecycleHumanKind;
     readonly schemaId: string;
-    readonly schemaDigest: string;
+    /**
+     * 64-hex SHA-256 of the response contract. Omit it to derive it from `response` when that validator can describe
+     * itself as JSON Schema (Zod 4.2 and later can); see `schemaDigest`.
+     */
+    readonly schemaDigest?: string;
     readonly prompt: string;
     readonly response: S;
     readonly context?: Binding;
@@ -29,12 +33,32 @@ export interface WorkflowLifecycleTimerNode {
 }
 
 /**
+ * Waits, without holding a worker, for one signal delivered from outside the run: from code with the runtime's
+ * `signal`, or over the operator API (`client.signalWorkflow`, `mayura workflow-signal`). The payload is validated
+ * with `payload` and becomes the step's output, which later steps bind to like any step output. Delivery is
+ * idempotent on the signal id. A signal that arrives before the step starts is kept and completes the step when it
+ * starts. With `deadlineAtMs`, a step that has no signal by then is `timed_out`, and the run fails.
+ */
+export interface WorkflowLifecycleSignalNode<S extends Schema = Schema> {
+  readonly kind: 'signal';
+  readonly id: string;
+  readonly dependsOn?: readonly string[];
+  /** The name senders address, unique among the definition's signal nodes. Default: the node id. */
+  readonly name?: string;
+  readonly payload: S;
+  /** Binding to an absolute Unix epoch millisecond deadline. */
+  readonly deadlineAtMs?: Binding;
+  readonly when?: Binding;
+}
+
+/**
  * A lifecycle node. Any node may declare `when`, a binding over the input or a dependency's output: the node runs
  * only when it resolves to a value other than `null` or `false` (a path that does not resolve counts as `null`).
  * Otherwise the step is `bypassed`: it is never admitted, reserves and costs nothing, and dependents see its output
  * as `null`. A `step` binding must name one of the node's dependencies.
  */
-export type WorkflowLifecycleNode = (WorkflowNode & { readonly when?: Binding }) | WorkflowLifecycleHumanNode | WorkflowLifecycleTimerNode;
+export type WorkflowLifecycleNode = (WorkflowNode & { readonly when?: Binding }) | WorkflowLifecycleHumanNode | WorkflowLifecycleTimerNode
+  | WorkflowLifecycleSignalNode;
 
 export interface WorkflowLifecycleOptions<I extends Schema, O extends Schema> {
   readonly id: string;
@@ -76,7 +100,16 @@ export function assertWorkflowLifecycle(definition: AnyWorkflowLifecycle): void 
   if (!definitions.has(definition)) throw new MayuraError('INVALID_CONFIG', 'Use defineWorkflowLifecycle from this package instance.');
 }
 
-/** Build the strict data-only format-5 material; response validators are never persisted. */
+/** The schema digest of a human node that does not give one, derived from its response validator. */
+function derivedDigest(node: WorkflowLifecycleHumanNode): string {
+  try { return schemaDigest(node.request.response); }
+  catch {
+    throw new MayuraError('INVALID_CONFIG', `Human step "${node.id}" has no schemaDigest, and its response validator cannot describe itself as JSON Schema. `
+      + 'Give request.schemaDigest (64 hex characters), for example schemaDigest(jsonSchemaOfYourResponse).');
+  }
+}
+
+/** Build the strict data-only format-5 material; response and payload validators are never persisted. */
 export function lifecycleManifest(
   definition: Pick<AnyWorkflowLifecycle, 'id' | 'version' | 'nodes' | 'result'>,
 ): WorkflowLifecycleManifest {
@@ -95,9 +128,11 @@ export function lifecycleManifest(
         };
         if (node.kind === 'join') return { kind: node.kind, id: node.id, dependsOn: node.dependsOn, ...when };
         if (node.kind === 'timer') return { kind: node.kind, id: node.id, dependsOn: node.dependsOn ?? [], fireAtMs: node.fireAtMs, ...when };
+        if (node.kind === 'signal') return { kind: node.kind, id: node.id, dependsOn: node.dependsOn ?? [], name: node.name ?? node.id,
+          deadlineAtMs: node.deadlineAtMs ?? null, ...when };
         if (node.kind === 'human') return {
           kind: node.kind, id: node.id, dependsOn: node.dependsOn ?? [], requestKind: node.request.kind,
-          schemaId: node.request.schemaId, schemaDigest: node.request.schemaDigest, prompt: node.request.prompt,
+          schemaId: node.request.schemaId, schemaDigest: node.request.schemaDigest ?? derivedDigest(node), prompt: node.request.prompt,
           context: node.request.context ?? null, subjectDigest: node.request.subjectDigest ?? null,
           deadlineAtMs: node.request.deadlineAtMs ?? null, ...when,
         };
@@ -105,12 +140,13 @@ export function lifecycleManifest(
       }),
       result: definition.result,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') throw error;
     throw new MayuraError('INVALID_CONFIG', 'Workflow lifecycle metadata is invalid or exceeds its finite bounds.');
   }
 }
 
-/** Define an acyclic format-5 graph with explicit human and timer suspension nodes. */
+/** Define an acyclic format-5 graph with explicit human, timer and signal suspension nodes. */
 export function defineWorkflowLifecycle<I extends Schema, O extends Schema>(
   options: WorkflowLifecycleOptions<I, O>,
 ): WorkflowLifecycleDefinition<I, O> {
@@ -119,13 +155,14 @@ export function defineWorkflowLifecycle<I extends Schema, O extends Schema>(
   }
   assertSchema(options.input); assertSchema(options.output);
   const tools = new Map<string, Extract<WorkflowLifecycleNode, { readonly kind: 'tool' }>['tool']>();
-  const responses = new Map<string, Schema>();
+  const responses = new Map<string, Schema>(); const payloads = new Map<string, Schema>();
   for (const node of options.nodes) {
-    if (!node || !['tool', 'join', 'human', 'timer'].includes(node.kind)) {
+    if (!node || !['tool', 'join', 'human', 'timer', 'signal'].includes(node.kind)) {
       throw new MayuraError('INVALID_CONFIG', 'Unknown workflow lifecycle node kind.');
     }
     if (node.kind === 'tool') { assertTool(node.tool); tools.set(node.id, node.tool); }
     if (node.kind === 'human') { assertSchema(node.request.response); responses.set(node.id, snapshot(node.request.response)); }
+    if (node.kind === 'signal') { assertSchema(node.payload); payloads.set(node.id, snapshot(node.payload)); }
   }
   const manifest = lifecycleManifest(options);
   const nodes = Object.freeze(manifest.graph.map(node => {
@@ -137,6 +174,10 @@ export function defineWorkflowLifecycle<I extends Schema, O extends Schema>(
     if (node.kind === 'join') return node;
     if (node.kind === 'timer') return Object.freeze({
       kind: node.kind, id: node.id, dependsOn: node.dependsOn, fireAtMs: node.fireAtMs, ...when,
+    });
+    if (node.kind === 'signal') return Object.freeze({
+      kind: node.kind, id: node.id, dependsOn: node.dependsOn, name: node.name, payload: payloads.get(node.id)!,
+      ...(node.deadlineAtMs === null ? {} : { deadlineAtMs: node.deadlineAtMs }), ...when,
     });
     return Object.freeze({
       kind: node.kind, id: node.id, dependsOn: node.dependsOn, ...when,

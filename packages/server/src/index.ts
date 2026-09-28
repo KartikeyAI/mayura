@@ -28,8 +28,8 @@ export interface HumanRequestTransport {
 export interface WorkflowViewRecord {
   readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
-  readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer'; readonly dependsOn: readonly string[] }[];
-  readonly steps: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+  readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal'; readonly dependsOn: readonly string[] }[];
+  readonly steps: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal';
     readonly status: 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
     readonly childRunId?: string; readonly approval?: WorkflowApprovalRecord }[];
 }
@@ -325,7 +325,7 @@ const commandFields = 'commandId must be 1-128 letters, digits, ".", "_", "/" or
 const humanIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const encoder = new TextEncoder();
 const workflowKinds = Object.freeze({ 2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']),
-  4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer']) });
+  4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer', 'signal']) });
 const workflowStatuses = new Set(['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const workflowStepStatuses = new Set(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
 const approvalRecord = (value: JsonValue | undefined): boolean => {
@@ -396,7 +396,8 @@ function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewReco
       || seen.has(step['id']) || step['kind'] !== nodeKinds.get(step['id']) || typeof step['status'] !== 'string' || !workflowStepStatuses.has(step['status'])
       || (step['kind'] === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(step['status']))
       || (step['kind'] === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(step['status']))
-      || (step['status'] === 'timed_out' && step['kind'] !== 'human')
+      || (step['kind'] === 'signal' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(step['status']))
+      || (step['status'] === 'timed_out' && step['kind'] !== 'human' && step['kind'] !== 'signal')
       || (step['childRunId'] !== undefined && (step['kind'] !== 'child' || typeof step['childRunId'] !== 'string' || !/^[a-f0-9]{64}$/.test(step['childRunId'])))
       || (step['approval'] !== undefined && (step['kind'] !== 'tool' || step['status'] !== 'waiting' || !approvalRecord(step['approval'])))
       ) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');

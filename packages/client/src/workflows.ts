@@ -1,7 +1,7 @@
 import { ClientError, type ClientJson, type MayuraClient } from './index.js';
 
 export type WorkflowViewFormat = 2 | 3 | 4 | 5;
-export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer';
+export type WorkflowViewNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal';
 export type WorkflowViewRunStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type WorkflowViewStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowViewNode { readonly id: string; readonly kind: WorkflowViewNodeKind; readonly dependsOn: readonly string[] }
@@ -80,7 +80,7 @@ const terminal = new Set<WorkflowViewStepStatus>(['succeeded', 'failed', 'blocke
 const failed = new Set<WorkflowViewStepStatus>(['failed', 'blocked', 'unknown', 'timed_out']);
 const kinds: Readonly<Record<WorkflowViewFormat, ReadonlySet<WorkflowViewNodeKind>>> = Object.freeze({
   2: new Set<WorkflowViewNodeKind>(['tool', 'join']), 3: new Set<WorkflowViewNodeKind>(['tool', 'join', 'wait']),
-  4: new Set<WorkflowViewNodeKind>(['tool', 'join', 'child']), 5: new Set<WorkflowViewNodeKind>(['tool', 'join', 'human', 'timer']),
+  4: new Set<WorkflowViewNodeKind>(['tool', 'join', 'child']), 5: new Set<WorkflowViewNodeKind>(['tool', 'join', 'human', 'timer', 'signal']),
 });
 function invalid(): never { throw new ClientError('INVALID_WORKFLOW_VIEW'); }
 function fields(value: object, names: readonly string[]): Record<string, PropertyDescriptor> {
@@ -123,8 +123,8 @@ export function createWorkflowGraphProjection(input: WorkflowViewInput): Workflo
     const hasChildRunId = descriptors['childRunId'] !== undefined; const childRunId = descriptors['childRunId']?.value as string | undefined; const node = nodes.get(id);
     const approval = descriptors['approval']?.value as WorkflowViewApproval | undefined;
     if (!node || steps.has(id) || kind !== node.kind || typeof stepStatus !== 'string' || !stepStatuses.has(stepStatus)
-      || (kind === 'human' && !humanStatuses.has(stepStatus)) || (kind === 'timer' && !timerStatuses.has(stepStatus))
-      || (stepStatus === 'timed_out' && kind !== 'human')
+      || ((kind === 'human' || kind === 'signal') && !humanStatuses.has(stepStatus)) || (kind === 'timer' && !timerStatuses.has(stepStatus))
+      || (stepStatus === 'timed_out' && kind !== 'human' && kind !== 'signal')
       || (hasChildRunId && (kind !== 'child' || typeof childRunId !== 'string' || !digest.test(childRunId)))
       || (descriptors['approval'] !== undefined && (kind !== 'tool' || stepStatus !== 'waiting' || !pendingApproval(approval)))) return invalid();
     steps.set(id, { id, kind, status: stepStatus, childRunId: childRunId ?? null, approval: approval ?? null });
