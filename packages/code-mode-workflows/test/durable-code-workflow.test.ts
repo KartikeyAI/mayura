@@ -176,6 +176,32 @@ describe('durable Code Mode workflow bridge', () => {
     } finally { await runtime.close(); await store.close(); }
   });
 
+  it('records the precise Code Mode failure on the phase, but never the program\'s own error text', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    const program = defineCodeProgram({ id: 'limited.phase', version: '1', intent: 'Limit fixture.', language: 'javascript',
+      source: '() => { while (true) {} }', input: schema, output: schema, inputSchemaId: 'in', outputSchemaId: 'out', limits });
+    const adapter = defineSandboxAdapter({ id: 'test.limited-phase', version: '1', qualification: 'production', isAvailable: () => true,
+      execute: async () => ({ status: 'failed', reason: 'cpu_limit', programError: { name: 'Error', message: 'SECRET program text' } }) });
+    const mode = createCodeMode({ adapter, invokeTool: vi.fn() });
+    const audit = createDurableCodeAudit({ store, scope: { principalId: 'alice', projectId: 'project' } });
+    const definition = defineDurableCodeWorkflow({ id: 'limited.code', version: '1', input: schema, output: schema, codeMode: mode, audit,
+      phases: [{ id: 'execute', program, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'execute', path: [] } });
+    const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
+    const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'alice', projectId: 'project' },
+      permissions: { allow: [`tool:${phase.tool.id}`, ...phase.tool.capabilities] }, policyVersion: '1', maxCostMicros: 0, maxOutputBytes: 1_024,
+      workerId: 'limited', verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
+    try {
+      const submitted = await runtime.submit(definition, { input: { value: 1 }, idempotencyKey: 'limited' });
+      const waiting = await runtime.runUntilSettled(definition, submitted.id);
+      await runtime.approve({ id: submitted.id, nodeId: 'execute', digest: waiting.steps['execute']!.approval!.digest, credential: 'trusted' });
+      const result = await runtime.runUntilSettled(definition, submitted.id);
+      expect(result.status).toBe('failed');
+      expect(JSON.stringify(result)).not.toContain('SECRET');
+      expect(await audit.inspect(submitted.id, 'execute')).toMatchObject({ outcome: 'failed' });
+      expect(JSON.stringify(await audit.inspect(submitted.id, 'execute'))).not.toContain('SECRET');
+    } finally { await runtime.close(); await store.close(); }
+  });
+
   it.each(['effect', 'receipt', 'completion'] as const)('recovers without replay after actual process termination at the %s boundary', async scenario => {
     const directory = await mkdtemp(join(tmpdir(), 'mayura-code-phase-crash-'));
     const filename = join(directory, 'state.sqlite');
