@@ -14,7 +14,7 @@ const program = defineCodeProgram({ id: 'starter.code-phase', version: '1.0.0', 
   limits: { cpuMillis: 100, wallTimeMillis: 2_000, memoryBytes: 16_777_216, scratchBytes: 1_024, maxInputBytes: 1_024,
     maxOutputBytes: 1_024, maxToolInputBytes: 1_024, maxToolCalls: 1, maxToolConcurrency: 1 } });
 const budget = new Budget(0, 1);
-const mode = createCodeMode({ adapter: createQuickJsSandboxAdapter(), allowTestAdapter: true, invokeTool: (tool, input, context) => invokeTool(tool, input, {
+const mode = createCodeMode({ adapter: createQuickJsSandboxAdapter(), invokeTool: (tool, input, context) => invokeTool(tool, input, {
   runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal, permissions: { allow: [`tool:${tool.id}`] }, budget,
 }) as Promise<Outcome<JsonValue>> });
 const storage = createSqliteStore({ filename: ':memory:' }); await storage.initialize();

@@ -137,6 +137,9 @@ importers:
       '@mayura/code-mode':
         specifier: workspace:*
         version: link:../code-mode
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/adapter-code-quickjs:
     dependencies:
@@ -146,6 +149,9 @@ importers:
       '@mayura/code-mode':
         specifier: workspace:*
         version: link:../code-mode
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
       quickjs-emscripten-core:
         specifier: 0.32.0
         version: 0.32.0
