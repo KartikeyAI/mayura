@@ -93,7 +93,7 @@ export async function bundle(output) {
     name: 'mayura', version: root.version,
     description: 'A TypeScript framework for agents, typed tools and durable workflows.',
     keywords: ['agents', 'ai', 'llm', 'workflows', 'durable', 'typescript', 'tools'],
-    license: 'Apache-2.0', repository: root.repository, homepage: root.homepage, bugs: root.bugs,
+    author: root.author, license: 'Apache-2.0', repository: root.repository, homepage: root.homepage, bugs: root.bugs,
     type: 'module', sideEffects: false, engines: cli.manifest.engines,
     bin: { mayura: `./lib/cli/${cli.manifest.bin.mayura.replace(/^\.\//u, '')}` },
     exports: Object.fromEntries(Object.entries(exportsMap).sort(([a], [b]) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b))),

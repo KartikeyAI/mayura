@@ -16,6 +16,7 @@ const internalPackages = new Set(JSON.parse(await readFile(join(workspace, 'comp
 // The release version is the workspace version; scripts/version.mjs keeps every package in step with it.
 const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8')); const version = root.version;
 assert(typeof root.repository?.url === 'string' && root.homepage && root.bugs?.url, 'The root package.json must name the repository, homepage and issue tracker.');
+assert(typeof root.author?.name === 'string' && root.author.name && typeof root.author.email === 'string', 'The root package.json must name the author.');
 
 function npmCli() {
   const configured = process.env.MAYURA_NPM_CLI;
@@ -83,6 +84,7 @@ const packedManifest = JSON.parse(files.get('package.json').toString('utf8'));
 assert(packedManifest.name === 'mayura' && packedManifest.version === version && packedManifest.license === 'Apache-2.0');
 assert(packedManifest.private === undefined && packedManifest.publishConfig?.access === 'public' && packedManifest.publishConfig?.provenance === true);
 assert.equal(packedManifest.repository?.url, root.repository.url, 'mayura must name the repository for provenance.');
+assert.deepEqual(packedManifest.author, root.author, 'mayura must name its author.');
 assert(!packedManifest.scripts, 'mayura gained release-time lifecycle behavior.');
 assert.deepEqual(packedManifest.bin, { mayura: './lib/cli/dist/bin.js' }, 'CLI executable mapping changed.');
 for (const [name, range] of Object.entries({ ...packedManifest.dependencies, ...packedManifest.peerDependencies })) {
