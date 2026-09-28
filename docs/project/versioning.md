@@ -26,6 +26,20 @@ The promise covers more than function names:
 **Deep imports are not covered.** Import only the paths in the package's `exports` map, such as `mayura/workflows`.
 A path into the package's internal files (for example `mayura/lib/...`) can change in any release.
 
+## Code Mode
+
+Code Mode (`mayura/code-mode`, `mayura/code-mode-workflows` and both sandbox adapters) is stable under the same rules.
+Within a major version:
+
+- `defineCodeProgram` gives the same `digest` for the same definition, so approvals and audit records that name a
+  digest stay valid across upgrades.
+- The failure reasons a sandbox reports (`program_error`, `cpu_limit`, `memory_limit`, `invalid_output`,
+  `unsupported_program`, `sandbox_error`) and the error code each becomes do not change.
+- The built-in adapters stay qualified `production`, and the guarantees listed in [Security](security.md#code-mode-sandboxing)
+  are only ever tightened. The `test` qualification and `allowTestAdapter` keep their meaning for your own adapters.
+- The protocol between an adapter and its QuickJS worker is internal: the worker must come from the same `mayura`
+  version as the adapter. Rebuild the Docker sandbox image whenever you upgrade.
+
 ## How changes map to versions
 
 | Change | Release |

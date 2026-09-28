@@ -72,8 +72,8 @@ Most applications also install a schema validator. Zod is the reference choice; 
 |---|---|---|---|
 | `mayura/code-mode` | Letting a model write a program that calls your tools, run in a sandbox. | `createCodeMode`, `defineCodeProgram`, `defineSandboxAdapter` | a sandbox adapter |
 | `mayura/code-mode-workflows` | Code Mode programs as approval-gated durable workflow steps. | `defineDurableCodeWorkflow`, `createDurableCodeAudit` | |
-| `mayura/adapter-code-quickjs` | The QuickJS sandbox, run in a separate process. | `createQuickJsSandboxAdapter`, `createQuickJsProtocolAdapter` | `quickjs-emscripten-core`, `@jitl/quickjs-wasmfile-release-sync` |
-| `mayura/adapter-code-docker` | The QuickJS sandbox inside a locked-down Docker container. | `createDockerQuickJsSandboxAdapter`, `createPromotedDockerQuickJsSandboxAdapter`, `issueDockerImagePromotion`, `verifyDockerImagePromotion` | Docker and the sandbox image |
+| `mayura/adapter-code-quickjs` | The QuickJS sandbox: a new, permission-restricted Node.js process per execution. | `createQuickJsSandboxAdapter`, `createQuickJsProtocolAdapter` | `quickjs-emscripten-core`, `@jitl/quickjs-wasmfile-release-sync` |
+| `mayura/adapter-code-docker` | The QuickJS sandbox inside a new locked-down Docker container per execution. | `createDockerQuickJsSandboxAdapter`, `createPromotedDockerQuickJsSandboxAdapter`, `issueDockerImagePromotion`, `verifyDockerImagePromotion` | Docker and the sandbox image |
 
 ## Workflows
 

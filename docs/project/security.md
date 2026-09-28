@@ -52,18 +52,63 @@ API, pass an idempotency key to the provider or reconcile from its records. See 
 
 ## Code Mode sandboxing
 
-Code Mode lets a model write a small program that calls your tools. Mayura never runs that program in your process:
+Code Mode lets a model write a small program that calls your tools. Mayura never runs that program in your process,
+and never falls back to doing so when a sandbox is unavailable. Two sandboxes ship with Mayura, both qualified for
+production use within the guarantees below. They have not had an independent security audit.
 
-- `mayura/adapter-code-quickjs` runs it in a separate child process, in a fresh QuickJS interpreter with memory, stack
-  and CPU limits. Inside, there is no file system, network, environment, process or module access; the only way out
-  is a bounded bridge to tools you allowed, which go through the normal checks.
-- `mayura/adapter-code-docker` adds an outer container: no network, read-only root file system, non-root user, no
-  Linux capabilities, and limits on processes, memory, CPU and open files. It runs only an image you pinned by digest,
-  optionally with a signed promotion statement.
+**What every execution gets, in both sandboxes:**
 
-Both adapters are defence in depth and have not had an independent security audit. They are not qualified for
-running hostile code from many tenants. The QuickJS adapter must be enabled explicitly with `allowTestAdapter: true`.
-See [Code Mode](../guides/code-mode.md).
+- **A fresh interpreter in a fresh process.** Each execution starts a new worker process with a new QuickJS
+  interpreter compiled to WebAssembly. Nothing survives from one execution to the next, and the worker is killed when
+  the execution ends, however it ends.
+- **No host APIs.** The program sees standard JavaScript and `tools.call`, nothing else: no `require`, `import`,
+  `process`, `fetch`, network, file system, timers or environment. The `Function` constructor and `eval` compile code
+  inside the same interpreter, not in Node.js. The program is compiled and run by QuickJS; its text is never evaluated
+  by the host's JavaScript engine.
+- **One narrow bridge.** `tools.call` sends a bounded JSON request to the host, which checks it against the program's
+  tool list and limits and then calls your broker, with the tool's permissions, schemas, guards and budget. Data
+  crossing the bridge in either direction is re-validated as plain JSON (no `__proto__`, `constructor` or `prototype`
+  keys, no accessors), so a program cannot pollute host prototypes. The bridge captures its own copies of `JSON`
+  before the program starts, so a program that replaces globals changes only its own view.
+- **Hard limits.** `cpuMillis` counts the time the interpreter spends running the program and stops it with an
+  interrupt the program cannot catch, including in `finally` blocks and promise loops. `memoryBytes` is enforced by the
+  WebAssembly memory itself: it cannot grow further, so the allocation fails inside the interpreter. Recursion is
+  bounded; a deeper native recursion that exhausts the host stack ends the execution cleanly. Results larger than
+  `maxOutputBytes` are refused before they leave the interpreter. A program flooding `tools.call` is answered inside
+  the sandbox after `maxToolCalls`; the host never sees more requests than that. `wallTimeMillis` bounds everything,
+  and the worker also stops itself at that deadline if the host process disappears.
+- **Errors that leak nothing.** Outcome messages are written by Mayura. What the program threw is returned separately
+  as `programError`, bounded, and never logged or persisted by Mayura.
+
+**`mayura/adapter-code-quickjs`** runs the worker as a Node.js child process of your application, under the Node.js
+permission model: it can read only installed packages (the `node_modules` directory that holds Mayura and QuickJS),
+and cannot write files, start processes or worker threads, load native addons, use WASI or open the inspector. It
+runs with an empty environment (on Windows, Node.js still passes the variables Windows requires, such as `PATH` and
+`USERPROFILE`) and with code generation from strings disabled. Its limit is that the worker is an ordinary process of
+your user on your host, sharing its network: code that escaped both QuickJS and V8's WebAssembly sandbox could make
+network connections and read installed packages. Use it for programs that models write for your own users.
+
+**`mayura/adapter-code-docker`** runs the same worker, under the same permission model, inside a new container for
+each execution:
+
+- no network (`--network=none`), a read-only root file system, a private IPC namespace;
+- an unprivileged user (UID/GID 65532), all Linux capabilities dropped, `no-new-privileges`, Docker's default seccomp
+  profile;
+- at most 16 processes and 64 open files, one CPU, `memoryBytes` plus 256 MiB of memory with no extra swap, and a
+  `noexec,nosuid,nodev` `tmpfs` of `scratchBytes` at `/tmp`;
+- no log driver, so tool data on the worker's streams is never written to daemon logs;
+- an image named by exact content digest and never pulled, whose provenance label must match the SPDX digest you
+  configured; optionally a signed, unexpired promotion statement of a clean vulnerability scan, checked before every
+  execution;
+- the container is force-removed when the execution ends, times out or is cancelled.
+
+Its limit is the one every container shares: the host kernel. For hostile programs from many tenants, run it with a
+user-space kernel such as gVisor (`runtime: 'runsc'`) and a rootless daemon (`host`), on hosts that hold no other
+secrets. The Docker daemon and CLI are trusted: whoever controls them controls the sandbox.
+
+**Neither sandbox** judges whether a program is correct or safe to run, and neither limits what your tools do when a
+program calls them within its permissions. Grant a program only the tools it needs, and require approval of the
+program digest for anything with write effects (see [Code Mode](../guides/code-mode.md)).
 
 ## The HTTP server
 

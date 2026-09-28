@@ -45,7 +45,6 @@ const program = defineCodeProgram({
 const budget = new Budget(0, 20);
 const mode = createCodeMode({
   adapter: createQuickJsSandboxAdapter(),
-  allowTestAdapter: true,
   invokeTool: (tool, input, context) => invokeTool(tool, input, {
     runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
     permissions: { allow: [`tool:${tool.id}`, 'effect:read'] }, budget,
@@ -69,17 +68,19 @@ tools, limits and metadata; approvals and audit records refer to that exact dige
 | Option | Notes |
 | --- | --- |
 | `id`, `version`, `intent` | Identity, and a short description of what the program is for (shown to approvers). |
-| `language` | `'javascript'`. The QuickJS sandbox runs JavaScript only. |
-| `source` | A function expression `(input, tools) => output`, sync or async. Up to 1 MiB. |
+| `language` | `'javascript'`. The built-in sandboxes run JavaScript only and report `UNSUPPORTED_PROFILE` for `'typescript'`, which exists for custom sandboxes. |
+| `source` | One function expression, `(input, tools) => output`, sync or async. Up to 1 MiB. It runs in strict mode. |
 | `input`, `output` | Schemas for the program's input and result. The result is validated before you receive it. |
 | `inputSchemaId`, `outputSchemaId` | Stable names for those schemas, recorded in the manifest. |
 | `tools` | The only tools the program may call, up to 128. |
+| `approvedImports` | Module specifiers for custom sandboxes that support imports. The built-in sandboxes support none and report `UNSUPPORTED_PROFILE` if you list any. |
 | `limits` | Required; see below. |
 
 Inside the sandbox, `tools.call(toolId, input)` returns `{ status, output }` on success or `{ status, error }` with a
-public error code otherwise. It never throws for a tool failure, so the program decides what to do. Calling a tool
-that is not in `tools` returns `PERMISSION_DENIED`. There are no imports, no network, no filesystem and no clock
-beyond what the sandbox provides.
+public error code otherwise. It does not throw for a tool failure, so the program decides what to do; it throws only if
+`input` cannot be serialized as JSON. Calling a tool that is not in `tools` returns `PERMISSION_DENIED`, and calls past
+`maxToolCalls` return `LIMIT_EXCEEDED`. The program sees standard JavaScript (including `Date` and `Math.random`) and
+`tools`, nothing else: no imports, network, file system, timers, `console` or `process`.
 
 ## Limits
 
@@ -87,51 +88,104 @@ Every limit is required, so each program states its own ceiling.
 
 | Limit | Meaning | Maximum |
 | --- | --- | --- |
-| `cpuMillis` | CPU time inside the interpreter | 1 hour |
-| `wallTimeMillis` | Total time, including tool calls; then `TIMEOUT` | 1 hour |
-| `memoryBytes` | Interpreter heap | 2 GiB |
-| `scratchBytes` | Temporary disk (Docker sandbox) | 2 GiB |
-| `maxInputBytes`, `maxOutputBytes` | Program input and output as JSON | 16 MiB |
-| `maxToolInputBytes` | Each tool call's input | 16 MiB |
-| `maxToolCalls` | Tool calls per execution | 10,000 |
-| `maxToolConcurrency` | Tool calls in flight at once; at most `maxToolCalls` | 128 |
+| `cpuMillis` | Time the interpreter spends running the program. Time spent waiting for tool calls does not count. Then `LIMIT_EXCEEDED`. | 1 hour |
+| `wallTimeMillis` | Total time, including tool calls. Then `TIMEOUT`. | 1 hour |
+| `memoryBytes` | The program's heap. The interpreter adds a fixed 16 MiB for itself. Then `LIMIT_EXCEEDED`. | 2 GiB |
+| `scratchBytes` | Size of the Docker sandbox's `/tmp`. The QuickJS sandbox has no file system and ignores it. | 2 GiB |
+| `maxInputBytes`, `maxOutputBytes` | Program input and result as JSON. | 16 MiB |
+| `maxToolInputBytes` | Each tool call's input. | 16 MiB |
+| `maxToolCalls` | Tool calls per execution. | 10,000 |
+| `maxToolConcurrency` | Tool calls in flight at once; at most `maxToolCalls`. | 128 |
+
+JSON values crossing the sandbox boundary may nest at most 32 levels deep and hold at most 100,000 values. Recursion is
+limited to roughly 1,500 plain JavaScript frames; deeper recursion throws a catchable `InternalError: stack overflow`.
 
 ## Running a program
 
 `createCodeMode({ adapter, invokeTool })` returns an executor. `invokeTool` is your broker: it receives the tool, the
 input the program sent and a context with `runId`, `callId`, `scope`, `signal` and the program digest, and returns the
 tool's outcome. Calling `invokeTool` from `mayura` (as above) applies the tool's schemas, guards, permissions and
-budget.
+budget. Honour `context.signal`: an execution returns only after every tool call it started has settled.
 
-`mode.execute(program, input, { runId, executionId, scope, signal })` returns an outcome plus `usage`: tool calls made,
-known cost, unresolved cost and the program's maximum possible cost. `executionId` must be unique for the executor.
+`mode.execute(program, input, { runId, executionId, scope, signal })` never throws. It returns an outcome plus
+`usage`: tool calls made, known cost, unresolved cost and the program's maximum possible cost. Use a new `executionId`
+for each execution; the executor rejects one that is running or among the last 100,000 it finished.
 
 | Result | When |
 | --- | --- |
 | `succeeded` | The program returned a value that passed the output schema. |
-| `failed` with `TOOL_FAILED` | The program threw, or the sandbox failed. Details are withheld. |
-| `failed` with `INVALID_INPUT` or `INVALID_OUTPUT` | Input or result did not match its schema or size limit. |
+| `failed` with `TOOL_FAILED` | The program threw, did not compile, or returned a promise that can never settle; or the sandbox itself failed. |
+| `failed` with `LIMIT_EXCEEDED` | The program used more than `cpuMillis` or `memoryBytes`. |
+| `failed` with `INVALID_INPUT` or `INVALID_OUTPUT` | Input or result is not plain JSON within its size limit, or does not match its schema. |
 | `failed` with `TIMEOUT` | `wallTimeMillis` passed. |
+| `cancelled` with `CANCELLED` | Your `signal` aborted. |
 | `outcome_unknown` | A tool call's result is unknown (for example it timed out mid-effect). The program's return value is discarded; reconcile the effect. |
-| `failed` with `UNSUPPORTED_PROFILE` | The sandbox is not available on this machine. Mayura never falls back to running code in-process. |
+| `failed` with `UNSUPPORTED_PROFILE` | The sandbox is not available on this machine, or cannot run the program's language or imports. Mayura never falls back to running code in-process. |
+| `failed` with `CONFLICT` | The `executionId` was already used. |
+| `failed` with `INVALID_CONFIG` | The program or execute options are invalid; the message names the field. |
+
+Every `error.message` is written by Mayura and names the limit or rule involved; it never contains program text or
+tool data. When the program itself threw, the outcome also has `programError: { name, message }`, the error it threw
+(at most 128 and 1,024 characters). Show it to the model that wrote the program so it can fix it, but treat it like the
+program's output: the program chose that text, and it may contain tool data.
+
+```ts
+import type { CodeExecutionOutcome } from 'mayura/code-mode';
+
+function feedback(outcome: CodeExecutionOutcome<unknown>): string {
+  if (outcome.status === 'succeeded') return 'ok';
+  if (outcome.programError) return `Your program threw ${outcome.programError.name}: ${outcome.programError.message}`;
+  return `${outcome.error.code}: ${outcome.error.message}`;
+}
+```
 
 ## Sandboxes
 
+Both built-in adapters are qualified `production`: they meet the guarantees below, and `createCodeMode` accepts them
+directly. [Security](../project/security.md#code-mode-sandboxing) explains what each one does and does not protect
+against.
+
 | Adapter | Import | Isolation |
 | --- | --- | --- |
-| QuickJS | `createQuickJsSandboxAdapter()` from `mayura/adapter-code-quickjs` | A QuickJS WebAssembly interpreter in a separate Node.js child process with an empty environment, memory and CPU limits. |
-| Docker | `createDockerQuickJsSandboxAdapter({ dockerPath, image, provenance })` from `mayura/adapter-code-docker` | The same interpreter inside a container: no network, read-only root, non-root user, no capabilities, PID, memory, CPU and file limits, a small `tmpfs`. |
+| QuickJS | `createQuickJsSandboxAdapter()` from `mayura/adapter-code-quickjs` | A QuickJS WebAssembly interpreter in a new Node.js child process per execution, under the Node.js permission model, with hard CPU, memory and stack limits. |
+| Docker | `createDockerQuickJsSandboxAdapter({ dockerPath, image, provenance })` from `mayura/adapter-code-docker` | The same worker inside a new container per execution: no network, read-only root, non-root user, no capabilities, limits on processes, memory, CPU and files, a small `tmpfs`, no logs. |
 
-Both adapters are marked `test`. `createCodeMode` refuses a `test` adapter unless you pass `allowTestAdapter: true`,
-which is your explicit decision that this isolation is enough for the code you run. Mayura does not currently ship an
-adapter marked `production`; for hostile code, run the Docker adapter on hardened hosts you control, or wrap your own
-sandbox with `defineSandboxAdapter({ id, version, qualification, isAvailable, execute })`.
+Use QuickJS for programs from a model working for your own users. For programs from many tenants, or when a
+sandbox escape must not reach the host's files or network, use Docker, ideally with gVisor (`runtime: 'runsc'`).
+
+### Your own sandbox
+
+`defineSandboxAdapter({ id, version, qualification, isAvailable, execute })` wraps any sandbox. `execute` receives the
+program, its input and a `tools` bridge, and returns `{ status: 'succeeded', output }` or
+`{ status: 'failed', reason?, programError? }`, where `reason` is one of `program_error`, `cpu_limit`, `memory_limit`,
+`invalid_output`, `unsupported_program` or `sandbox_error`. To run Mayura's QuickJS worker inside your own outer sandbox,
+use `createQuickJsProtocolAdapter({ id, version, qualification, launch })`.
+
+Declare `qualification: 'production'` only for a sandbox that meets guarantees you have documented and tested.
+An adapter declared `'test'` (the default for `createQuickJsProtocolAdapter`) is for fixtures and experiments:
+`createCodeMode` throws `UNSUPPORTED_PROFILE` for it unless you pass `allowTestAdapter: true`.
+
+### Docker
 
 The Docker adapter takes an absolute path to the Docker CLI and exact `sha256:` digests for a locally built image and
-its SPDX provenance document; it never pulls images or looks up `docker` on the `PATH`. Build the image from the
-[Dockerfile in the repository](https://github.com/KartikeyAI/mayura/blob/main/packages/adapter-code-docker/image/Dockerfile).
+its SPDX provenance document; it never pulls images or looks up `docker` on the `PATH`. Two options are optional:
+`host`, a local daemon socket such as a rootless daemon's (`unix:///run/user/1000/docker.sock` or
+`npipe:////./pipe/<name>`), and `runtime`, an OCI runtime such as `runsc`.
 `createPromotedDockerQuickJsSandboxAdapter` additionally requires a signed statement that the image passed a clean
 vulnerability scan, and checks it before every run.
+
+Build the image from the files in the installed package, and rebuild it whenever you upgrade `mayura`, because the
+worker inside must match the adapter:
+
+1. Make a build directory with a `root/` folder. Copy `node_modules/mayura/lib/adapter-code-quickjs/dist/worker.js` to
+   `root/worker.mjs`, write `{"type":"module"}` to `root/package.json`, and copy the installed
+   `quickjs-emscripten-core`, `@jitl/quickjs-wasmfile-release-sync` and `@jitl/quickjs-ffi-types` packages into
+   `root/node_modules/`.
+2. Generate an SPDX document for `root/` with your SBOM tool, keep it, and save it as `root/sbom.spdx.json`. Its
+   `sha256:` digest is your `provenance`.
+3. Copy `node_modules/mayura/lib/adapter-code-docker/image/Dockerfile` into the build directory and run
+   `docker build --network=none --build-arg MAYURA_PROVENANCE=sha256:<digest> --tag mayura-code-sandbox .`
+4. `docker image inspect --format '{{.Id}}' mayura-code-sandbox` prints the `image` value to configure.
 
 ## Approvals and durable phases
 
@@ -156,7 +210,7 @@ Run it with `createScheduledWorkflowRuntime` from `mayura/workflows`. The run wa
 Each phase becomes a tool whose `capabilities` (`code:execute`, `code:audit:v2`, the audit scope and the program
 digest) you grant to the runtime, together with `tool:<phase tool id>`. The phase takes the strongest effect of its
 nested tools and reserves the program's maximum tool cost up front, releasing what it did not use. A phase allows at
-most 64 tool calls. `audit.inspect(runId, phaseId)` returns the stored record.
+most 64 tool calls. `audit.inspect(runId, phaseId)` returns the stored record, which never includes `programError`.
 
 The [`code-mode-workflow` template](https://github.com/KartikeyAI/mayura/blob/main/packages/cli/templates/code-mode-workflow.ts)
 is a complete, runnable version.
@@ -177,3 +231,4 @@ is a complete, runnable version.
 - [Approvals and human input](approvals-and-human-input.md)
 - [Permissions](../concepts/permissions.md)
 - [Costs and budgets](../concepts/costs-and-budgets.md)
+- [Security](../project/security.md)

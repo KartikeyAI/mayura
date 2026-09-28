@@ -1,5 +1,7 @@
 # mayura/adapter-code-quickjs
 
-Experimental QuickJS/WASM inner-interpreter adapter for `mayura/code-mode`. Each execution uses a disposable child process, a fresh QuickJS runtime, explicit memory/stack/CPU limits and a bounded JSON tool bridge.
+The QuickJS sandbox for `mayura/code-mode`, qualified `production`. Each execution runs in a new Node.js child process under the Node.js permission model (read-only access to the QuickJS packages; no file writes, processes, worker threads, native addons or code generation from strings) with an empty environment, and in a fresh QuickJS WebAssembly interpreter. The program sees standard JavaScript and `tools.call` only.
 
-This adapter is deliberately marked `test`: a child process and WebAssembly interpreter are defense-in-depth, not Mayura's required OS-enforced hostile-code boundary. Use requires `allowTestAdapter: true`. It has no imports, filesystem, network, environment, process or module API inside the QuickJS context, but V15 remains open until an outer sandbox profile and crash/replay path are qualified.
+Limits are hard: `cpuMillis` counts interpreter time and is enforced by an uncatchable interrupt, `memoryBytes` by the WebAssembly memory maximum, recursion by a fixed stack, and results and tool calls by size and count before they leave the interpreter. `createQuickJsProtocolAdapter` runs the same worker inside an outer sandbox you launch; it defaults to the `test` qualification.
+
+Install the optional peers `quickjs-emscripten-core` and `@jitl/quickjs-wasmfile-release-sync`. See the [Code Mode guide](../../docs/guides/code-mode.md) and the [sandbox guarantees](../../docs/project/security.md#code-mode-sandboxing).
