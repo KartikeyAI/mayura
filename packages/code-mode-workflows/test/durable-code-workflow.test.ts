@@ -18,6 +18,10 @@ const schema: Schema<Value, Value> = { '~standard': { version: 1, vendor: 'test'
 const limits = { cpuMillis: 100, wallTimeMillis: 2_000, memoryBytes: 16 * 1_024 * 1_024, scratchBytes: 1_024,
   maxInputBytes: 1_024, maxOutputBytes: 1_024, maxToolInputBytes: 1_024, maxToolCalls: 2, maxToolConcurrency: 1 };
 
+// A child process must start Node.js, load Mayura and open SQLite before its checkpoint: several times slower on
+// hosted Windows CI runners (see vitest.config.ts), where it once took longer than 8 s. Other runs keep the tight limits.
+const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+
 describe('durable Code Mode workflow bridge', () => {
   it('persists exact approval before one brokered phase execution across reopen', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'mayura-code-phase-'));
@@ -210,7 +214,7 @@ describe('durable Code Mode workflow bridge', () => {
     let exited = false; let runId: string | undefined;
     const exit = new Promise<void>(resolve => { child.once('exit', () => { exited = true; resolve(); }); });
     const checkpoint = new Promise<{ readonly effects: number; readonly scenario: string }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Owned Code Mode child did not reach its checkpoint.')), 8_000);
+      const timer = setTimeout(() => reject(new Error('Owned Code Mode child did not reach its checkpoint.')), slowRunner ? 30_000 : 8_000);
       child.once('error', reject);
       child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown; scenario?: unknown }) => {
         if (message.kind === 'run' && typeof message.runId === 'string') runId = message.runId;
@@ -266,5 +270,5 @@ describe('durable Code Mode workflow bridge', () => {
       if (!exited) { child.kill('SIGKILL'); await exit; }
       await rm(directory, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, slowRunner ? 60_000 : 20_000);
 });
