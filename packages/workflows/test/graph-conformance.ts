@@ -501,8 +501,10 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       // This checks aggregate bounds rather than the minimum lease's throughput envelope.
       // The 16-effect / near-one-MiB public path took 58.75 s in a focused paired run;
       // allow a bounded 120 s runner window under the full four-worker suite. Production
-      // deadlines, the explicit fixture lease and every headroom/receipt assertion stay fixed.
-      const engine = runtime({ maxConcurrentJobs: 1, leaseMs: 30_000 }); const run = await engine.submit(definition, { input: null, idempotencyKey: 'headroom-limit' });
+      // deadlines, the explicit fixture lease and every headroom/receipt assertion stay fixed. Each write here persists
+      // close to 1 MiB of state; on a slow Windows runner one took longer than the 10 s default storage deadline, which
+      // the runtime rightly reports as STORAGE_UNAVAILABLE (reproduced with a short deadline), so it gets the 30 s maximum.
+      const engine = runtime({ maxConcurrentJobs: 1, leaseMs: 30_000, storageTimeoutMs: 30_000 }); const run = await engine.submit(definition, { input: null, idempotencyKey: 'headroom-limit' });
       const blocked = await engine.runUntilSettled(definition, run.id); expect(blocked.status).toBe('blocked');
       const withheld = Object.values(blocked.steps).filter(node => node.kind === 'tool' && node.status === 'blocked');
       expect(withheld.length).toBeGreaterThan(0);
