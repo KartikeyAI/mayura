@@ -36,7 +36,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 import { createLocalArtifactStore } from '../src/index.js';
 
 const roots: string[] = [];
-const scope = Object.freeze({ tenantId: 'disk-full', projectId: 'recovery' });
+const scope = Object.freeze({ principalId: 'disk-full', projectId: 'recovery' });
 async function root(): Promise<string> { const value = await mkdtemp(join(tmpdir(), 'mayura-artifact-enospc-')); roots.push(value); return value; }
 function input(value: number) {
   return { scope, content: new Uint8Array([value]), mediaType: 'application/octet-stream', classification: 'internal' as const };

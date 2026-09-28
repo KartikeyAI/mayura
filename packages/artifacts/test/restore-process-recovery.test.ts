@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createLocalArtifactStore, type ArtifactReference } from '../src/index.js';
 
 const prefix = 'mayura-artifact-crash-'; const roots: string[] = [];
-const scope = Object.freeze({ tenantId: 'crash', projectId: 'restore' });
+const scope = Object.freeze({ principalId: 'crash', projectId: 'restore' });
 async function root(): Promise<string> { const value = await mkdtemp(join(tmpdir(), prefix)); roots.push(value); return value; }
 async function bounded<T>(promise: Promise<T>, label: string, milliseconds = 10_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

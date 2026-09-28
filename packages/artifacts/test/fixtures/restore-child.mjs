@@ -12,7 +12,7 @@ const archive = new Uint8Array(await readFile(archivePath));
 const store = createLocalArtifactStore({ rootDirectory: directory, maxArtifactBytes: 1_048_576 });
 if (!process.send) throw new Error('Restore fixture requires an IPC parent.');
 process.send({ kind: 'started' });
-const result = await store.restore(archive, { tenantId: 'crash', projectId: 'restore' }, {
+const result = await store.restore(archive, { principalId: 'crash', projectId: 'restore' }, {
   maxArchiveBytes: 48 * 1_024 * 1_024, maxTotalBytes: 32 * 1_024 * 1_024, maxArtifacts: 32,
 });
 process.send({ kind: 'completed', result });

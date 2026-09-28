@@ -6,7 +6,7 @@ import { createLocalArtifactStore, type ArtifactReconciliationCursor, type Artif
   type ArtifactReference, type ArtifactScope } from '../src/index.js';
 
 const roots: string[] = [];
-const scope = Object.freeze({ tenantId: 'tenant-a', projectId: 'project-a' });
+const scope = Object.freeze({ principalId: 'tenant-a', projectId: 'project-a' });
 
 async function root(): Promise<string> {
   const value = await mkdtemp(join(tmpdir(), 'mayura-artifact-'));
@@ -38,7 +38,7 @@ describe('local artifact store', () => {
     const store = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
     const bytes = new Uint8Array([1, 2, 3]);
     const first = await store.commit(await store.stage({ scope, content: bytes, mediaType: 'application/octet-stream', classification: 'confidential' }));
-    const otherScope = { tenantId: 'tenant-b', projectId: 'project-a' };
+    const otherScope = { principalId: 'tenant-b', projectId: 'project-a' };
     const second = await store.commit(await store.stage({ scope: otherScope, content: bytes, mediaType: 'application/octet-stream', classification: 'confidential' }));
     expect(second.digest).toBe(first.digest);
     expect(second.scopeDigest).not.toBe(first.scopeDigest);
@@ -113,7 +113,7 @@ describe('local artifact store', () => {
     const reference = await store.commit(await store.stage({ scope, content: new Uint8Array(), mediaType: 'text/plain', classification: 'public' }));
     await expect(store.read({ ...reference, extra: true } as unknown as ArtifactReference, scope)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     let invoked = false;
-    const hostileScope = Object.defineProperty({ tenantId: 'tenant-a' }, 'projectId', { enumerable: true, get: () => { invoked = true; return 'project-a'; } });
+    const hostileScope = Object.defineProperty({ principalId: 'tenant-a' }, 'projectId', { enumerable: true, get: () => { invoked = true; return 'project-a'; } });
     await expect(store.read(reference, hostileScope as ArtifactScope)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(invoked).toBe(false);
   });
@@ -121,7 +121,7 @@ describe('local artifact store', () => {
   it('deletes only an exact scoped object and reports absence idempotently', async () => {
     const store = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
     const reference = await store.commit(await store.stage({ scope, content: new Uint8Array([1]), mediaType: 'application/octet-stream', classification: 'restricted' }));
-    await expect(store.delete(reference, { tenantId: 'other' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(store.delete(reference, { principalId: 'other', projectId: 'project-a' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     expect(await store.delete(reference, scope)).toBe(true);
     expect(await store.delete(reference, scope)).toBe(false);
   });
@@ -174,7 +174,7 @@ describe('local artifact store', () => {
     const reference = await store.commit(await store.stage({ scope, content: new Uint8Array([1, 2]), mediaType: 'text/plain', classification: 'internal' }));
     await expect(store.audit([reference, reference], scope, { maxTotalBytes: 10 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     await expect(store.audit([reference], scope, { maxTotalBytes: 1 })).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
-    await expect(store.audit([reference], { tenantId: 'other' }, { maxTotalBytes: 10 })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(store.audit([reference], { principalId: 'other', projectId: 'project-a' }, { maxTotalBytes: 10 })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     let invoked = false; const hostile = [reference];
     Object.defineProperty(hostile, '0', { enumerable: true, get: () => { invoked = true; return reference; } });
     await expect(store.audit(hostile, scope, { maxTotalBytes: 10 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
@@ -214,7 +214,7 @@ describe('local artifact store', () => {
     await expect(first.applyReconciliation(plan)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     const wrongCursor = { format: 'mayura-artifact-reconciliation-cursor-v1', scopeDigest: reference.scopeDigest,
       after: reference.referenceDigest } as const;
-    await expect(first.planReconciliation({ scope: { tenantId: 'other' }, retainedReferences: [], authoritativeSetComplete: true,
+    await expect(first.planReconciliation({ scope: { principalId: 'other', projectId: 'project-a' }, retainedReferences: [], authoritativeSetComplete: true,
       olderThan: Date.now(), maxExamined: 1, maxDeletes: 1, cursor: wrongCursor })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
@@ -294,7 +294,7 @@ describe('local artifact store', () => {
     const archive = await source.backup({ scope, references: [reference], authoritativeSetComplete: true, maxTotalBytes: 10 });
     const destination = createLocalArtifactStore({ rootDirectory: await root(), maxArtifactBytes: 100 });
     const limits = { maxArchiveBytes: 10_000, maxTotalBytes: 10, maxArtifacts: 1 };
-    await expect(destination.restore(archive, { tenantId: 'other' }, limits)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(destination.restore(archive, { principalId: 'other', projectId: 'project-a' }, limits)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     const corrupt = new Uint8Array(archive); corrupt[corrupt.length - 1] = 0x78;
     await expect(destination.restore(corrupt, scope, limits)).rejects.toMatchObject({ code: 'INTEGRITY_VIOLATION' });
     await expect(destination.read(reference, scope)).rejects.toMatchObject({ code: 'NOT_FOUND' });

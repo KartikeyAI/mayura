@@ -15,7 +15,7 @@ const artifacts = createLocalArtifactStore({
   rootDirectory: '/var/lib/my-app/artifacts',
   maxArtifactBytes: 10 * 1024 * 1024,
 });
-const scope = { tenantId: 'acme', projectId: 'reports' };
+const scope = { principalId: 'acme', projectId: 'reports' };
 
 const staged = await artifacts.stage({
   scope,
@@ -49,7 +49,7 @@ A stage takes:
 
 | Field | Notes |
 | --- | --- |
-| `scope` | `{ tenantId, projectId? }`. Files are partitioned by scope, even when two tenants store identical bytes. |
+| `scope` | `{ principalId, projectId? }`. Files are partitioned by scope, even when two tenants store identical bytes. |
 | `content` | A `Uint8Array`. |
 | `mediaType` | A registered media type without parameters, such as `text/csv` or `application/pdf`. |
 | `classification` | `public`, `internal`, `confidential` or `restricted`. Downloads are allowed per classification. |

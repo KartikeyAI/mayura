@@ -83,17 +83,15 @@ function decodeBase64(value: unknown, field: string, maximum: number): Uint8Arra
   return decoded;
 }
 
-function stableScope(scope: ArtifactScope): { readonly tenantId: string; readonly projectId?: string } {
-  const fields = plainData(scope, 'scope', new Set(['tenantId', 'projectId']));
-  const tenantId = boundedIdentity(fields.get('tenantId'), 'scope.tenantId');
-  const projectId = fields.get('projectId');
-  if (projectId === undefined) return Object.freeze({ tenantId });
-  return Object.freeze({ tenantId, projectId: boundedIdentity(projectId, 'scope.projectId') });
+function stableScope(scope: ArtifactScope): { readonly principalId: string; readonly projectId: string } {
+  const fields = plainData(scope, 'scope', new Set(['principalId', 'projectId']));
+  return Object.freeze({ principalId: boundedIdentity(fields.get('principalId'), 'scope.principalId'), projectId: boundedIdentity(fields.get('projectId'), 'scope.projectId') });
 }
 
+/** The same digest the store used when this field was called tenantId, so artifacts stored earlier stay reachable. */
 function scopeDigest(scope: ArtifactScope): `sha256:${string}` {
   const value = stableScope(scope);
-  return sha256(JSON.stringify([value.tenantId, value.projectId ?? null]));
+  return sha256(JSON.stringify([value.principalId, value.projectId]));
 }
 
 function boundedIdentity(value: unknown, field: string): string {

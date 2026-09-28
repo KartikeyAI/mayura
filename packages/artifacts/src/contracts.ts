@@ -1,8 +1,12 @@
 export type ArtifactClassification = 'public' | 'internal' | 'confidential' | 'restricted';
 
+/**
+ * Whose artifacts: Mayura's usual scope, the principal (a user, a service, or a customer organisation) and the project.
+ * Artifacts in one scope are invisible from any other.
+ */
 export interface ArtifactScope {
-  readonly tenantId: string;
-  readonly projectId?: string;
+  readonly principalId: string;
+  readonly projectId: string;
 }
 
 export interface StageArtifactInput {

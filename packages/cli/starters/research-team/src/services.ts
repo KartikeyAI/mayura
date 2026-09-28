@@ -29,7 +29,7 @@ export async function openServices(config: Config, options: { readonly library?:
   const artifactsDirectory = resolve(config.artifactsDirectory);
   await mkdir(artifactsDirectory, { recursive: true });
   const artifacts = createLocalArtifactStore({ rootDirectory: artifactsDirectory, maxArtifactBytes: 262_144 });
-  const artifactScope = { tenantId: config.scope.principalId, projectId: config.scope.projectId };
+  const artifactScope = { principalId: config.scope.principalId, projectId: config.scope.projectId };
   // Replace the bundled corpus with your own sources (README "Make it yours").
   const library = options.library ?? localLibrary(harlowCreekCorpus);
   const telemetry = createTelemetry(config.telemetry);
