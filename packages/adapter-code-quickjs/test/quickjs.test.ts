@@ -105,13 +105,15 @@ describe('QuickJS sandbox adapter', () => {
         await new Promise(resolve => setTimeout(resolve, 400));
         return { status: 'succeeded', output: input, receipt: { callId: context.callId, toolId: tool.id, execution: 'succeeded', disclosure: 'released' } };
       });
-      // After ~800 ms of waiting, the program still does real work; only that work counts against the 150 ms.
+      // After ~800 ms of waiting, the program still does real work; only that work counts against the 400 ms. Were the
+      // waiting counted, 800 ms would exceed the limit. The work stays well under it even on a loaded CI runner (a
+      // 300,000-step loop once took over 150 ms on macOS CI).
       const result = await execute(`async (input, tools) => {
         const first = await tools.call("number.double", input);
         const second = await tools.call("number.double", first.output);
-        let sum = 0; for (let i = 0; i < 300000; i++) sum += i % 7;
+        let sum = 0; for (let i = 0; i < 50000; i++) sum += i % 7;
         return { value: second.output.value, sum };
-      }`, slow, { tools: [double], limits: { ...limits, cpuMillis: 150 } });
+      }`, slow, { tools: [double], limits: { ...limits, cpuMillis: 400 } });
       expect(result).toMatchObject({ status: 'succeeded', output: { value: 3 } });
     });
 
