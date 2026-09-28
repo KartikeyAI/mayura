@@ -7,11 +7,12 @@ interface Health { readonly status: string; readonly checks: readonly { readonly
 interface Tool { readonly agentId: string; readonly id: string; readonly version: string; readonly effects: string; readonly capabilities: readonly string[] }
 
 export function Overview() {
-  const { client, get } = useSession();
-  const health = useLoad(signal => get<Health>('/v1/operations/health', signal), []);
-  const agents = useLoad(signal => client.agents({ signal }), []);
-  const tools = useLoad(signal => get<{ tools: Tool[] }>('/v1/tools?limit=100', signal), []);
-  const fleet = useLoad(signal => client.workflowFleet({ signal }), []);
+  const { client, get, can, offers } = useSession();
+  // Only what this token may read is requested; the rest is shown as not available.
+  const health = useLoad(signal => get<Health>('/v1/operations/health', signal), [], can('operations:read'));
+  const agents = useLoad(signal => client.agents({ signal }), [], can('runs:read'));
+  const tools = useLoad(signal => get<{ tools: Tool[] }>('/v1/tools?limit=100', signal), [], can('operations:read'));
+  const fleet = useLoad(signal => client.workflowFleet({ signal }), [], can('workflows:read') && offers('workflowFleet'));
   const stat = (icon: React.ReactNode, title: string, value: React.ReactNode, detail: string) => (
     <Card className="gap-2 py-4"><CardHeader className="px-4"><CardDescription className="flex items-center gap-2">{icon}{title}</CardDescription>
       <CardTitle className="text-2xl">{value}</CardTitle></CardHeader><CardContent className="text-muted-foreground px-4 text-xs">{detail}</CardContent></Card>
@@ -20,7 +21,7 @@ export function Overview() {
     <div className="space-y-6">
       <PageHeader title="Overview" description="Readiness, registered agents and tools, and the fleet hold for this scope." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stat(<Activity className="size-4" />, 'Readiness', health.data ? <StatusBadge status={health.data.status} /> : health.error ? 'unavailable' : <Skeleton className="h-7 w-20" />,
+        {stat(<Activity className="size-4" />, 'Readiness', health.data ? <StatusBadge status={health.data.status} /> : health.loading ? <Skeleton className="h-7 w-20" /> : 'unavailable',
           health.data ? `${health.data.checks.length} check(s)` : 'operations:read')}
         {stat(<Bot className="size-4" />, 'Agents', agents.data?.length ?? '–', 'visible to this token')}
         {stat(<Wrench className="size-4" />, 'Tools', tools.data?.tools.length ?? '–', 'across visible agents')}

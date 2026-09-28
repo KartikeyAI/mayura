@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Empty, ErrorAlert, JsonBlock, PageHeader, StatusBadge } from '@/components/common';
 
 export function Humans() {
-  const { client } = useSession();
+  const { client, can } = useSession();
   const page = useLoad(signal => client.humanRequests({ limit: 50, signal }), []);
   return (
     <div className="space-y-6">
@@ -26,7 +26,7 @@ export function Humans() {
                 <TableRow key={item.id}><TableCell className="font-medium">{item.id}</TableCell><TableCell>{item.agentId}</TableCell><TableCell>{item.kind.replaceAll('_', ' ')}</TableCell>
                   <TableCell className="max-w-md truncate whitespace-normal">{item.prompt}</TableCell>
                   <TableCell><StatusBadge status={view.urgency === 'expired' ? 'timed_out' : item.status} /></TableCell>
-                  <TableCell className="text-right">{view.canRespond ? <Respond request={item} action={view.actionText ?? 'Respond'} onDone={page.reload} /> : null}</TableCell></TableRow>
+                  <TableCell className="text-right">{view.canRespond && can('humans:respond') ? <Respond request={item} action={view.actionText ?? 'Respond'} onDone={page.reload} /> : null}</TableCell></TableRow>
               );
             })}</TableBody></Table>) : null}
       </CardContent></Card>

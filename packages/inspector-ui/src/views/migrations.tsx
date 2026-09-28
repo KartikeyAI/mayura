@@ -30,7 +30,7 @@ function ReviewDialog({ run, offer, open, onOpenChange, onMigrated }: {
   run: { readonly runId: string; readonly revision: number; readonly status: string }; offer: WorkflowMigrationOffer; open: boolean;
   onOpenChange: (open: boolean) => void; onMigrated: () => void;
 }) {
-  const { client } = useSession();
+  const { client, can } = useSession();
   const [generation, setGeneration] = React.useState(0);
   const [plan, setPlan] = React.useState<WorkflowMigrationPlan>(); const [error, setError] = React.useState<string>();
   const [applying, setApplying] = React.useState(false); const [applied, setApplied] = React.useState(false);
@@ -87,7 +87,7 @@ function ReviewDialog({ run, offer, open, onOpenChange, onMigrated }: {
         </>)}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={applying}>{applied ? 'Close' : 'Cancel'}</Button>
-          {applied ? null : <Button onClick={apply} disabled={applying || !plan?.allowed || !paused}
+          {applied || !can('workflows:migrate') ? null : <Button onClick={apply} disabled={applying || !plan?.allowed || !paused}
             title={!paused ? 'Pause the run first.' : undefined}>{applying ? <Loader2 className="animate-spin" /> : null}Apply migration</Button>}
         </DialogFooter>
       </DialogContent>

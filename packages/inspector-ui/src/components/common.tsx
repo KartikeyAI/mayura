@@ -35,7 +35,7 @@ const explained: Record<string, { title: string; text: string }> = {
 };
 export function ErrorAlert({ error, title = 'Request failed' }: { error: string | undefined; title?: string }) {
   if (!error) return null;
-  const known = explained[/\(HTTP (\d{3})\)$/.exec(error)?.[1] ?? ''];
+  const known = explained[/HTTP (\d{3})\)$/.exec(error)?.[1] ?? ''];
   if (known) return <Alert><Info /><AlertTitle>{known.title}</AlertTitle><AlertDescription>{known.text} <span className="text-muted-foreground">({error})</span></AlertDescription></Alert>;
   return <Alert variant="destructive"><AlertCircle /><AlertTitle>{title}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>;
 }

@@ -9,18 +9,21 @@ import { ConfirmAction, Empty, ErrorAlert, Mono, PageHeader, StatusBadge } from 
 const runPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function Runs() {
-  const { client } = useSession();
+  const { client, can, offers } = useSession();
   const [input, setInput] = React.useState(''); const [runId, setRunId] = React.useState<string>();
   const [snapshot, setSnapshot] = React.useState<RemoteSnapshot>(); const [events, setEvents] = React.useState<ClientEvent[]>([]);
-  const [error, setError] = React.useState<string>(); const [live, setLive] = React.useState(false);
+  const [error, setError] = React.useState<string>(); const [live, setLive] = React.useState<'following' | 'reconnecting' | false>(false);
   React.useEffect(() => {
     if (!runId) return;
     const controller = new AbortController(); const run = client.run(runId);
-    setSnapshot(undefined); setEvents([]); setError(undefined); setLive(true);
+    setSnapshot(undefined); setEvents([]); setError(undefined); setLive('following');
     (async () => {
       try {
         setSnapshot(await run.inspect({ signal: controller.signal }));
-        for await (const event of run.events({ signal: controller.signal })) setEvents(previous => [...previous.slice(-499), event]);
+        // The client reconnects by itself until the run completes; show when it is doing so.
+        for await (const event of run.events({ signal: controller.signal, onReconnect: reconnect => { if (reconnect.code) setLive('reconnecting'); } })) {
+          setLive('following'); setEvents(previous => [...previous.slice(-499), event]);
+        }
         setSnapshot(await run.inspect({ signal: controller.signal }));
       } catch (failure) { if (!controller.signal.aborted) setError(errorText(failure)); } finally { if (!controller.signal.aborted) setLive(false); }
     })();
@@ -29,7 +32,8 @@ export function Runs() {
   const terminal = snapshot ? snapshot.status !== 'running' : true;
   return (
     <div className="space-y-6">
-      <PageHeader title="Agent runs" description="Inspect an ephemeral agent run and follow its metadata event stream live." />
+      <PageHeader title="Agent runs" description={offers('runRecords') ? 'Inspect an agent run on any server replica and follow its metadata event stream live.'
+        : 'Inspect an agent run held by this server and follow its metadata event stream live.'} />
       <Card><CardContent>
         <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); if (runPattern.test(input.trim())) setRunId(input.trim()); else setError('Enter a run id (UUID).'); }}>
           <div className="min-w-80 flex-1 space-y-2"><Label htmlFor="run-id">Run id</Label><Input id="run-id" value={input} onChange={event => setInput(event.target.value)} placeholder="00000000-0000-4000-8000-000000000000" /></div>
@@ -46,10 +50,10 @@ export function Runs() {
                 <div><dt className="text-muted-foreground">Reserved</dt><dd className="font-medium">{snapshot.budget.reservedMicros} µ</dd></div>
                 <div><dt className="text-muted-foreground">Calls</dt><dd className="font-medium">{snapshot.budget.calls}</dd></div>
               </dl>
-              <p className="text-muted-foreground text-xs">{snapshot.evidence.length} tool receipt(s) · {live ? 'following live' : 'stream ended'}</p>
-              <ConfirmAction label="Cancel run" icon={<Ban />} destructive disabled={terminal} title="Cancel this run?" confirm="Cancel run"
+              <p className="text-muted-foreground text-xs">{snapshot.evidence.length} tool receipt(s) · {live === 'reconnecting' ? 'reconnecting…' : live ? 'following live' : 'stream ended'}</p>
+              {can('runs:cancel') ? <ConfirmAction label="Cancel run" icon={<Ban />} destructive disabled={terminal} title="Cancel this run?" confirm="Cancel run"
                 description={<p>The run and its children stop admitting work. Effects already started keep their truthful outcome.</p>}
-                onConfirm={() => client.run(runId).cancel()} />
+                onConfirm={() => client.run(runId).cancel()} /> : null}
             </CardContent></Card>
           <Card className="lg:col-span-2"><CardHeader><CardTitle>Events</CardTitle><CardDescription>Content-free metadata only.</CardDescription></CardHeader><CardContent>
             {events.length === 0 ? <Empty>No events yet.</Empty> : (

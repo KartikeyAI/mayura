@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, Table, Table
 import { ConfirmAction, ErrorAlert, Mono, PageHeader, StatusBadge, short } from '@/components/common';
 
 export function Fleet() {
-  const { client } = useSession();
+  const { client, can } = useSession(); const operate = can('workflows:fleet');
   const hold = useLoad(signal => client.workflowFleet({ signal }), []);
   const [outcomes, setOutcomes] = React.useState<WorkflowFleetSweepOutcome[]>([]);
   const [sweeping, setSweeping] = React.useState<'pause' | 'resume'>(); const [error, setError] = React.useState<string>();
@@ -26,7 +26,7 @@ export function Fleet() {
       <ErrorAlert error={hold.error} />
       <Card><CardHeader><CardTitle className="flex items-center gap-2">Fleet hold {hold.data ? <StatusBadge status={held ? 'held' : 'released'} /> : null}</CardTitle>
         <CardDescription>{hold.data ? `Generation ${hold.data.generation}${hold.data.changedAtMs ? ` · changed ${new Date(hold.data.changedAtMs).toLocaleString()}` : ''}` : 'Requires workflows:fleet.'}</CardDescription></CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        {operate ? <CardContent className="flex flex-wrap gap-2">
           <ConfirmAction label="Hold fleet" icon={<Lock />} disabled={!hold.data || held || sweeping !== undefined} title="Hold the fleet?"
             description={<p>Hosts and coordinators stop driving runs in this scope. Running work finishes its current step; nothing is cancelled.</p>}
             confirm="Hold" onConfirm={() => client.holdWorkflowFleet()} onDone={hold.reload} />
@@ -35,7 +35,7 @@ export function Fleet() {
             description={<p>Hosts resume driving runs. Runs paused by the sweep stay paused until you run a resume sweep.</p>}
             confirm="Release" onConfirm={() => client.releaseWorkflowFleet()} onDone={hold.reload} />
           <Button size="sm" variant="outline" disabled={held || !hold.data || sweeping !== undefined} onClick={() => sweep('resume')}><Play />{sweeping === 'resume' ? 'Resuming…' : 'Resume sweep'}</Button>
-        </CardContent></Card>
+        </CardContent> : <CardContent className="text-muted-foreground text-sm">Holding, releasing and sweeping need workflows:fleet.</CardContent>}</Card>
       <ErrorAlert error={error} title="Sweep stopped" />
       {outcomes.length ? (
         <Card><CardHeader><CardTitle>Sweep results</CardTitle><CardDescription>{Object.entries(counts).map(([key, value]) => `${value} ${key.replaceAll('_', ' ')}`).join(' · ')}</CardDescription></CardHeader>

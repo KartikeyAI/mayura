@@ -46,7 +46,7 @@ export function Workflows() {
 }
 
 function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
-  const { client } = useSession();
+  const { client, can, offers } = useSession(); const control = can('workflows:control');
   const view = useLoad(signal => client.workflow(runId, { signal }), [runId]);
   const projection = React.useMemo(() => { try { return view.data ? createWorkflowGraphProjection(view.data) : undefined; } catch { return undefined; } }, [view.data]);
   const run = view.data as WorkflowViewInput | undefined;
@@ -57,6 +57,7 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
       <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft />All workflows</Button>
       <PageHeader title={run ? `${run.definitionId}@${run.definitionVersion}` : 'Workflow'} description={runId}
         actions={run ? <>
+          {control ? <>
           <ConfirmAction label="Pause" icon={<Pause />} disabled={terminal || run.status === 'paused'} title="Pause this run?"
             description={<p>The run stops at a quiescent point. Pausing is refused while a step is dispatching or leased.</p>} confirm="Pause"
             onConfirm={command(revision => client.pauseWorkflow(runId, revision, { commandId: commandId() }))} onDone={view.reload} />
@@ -66,6 +67,7 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
           <ConfirmAction label="Cancel" icon={<Ban />} destructive disabled={terminal} title="Cancel this run?"
             description={<><p>No new step starts. Steps with unknown effects stay unknown and need reconciliation.</p><p className="font-medium">This cannot be undone.</p></>}
             confirm="Cancel run" onConfirm={command(revision => client.cancelWorkflow(runId, revision, { commandId: commandId() }))} onDone={view.reload} />
+          </> : null}
           <Button variant="outline" size="sm" onClick={view.reload}><RefreshCw />Refresh</Button>
         </> : null} />
       <ErrorAlert error={view.error} />
@@ -89,7 +91,7 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
               </dl>
               <p className="text-muted-foreground text-xs">Format {run.format} · revision {run.revision}</p>
             </CardContent></Card>
-            <MigrationPanel run={run} onMigrated={view.reload} />
+            {offers('workflowMigrations') ? <MigrationPanel run={run} onMigrated={view.reload} /> : null}
           </div>
         </div>
       ) : null}
@@ -99,7 +101,7 @@ function WorkflowDetail({ runId, onBack }: { runId: string; onBack: () => void }
 
 /** Tool steps waiting for approval: what will run, until when, and the exact digest the approval names. */
 function ApprovalPanel({ run, onApproved }: { run: WorkflowViewInput; onApproved: () => void }) {
-  const { client } = useSession();
+  const { client, can } = useSession(); const control = can('workflows:control');
   const pending = run.steps.flatMap(step => step.approval ? [{ id: step.id, approval: step.approval }] : []);
   if (pending.length === 0) return null;
   return (
@@ -108,10 +110,10 @@ function ApprovalPanel({ run, onApproved }: { run: WorkflowViewInput; onApproved
         <div key={id} className="space-y-2 border-b pb-4 last:border-b-0 last:pb-0">
           <div className="flex items-center justify-between gap-2">
             <div><Mono>{id}</Mono>{approval.subject ? <span className="text-muted-foreground ml-2 text-xs">{approval.subject.toolId}@{approval.subject.toolVersion}</span> : null}</div>
-            <ConfirmAction label="Approve" icon={<Check />} title={`Approve ${id}?`}
+            {control ? <ConfirmAction label="Approve" icon={<Check />} title={`Approve ${id}?`}
               description={<ApprovalSummary approval={approval} />} confirm="Approve"
               onConfirm={async () => { await client.approveWorkflow(run.runId, { revision: run.revision, nodeId: id, approvalDigest: approval.digest }, { commandId: commandId() }); }}
-              onDone={onApproved} />
+              onDone={onApproved} /> : null}
           </div>
           <ApprovalSummary approval={approval} />
         </div>))}

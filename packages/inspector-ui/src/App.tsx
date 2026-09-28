@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Activity, GitBranch, KeyRound, LayoutDashboard, LogOut, MessageSquare, Moon, PauseCircle, Shuffle, Sun, Workflow } from 'lucide-react';
-import { createClient } from '@mayura/client';
-import { SessionProvider, errorText, useSession } from '@/lib/session';
+import { createClient, type RemoteSession } from '@mayura/client';
+import { SessionProvider, errorText, useSession, type Session } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Separator } from '@/components/ui/primitives';
@@ -13,13 +13,16 @@ import { Fleet } from '@/views/fleet';
 import { Runs } from '@/views/runs';
 import { Migrations } from '@/views/migrations';
 
+/** Each view is listed only when the token may use it and the server offers what it needs. */
 const views = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, render: () => <Overview /> },
-  { id: 'workflows', label: 'Workflows', icon: Workflow, render: () => <Workflows /> },
-  { id: 'humans', label: 'Human requests', icon: MessageSquare, render: () => <Humans /> },
-  { id: 'fleet', label: 'Fleet control', icon: PauseCircle, render: () => <Fleet /> },
-  { id: 'migrations', label: 'Migrations', icon: Shuffle, render: () => <Migrations /> },
-  { id: 'runs', label: 'Agent runs', icon: Activity, render: () => <Runs /> },
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, render: () => <Overview />,
+    usable: (session: Session) => session.can('operations:read') || session.can('runs:read') || (session.can('workflows:read') && session.offers('workflowFleet')) },
+  { id: 'workflows', label: 'Workflows', icon: Workflow, render: () => <Workflows />, usable: (session: Session) => session.can('workflows:read') && session.offers('workflowIndex') },
+  { id: 'humans', label: 'Human requests', icon: MessageSquare, render: () => <Humans />, usable: (session: Session) => session.can('humans:read') && session.offers('humanRequests') },
+  { id: 'fleet', label: 'Fleet control', icon: PauseCircle, render: () => <Fleet />, usable: (session: Session) => session.can('workflows:read') && session.offers('workflowFleet') },
+  { id: 'migrations', label: 'Migrations', icon: Shuffle, render: () => <Migrations />,
+    usable: (session: Session) => session.can('workflows:read') && session.offers('workflowIndex') && session.offers('workflowMigrations') },
+  { id: 'runs', label: 'Agent runs', icon: Activity, render: () => <Runs />, usable: (session: Session) => session.can('runs:read') },
 ] as const;
 type ViewId = typeof views[number]['id'];
 
@@ -30,19 +33,20 @@ function useTheme(): [boolean, () => void] {
 }
 
 export function App() {
-  const [token, setToken] = React.useState<string>();
-  const forget = React.useCallback(() => setToken(undefined), []);
+  const [connected, setConnected] = React.useState<{ token: string; info: RemoteSession }>();
+  const forget = React.useCallback(() => setConnected(undefined), []);
   const [dark, toggle] = useTheme();
-  if (!token) return <Connect onConnect={setToken} dark={dark} toggle={toggle} />;
-  return <SessionProvider token={token} onForget={forget}><Shell dark={dark} toggle={toggle} /></SessionProvider>;
+  if (!connected) return <Connect onConnect={(token, info) => setConnected({ token, info })} dark={dark} toggle={toggle} />;
+  return <SessionProvider token={connected.token} info={connected.info} onForget={forget}><Shell dark={dark} toggle={toggle} /></SessionProvider>;
 }
 
-function Connect({ onConnect, dark, toggle }: { onConnect: (token: string) => void; dark: boolean; toggle: () => void }) {
+function Connect({ onConnect, dark, toggle }: { onConnect: (token: string, info: RemoteSession) => void; dark: boolean; toggle: () => void }) {
   const [value, setValue] = React.useState(''); const [error, setError] = React.useState<string>(); const [busy, setBusy] = React.useState(false);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); const token = value.trim(); if (!token) return;
     setBusy(true); setError(undefined);
-    try { await createClient({ baseUrl: window.location.origin, token: () => token }).agents(); setValue(''); onConnect(token); }
+    // The session read needs no capability, so any accepted token connects and sees only what it may use.
+    try { const info = await createClient({ baseUrl: window.location.origin, token: () => token }).session(); setValue(''); onConnect(token, info); }
     catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
   };
   return (
@@ -66,22 +70,24 @@ function Connect({ onConnect, dark, toggle }: { onConnect: (token: string) => vo
 }
 
 function Shell({ dark, toggle }: { dark: boolean; toggle: () => void }) {
-  const { forget } = useSession();
-  const [view, setView] = React.useState<ViewId>('overview');
+  const session = useSession(); const { forget, info } = session;
+  const usable = views.filter(item => item.usable(session));
+  const [view, setView] = React.useState<ViewId | undefined>(() => usable[0]?.id);
   const main = React.useRef<HTMLElement>(null);
-  const current = views.find(item => item.id === view)!;
+  const current = usable.find(item => item.id === view);
   return (
     <div className="flex min-h-svh">
       <aside className="bg-sidebar hidden w-60 shrink-0 flex-col border-r md:flex">
         <div className="flex h-14 items-center gap-2 px-4 font-semibold"><div className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md"><GitBranch className="size-4" /></div>Mayura</div>
         <Separator />
         <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Sections">
-          {views.map(item => (
+          {usable.map(item => (
             <button key={item.id} type="button" onClick={() => { setView(item.id); main.current?.focus(); }} aria-current={item.id === view ? 'page' : undefined}
               className={cn('hover:bg-accent flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors', item.id === view && 'bg-accent font-medium')}>
               <item.icon className="size-4" />{item.label}</button>))}
         </nav>
         <Separator />
+        <p className="text-muted-foreground truncate px-4 pt-2 text-xs" title={info.capabilities.join(', ')}>{info.scope.principalId} · {info.scope.projectId}</p>
         <div className="flex items-center gap-1 p-2">
           <Button variant="ghost" size="sm" className="flex-1 justify-start" onClick={forget}><LogOut />Forget token</Button>
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</Button>
@@ -89,11 +95,13 @@ function Shell({ dark, toggle }: { dark: boolean; toggle: () => void }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-2 border-b px-4 md:hidden">
-          <select className="bg-background rounded-md border px-2 py-1 text-sm" value={view} onChange={event => setView(event.target.value as ViewId)} aria-label="Section">
-            {views.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+          <select className="bg-background rounded-md border px-2 py-1 text-sm" value={view ?? ''} onChange={event => setView(event.target.value as ViewId)} aria-label="Section">
+            {usable.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
           <Button variant="ghost" size="sm" className="ml-auto" onClick={forget}><LogOut />Forget</Button>
         </header>
-        <main ref={main} tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 p-4 outline-none md:p-8">{current.render()}</main>
+        <main ref={main} tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 p-4 outline-none md:p-8">{current ? current.render() : (
+          <Card className="mx-auto max-w-lg"><CardHeader><CardTitle>Nothing to show for this token</CardTitle>
+            <CardDescription>The token is valid, but its capabilities ({info.capabilities.join(', ') || 'none'}) do not match any view this server offers.</CardDescription></CardHeader></Card>)}</main>
       </div>
     </div>
   );
