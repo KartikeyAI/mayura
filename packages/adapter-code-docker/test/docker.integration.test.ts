@@ -46,7 +46,7 @@ const tool = defineTool({ id: 'number.double', version: '1', description: 'Doubl
 describe.skipIf(!available)('Docker QuickJS containment profile', () => {
   it('rejects an exact image whose retained provenance digest does not match its label', async () => {
     const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!,
-      provenance: `sha256:${'0'.repeat(64)}` }), allowTestAdapter: true, invokeTool: vi.fn() });
+      provenance: `sha256:${'0'.repeat(64)}` }), invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'docker.provenance', version: '1', intent: 'Docker provenance test.', language: 'javascript',
       source: 'input => input', input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', limits });
     await expect(mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-provenance',
@@ -60,7 +60,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
       invokeTool(definition, input, { runId: context.runId, callId: context.callId, scope: context.scope, signal: context.signal,
         permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>>);
     const mode = createCodeMode({ adapter: createPromotedDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance!,
-      promotion: promotionProof() }), allowTestAdapter: true, invokeTool: broker });
+      promotion: promotionProof() }), invokeTool: broker });
     const program = defineCodeProgram({ id: 'docker.tool', version: '1', intent: 'Docker tool test.', language: 'javascript',
       source: 'async (input, tools) => (await tools.call("number.double", input)).output', input: schema, output: schema,
       inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', tools: [tool], limits });
@@ -69,13 +69,30 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     expect(result, JSON.stringify(result)).toMatchObject({ status: 'succeeded', output: { value: 10 } }); expect(broker).toHaveBeenCalledTimes(1);
   }, 30_000);
 
-  it('interrupts hostile CPU work and removes the container', async () => {
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: vi.fn() });
+  it('stops hostile CPU work at cpuMillis', async () => {
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'docker.cpu', version: '1', intent: 'Docker CPU test.', language: 'javascript', source: '() => { while (true) {} }',
       input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1', limits: { ...limits, cpuMillis: 20 } });
     await expect(mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-cpu', scope: { principalId: 'alice', projectId: 'project' },
-      signal: new AbortController().signal })).resolves.toMatchObject({ status: 'failed', error: { code: 'TOOL_FAILED' } });
+      signal: new AbortController().signal })).resolves.toMatchObject({ status: 'failed', error: { code: 'LIMIT_EXCEEDED' } });
   }, 30_000);
+
+  it('bounds hostile memory, recursion and output inside the container, then removes it', async () => {
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), invokeTool: vi.fn() });
+    const any: Schema<unknown, unknown> = { '~standard': { version: 1, vendor: 'test', validate: value => ({ value }) } };
+    const run = (source: string, executionId: string) => mode.execute(defineCodeProgram({ id: 'docker.hostile', version: '1', intent: 'Docker hostile test.',
+      language: 'javascript', source, input: schema, output: any, inputSchemaId: 'value.input.v1', outputSchemaId: 'any.output.v1',
+      limits: { ...limits, cpuMillis: 5_000 } }), { value: 1 }, { runId: 'run', executionId, scope: { principalId: 'alice', projectId: 'project' },
+      signal: new AbortController().signal });
+    await expect(run('() => { const values = []; for (;;) values.push("x".repeat(65536) + values.length); }', 'docker-memory'))
+      .resolves.toMatchObject({ status: 'failed', error: { code: 'LIMIT_EXCEEDED', message: expect.stringContaining('memoryBytes') } });
+    await expect(run('() => { const down = n => down(n + 1) + 1; return down(0); }', 'docker-stack'))
+      .resolves.toMatchObject({ status: 'failed', programError: { name: 'InternalError', message: 'stack overflow' } });
+    await expect(run('() => "x".repeat(100000)', 'docker-output')).resolves.toMatchObject({ status: 'failed', error: { code: 'INVALID_OUTPUT' } });
+    await expect(run('() => [typeof process, typeof require, typeof fetch, Function("return typeof process")()]', 'docker-globals'))
+      .resolves.toMatchObject({ status: 'succeeded', output: ['undefined', 'undefined', 'undefined', 'undefined'] });
+    await expect(waitForContainerCount(0)).resolves.toEqual([]);
+  }, 60_000);
 
   it('applies the declared outer-container confinement controls', async () => {
     let admit!: () => void;
@@ -85,7 +102,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     const holdingTool = defineTool({ id: 'number.hold', version: '1', description: 'Hold for inspection.', input: schema, output: schema,
       effects: 'none', capabilities: [], execute: async input => { admit(); await blocked; return input; } });
     const budget = new Budget(0, 1);
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true,
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }),
       invokeTool: (definition, input, context) => invokeTool(definition, input, { runId: context.runId, callId: context.callId,
         scope: context.scope, signal: context.signal, permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>> });
     const program = defineCodeProgram({ id: 'docker.inspect', version: '1', intent: 'Docker confinement inspection.', language: 'javascript',
@@ -98,7 +115,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
       const ids = await waitForContainerCount(1);
       const inspected = await executeFile(dockerPath!, ['container', 'inspect', ids[0]!],
         { windowsHide: true, timeout: 10_000, maxBuffer: 128 * 1_024, env: Object.freeze({}) });
-      const value = JSON.parse(inspected.stdout) as Array<{ Config: { User: string }; HostConfig: Record<string, unknown>; Mounts: Array<{ Type: string }> }>;
+      const value = JSON.parse(inspected.stdout) as Array<{ Config: { User: string }; HostConfig: Record<string, unknown>; Mounts: Array<{ Type: string }>; Path: string; Args: string[] }>;
       expect(value).toHaveLength(1);
       expect(value[0]!.Config.User).toBe('65532:65532');
       expect(value[0]!.HostConfig).toMatchObject({ NetworkMode: 'none', ReadonlyRootfs: true, CapDrop: ['ALL'], PidsLimit: 16,
@@ -107,6 +124,8 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
       expect(value[0]!.HostConfig['SecurityOpt']).toEqual(expect.arrayContaining(['no-new-privileges=true', 'seccomp=builtin']));
       expect(value[0]!.HostConfig['Tmpfs']).toEqual({ '/tmp': expect.stringContaining('size=1048576') });
       expect(value[0]!.Mounts.every(mount => mount.Type === 'tmpfs')).toBe(true);
+      expect(value[0]!.HostConfig['LogConfig']).toMatchObject({ Type: 'none' });
+      expect([value[0]!.Path, ...value[0]!.Args]).toEqual(['node', '--permission', '--allow-fs-read=/sandbox', '--disallow-code-generation-from-strings', '/sandbox/worker.mjs']);
     } finally { release(); }
     await expect(execution).resolves.toMatchObject({ status: 'succeeded', output: { value: 1 } });
   }, 30_000);
@@ -120,7 +139,7 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
       effects: 'none', capabilities: [], execute: async input => { admit(); await blocked; return input; } });
     const budget = new Budget(0, 1);
     const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }),
-      allowTestAdapter: true, invokeTool: (definition, input, context) => invokeTool(definition, input, { runId: context.runId,
+      invokeTool: (definition, input, context) => invokeTool(definition, input, { runId: context.runId,
         callId: context.callId, scope: context.scope, signal: context.signal, permissions: { allow: [`tool:${definition.id}`] }, budget }) as Promise<Outcome<JsonValue>> });
     const program = defineCodeProgram({ id: 'docker.escape', version: '1', intent: 'Docker escape boundary test.', language: 'javascript',
       source: 'async (input, tools) => (await tools.call("number.escape-hold", input)).output', input: schema, output: schema,
@@ -157,9 +176,19 @@ describe.skipIf(!available)('Docker QuickJS containment profile', () => {
     await expect(execution).resolves.toMatchObject({ status: 'succeeded', output: { value: 1 } });
   }, 30_000);
 
+  it('force-removes the disposable container at the wall deadline', async () => {
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), invokeTool: vi.fn() });
+    const program = defineCodeProgram({ id: 'docker.deadline', version: '1', intent: 'Docker deadline test.', language: 'javascript',
+      source: '() => { while (true) {} }', input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1',
+      limits: { ...limits, cpuMillis: 60_000, wallTimeMillis: 4_000 } });
+    await expect(mode.execute(program, { value: 1 }, { runId: 'run', executionId: 'docker-deadline',
+      scope: { principalId: 'alice', projectId: 'project' }, signal: new AbortController().signal })).resolves.toMatchObject({ status: 'failed', error: { code: 'TIMEOUT' } });
+    await expect(waitForContainerCount(0)).resolves.toEqual([]);
+  }, 30_000);
+
   it('force-removes the disposable container when the caller cancels', async () => {
     const controller = new AbortController();
-    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), allowTestAdapter: true, invokeTool: vi.fn() });
+    const mode = createCodeMode({ adapter: createDockerQuickJsSandboxAdapter({ dockerPath: dockerPath!, image: image!, provenance: provenance! }), invokeTool: vi.fn() });
     const program = defineCodeProgram({ id: 'docker.cancel', version: '1', intent: 'Docker cancellation test.', language: 'javascript',
       source: '() => { while (true) {} }', input: schema, output: schema, inputSchemaId: 'value.input.v1', outputSchemaId: 'value.output.v1',
       limits: { ...limits, cpuMillis: 10_000 } });

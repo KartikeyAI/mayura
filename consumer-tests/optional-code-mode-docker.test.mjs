@@ -5,7 +5,7 @@ let immutableImageRequired = false;
 try {
   createDockerQuickJsSandboxAdapter({ dockerPath: 'docker', image: 'node:latest', provenance: 'sha256:bad' });
 } catch (error) {
-  immutableImageRequired = error instanceof TypeError;
+  immutableImageRequired = error instanceof Error && error.code === 'INVALID_CONFIG';
 }
 const image = `sha256:${'a'.repeat(64)}`; const provenance = `sha256:${'b'.repeat(64)}`; const now = Date.now();
 const { privateKey } = generateKeyPairSync('ed25519');

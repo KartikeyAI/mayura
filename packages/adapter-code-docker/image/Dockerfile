@@ -9,4 +9,6 @@ LABEL org.opencontainers.image.title="Mayura Code Sandbox" \
 WORKDIR /sandbox
 COPY --chown=65532:65532 root/ /sandbox/
 USER 65532:65532
-ENTRYPOINT ["node", "/sandbox/worker.mjs"]
+# The Node.js permission model inside the container too: the worker may read only /sandbox, and cannot write files,
+# start processes or threads, load native addons or compile JavaScript from strings.
+ENTRYPOINT ["node", "--permission", "--allow-fs-read=/sandbox", "--disallow-code-generation-from-strings", "/sandbox/worker.mjs"]
