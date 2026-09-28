@@ -10,7 +10,9 @@ import { createPipeline, redactPII, type ContentProcessor, type ContentSnapshot 
 //    final reply the runtime is about to release; if anything would still change, the content is withheld and the run
 //    ends `blocked`.
 //
-// Agent guards can only allow or block, so the transforming step lives in the schemas; the guard proves it happened.
+// The redaction lives in the schemas, so it applies wherever a value is validated (input, tool results, the reply);
+// the backstop guard only checks it happened. (A guard may also rewrite content; this one deliberately blocks instead,
+// so a redaction gap shows up as a blocked run rather than being silently patched.)
 // These recognizers are heuristics (see mayura/guardrails `redactPII`): they miss unusual formats and can flag long
 // digit strings that are not PII. They are a safety net, not a compliance certification.
 
