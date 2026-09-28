@@ -2,7 +2,7 @@
 
 Optional React 18.3/19 hooks over `mayura/client/headless`, `mayura/client/forms` and `mayura/client/workflows`. The package exposes `useMayuraRun`, `useMayuraRunActions`, `useMayuraHumanRequest`, `useMayuraHumanResponseCommand`, `useMayuraRunActivity`, `useMayuraWorkflowGraph` and `useMayuraWorkflowCommand`.
 
-The caller owns and disposes the headless store. Hooks never refresh, observe, reconnect, cancel or create timers automatically. Call actions from explicit event/effect policy in the application. One shared store means multiple React consumers reuse the same bounded state and transport observation.
+The caller owns and disposes the headless store. Hooks never refresh, observe, cancel or create timers automatically; an explicit `observe()` follows the run to its end and reconnects dropped streams by itself (the state shows `reconnecting`). Call actions from explicit event/effect policy in the application. One shared store means multiple React consumers reuse the same bounded state and transport observation.
 
 `useMayuraWorkflowCommand` subscribes to a caller-owned explicit controller without reading or mutating on mount. Conflict and ambiguous-failure reconciliation remain application decisions.
 

@@ -147,10 +147,9 @@ export function validateHumanResponse(request: RemoteHumanRequest, definition: H
 }
 
 function commandState(state: HumanResponseCommandState): HumanResponseCommandState { return Object.freeze({ ...state }); }
+/** Client errors keep their code (the server's own, when it sent one); anything else becomes FORM_SUBMISSION_FAILED. */
 function safeCommandError(error: unknown): ClientError {
-  const allowed = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT', 'INVALID_REQUEST',
-    'FORM_SUBMISSION_CONFLICT']);
-  return error instanceof ClientError && allowed.has(error.code) ? error : new ClientError('FORM_SUBMISSION_FAILED');
+  return error instanceof ClientError && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error : new ClientError('FORM_SUBMISSION_FAILED');
 }
 
 /** Explicit single-flight response command state. It never retries, refreshes or sends work until submit is called. */
@@ -198,7 +197,7 @@ export function createHumanResponseController(options: HumanResponseControllerOp
       } catch (error) {
         const safe = safeCommandError(error);
         if (!disposed && state.status !== 'conflict') {
-          const conflict = safe.code === 'HTTP_ERROR' && (safe.status === 409 || safe.status === 412);
+          const conflict = safe.status === 409 || safe.status === 412;
           publish({ status: conflict ? 'conflict' : 'failed', responseStatus: null, errorCode: conflict ? 'FORM_SUBMISSION_CONFLICT' : safe.code });
         }
         throw safe;

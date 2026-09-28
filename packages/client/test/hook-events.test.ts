@@ -15,7 +15,8 @@ async function receive(values: readonly ReturnType<typeof event>[]): Promise<Cli
   const client = createClient({ baseUrl: 'https://mayura.test', token: () => 'test-only', fetch: async () => new Response(encoded,
     { headers: { 'Content-Type': 'text/event-stream' } }) });
   const result: ClientEvent[] = [];
-  for await (const entry of client.run(runId).events()) result.push(entry);
+  // One recorded connection: without reconnecting, the stream's end is the end of the test input.
+  for await (const entry of client.run(runId).events({ reconnect: false })) result.push(entry);
   return result;
 }
 

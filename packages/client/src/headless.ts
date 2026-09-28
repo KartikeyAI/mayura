@@ -1,6 +1,7 @@
 import { ClientError, type ClientEvent, type RemoteHumanRequest, type RemoteRun, type RemoteSnapshot } from './index.js';
 
-export type RunConnection = 'idle' | 'loading' | 'observing' | 'stopped' | 'error' | 'disposed';
+/** `reconnecting`: the event stream failed and is being reopened from the last sequence; `errorCode` says why. */
+export type RunConnection = 'idle' | 'loading' | 'observing' | 'reconnecting' | 'stopped' | 'error' | 'disposed';
 export interface HeadlessRunState {
   readonly revision: number; readonly connection: RunConnection; readonly snapshot: RemoteSnapshot | null;
   readonly events: readonly ClientEvent[]; readonly lastSequence: number; readonly hasGap: boolean;
@@ -22,6 +23,7 @@ export interface HeadlessRunStore {
   getSnapshot(): HeadlessRunState;
   subscribe(listener: () => void): () => void;
   refresh(options?: { readonly signal?: AbortSignal }): Promise<HeadlessRunState>;
+  /** Follow the run's events until `run.completed`, reconnecting from the last sequence as needed, then read its snapshot. */
   observe(options?: { readonly signal?: AbortSignal }): Promise<HeadlessRunState>;
   cancel(options?: { readonly signal?: AbortSignal }): Promise<void>;
   dispose(): void;
@@ -55,11 +57,9 @@ function streamed(current: StreamedOutput, item: ClientEvent, gap: boolean, maxC
   return Object.freeze({ modelCall, withheld: base.withheld, text: text.slice(0, maxChars), complete: base.complete && !gap && text.length <= maxChars });
 }
 const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const remoteErrorCodes = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT',
-  'INVALID_OUTPUT', 'INVALID_REQUEST', 'INVALID_CURSOR', 'INVALID_IDEMPOTENCY_KEY', 'INVALID_STREAM', 'OBSERVATION_FAILED', 'STREAM_LIMIT', 'TRUNCATED_STREAM',
-  'INVALID_VIEW_INPUT']);
 const encoder = new TextEncoder();
-function viewError(error: unknown): ClientError { return error instanceof ClientError && remoteErrorCodes.has(error.code) ? error : new ClientError('VIEW_FAILED'); }
+/** Client errors keep their code (the server's own, when it sent one); anything else becomes VIEW_FAILED. */
+function viewError(error: unknown): ClientError { return error instanceof ClientError && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error : new ClientError('VIEW_FAILED'); }
 function snapshot(value: RemoteSnapshot, id: string): RemoteSnapshot {
   if (!value || !Object.isFrozen(value)) throw new ClientError('INVALID_VIEW_INPUT');
   const fields = Object.getOwnPropertyDescriptors(value);
@@ -150,7 +150,12 @@ export function createHeadlessRunStore(options: HeadlessRunStoreOptions): Headle
       if (disposed) throw new ClientError('VIEW_DISPOSED'); if (observing) throw new ClientError('VIEW_BUSY'); observing = true;
       const control = operation(settings?.signal); publish({ connection: 'observing', errorCode: null });
       try {
-        for await (const received of run.events({ after: state.lastSequence, signal: control.signal })) {
+        // The client reconnects by itself until run.completed; the store only shows that it is doing so.
+        const onReconnect = (reconnect: { readonly code: string | null }): void => {
+          if (reconnect.code !== null && typeof reconnect.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(reconnect.code))
+            publish({ connection: 'reconnecting', errorCode: reconnect.code });
+        };
+        for await (const received of run.events({ after: state.lastSequence, signal: control.signal, onReconnect })) {
           const item = event(received, run.id, state.lastSequence); const gap = state.hasGap || item.type === 'events.gap';
           const activity = gap ? { models: null, tools: null, hooks: null } : { ...state.activity };
           if (!gap) {
@@ -159,7 +164,8 @@ export function createHeadlessRunStore(options: HeadlessRunStoreOptions): Headle
           }
           const output = item.type === 'output.delta' || item.type === 'output.withheld' ? { streamedOutput: streamed(state.streamedOutput, item, gap, maxStreamedChars) }
             : item.type === 'events.gap' && state.streamedOutput ? { streamedOutput: Object.freeze({ ...state.streamedOutput, complete: false }) } : {};
-          publish({ events: [...state.events, item].slice(-maxEvents), lastSequence: item.sequence, hasGap: gap, activity, ...output });
+          publish({ events: [...state.events, item].slice(-maxEvents), lastSequence: item.sequence, hasGap: gap, activity, ...output,
+            ...(state.connection === 'reconnecting' ? { connection: 'observing' as const, errorCode: null } : {}) });
         }
         const current = snapshot(await run.inspect({ signal: control.signal }), run.id);
         return publish({ snapshot: current, connection: 'stopped', errorCode: null,

@@ -161,9 +161,9 @@ const commandId = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const signalIdentifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const encoder = new TextEncoder();
 function workflowCommandState(state: WorkflowCommandState): WorkflowCommandState { return Object.freeze({ ...state }); }
+/** Client errors keep their code (the server's own, when it sent one); anything else becomes WORKFLOW_COMMAND_FAILED. */
 function safeWorkflowCommandError(error: unknown): ClientError {
-  const allowed = new Set(['ABORTED', 'TRANSPORT_FAILED', 'REDIRECT_DENIED', 'HTTP_ERROR', 'INVALID_RESPONSE', 'INVALID_JSON', 'RESPONSE_LIMIT', 'INVALID_REQUEST']);
-  return error instanceof ClientError && allowed.has(error.code) ? error : new ClientError('WORKFLOW_COMMAND_FAILED');
+  return error instanceof ClientError && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error : new ClientError('WORKFLOW_COMMAND_FAILED');
 }
 function approvalIntent(value: unknown, projection: WorkflowGraphProjection): WorkflowApprovalIntent {
   if (!value || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value)))
@@ -253,7 +253,8 @@ export function createWorkflowCommandController(options: WorkflowCommandControll
     } catch (error) {
       const safe = safeWorkflowCommandError(error);
       if (!disposed) {
-        const conflict = safe.code === 'HTTP_ERROR' && (safe.status === 409 || safe.status === 412);
+        // Any 409 (WORKFLOW_CONFLICT, MIGRATION_REFUSED, ...) means the run moved on: read it again. The thrown error keeps the server's code.
+        const conflict = safe.status === 409 || safe.status === 412;
         publish({ status: conflict ? 'conflict' : 'failed', errorCode: conflict ? 'WORKFLOW_COMMAND_CONFLICT' : safe.code });
       }
       throw safe;

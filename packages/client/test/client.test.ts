@@ -180,14 +180,15 @@ describe('browser client against actual authenticated server Fetch facade', () =
 
   it('rejects server body-limit failure without retry or model dispatch', async () => {
     const { client, generate, transport } = fixture({ limits: { maxBodyBytes: 16 } });
-    await expect(client.submit('fixture.agent', 2, { idempotencyKey: 'too-large' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 413 });
+    await expect(client.submit('fixture.agent', 2, { idempotencyKey: 'too-large' })).rejects.toMatchObject({ code: 'BODY_TOO_LARGE', status: 413, details: { limitBytes: 16 } });
     expect(transport).toHaveBeenCalledOnce(); expect(generate).not.toHaveBeenCalled();
   });
 
   it('withholds authentication exception text across the actual boundary', async () => {
     const { client, generate } = fixture({ authenticate: async () => { throw new Error('PRIVATE TOKEN DATABASE PASSWORD'); } });
     const error = await client.agents().catch(value => value as Error);
-    expect(error).toMatchObject({ code: 'HTTP_ERROR', status: 503 }); expect(String(error)).not.toContain('PRIVATE'); expect(generate).not.toHaveBeenCalled();
+    expect(error).toMatchObject({ code: 'AUTH_UNAVAILABLE', status: 503, retryAfterMs: 2_000, message: expect.stringContaining('verify the access token') });
+    expect(String(error)).not.toContain('PRIVATE'); expect(generate).not.toHaveBeenCalled();
   });
 });
 
@@ -208,7 +209,7 @@ describe('browser human request client', () => {
     const { client } = fixture({ humanRequests: { list: async () => ({ items: [{ ...request, handler: 'PRIVATE' } as never], next: null }), inspect: async () => request, respond: async () => request } });
     await expect(client.humanRequest('../private')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     await expect(client.humanRequests({ limit: 101 })).rejects.toMatchObject({ code: 'INVALID_CURSOR' });
-    await expect(client.humanRequests()).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 503 });
+    await expect(client.humanRequests()).rejects.toMatchObject({ code: 'HUMAN_TRANSPORT_INVALID', status: 503 });
   });
 });
 
@@ -257,7 +258,7 @@ describe('browser durable workflow view client', () => {
 
   it('does not retry conflicts and rejects malformed mutation arguments before transport', async () => {
     const { client, transport } = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
-    await expect(client.cancelWorkflow(runId, 2, { commandId: 'cancel-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    await expect(client.cancelWorkflow(runId, 2, { commandId: 'cancel-1' })).rejects.toMatchObject({ code: 'WORKFLOW_CONFLICT', status: 409 });
     expect(transport).toHaveBeenCalledOnce();
     await expect(client.approveWorkflow(runId, { revision: 0, nodeId: '../bad', approvalDigest: 'bad' }, { commandId: '' }))
       .rejects.toMatchObject({ code: 'INVALID_REQUEST' }); expect(transport).toHaveBeenCalledOnce();
@@ -286,7 +287,7 @@ describe('browser durable workflow view client', () => {
     expect(resume).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'developer', runId, revision: 2, commandId: 'resume-1' }));
     expect(JSON.parse(transport.mock.calls[0]![1]?.body as string)).toEqual({ commandId: 'resume-1', revision: 2 });
     const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
-    await expect(conflict.client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    await expect(conflict.client.resumeWorkflow(runId, 2, { commandId: 'resume-1' })).rejects.toMatchObject({ code: 'WORKFLOW_CONFLICT', status: 409 });
     expect(conflict.transport).toHaveBeenCalledOnce();
   });
 
@@ -312,7 +313,7 @@ describe('browser durable workflow view client', () => {
     await expect(client.sweepWorkflowFleet('drain' as never, { cursor: null })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     expect(transport).toHaveBeenCalledTimes(5);
     const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
-    await expect(conflict.client.sweepWorkflowFleet('resume', { cursor: null })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    await expect(conflict.client.sweepWorkflowFleet('resume', { cursor: null })).rejects.toMatchObject({ code: 'WORKFLOW_CONFLICT', status: 409 });
     expect(conflict.transport).toHaveBeenCalledOnce();
     const lying = fakeClient(() => jsonResponse({ fleet: { held: false, generation: 0, changedAtMs: null } }));
     await expect(lying.client.holdWorkflowFleet()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
@@ -365,7 +366,7 @@ describe('browser durable workflow view client', () => {
     expect(JSON.parse(transport.mock.calls[0]![1]?.body as string)).toEqual({ commandId: 'pause-1', revision: 2 });
     expect(String(transport.mock.calls[0]![0])).toMatch(new RegExp(`/v1/workflow-runs/${runId}/pause$`));
     const conflict = fakeClient(() => jsonResponse({ error: { code: 'WORKFLOW_CONFLICT' } }, 409));
-    await expect(conflict.client.pauseWorkflow(runId, 2, { commandId: 'pause-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+    await expect(conflict.client.pauseWorkflow(runId, 2, { commandId: 'pause-1' })).rejects.toMatchObject({ code: 'WORKFLOW_CONFLICT', status: 409 });
     expect(conflict.transport).toHaveBeenCalledOnce();
     await expect(client.pauseWorkflow(runId, 0, { commandId: 'pause-1' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
@@ -521,7 +522,7 @@ describe('client SSE parsing and admission', () => {
     [() => stream([encoder.encode('id: 1\nevent: run.started\ndata: PRIVATE\n\n')]), 'INVALID_STREAM'],
   ] as const)('rejects malformed, truncated or failed observations %#', async (response, code) => {
     const { client } = fakeClient(response);
-    const error = await collect(client.run(id).events()).catch(value => value as Error);
+    const error = await collect(client.run(id).events({ reconnect: false })).catch(value => value as Error);
     expect(error).toMatchObject({ code }); expect(String(error)).not.toContain('PRIVATE');
   });
   it('bounds complete frames, unfinished frames and oversized transport chunks', async () => {
@@ -560,7 +561,7 @@ describe('client cancellation boundaries and browser import graph', () => {
     const { client, transport } = fakeClient(() => jsonResponse({ agents: [] }), {
       requestTimeoutMs: 20, token: () => { began.resolve(); return credential.promise; },
     });
-    const pending = client.agents(); const assertion = expect(pending).rejects.toMatchObject({ code: 'ABORTED' });
+    const pending = client.agents(); const assertion = expect(pending).rejects.toMatchObject({ code: 'TIMEOUT', message: expect.stringContaining('requestTimeoutMs') });
     await began.promise; await vi.advanceTimersByTimeAsync(20); await assertion;
     credential.resolve('test-token'); await Promise.resolve(); await Promise.resolve(); expect(transport).not.toHaveBeenCalled();
   });
@@ -643,7 +644,7 @@ describe('browser workflow migration client', () => {
       const blocked = await client.planWorkflowMigration(run.id, 'e2e-1-to-2');
       expect(blocked).toMatchObject({ allowed: false, blockers: [{ node: '*' }] });
       const waiting = await runtime.inspect(run.id);
-      await expect(client.migrateWorkflow(run.id, 'e2e-1-to-2', waiting.version, { commandId: 'migrate-1' })).rejects.toMatchObject({ code: 'HTTP_ERROR', status: 409 });
+      await expect(client.migrateWorkflow(run.id, 'e2e-1-to-2', waiting.version, { commandId: 'migrate-1' })).rejects.toMatchObject({ code: 'MIGRATION_REFUSED', status: 409 });
       const paused = await runtime.pause(run.id);
       expect((await client.planWorkflowMigration(run.id, 'e2e-1-to-2')).entries.map(entry => entry.action)).toEqual(['keep', 'add']);
       await expect(client.migrateWorkflow(run.id, 'e2e-1-to-2', paused.version - 1, { commandId: 'migrate-1' })).rejects.toMatchObject({ status: 409 });

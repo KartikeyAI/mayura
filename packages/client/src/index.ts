@@ -30,7 +30,11 @@ export interface RemoteRun {
   /** Returns undefined while running; terminal output requires a wire-output schema. No polling/retry is implicit. */
   result<T>(schema: ClientSchema<T>, options?: { readonly signal?: AbortSignal }): Promise<RemoteOutcome<T> | undefined>;
   cancel(options?: { readonly signal?: AbortSignal }): Promise<void>;
-  events(options?: { readonly after?: number; readonly signal?: AbortSignal }): AsyncIterable<ClientEvent>;
+  /**
+   * The run's metadata events from `after`. Reconnects transparently (see `EventOptions.reconnect`) until the run's
+   * `run.completed`; a stretch the server no longer holds arrives as one `events.gap`.
+   */
+  events(options?: EventOptions): AsyncIterable<ClientEvent>;
 }
 export interface RemoteHumanRequest {
   readonly id: string; readonly agentId: string; readonly kind: 'information' | 'correction' | 'plan_selection';
@@ -79,9 +83,50 @@ export interface ClientOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly maxResponseBytes?: number;
   readonly maxEventBytes?: number;
+  /** How long a request may take (default 30 s). For event streams it bounds only connecting, not the stream. */
   readonly requestTimeoutMs?: number;
+  /** An event stream that delivers nothing, not even the server's keep-alive, for this long is reconnected (default 45 s). */
+  readonly eventIdleTimeoutMs?: number;
+  /** Consecutive failed event-stream reconnects before `events()` gives up with the last error (default 8). */
+  readonly maxReconnectAttempts?: number;
+  /** First reconnect delay after a failure, doubled per failure up to 10 s, with jitter (default 250 ms). */
+  readonly reconnectDelayMs?: number;
+}
+/** The authenticated token's own identity, and which optional APIs this server offers it. */
+export interface RemoteSession {
+  readonly scope: { readonly principalId: string; readonly projectId: string };
+  readonly agentIds: readonly string[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond'
+    | 'workflows:read' | 'workflows:control' | 'workflows:fleet' | 'workflows:migrate')[];
+  readonly expiresAtMs: number;
+  /** Optional server APIs this token can use, by server option name, for example `workflowIndex` or `runRecords`. */
+  readonly features: readonly RemoteFeature[];
+}
+export type RemoteFeature = 'humanRequests' | 'workflowIndex' | 'workflowViews' | 'workflowControls' | 'workflowSignals' | 'workflowResumes'
+  | 'workflowPauses' | 'workflowFleet' | 'workflowMigrations' | 'runRecords';
+/** Passed to `onReconnect` before an event stream reconnects. */
+export interface EventReconnect {
+  /** Consecutive failed attempts so far (0 when the server simply ended a stream that made progress). */
+  readonly attempt: number;
+  /** The sequence the stream resumes after. */
+  readonly after: number;
+  readonly delayMs: number;
+  /** The error that ended the previous connection, or null when the server ended it normally. */
+  readonly code: string | null;
+}
+export interface EventOptions {
+  readonly after?: number; readonly signal?: AbortSignal;
+  /**
+   * Reconnect from the last sequence when a stream ends or fails, until `run.completed` (default true). With false,
+   * one connection is read and its end or failure is returned as is.
+   */
+  readonly reconnect?: boolean;
+  /** Called before each reconnect, for example to show a "reconnecting" state. Errors it throws are ignored. */
+  readonly onReconnect?: (reconnect: EventReconnect) => void;
 }
 export interface MayuraClient {
+  /** What the token may do: its scope, agents, capabilities, expiry and the optional APIs the server offers it. */
+  session(options?: { readonly signal?: AbortSignal }): Promise<RemoteSession>;
   agents(options?: { readonly signal?: AbortSignal }): Promise<readonly { readonly id: string; readonly version: string }[]>;
   submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal }): Promise<RemoteRun>;
   run(id: string): RemoteRun;
@@ -116,9 +161,87 @@ export interface MayuraClient {
   respondHumanRequest(id: string, requestDigest: string, value: unknown,
     options: { readonly commandId: string; readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
 }
-/** Safe machine-readable transport error; server/provider response bodies are never used as its message. */
+/** Machine-useful facts a server error may carry; each is validated before it is exposed. */
+export interface ClientErrorDetails {
+  /** Wait at least this long before retrying (also sent as Retry-After). */
+  readonly retryAfterMs?: number;
+  /** The capability the token lacks (CAPABILITY_REQUIRED). */
+  readonly capability?: string;
+  /** The server option that enables an API the server does not offer (NOT_ENABLED). */
+  readonly option?: string;
+  /** The size limit that was exceeded (BODY_TOO_LARGE). */
+  readonly limitBytes?: number;
+  /** The workflow run's revision now (WORKFLOW_CONFLICT, when the token may read the run). */
+  readonly currentRevision?: number;
+}
+/**
+ * A failed request. `code` is the Mayura server's error code when the server sent one (for example
+ * `IDEMPOTENCY_CONFLICT` or `CAPABILITY_REQUIRED`), or a client code for failures before or around HTTP
+ * (`TIMEOUT`, `ABORTED`, `TRANSPORT_FAILED`, `INVALID_RESPONSE`, `HTTP_ERROR` for a non-Mayura error answer, ...).
+ * `message` is the server's fixed, data-free explanation, checked to be short printable text, or a client message.
+ */
 export class ClientError extends Error {
-  constructor(readonly code: string, readonly status?: number) { super(`Mayura request failed (${code}).`); this.name = 'ClientError'; Object.freeze(this); }
+  readonly retryAfterMs?: number;
+  readonly details: Readonly<ClientErrorDetails>;
+  constructor(readonly code: string, readonly status?: number, options: { readonly message?: string; readonly details?: ClientErrorDetails } = {}) {
+    super(options.message ?? clientMessages[code] ?? `Mayura request failed (${code}).`); this.name = 'ClientError';
+    this.details = Object.freeze({ ...options.details });
+    if (options.details?.retryAfterMs !== undefined) this.retryAfterMs = options.details.retryAfterMs;
+    Object.freeze(this);
+  }
+}
+/** Messages for the codes the client itself produces. */
+const clientMessages: Readonly<Record<string, string>> = Object.freeze({
+  ABORTED: 'The request was cancelled by its caller.',
+  TIMEOUT: 'The server did not answer within requestTimeoutMs, or an event stream stayed silent for eventIdleTimeoutMs.',
+  TRANSPORT_FAILED: 'The server could not be reached, or the connection failed. The request may or may not have taken effect.',
+  REDIRECT_DENIED: 'The server answered with a redirect, which the client never follows.',
+  HTTP_ERROR: 'The server answered with an HTTP error that did not come from Mayura (for example from a proxy).',
+  INVALID_RESPONSE: 'The server\'s answer did not have the shape this client expects.',
+  INVALID_JSON: 'A value was not bounded plain JSON.',
+  RESPONSE_LIMIT: 'The server\'s answer was larger than maxResponseBytes.',
+  INVALID_STREAM: 'The event stream broke the protocol (bad frame, order or run).',
+  TRUNCATED_STREAM: 'The event stream ended in the middle of an event.',
+  STREAM_LIMIT: 'An event frame or chunk was larger than the client allows.',
+  OBSERVATION_FAILED: 'The server could not follow the run\'s events from the requested position.',
+  INVALID_CONFIG: 'The client options are invalid.',
+  INVALID_CREDENTIAL: 'The token callback returned something that is not a valid bearer token.',
+  INVALID_REQUEST: 'The request arguments are invalid.',
+  INVALID_OUTPUT: 'The run\'s output did not match the schema.',
+});
+/**
+ * Error codes a Mayura server (mayura/server and mayura/server-node) sends. Only these are passed through as
+ * `ClientError.code`; any other error answer becomes HTTP_ERROR.
+ */
+const serverErrorCodes: ReadonlySet<string> = new Set(['AUTH_REQUIRED', 'AUTH_INVALID', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT',
+  'IDENTITY_INVALID', 'CAPABILITY_REQUIRED', 'ORIGIN_DENIED', 'PREFLIGHT_DENIED', 'INVALID_DESTINATION', 'INVALID_QUERY', 'INVALID_CURSOR',
+  'INVALID_JSON', 'INVALID_REQUEST', 'IDEMPOTENCY_KEY_REQUIRED', 'UNSUPPORTED_MEDIA_TYPE', 'BODY_TOO_LARGE', 'ROUTE_NOT_FOUND', 'METHOD_NOT_ALLOWED',
+  'NOT_ENABLED', 'AGENT_NOT_FOUND', 'RUN_NOT_FOUND', 'HUMAN_REQUEST_NOT_FOUND', 'WORKFLOW_RUN_NOT_FOUND', 'MIGRATION_NOT_FOUND', 'REQUEST_TIMEOUT',
+  'IDEMPOTENCY_CONFLICT', 'SUBMISSION_IN_PROGRESS', 'SUBMISSION_OUTCOME_UNKNOWN', 'RUN_EXPIRED', 'WORKFLOW_CONFLICT', 'FLEET_CONFLICT',
+  'MIGRATION_REFUSED', 'REQUEST_LIMIT', 'STREAM_LIMIT', 'RUN_LIMIT', 'RUNTIME_LIMIT', 'HUMAN_LIMIT', 'WORKFLOW_LIMIT', 'SERVER_CLOSED',
+  'SERVICE_UNAVAILABLE', 'SUBMISSION_JOURNAL_UNAVAILABLE', 'RUN_RECORDS_UNAVAILABLE', 'HUMAN_UNAVAILABLE', 'HUMAN_TRANSPORT_INVALID',
+  'WORKFLOW_UNAVAILABLE', 'WORKFLOW_TRANSPORT_INVALID', 'RESPONSE_TOO_LARGE', 'OBSERVATION_FAILED', 'INTERNAL_ERROR', 'HOST_UNAVAILABLE',
+  'MISDIRECTED_REQUEST']);
+const capabilityNames: readonly string[] = ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond',
+  'workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate'];
+/** A server error body `{ error: { code, message, ...details } }`, or null when it is not one. Nothing else is read from it. */
+function serverError(value: unknown, status: number, retryAfter: string | null): ClientError | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const error = (value as Record<string, unknown>)['error'];
+  if (error === null || typeof error !== 'object' || Array.isArray(error)) return null;
+  const raw = error as Record<string, unknown>; const code = raw['code']; const message = raw['message'];
+  if (typeof code !== 'string' || !serverErrorCodes.has(code)) return null;
+  const details: { -readonly [key in keyof ClientErrorDetails]: ClientErrorDetails[key] } = {};
+  const bounded = (item: unknown, maximum: number): item is number => Number.isSafeInteger(item) && (item as number) >= 0 && (item as number) <= maximum;
+  if (bounded(raw['retryAfterMs'], 3_600_000)) details.retryAfterMs = raw['retryAfterMs'];
+  else if (retryAfter !== null && /^\d{1,4}$/.test(retryAfter)) details.retryAfterMs = Number(retryAfter) * 1_000;
+  if (typeof raw['capability'] === 'string' && capabilityNames.includes(raw['capability'])) details.capability = raw['capability'];
+  if (typeof raw['option'] === 'string' && /^[a-z][A-Za-z]{0,63}$/.test(raw['option'])) details.option = raw['option'];
+  if (bounded(raw['limitBytes'], Number.MAX_SAFE_INTEGER)) details.limitBytes = raw['limitBytes'];
+  if (bounded(raw['currentRevision'], Number.MAX_SAFE_INTEGER) && (raw['currentRevision'] as number) >= 1) details.currentRevision = raw['currentRevision'];
+  // Only short printable text is shown; anything else falls back to the client's own message for the code.
+  const text = typeof message === 'string' && /^[\x20-\x7e]{1,1024}$/.test(message) ? message : undefined;
+  return new ClientError(code, status, { ...(text === undefined ? {} : { message: text }), details });
 }
 const encoder = new TextEncoder();
 const migrationIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -325,10 +448,25 @@ function workflowIndexEntry(value: unknown, settled = false): WorkflowIndexEntry
     || typeof raw['status'] !== 'string' || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(raw['status'])) return fail();
   return raw as unknown as WorkflowIndexEntry;
 }
+const featureNames: readonly string[] = ['humanRequests', 'workflowIndex', 'workflowViews', 'workflowControls', 'workflowSignals', 'workflowResumes',
+  'workflowPauses', 'workflowFleet', 'workflowMigrations', 'runRecords'];
+/**
+ * Stream failures worth another connection: the network, silence, a cut stream, a server that is busy, restarting or
+ * briefly without storage, and an expired identity (the token callback may return a fresh one). Anything else, such as
+ * RUN_NOT_FOUND, a missing capability or a protocol violation, is final.
+ */
+function retryableStream(error: ClientError): boolean {
+  return ['TRANSPORT_FAILED', 'TIMEOUT', 'TRUNCATED_STREAM', 'RUN_RECORDS_UNAVAILABLE', 'AUTH_EXPIRED'].includes(error.code)
+    || (error.status !== undefined && [408, 429, 502, 503, 504].includes(error.status));
+}
+/** Why a signal ended: the client's own timers abort with a TIMEOUT error; anything else is the caller's cancellation. */
+function stopped(signal: AbortSignal): ClientError {
+  return signal.reason instanceof ClientError && signal.reason.code === 'TIMEOUT' ? signal.reason : new ClientError('ABORTED');
+}
 async function race<T>(work: PromiseLike<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) { void Promise.resolve(work).catch(() => {}); throw new ClientError('ABORTED'); }
+  if (signal.aborted) { void Promise.resolve(work).catch(() => {}); throw stopped(signal); }
   return await new Promise<T>((resolve, reject) => {
-    const abort = (): void => { cleanup(); reject(new ClientError('ABORTED')); };
+    const abort = (): void => { cleanup(); reject(stopped(signal)); };
     const cleanup = (): void => { signal.removeEventListener('abort', abort); };
     signal.addEventListener('abort', abort, { once: true });
     Promise.resolve(work).then(value => { cleanup(); resolve(value); }, () => { cleanup(); reject(new ClientError('TRANSPORT_FAILED')); });
@@ -344,17 +482,19 @@ export function createClient(options: ClientOptions): MayuraClient {
   if (typeof options.token !== 'function') throw new ClientError('INVALID_CONFIG');
   const token = options.token; const transport = options.fetch ?? globalThis.fetch.bind(globalThis);
   const maxBytes = options.maxResponseBytes ?? 4_194_304; const frameBytes = options.maxEventBytes ?? 16_384; const timeout = options.requestTimeoutMs ?? 30_000;
-  if ([maxBytes, frameBytes, timeout].some(value => !Number.isSafeInteger(value) || value < 1 || value > 16_777_216)) throw new ClientError('INVALID_CONFIG');
+  const idleTimeout = options.eventIdleTimeoutMs ?? 45_000; const reconnectDelay = options.reconnectDelayMs ?? 250; const maxAttempts = options.maxReconnectAttempts ?? 8;
+  if ([maxBytes, frameBytes, timeout, idleTimeout, reconnectDelay].some(value => !Number.isSafeInteger(value) || value < 1 || value > 16_777_216)
+    || !Number.isSafeInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 1_000) throw new ClientError('INVALID_CONFIG');
 
   const request = async (path: string, method: 'GET' | 'POST', signal: AbortSignal, body?: ClientJson, key?: string): Promise<Response> => {
-    const credential = await race(Promise.resolve().then(() => { if (signal.aborted) throw new ClientError('ABORTED'); return token(); }), signal);
+    const credential = await race(Promise.resolve().then(() => { if (signal.aborted) throw stopped(signal); return token(); }), signal);
     if (typeof credential !== 'string' || !/^[\x21-\x7e]{1,8192}$/.test(credential)) throw new ClientError('INVALID_CREDENTIAL');
     const headers: Record<string, string> = { Authorization: `Bearer ${credential}` };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (key !== undefined) headers['Idempotency-Key'] = key;
-    if (signal.aborted) throw new ClientError('ABORTED');
+    if (signal.aborted) throw stopped(signal);
     const response = await race(Promise.resolve().then(() => {
-      if (signal.aborted) throw new ClientError('ABORTED');
+      if (signal.aborted) throw stopped(signal);
       return transport(new URL(path, base), {
       method, headers, signal, redirect: 'error', credentials: 'omit', cache: 'no-store',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -362,36 +502,50 @@ export function createClient(options: ClientOptions): MayuraClient {
     }).then(response => {
       if (signal.aborted) {
         void response.body?.cancel().catch(() => {});
-        throw new ClientError('ABORTED');
+        throw stopped(signal);
       }
       return response;
     }), signal);
-    if (response.redirected || (response.url && new URL(response.url).origin !== base.origin) || !response.ok) {
-      void response.body?.cancel().catch(() => {});
-      throw new ClientError(response.redirected ? 'REDIRECT_DENIED' : 'HTTP_ERROR', response.status);
+    if (response.redirected || (response.url && new URL(response.url).origin !== base.origin)) {
+      void response.body?.cancel().catch(() => {}); throw new ClientError('REDIRECT_DENIED', response.status);
+    }
+    if (!response.ok) {
+      // A Mayura error body names what happened; anything else (a proxy page, a hostile body) is only an HTTP status.
+      let failure: ClientError | null = null;
+      if (/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
+        try { failure = serverError(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readBytes(response, signal, 16_384))), response.status, response.headers.get('retry-after')); }
+        catch (error) { if (error instanceof ClientError && ['ABORTED', 'TIMEOUT'].includes(error.code)) throw error; }
+      } else void response.body?.cancel().catch(() => {});
+      throw failure ?? new ClientError('HTTP_ERROR', response.status);
     }
     return response;
   };
-  const scope = (external?: AbortSignal) => {
-    const controller = new AbortController(); const abort = (): void => { controller.abort(); };
+  /** The operation's signal: the caller's cancellation, or TIMEOUT after `ms`. */
+  const scope = (external?: AbortSignal, ms: number = timeout) => {
+    const controller = new AbortController(); const abort = (): void => { controller.abort(new ClientError('ABORTED')); };
     external?.addEventListener('abort', abort, { once: true }); if (external?.aborted) abort();
-    const timer = setTimeout(abort, timeout);
+    const timer = setTimeout(() => controller.abort(new ClientError('TIMEOUT')), ms);
     return { signal: controller.signal, close() { clearTimeout(timer); external?.removeEventListener('abort', abort); controller.abort(); } };
   };
-  const readJson = async (response: Response, signal: AbortSignal): Promise<Record<string, unknown>> => {
-    if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); return fail(); }
-    const reader = response.body?.getReader(); if (!reader) return fail();
+  const readBytes = async (response: Response, signal: AbortSignal, maximum: number): Promise<Uint8Array> => {
+    const reader = response.body?.getReader(); if (!reader) return new Uint8Array();
     const chunks: Uint8Array[] = []; let size = 0; let done = false;
     try {
       while (true) {
         const next = await race(reader.read(), signal); if (next.done) { done = true; break; }
-        size += next.value.byteLength; if (size > maxBytes) throw new ClientError('RESPONSE_LIMIT'); chunks.push(next.value);
+        size += next.value.byteLength; if (size > maximum) throw new ClientError('RESPONSE_LIMIT'); chunks.push(next.value);
       }
       const bytes = new Uint8Array(size); let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-      try { return record(json(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), maxBytes)); }
-      catch { return fail(); }
+      return bytes;
     } finally { if (!done) void reader.cancel().catch(() => {}); reader.releaseLock(); }
+  };
+  const readJson = async (response: Response, signal: AbortSignal): Promise<Record<string, unknown>> => {
+    if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); return fail(); }
+    if (!response.body) return fail();
+    const bytes = await readBytes(response, signal, maxBytes);
+    try { return record(json(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), maxBytes)); }
+    catch { return fail(); }
   };
   const command = async (path: string, method: 'GET' | 'POST', external?: AbortSignal, body?: ClientJson, key?: string) => {
     const control = scope(external);
@@ -427,6 +581,77 @@ export function createClient(options: ClientOptions): MayuraClient {
       ...(item['subjectDigest'] === undefined ? {} : { subjectDigest: item['subjectDigest'] as string }),
       ...(item['deadlineAtMs'] === undefined ? {} : { deadlineAtMs: item['deadlineAtMs'] as number }) });
   };
+  /**
+   * One event-stream connection from `after`. Connecting is bounded by requestTimeoutMs; after that the stream may
+   * stay open as long as bytes (events or the server's keep-alive comments) keep arriving within eventIdleTimeoutMs.
+   */
+  const connection = async function* (id: string, path: string, after: number, external: AbortSignal | undefined): AsyncGenerator<ClientEvent> {
+    let cursor = after;
+    const controller = new AbortController(); const abort = (): void => { controller.abort(new ClientError('ABORTED')); };
+    external?.addEventListener('abort', abort, { once: true }); if (external?.aborted) abort();
+    const expire = (): void => { controller.abort(new ClientError('TIMEOUT')); };
+    let timer = setTimeout(expire, timeout);
+    const alive = (): void => { clearTimeout(timer); timer = setTimeout(expire, idleTimeout); };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const response = await request(`${path}/events?after=${cursor}`, 'GET', controller.signal);
+      if (!/^text\/event-stream(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); fail(); }
+      reader = response.body?.getReader(); if (!reader) fail();
+      alive();
+      const decoder = new TextDecoder('utf-8', { fatal: true }); let pending = '';
+      while (true) {
+        const next = await race(reader.read(), controller.signal); alive();
+        if (!next.done && next.value.byteLength > maxBytes) throw new ClientError('STREAM_LIMIT');
+        try { pending += next.done ? decoder.decode() : decoder.decode(next.value, { stream: true }); }
+        catch { throw new ClientError('INVALID_STREAM'); }
+        // Handle LF/CRLF independently of how UTF-8/network chunks were split.
+        while (true) {
+          const boundary = /\r?\n\r?\n/.exec(pending); if (!boundary || boundary.index === undefined) break;
+          const frame = pending.slice(0, boundary.index); pending = pending.slice(boundary.index + boundary[0].length);
+          if (encoder.encode(frame).byteLength > frameBytes) throw new ClientError('STREAM_LIMIT');
+          let event = ''; let eventId = ''; const data: string[] = [];
+          for (const line of frame.split(/\r?\n/)) {
+            if (!line || line.startsWith(':')) continue;
+            const colon = line.indexOf(':'); const key = colon < 0 ? line : line.slice(0, colon); const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
+            if (key === 'event') event = value; else if (key === 'id') eventId = value; else if (key === 'data') data.push(value);
+          }
+          if (data.length === 0) continue;
+          if (event === 'stream.error') {
+            // Only a known server code and short printable message are taken from the error frame.
+            let reported: ClientError | null = null;
+            try { reported = serverError({ error: JSON.parse(data.join('\n')) }, 0, null); } catch { /* Not a Mayura error frame. */ }
+            throw reported && ['OBSERVATION_FAILED', 'RUN_RECORDS_UNAVAILABLE'].includes(reported.code)
+              ? new ClientError(reported.code, undefined, { message: reported.message, details: reported.details }) : new ClientError('OBSERVATION_FAILED');
+          }
+          let raw: Record<string, unknown>;
+          try { raw = record(json(JSON.parse(data.join('\n')), frameBytes)); } catch { throw new ClientError('INVALID_STREAM'); }
+          const sequence = natural(raw['sequence']);
+          if (!eventTypes.includes(event) || raw['type'] !== event || raw['runId'] !== id || String(sequence) !== eventId || sequence <= cursor) throw new ClientError('INVALID_STREAM');
+          const metadata = record(raw['metadata']);
+          if (Object.keys(metadata).length > 64 || Object.values(metadata).some(value => !['string', 'number', 'boolean'].includes(typeof value))) throw new ClientError('INVALID_STREAM');
+          if (event === 'hook.started' || event === 'hook.completed') hookMetadata(metadata, event === 'hook.completed');
+          if (event === 'output.delta' || event === 'output.withheld') outputMetadata(metadata, event === 'output.delta');
+          if (event === 'events.gap') {
+            if (metadata['from'] !== cursor + 1 || metadata['to'] !== sequence
+              || !Number.isSafeInteger(metadata['from']) || !Number.isSafeInteger(metadata['to']) || (metadata['to'] as number) < (metadata['from'] as number)) throw new ClientError('INVALID_STREAM');
+          } else if (sequence !== cursor + 1) throw new ClientError('INVALID_STREAM');
+          const timestamp = text(raw['timestamp'], 64); if (!Number.isFinite(Date.parse(timestamp))) throw new ClientError('INVALID_STREAM');
+          cursor = sequence;
+          yield Object.freeze({ runId: id, sequence, timestamp, type: event as ClientEvent['type'], metadata: Object.freeze(metadata) as ClientEvent['metadata'] });
+        }
+        if (encoder.encode(pending).byteLength > frameBytes) throw new ClientError('STREAM_LIMIT');
+        if (next.done) { if (pending.trim()) throw new ClientError('TRUNCATED_STREAM'); break; }
+      }
+    } finally {
+      clearTimeout(timer); external?.removeEventListener('abort', abort); controller.abort();
+      if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+    }
+  };
+  const pause = (ms: number, signal: AbortSignal | undefined): Promise<void> => new Promise<void>((resolve, reject) => {
+    const done = (): void => { clearTimeout(timer); signal?.removeEventListener('abort', cancelled); resolve(); };
+    const cancelled = (): void => { clearTimeout(timer); reject(new ClientError('ABORTED')); };
+    const timer = setTimeout(done, ms); signal?.addEventListener('abort', cancelled, { once: true }); if (signal?.aborted) cancelled();
+  });
   const run = (id: string): RemoteRun => {
     runId(id); const path = `/v1/runs/${id}`;
     return Object.freeze({
@@ -437,7 +662,7 @@ export function createClient(options: ClientOptions): MayuraClient {
         if (state.status === 'running') return undefined;
         const outcome = record(raw['outcome']); if (outcome['status'] !== state.status) return fail();
         if (outcome['status'] !== 'succeeded') return Object.freeze({ status: state.status as Exclude<RemoteStatus, 'running' | 'succeeded'>, error: Object.freeze({ code: text(record(outcome['error'])['code'], 128) }), evidence: state.evidence });
-        let validationAborted = false;
+        let validationStopped: ClientError | undefined;
         try {
           if (schema['~standard'].version !== 1) throw new Error();
           const control = scope(settings?.signal);
@@ -445,65 +670,69 @@ export function createClient(options: ClientOptions): MayuraClient {
             const validated = await race(Promise.resolve(schema['~standard'].validate(outcome['output'])), control.signal);
             if (validated.issues) throw new Error();
             return Object.freeze({ status: 'succeeded' as const, output: json(validated.value, maxBytes) as T, evidence: state.evidence });
-          } catch (error) { validationAborted = control.signal.aborted; throw error; }
+          } catch (error) { if (control.signal.aborted) validationStopped = stopped(control.signal); throw error; }
           finally { control.close(); }
-        } catch { throw new ClientError(validationAborted ? 'ABORTED' : 'INVALID_OUTPUT'); }
+        } catch { throw validationStopped ?? new ClientError('INVALID_OUTPUT'); }
       },
       async cancel(settings?: { readonly signal?: AbortSignal }) {
         const value = await command(`${path}/cancel`, 'POST', settings?.signal);
         if (value['id'] !== id || value['cancellationRequested'] !== true) fail();
       },
-      async *events(settings?: { readonly after?: number; readonly signal?: AbortSignal }): AsyncIterable<ClientEvent> {
-        let cursor = natural(settings?.after ?? 0); const control = scope(settings?.signal);
-        let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-        try {
-          const response = await request(`${path}/events?after=${cursor}`, 'GET', control.signal);
-          if (!/^text\/event-stream(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); fail(); }
-          reader = response.body?.getReader(); if (!reader) fail();
-          const decoder = new TextDecoder('utf-8', { fatal: true }); let pending = '';
-          while (true) {
-            const next = await race(reader.read(), control.signal);
-            if (!next.done && next.value.byteLength > maxBytes) throw new ClientError('STREAM_LIMIT');
-            try { pending += next.done ? decoder.decode() : decoder.decode(next.value, { stream: true }); }
-            catch { throw new ClientError('INVALID_STREAM'); }
-            // Handle LF/CRLF independently of how UTF-8/network chunks were split.
-            while (true) {
-              const boundary = /\r?\n\r?\n/.exec(pending); if (!boundary || boundary.index === undefined) break;
-              const frame = pending.slice(0, boundary.index); pending = pending.slice(boundary.index + boundary[0].length);
-              if (encoder.encode(frame).byteLength > frameBytes) throw new ClientError('STREAM_LIMIT');
-              let event = ''; let eventId = ''; const data: string[] = [];
-              for (const line of frame.split(/\r?\n/)) {
-                if (!line || line.startsWith(':')) continue;
-                const colon = line.indexOf(':'); const key = colon < 0 ? line : line.slice(0, colon); const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
-                if (key === 'event') event = value; else if (key === 'id') eventId = value; else if (key === 'data') data.push(value);
-              }
-              if (data.length === 0) continue;
-              if (event === 'stream.error') throw new ClientError('OBSERVATION_FAILED');
-              let raw: Record<string, unknown>;
-              try { raw = record(json(JSON.parse(data.join('\n')), frameBytes)); } catch { throw new ClientError('INVALID_STREAM'); }
-              const sequence = natural(raw['sequence']);
-              if (!eventTypes.includes(event) || raw['type'] !== event || raw['runId'] !== id || String(sequence) !== eventId || sequence <= cursor) throw new ClientError('INVALID_STREAM');
-              const metadata = record(raw['metadata']);
-              if (Object.keys(metadata).length > 64 || Object.values(metadata).some(value => !['string', 'number', 'boolean'].includes(typeof value))) throw new ClientError('INVALID_STREAM');
-              if (event === 'hook.started' || event === 'hook.completed') hookMetadata(metadata, event === 'hook.completed');
-              if (event === 'output.delta' || event === 'output.withheld') outputMetadata(metadata, event === 'output.delta');
-              if (event === 'events.gap') {
-                if (metadata['from'] !== cursor + 1 || metadata['to'] !== sequence
-                  || !Number.isSafeInteger(metadata['from']) || !Number.isSafeInteger(metadata['to']) || (metadata['to'] as number) < (metadata['from'] as number)) throw new ClientError('INVALID_STREAM');
-              } else if (sequence !== cursor + 1) throw new ClientError('INVALID_STREAM');
-              const timestamp = text(raw['timestamp'], 64); if (!Number.isFinite(Date.parse(timestamp))) throw new ClientError('INVALID_STREAM');
-              cursor = sequence;
-              yield Object.freeze({ runId: id, sequence, timestamp, type: event as ClientEvent['type'], metadata: Object.freeze(metadata) as ClientEvent['metadata'] });
+      async *events(settings?: EventOptions): AsyncIterable<ClientEvent> {
+        let cursor = natural(settings?.after ?? 0); const external = settings?.signal; const reconnect = settings?.reconnect !== false;
+        if (settings?.onReconnect !== undefined && typeof settings.onReconnect !== 'function') throw new ClientError('INVALID_REQUEST');
+        // `failures` counts consecutive failed connections (bounded by maxReconnectAttempts); `quiet` counts streams that
+        // ended quickly without events while the run was still running, which only slows reconnection down.
+        let failures = 0; let quiet = 0;
+        for (;;) {
+          const opened = Date.now(); let progressed = false; let failure: ClientError | undefined;
+          try {
+            for await (const item of connection(id, path, cursor, external)) {
+              cursor = item.sequence; progressed = true; failures = 0; quiet = 0;
+              yield item;
+              if (item.type === 'run.completed') return;
             }
-            if (encoder.encode(pending).byteLength > frameBytes) throw new ClientError('STREAM_LIMIT');
-            if (next.done) { if (pending.trim()) throw new ClientError('TRUNCATED_STREAM'); break; }
+          } catch (error) {
+            failure = error instanceof ClientError ? error : new ClientError('TRANSPORT_FAILED');
+            if (!reconnect || failure.code === 'ABORTED' || !retryableStream(failure)) throw failure;
           }
-        } finally { control.close(); if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); } }
+          if (!reconnect) return;
+          if (external?.aborted) throw new ClientError('ABORTED');
+          let delayMs = 0;
+          if (failure) {
+            failures += 1; if (failures > maxAttempts) throw failure;
+            delayMs = Math.max(failure.retryAfterMs ?? 0, Math.min(10_000, reconnectDelay * 2 ** (failures - 1)) * (0.8 + Math.random() * 0.4));
+          } else if (!progressed) {
+            // The server closed a stream that carried nothing: the run may already be over. If so, drain what is left once.
+            if ((await run(id).inspect({ ...(external ? { signal: external } : {}) })).status !== 'running') {
+              for await (const item of connection(id, path, cursor, external)) { cursor = item.sequence; yield item; if (item.type === 'run.completed') return; }
+              return;
+            }
+            // A quiet run's streams end after streamDurationMs and resume at once; streams that end quickly back off.
+            if (Date.now() - opened < 1_000) { quiet += 1; delayMs = Math.min(10_000, reconnectDelay * 2 ** (quiet - 1)); } else quiet = 0;
+          }
+          delayMs = Math.round(delayMs);
+          try { settings?.onReconnect?.(Object.freeze({ attempt: failures, after: cursor, delayMs, code: failure?.code ?? null })); } catch { /* UI callbacks cannot break the stream. */ }
+          if (delayMs > 0) await pause(delayMs, external);
+        }
       },
     });
   };
   return Object.freeze({
     run,
+    async session(settings?: { readonly signal?: AbortSignal }) {
+      const raw = await command('/v1/session', 'GET', settings?.signal); if (Object.keys(raw).length !== 1) return fail();
+      const item = record(raw['session']); const scope = record(item['scope']);
+      const pattern = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+      if (Object.keys(item).length !== 5 || Object.keys(scope).length !== 2 || typeof scope['principalId'] !== 'string' || !pattern.test(scope['principalId'])
+        || typeof scope['projectId'] !== 'string' || !pattern.test(scope['projectId']) || !Array.isArray(item['agentIds']) || item['agentIds'].length > 256
+        || item['agentIds'].some(value => typeof value !== 'string' || !pattern.test(value)) || !Array.isArray(item['capabilities'])
+        || item['capabilities'].some(value => typeof value !== 'string' || !capabilityNames.includes(value)) || !Array.isArray(item['features'])
+        || item['features'].some(value => typeof value !== 'string' || !featureNames.includes(value))) return fail();
+      return Object.freeze({ scope: Object.freeze({ principalId: scope['principalId'], projectId: scope['projectId'] }),
+        agentIds: Object.freeze([...item['agentIds']] as string[]), capabilities: Object.freeze([...item['capabilities']] as RemoteSession['capabilities'][number][]),
+        expiresAtMs: natural(item['expiresAtMs']), features: Object.freeze([...item['features']] as RemoteFeature[]) });
+    },
     async agents(settings?: { readonly signal?: AbortSignal }) {
       const raw = await command('/v1/agents', 'GET', settings?.signal);
       if (!Array.isArray(raw['agents']) || raw['agents'].length > 256) return fail();
