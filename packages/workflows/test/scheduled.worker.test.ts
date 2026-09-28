@@ -161,7 +161,7 @@ describe('bounded scheduled worker and custom adapter boundaries', () => {
     releaseFixtures.push(() => late.resolve(source.view()));
     const worker = source.worker({ storageTimeoutMs: 20, maxPendingStorageOperations: 1 });
     await expect(within(worker.inspect(source.id))).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
-    await expect(within(worker.inspect(source.id))).rejects.toMatchObject({ code: 'QUEUE_FULL' });
+    await expect(within(worker.inspect(source.id))).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED', storageCode: 'QUEUE_FULL' });
     expect(inspect).toHaveBeenCalledOnce();
     late.resolve(source.view()); await flush();
     expect(await within(worker.inspect(source.id))).toMatchObject({ id: source.id }); expect(inspect).toHaveBeenCalledTimes(2);

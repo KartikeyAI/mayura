@@ -301,7 +301,7 @@ export function memoryIndexResult(method: MemoryIndexMethod, value: unknown, com
         return snapshot(({ records: integer(result['records']), edges: integer(result['edges']), sequence: integer(result['sequence']) }));
       }
     }
-  } catch (error) { if (error instanceof StorageError && error.code !== 'INVALID_INPUT') throw error; return corrupt(); }
+  } catch (error) { if (error instanceof StorageError && error.storageCode !== 'INVALID_INPUT') throw error; return corrupt(); }
   return corrupt();
 }
 

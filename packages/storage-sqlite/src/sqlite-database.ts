@@ -109,10 +109,10 @@ export class SqliteDatabase {
       const existing = this.db.prepare('SELECT * FROM mayura_aggregates WHERE scope = ? AND idempotency_key = ?')
         .get(input.scope, input.idempotencyKey) as Row | undefined;
       if (existing) {
-        if (existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'Idempotency key already belongs to a different submission.');
+        if (existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'This idempotency key was already used for a different submission (other input, definition or settings); resubmit exactly the same request, or use a new key.');
         return { record: record(existing), created: false };
       }
-      if (this.row(input.scope, input.id)) throw new StorageError('CONFLICT', 'Record ID already exists in this scope.');
+      if (this.row(input.scope, input.id)) throw new StorageError('CONFLICT', 'A record with this ID already exists in this scope under another idempotency key; use a different ID.');
       this.db.prepare(`INSERT INTO mayura_aggregates
         (scope, id, idempotency_key, definition_hash, submission_digest, version, event_sequence, state)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
@@ -130,7 +130,7 @@ export class SqliteDatabase {
       const current = this.row(input.scope, input.id);
       if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
       if (this.db.prepare('SELECT aggregate_id FROM mayura_workflow_owners WHERE scope = ? AND aggregate_id = ?').get(input.scope,input.id)) writerRequired();
-      if (current.version !== input.expectedVersion) throw new StorageError('CONFLICT', 'Record version has changed.');
+      if (current.version !== input.expectedVersion) throw new StorageError('CONFLICT', 'The record changed after it was read (another writer updated it); read it again and retry.');
       this.db.prepare('UPDATE mayura_aggregates SET state = ?, version = ?, event_sequence = ? WHERE scope = ? AND id = ?')
         .run(JSON.stringify(input.state), nextCounter(current.version, 1), nextCounter(current.event_sequence, input.events.length), input.scope, input.id);
       this.append(input.scope, input.id, current.event_sequence, input.events);
@@ -146,7 +146,7 @@ export class SqliteDatabase {
       const current = this.row(input.scope, input.id);
       if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
       if (this.db.prepare('SELECT aggregate_id FROM mayura_workflow_owners WHERE scope = ? AND aggregate_id = ?').get(input.scope,input.id)) writerRequired();
-      if (current.version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'Record version or definition has changed.');
+      if (current.version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'The record or its pinned definition changed after it was read; read it again and retry.');
       this.db.prepare('UPDATE mayura_aggregates SET state = ?, definition_hash = ?, version = ?, event_sequence = ? WHERE scope = ? AND id = ?')
         .run(JSON.stringify(input.state), input.definitionHash, nextCounter(current.version, 1), nextCounter(current.event_sequence, input.events.length), input.scope, input.id);
       this.append(input.scope, input.id, current.event_sequence, input.events);

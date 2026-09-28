@@ -243,7 +243,7 @@ describe('workflow graph custom-adapter and worker boundaries', () => {
     source.inspect.mockImplementationOnce(() => pending.promise); releases.push(() => pending.resolve(source.view()));
     const worker = source.worker({ storageTimeoutMs: 20, maxPendingStorageOperations: 1 });
     await expect(worker.inspect(source.id)).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
-    await expect(worker.inspect(source.id)).rejects.toMatchObject({ code: 'QUEUE_FULL' }); expect(source.inspect).toHaveBeenCalledOnce();
+    await expect(worker.inspect(source.id)).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED', storageCode: 'QUEUE_FULL' }); expect(source.inspect).toHaveBeenCalledOnce();
     pending.resolve(source.view()); await flush(); expect(await worker.inspect(source.id)).toMatchObject({ status: 'waiting' });
   });
 

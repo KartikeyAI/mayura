@@ -99,7 +99,7 @@ export function createWorkflowHookRelay(options: WorkflowHookRelayOptions): Work
   const cursorId = (runId: string): string => digest('mayura:workflow-hook-relay:v1', { relayId, runId });
   const guarded = async <T>(operation: () => Promise<T>): Promise<T> => {
     try { return await operation(); }
-    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.code === 'CONFLICT')) throw error;
+    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.storageCode === 'CONFLICT')) throw error;
       throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow hook relay storage is unavailable.'); }
   };
   const read = async (runId: string): Promise<{ record?: StoredRecord; sequence: number }> => {
@@ -122,7 +122,7 @@ export function createWorkflowHookRelay(options: WorkflowHookRelayOptions): Work
           definitionHash: digest('mayura:workflow-hook-relay-format:v1', {}), state, events: [event] }))).record;
       return { record, sequence };
     } catch (error) {
-      if (!(error instanceof StorageError && error.code === 'CONFLICT')) throw error;
+      if (!(error instanceof StorageError && error.storageCode === 'CONFLICT')) throw error;
       const latest = await read(runId);
       return latest.sequence >= sequence ? latest : advance(runId, latest, sequence);
     }

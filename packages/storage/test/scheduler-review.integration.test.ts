@@ -169,7 +169,7 @@ function review(name: string, factory: () => Promise<Fixture>) {
       const result = await fixture.store.scheduler.recordReceipt({ ...key, fence: ownership.fence, evidenceId: 'late-known', receipt: known });
       expect(result.disposition).toBe('late'); expect(result.job.state).toBe('outcome_unknown'); expect(result.job.output).toBeNull();
       expect(await fixture.store.scheduler.receipts({ ...key, fence: ownership.fence })).toMatchObject([{ receipt: known, disposition: 'late' }]);
-      await expect(fixture.store.scheduler.complete({ claim: ownership, commandId: 'late-complete', evidenceId: 'late-known', outcome: 'succeeded', output: 'PRIVATE' })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(fixture.store.scheduler.complete({ claim: ownership, commandId: 'late-complete', evidenceId: 'late-known', outcome: 'succeeded', output: 'PRIVATE' })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       const holds = await fixture.query(`SELECT disposition, fence FROM ${table('resources')} WHERE scope = ? AND job_id = ?`, [key.scope, key.jobId]);
       expect(holds).toHaveLength(1); expect(holds[0]!['disposition']).toBe('quarantined'); expect(Number(holds[0]!['fence'])).toBe(ownership.fence);
     });

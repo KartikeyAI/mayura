@@ -90,7 +90,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
               WHERE n.nspname = ? AND c.relname = ?`, [fixture.childConfig.kind === 'postgres' ? fixture.childConfig.schema : '', 'mayura_workflow_owners_discovery']);
         const identity = await catalog(); expect(identity).toHaveLength(1); const before = await fingerprint();
         await expect(store.workflowGraphDiscovery.initialize()).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
-        await expect(store.workflowGraphDiscovery.scan({ scope: scopeHash, policyHash, cursor: null, limit: 16 })).rejects.toMatchObject({ code: 'STORE_NOT_INITIALIZED' });
+        await expect(store.workflowGraphDiscovery.scan({ scope: scopeHash, policyHash, cursor: null, limit: 16 })).rejects.toMatchObject({ code: 'INVALID_CONFIG', storageCode: 'STORE_NOT_INITIALIZED' });
         await expect(discover().scan()).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
         expect(await catalog()).toEqual(identity); expect(await fingerprint()).toEqual(before);
       });

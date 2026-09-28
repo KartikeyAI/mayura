@@ -35,7 +35,7 @@ export function createSqliteStore(options: SqliteStoreOptions): WorkflowGraphDis
 
   const request = <T>(method: string, args: unknown[]): Promise<T> => {
     if (fatal) return Promise.reject(new StorageError('STORAGE_UNAVAILABLE', 'SQLite storage worker is unavailable.'));
-    if (closed && method !== 'close') return Promise.reject(new StorageError('STORE_CLOSED', 'Storage has been closed.'));
+    if (closed && method !== 'close') return Promise.reject(new StorageError('STORE_CLOSED', 'Storage has been closed; open a new store to continue.'));
     if (pending.size >= 256 && method !== 'close') return Promise.reject(new StorageError('QUEUE_FULL', 'Storage queue is full; retry with bounded backoff.'));
     const id = ++nextId;
     return new Promise<T>((resolve, reject) => {

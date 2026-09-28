@@ -149,7 +149,7 @@ export function createWorkStream(options: WorkStreamOptions): WorkStream {
   const storage = async <T>(operation: () => Promise<T>): Promise<T> => {
     try { return await operation(); }
     catch (error) {
-      if (error instanceof StorageError && error.code === 'CONFLICT') throw new MayuraError('CONFLICT', 'The WorkStream record changed concurrently.');
+      if (error instanceof StorageError && error.storageCode === 'CONFLICT') throw new MayuraError('CONFLICT', 'The WorkStream record changed concurrently.');
       throw new MayuraError('STORAGE_UNAVAILABLE', 'WorkStream storage is unavailable; retry the same stable command after recovery.');
     }
   };
@@ -175,7 +175,7 @@ export function createWorkStream(options: WorkStreamOptions): WorkStream {
         await store.update({ scope: requireScope(), id: streamId, expectedVersion: record.version, state: serialized, events });
         return immutable(result);
       } catch (error) {
-        if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+        if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
         throw new MayuraError('STORAGE_UNAVAILABLE', 'WorkStream update could not be confirmed; retry the same stable command.');
       }
     }

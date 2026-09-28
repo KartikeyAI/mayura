@@ -43,7 +43,7 @@ export function createAggregateSubmissionJournal(store: AggregateStore): Submiss
         const created = await store.create({ scope, id, idempotencyKey: id, definitionHash: await sha256('mayura:submission-journal-format:v1', {}),
           state: { format: 1, digest: input.digest }, events: [{ type: 'submission.claimed', data: {} }] });
         if (created.created) return { status: 'claimed' as const };
-      } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return existing();
     },
   });

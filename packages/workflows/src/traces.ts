@@ -246,7 +246,7 @@ export function createWorkflowTraceExport(options: WorkflowTraceExportOptions): 
   const markerId = (runId: string): string => digest('mayura:workflow-trace-export:v1', { exportId, runId });
   const guarded = async <T>(operation: () => Promise<T>): Promise<T> => {
     try { return await operation(); }
-    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.code === 'CONFLICT')) throw error;
+    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.storageCode === 'CONFLICT')) throw error;
       throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow trace export storage is unavailable.'); }
   };
   const corrupt = (): never => { throw new MayuraError('STORAGE_UNAVAILABLE', 'Stored workflow trace export state failed integrity validation.'); };
@@ -269,7 +269,7 @@ export function createWorkflowTraceExport(options: WorkflowTraceExportOptions): 
       try {
         if (record) { await guarded(() => store.update({ scope, id, expectedVersion: record.version, state, events: [{ type, data: {} }] })); return; }
         if ((await guarded(() => store.create({ scope, id, idempotencyKey: id, definitionHash: formatHash, state, events: [{ type, data: {} }] }))).created) return;
-      } catch (error) { if (!(error instanceof StorageError && error.code === 'CONFLICT')) throw error; }
+      } catch (error) { if (!(error instanceof StorageError && error.storageCode === 'CONFLICT')) throw error; }
     }
     throw new MayuraError('CONFLICT', 'Workflow trace export contention exceeded its bounded retry limit.');
   };

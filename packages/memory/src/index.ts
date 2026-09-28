@@ -132,7 +132,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
         });
         parse(updated);
         return immutable(result);
-      } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
     }
     throw new MayuraError('CONFLICT', 'Memory contention exceeded the bounded retry limit.');
   };

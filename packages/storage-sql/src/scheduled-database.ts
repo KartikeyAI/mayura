@@ -733,7 +733,7 @@ export class ScheduledWorkflowDatabase {
           }
           await this.save(tx,run,method,input,{type:'step.completed',data:{nodeId:node.id,outcome:step.status}}); return this.snapshot(run);
         } catch (error) {
-          if (!(error instanceof StorageError) || error.code !== 'STALE_CLAIM') throw error;
+          if (!(error instanceof StorageError) || error.storageCode !== 'STALE_CLAIM') throw error;
           await this.blockExpiredReview(tx,run,job);
           if (run.events.length > 0) { this.mirrorJob(run,await this.refreshJob(tx,run,job.jobId)); await this.save(tx,run); }
           return STALE;

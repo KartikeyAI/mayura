@@ -24,7 +24,7 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
     } else if (request.method === 'close') {
       database?.close(); database = undefined; initialized = false;
     } else {
-      if (!initialized || !database) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize storage before accessing records.');
+      if (!initialized || !database) throw new StorageError('STORE_NOT_INITIALIZED', 'Storage is not initialized: call `await store.initialize()` before using it.');
       switch (request.method) {
         case 'scheduler': result = await database.schedulerCommand(request.args[0] as SchedulerMethod, request.args[1]); break;
         case 'workflows': result = await database.workflowsCommand(request.args[0] as ScheduledMethod, request.args[1]); break;
@@ -47,6 +47,6 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
     if (request.method === 'close') port.close();
   } catch (error) {
     const safe = storageError(error);
-    port.postMessage({ id: request.id, error: { code: safe.code, message: safe.message } });
+    port.postMessage({ id: request.id, error: { code: safe.storageCode, message: safe.message } });
   }
 }); });

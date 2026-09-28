@@ -45,7 +45,7 @@ describe('graph discovery host transport boundary', () => {
     const facade = workflowGraphDiscoveryFacade(request);
     await expect(facade.scan({...command(),limit:33})).rejects.toMatchObject({code:'INVALID_INPUT'});
     expect(request).not.toHaveBeenCalled();
-    await expect(facade.scan(command())).rejects.toMatchObject({code:'STORE_CLOSED'});
+    await expect(facade.scan(command())).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE',storageCode:'STORE_CLOSED'});
   });
 });
 
@@ -105,7 +105,7 @@ describe('graph discovery indexed finite SQL boundary', () => {
     current.database.exec(`CREATE INDEX mayura_workflow_owners_discovery ${definition}`);
     const before = current.database.prepare("SELECT * FROM sqlite_schema WHERE name = 'mayura_workflow_owners_discovery'").all();
     await expect(current.discovery.initialize()).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
-    await expect(current.discovery.scan(command())).rejects.toMatchObject({code:'STORE_NOT_INITIALIZED'});
+    await expect(current.discovery.scan(command())).rejects.toMatchObject({code:'INVALID_CONFIG',storageCode:'STORE_NOT_INITIALIZED'});
     expect(current.database.prepare("SELECT * FROM sqlite_schema WHERE name = 'mayura_workflow_owners_discovery'").all()).toEqual(before);
   });
 
@@ -118,7 +118,7 @@ describe('graph discovery indexed finite SQL boundary', () => {
       terminal.push(await current.graphs.cancel({...access(submitted),expectedVersion:submitted.record.version,commandId:`cancel-${key}`}));
     }
     await expect(current.discovery.scan({...command(),scope:terminal[0]!.record.scope,policyHash:terminal[0]!.policyHash}))
-      .rejects.toMatchObject({code:'STORE_NOT_INITIALIZED'});
+      .rejects.toMatchObject({code:'INVALID_CONFIG',storageCode:'STORE_NOT_INITIALIZED'});
     current.queries.length = 0;
     await current.discovery.initialize(); await current.discovery.initialize();
     expect(current.queries.filter(query => query.sql.startsWith('CREATE INDEX IF NOT EXISTS mayura_workflow_owners_discovery'))).toHaveLength(1);

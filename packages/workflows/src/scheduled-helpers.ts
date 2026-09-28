@@ -31,13 +31,13 @@ const storageCodes = new Set<StorageErrorCode>(['INVALID_INPUT', 'CONFLICT', 'NO
 /** Preserve only stable storage codes; never copy adapter messages or inspect exception getters. */
 /** Fixed storage answer when an approval expired before admission: final for that call, and a new review is needed. */
 export const reviewExpiredMessage = 'The approval expired; request a new review before admission.';
-export const isReviewExpired = (error: unknown): boolean => error instanceof StorageError && error.code === 'CONFLICT' && error.message === reviewExpiredMessage;
+export const isReviewExpired = (error: unknown): boolean => error instanceof StorageError && error.storageCode === 'CONFLICT' && error.message === reviewExpiredMessage;
 export async function scheduledStorage<T>(operation: () => Promise<T>, timeoutMs = 10_000, signal?: AbortSignal): Promise<T> {
   try { return await scheduledCallback(operation, timeoutMs, signal ?? new AbortController().signal); }
   catch (error) {
     let code: StorageErrorCode = 'STORAGE_UNAVAILABLE'; let refusal: string | undefined;
     try {
-      const own = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'code') : undefined;
+      const own = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'storageCode') : undefined;
       if (own && 'value' in own && storageCodes.has(own.value as StorageErrorCode)) code = own.value as StorageErrorCode;
       // A migration refusal is fixed storage text plus step ids; it is the reviewer's answer, so it is kept verbatim.
       const message = error instanceof StorageError ? Object.getOwnPropertyDescriptor(error, 'message') : undefined;
@@ -49,7 +49,7 @@ export async function scheduledStorage<T>(operation: () => Promise<T>, timeoutMs
 }
 
 export function isStorageCode(error: unknown, code: StorageErrorCode): boolean {
-  return error instanceof StorageError && error.code === code;
+  return error instanceof StorageError && error.storageCode === code;
 }
 
 /** One bounded callback window. Late results/rejections are handled without further admission. */

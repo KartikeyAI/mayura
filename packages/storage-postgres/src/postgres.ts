@@ -31,7 +31,7 @@ function record(row: Row): StoredRecord {
 
 function safeFailure(error: unknown): StorageError {
   if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
-    return new StorageError('CONFLICT', 'A scoped record or idempotency key already exists.');
+    return new StorageError('CONFLICT', 'A record with this ID or idempotency key already exists in this scope with different content; use a new ID or key.');
   }
   return storageError(error);
 }
@@ -58,8 +58,8 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
   let closePromise: Promise<void> | undefined;
 
   const available = (requireInitialization = true): void => {
-    if (closed) throw new StorageError('STORE_CLOSED', 'Storage has been closed.');
-    if (requireInitialization && !initialized) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize storage before accessing records.');
+    if (closed) throw new StorageError('STORE_CLOSED', 'Storage has been closed; open a new store to continue.');
+    if (requireInitialization && !initialized) throw new StorageError('STORE_NOT_INITIALIZED', 'Storage is not initialized: call `await store.initialize()` before using it.');
   };
 
   const transaction = async <T>(body: (client: PoolClient) => Promise<T>): Promise<T> => {
@@ -157,7 +157,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
         const found = await client.query<Row>(`SELECT * FROM ${aggregates} WHERE scope = $1 AND idempotency_key = $2`, [input.scope, input.idempotencyKey]);
         const existing = found.rows[0];
         if (!existing) throw new StorageError('STORAGE_UNAVAILABLE', 'Existing submission is unavailable.');
-        if (existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'Idempotency key already belongs to a different submission.');
+        if (existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'This idempotency key was already used for a different submission (other input, definition or settings); resubmit exactly the same request, or use a new key.');
         return { record: record(existing), created: false };
       });
     },
@@ -178,7 +178,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
         if (await ownedRun(session(client),backend,input.scope,input.id)) writerRequired();
         const version = integer(current.version);
         const sequence = integer(current.event_sequence);
-        if (version !== input.expectedVersion) throw new StorageError('CONFLICT', 'Record version has changed.');
+        if (version !== input.expectedVersion) throw new StorageError('CONFLICT', 'The record changed after it was read (another writer updated it); read it again and retry.');
         const updated = await client.query<Row>(`UPDATE ${aggregates} SET state = $1, version = $2, event_sequence = $3 WHERE scope = $4 AND id = $5 RETURNING *`,
           [JSON.stringify(input.state), nextCounter(version, 1), nextCounter(sequence, input.events.length), input.scope, input.id]);
         await append(client, input.scope, input.id, sequence, input.events);
@@ -196,7 +196,7 @@ export function createPostgresStore(options: PostgresStoreOptions): WorkflowGrap
         if (!current) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
         if (await ownedRun(session(client),backend,input.scope,input.id)) writerRequired();
         const version = integer(current.version); const sequence = integer(current.event_sequence);
-        if (version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'Record version or definition has changed.');
+        if (version !== input.expectedVersion || current.definition_hash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'The record or its pinned definition changed after it was read; read it again and retry.');
         const updated = await client.query<Row>(`UPDATE ${aggregates} SET state = $1, definition_hash = $2, version = $3, event_sequence = $4 WHERE scope = $5 AND id = $6 RETURNING *`,
           [JSON.stringify(input.state), input.definitionHash, nextCounter(version, 1), nextCounter(sequence, input.events.length), input.scope, input.id]);
         await append(client, input.scope, input.id, sequence, input.events);

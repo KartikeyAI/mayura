@@ -61,7 +61,7 @@ export function createWorkflowLeadership(options: WorkflowLeadershipOptions): Wo
   })) as unknown as WorkflowLeadershipState;
   const guarded = async <T>(operation: () => Promise<T>): Promise<T> => {
     try { return await operation(); }
-    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.code === 'CONFLICT')) throw error;
+    catch (error) { if (error instanceof MayuraError || (error instanceof StorageError && error.storageCode === 'CONFLICT')) throw error;
       throw new MayuraError('STORAGE_UNAVAILABLE', 'Leadership storage is unavailable.'); }
   };
   return Object.freeze<WorkflowLeadership>({
@@ -81,7 +81,7 @@ export function createWorkflowLeadership(options: WorkflowLeadershipOptions): Wo
           } else await store.update({ scope, id, expectedVersion: record.version, state: jsonValue(next) as JsonObject, events: [event] });
           confirmed = { fence: next.fence, expiresAtMs: next.expiresAtMs }; return publicState(next, true);
         } catch (error) {
-          if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+          if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
           confirmed = null; throw new MayuraError('STORAGE_UNAVAILABLE', 'Leadership lease update could not be confirmed.');
         }
       }
@@ -94,7 +94,7 @@ export function createWorkflowLeadership(options: WorkflowLeadershipOptions): Wo
         if (!record || !lease || lease.holderId !== holderId || lease.fence !== held.fence) return;
         try { await store.update({ scope, id, expectedVersion: record.version, state: jsonValue({ ...lease, expiresAtMs: 0 }) as JsonObject,
           events: [{ type: 'leadership.released', data: { fence: lease.fence } }] }); return; }
-        catch (error) { if (!(error instanceof StorageError && error.code === 'CONFLICT')) throw new MayuraError('STORAGE_UNAVAILABLE', 'Leadership release could not be confirmed.'); }
+        catch (error) { if (!(error instanceof StorageError && error.storageCode === 'CONFLICT')) throw new MayuraError('STORAGE_UNAVAILABLE', 'Leadership release could not be confirmed.'); }
       }
     },
     isLeader: () => confirmed !== null && now() < confirmed.expiresAtMs - Math.floor(leaseMs / 3),

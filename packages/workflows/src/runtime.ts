@@ -8,6 +8,7 @@ import { assertWorkflow, charged, digest, resolveBinding, type AnyWorkflow, type
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 import { scheduledManifest } from './scheduled-helpers.js';
+import { createSubmission, workflowStorageFailure } from './storage-failure.js';
 
 export interface WorkflowSnapshot {
   readonly id: string; readonly version: number; readonly status: Status;
@@ -43,17 +44,7 @@ function stateFrom(record: StoredRecord): State {
 /** External storage diagnostics never cross the workflow's public error boundary. */
 async function storageCall<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
-  catch (error) {
-    let conflict = false;
-    try {
-      if (error instanceof StorageError) {
-        const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
-        conflict = !!descriptor && 'value' in descriptor && descriptor.value === 'CONFLICT';
-      }
-    } catch { /* Untrusted exception accessors/proxies do not become error messages. */ }
-    if (conflict) throw new StorageError('CONFLICT', 'Workflow storage version changed.');
-    throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow storage is unavailable; reconcile uncertain actions before retrying.');
-  }
+  catch (error) { throw workflowStorageFailure(error, 'workflow run'); }
 }
 function snapshot(record: StoredRecord): WorkflowSnapshot {
   const state = stateFrom(record);
@@ -107,7 +98,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       const record = await load(id, allowClosed); const state = stateFrom(record);
       if (!update(state)) return record;
       try { return await save(record, state, type, data); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
     }
     throw new MayuraError('CONFLICT', 'Workflow contention exceeded the bounded retry limit.');
   };
@@ -124,13 +115,13 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     if (dependencies.some(item => item.status !== 'succeeded')) return;
     if (node.kind === 'join') {
       step.output = dependencies.map(item => item.output); step.status = 'succeeded';
-      try { await save(record, state, 'step.completed', { nodeId: node.id }); } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      try { await save(record, state, 'step.completed', { nodeId: node.id }); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     const required = [`tool:${node.tool.id}`, ...node.tool.capabilities, ...(node.tool.effects === 'none' ? [] : [`effect:${node.tool.effects}`])];
     if (required.some(grant => !permissions.allow.includes(grant))) {
       step.status = 'blocked';
-      try { await save(record, state, 'step.blocked', { nodeId: node.id, code: 'PERMISSION_DENIED' }); } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      try { await save(record, state, 'step.blocked', { nodeId: node.id, code: 'PERMISSION_DENIED' }); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     let input: JsonValue;
@@ -138,7 +129,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     catch {
       step.status = 'failed';
       try { await save(record, state, 'step.failed', { nodeId: node.id, code: 'INVALID_INPUT' }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     const previousExpiry = step.approval?.expiresAt ?? 0;
@@ -146,13 +137,13 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     const candidateHash = candidate(node, input, id, reviewExpiry);
     if (node.approval && (step.status !== 'approved' || step.approval?.digest !== candidateHash || step.approval.expiresAt <= Date.now())) {
       step.status = 'waiting'; step.approval = { digest: candidateHash, expiresAt: reviewExpiry!, humanId: null }; state.status = 'waiting';
-      try { await save(record, state, 'approval.requested', { nodeId: node.id, digest: candidateHash }); } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      try { await save(record, state, 'approval.requested', { nodeId: node.id, digest: candidateHash }); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     if (node.tool.costMicros > state.maxCostMicros - state.spentMicros - state.reservedMicros) {
       step.status = 'blocked';
       try { await save(record, state, 'step.blocked', { nodeId: node.id, code: 'BUDGET_EXCEEDED' }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     step.status = 'dispatching'; step.candidateHash = candidateHash; step.costReserved = node.tool.costMicros;
@@ -161,7 +152,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     catch (error) {
       // Retry the losing claim immediately: waiting for this wave would serialize independent handlers.
       // Every retry reloads permissions/candidate/budget state before crossing the dispatch boundary.
-      if (error instanceof StorageError && error.code === 'CONFLICT' && claimRetries < 32) return executeNode(id, node, claimRetries + 1);
+      if (error instanceof StorageError && error.storageCode === 'CONFLICT' && claimRetries < 32) return executeNode(id, node, claimRetries + 1);
       throw error;
     }
     const controller = new AbortController(); const activeKey = `${id}/${node.id}`; active.set(activeKey, controller);
@@ -213,7 +204,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       const input = jsonValue(await bounded(() => validate(definition.input, inputSnapshot, 'input'), 30_000), { maxBytes: maxOutputBytes });
       const state = initialState(definition, input, policy, maxCostMicros);
       const id = digest('mayura:run-id:v1', { scope: scopeKey, submissionKey: idempotencyKey });
-      const created = await storageCall(() => store.create({ scope: scopeKey, id, idempotencyKey, definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'run.created', data: {} }] }));
+      const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey, definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'run.created', data: {} }] }), 'workflow run');
       return snapshot(created.record);
     },
     inspect: async (id: string): Promise<WorkflowSnapshot> => snapshot(await load(id)),
@@ -241,13 +232,13 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
             catch { next.status = 'failed'; }
           } else next.status = steps.some(item => item.status === 'unknown') ? 'outcome_unknown' : steps.some(item => item.status === 'blocked') ? 'blocked' : 'failed';
           try { after = await save(after, next, 'run.completed', { status: next.status }); }
-          catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; after = await load(id); }
+          catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           return snapshot(after);
         }
         if (after.version === before.version) {
           if (steps.some(item => item.status === 'waiting') && !steps.some(item => item.status === 'dispatching') && next.status !== 'waiting') {
             next.status = 'waiting';
-            try { after = await save(after, next, 'run.waiting'); } catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; after = await load(id); }
+            try { after = await save(after, next, 'run.waiting'); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           }
           return snapshot(after);
         }

@@ -3,6 +3,7 @@ import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowSagaStateMatchesManifest, initialWorkflowSagaState, workflowSagaState,
   type StoredRecord, type WorkflowSagaState, type WorkflowSagaStatus, type WorkflowSagaStepState } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
+import { createSubmission, workflowStorageFailure } from './storage-failure.js';
 import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
   type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowSaga, sagaManifest, type AnyWorkflowSaga, type WorkflowSagaStep } from './saga-definition.js';
@@ -52,8 +53,7 @@ const terminalChild = (snapshot: WorkflowLifecycleSnapshot): boolean =>
 async function storageCall<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
   catch (error) {
-    if (error instanceof StorageError && error.code === 'CONFLICT') throw error;
-    throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow saga storage is unavailable; inspect current state before retrying.');
+    throw workflowStorageFailure(error, 'workflow saga run');
   }
 }
 
@@ -164,7 +164,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       // Progress recorded while paused (a child settling) never un-pauses the saga; only a terminal outcome replaces it.
       if (paused && !terminalSagaStatuses.has(state.status) && type !== 'saga.run.resumed') state.status = 'paused';
       try { return await save(record, state, type, data); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
     }
     throw new MayuraError('CONFLICT', 'Workflow saga contention exceeded the bounded retry limit.');
   };
@@ -325,9 +325,9 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       const input = await boundedValidate(definition.input, raw, 'input');
       const state = initialWorkflowSagaState(sagaManifest(definition), input, definition.digest, policy, options.maxCostMicros);
       const id = digest('mayura:workflow-saga-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
-      const created = await storageCall(() => store.create({ scope: scopeKey, id,
+      const created = await createSubmission(() => store.create({ scope: scopeKey, id,
         idempotencyKey: `saga:${command.idempotencyKey}`, definitionHash: definition.digest,
-        state: jsonValue(state) as JsonObject, events: [{ type: 'saga.run.created', data: {} }] }));
+        state: jsonValue(state) as JsonObject, events: [{ type: 'saga.run.created', data: {} }] }), 'workflow saga run');
       verify(definition, created.record, decoded(created.record)); return snapshot(created.record);
     },
     inspect: async id => snapshot(await load(id)),

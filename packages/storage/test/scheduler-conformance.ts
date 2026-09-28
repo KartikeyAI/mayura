@@ -51,7 +51,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       expect((await scheduler.read(key))?.state).toBe('leased');
       expect((await scheduler.start({ claim, candidateHash })).status).toBe('started');
       expect((await scheduler.start({ claim, candidateHash })).status).toBe('already_started');
-      await expect(scheduler.start({ claim: { ...claim, workerId: 'other' }, candidateHash })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.start({ claim: { ...claim, workerId: 'other' }, candidateHash })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect(await scheduler.claim({ scope: key.scope, workerId: 'other', limit: 2, leaseMs: 1_000 })).toEqual([]);
     });
 
@@ -92,14 +92,14 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
 
     it('persists expiry observation and rejects stale control before and after pre-start recovery', async () => {
       await reserve({ resourceKeys: ['exclusive'] }); const old = await claimOne(1_000); await pause(1_050);
-      await expect(scheduler.renew({ claim: old, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.renew({ claim: old, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect((await scheduler.read(key))?.leaseRevoked).toBe(true);
-      await expect(scheduler.start({ claim: { ...old, leaseUntilMs: Number.MAX_SAFE_INTEGER }, candidateHash })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
-      await expect(scheduler.complete({ claim: old, commandId: 'uncommitted-completion', evidenceId: 'none', outcome: 'blocked', output: null })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.start({ claim: { ...old, leaseUntilMs: Number.MAX_SAFE_INTEGER }, candidateHash })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
+      await expect(scheduler.complete({ claim: old, commandId: 'uncommitted-completion', evidenceId: 'none', outcome: 'blocked', output: null })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       const recovered = await scheduler.recover({ scope: key.scope, limit: 10 }); expect(recovered[0]?.state).toBe('ready');
       expect(await scheduler.recover({ scope: key.scope, limit: 10 })).toEqual([]);
       const current = await claimOne(); expect(current.fence).toBe(old.fence + 1);
-      await expect(scheduler.start({ claim: old, candidateHash })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.start({ claim: old, candidateHash })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect((await scheduler.start({ claim: current, candidateHash })).status).toBe('started');
     });
 
@@ -111,7 +111,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       const late = await scheduler.recordReceipt({ ...key, fence: claim.fence, evidenceId: 'late', receipt: executionReceipt });
       expect(late.disposition).toBe('late'); expect(late.job.state).toBe('outcome_unknown'); expect(late.job.output).toBeNull();
       expect((await scheduler.receipts({ ...key, fence: claim.fence }))[0]?.receipt.execution).toBe('succeeded');
-      await expect(scheduler.complete({ claim, commandId: 'late-completion', evidenceId: 'late', outcome: 'succeeded', output: true })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.complete({ claim, commandId: 'late-completion', evidenceId: 'late', outcome: 'succeeded', output: true })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect(await scheduler.claim({ scope: key.scope, workerId: 'next', limit: 10, leaseMs: 1_000 })).toEqual([]);
     });
 
@@ -125,7 +125,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       expect(blocked.state).toBe('blocked'); expect(blocked.receipt).toEqual(executionReceipt); expect(blocked.output).toBeNull();
       expect(await scheduler.complete(command)).toEqual(blocked);
       await expect(scheduler.complete({ ...command, outcome: 'succeeded', output: true })).rejects.toMatchObject({ code: 'CONFLICT' });
-      await expect(scheduler.complete({ ...command, commandId: 'new' })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.complete({ ...command, commandId: 'new' })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
     });
 
     it('quarantines unknown or contradictory evidence instead of fabricating completion', async () => {
@@ -134,7 +134,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       const conflict = await scheduler.recordReceipt({ ...key, fence: claim.fence, evidenceId: 'contradiction', receipt: { ...executionReceipt, execution: 'failed' } });
       expect(conflict.disposition).toBe('conflicting'); expect(conflict.job.state).toBe('outcome_unknown');
       expect(conflict.job.receipt?.execution).toBe('succeeded');
-      await expect(scheduler.complete({ claim, commandId: 'complete', evidenceId: 'known', outcome: 'succeeded', output: true })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.complete({ claim, commandId: 'complete', evidenceId: 'known', outcome: 'succeeded', output: true })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect(await scheduler.receipts({ ...key, fence: claim.fence })).toHaveLength(2);
     });
 
@@ -143,7 +143,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       const results = await Promise.allSettled([scheduler.start({ claim, candidateHash }), scheduler.cancel({ ...key, commandId: 'cancel' })]);
       expect(results[1]?.status).toBe('fulfilled');
       const job = await scheduler.read(key); expect(['cancelled','outcome_unknown']).toContain(job?.state);
-      await expect(scheduler.start({ claim, candidateHash })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.start({ claim, candidateHash })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect(await scheduler.claim({ scope: key.scope, workerId: 'next', limit: 10, leaseMs: 1_000 })).toEqual([]);
       expect((await scheduler.cancel({ ...key, commandId: 'cancel' })).state).toBe(job?.state);
     });
@@ -201,15 +201,15 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
       await scheduler.recordReceipt({ ...key, fence: claim.fence, evidenceId: 'known', receipt: executionReceipt });
       await pause(1_050);
       const command = { claim, commandId: 'never-committed', evidenceId: 'known', outcome: 'succeeded', output: true } as const;
-      await expect(scheduler.complete(command)).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.complete(command)).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect((await scheduler.read(key))?.leaseRevoked).toBe(true);
-      await expect(scheduler.complete(command)).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.complete(command)).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect((await scheduler.read(key))?.output).toBeNull();
     });
 
     it('retains revocation if a stored clock boundary subsequently moves backwards', async () => {
       await reserve(); const claim = await claimOne(1_000); await pause(1_050);
-      await expect(scheduler.start({ claim, candidateHash })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.start({ claim, candidateHash })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       await fixture.corruptJob!(data => {
         // Controlled fault simulates the old expiry becoming future relative to database time.
         // The sticky revocation, not this informative timestamp, must keep the generation stale.
@@ -217,7 +217,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
         job['leaseUntilMs'] = expiry;
         const attempts = data['attempts'] as JsonObject[]; attempts.at(-1)!['leaseUntilMs'] = expiry;
       });
-      await expect(scheduler.renew({ claim, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      await expect(scheduler.renew({ claim, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       expect((await scheduler.recover({ scope: key.scope, limit: 1 }))[0]?.state).toBe('ready');
     });
 
@@ -249,7 +249,7 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
     it('samples authority time after waiting for the database job lock', async () => {
       await reserve(); const claim = await claimOne(1_000);
       const held = await fixture.holdJob();
-      const checked = expect(scheduler.renew({ claim, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'STALE_CLAIM' });
+      const checked = expect(scheduler.renew({ claim, leaseMs: 10_000 })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'STALE_CLAIM' });
       try { await pause(1_050); } finally { await held.release(); }
       await checked;
       expect((await scheduler.read(key))?.leaseRevoked).toBe(true);

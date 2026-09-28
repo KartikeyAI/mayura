@@ -48,7 +48,7 @@ export function durableBudgetConformance(name: string, factory: () => Promise<Du
 
     it('requires explicit per-handle initialization and returns undefined for an absent root', async () => {
       const next = fixture.reopen(); stores.push(next); await next.initialize();
-      await expect(next.durableBudgets.inspect(key)).rejects.toMatchObject({ code: 'STORE_NOT_INITIALIZED' });
+      await expect(next.durableBudgets.inspect(key)).rejects.toMatchObject({ code: 'INVALID_CONFIG', storageCode: 'STORE_NOT_INITIALIZED' });
       expect(await next.durableBudgets.initialize()).toBeUndefined(); expect(await next.durableBudgets.inspect(key)).toBeUndefined();
     });
 

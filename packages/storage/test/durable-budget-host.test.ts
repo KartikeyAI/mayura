@@ -81,7 +81,7 @@ describe('durable budget transport ownership', () => {
     request.mockResolvedValueOnce({...initial(),accounts:[{...initial().accounts[0]!,reservedMicros:10}]});
     await expect(facade.inspect(key)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
     request.mockRejectedValueOnce(new StorageError('STORE_CLOSED','Closed'));
-    await expect(facade.inspect(key)).rejects.toMatchObject({code:'STORE_CLOSED'});
+    await expect(facade.inspect(key)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE',storageCode:'STORE_CLOSED'});
   });
 });
 
@@ -92,7 +92,7 @@ describe('durable budget actual SQLite transaction boundary', () => {
   it('does not cache initialization before commit and retains bounded explicit setup', async () => {
     current = fixture(); current.rejectNextCommit();
     await expect(current.facade.initialize()).rejects.toThrow('Injected precommit rollback');
-    await expect(current.facade.inspect(key)).rejects.toMatchObject({code:'STORE_NOT_INITIALIZED'});
+    await expect(current.facade.inspect(key)).rejects.toMatchObject({code:'INVALID_CONFIG',storageCode:'STORE_NOT_INITIALIZED'});
     expect(current.database.prepare("SELECT name FROM sqlite_schema WHERE name = 'mayura_durable_budgets'").all()).toEqual([]);
     await current.facade.initialize(); const count = current.transactions(); await current.facade.initialize();
     expect(current.transactions()).toBe(count); expect(await current.facade.inspect(key)).toBeUndefined();

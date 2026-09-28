@@ -146,7 +146,7 @@ export function aggregateConformance(name: string, fixtureFactory: () => Promise
       await store.create(initial());
       await store.update({ scope: 'tenant-a', id: 'run-1', expectedVersion: 1, state: { recovered: true }, events: [{ type: 'updated', data: {} }] });
       await store.close();
-      await expect(store.read('tenant-a', 'run-1')).rejects.toMatchObject({ code: 'STORE_CLOSED' });
+      await expect(store.read('tenant-a', 'run-1')).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', storageCode: 'STORE_CLOSED' });
       store = fixture.reopen();
       await store.initialize();
       expect((await store.read('tenant-a', 'run-1'))?.state).toEqual({ recovered: true });
@@ -158,7 +158,7 @@ export function aggregateConformance(name: string, fixtureFactory: () => Promise
       await Promise.all([store.initialize(), store.initialize()]);
       await store.create(initial());
       await Promise.all([store.close(), store.close()]);
-      await expect(store.initialize()).rejects.toMatchObject({ code: 'STORE_CLOSED' });
+      await expect(store.initialize()).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE', storageCode: 'STORE_CLOSED' });
     });
   });
 }

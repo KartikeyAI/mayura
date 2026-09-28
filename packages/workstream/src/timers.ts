@@ -103,7 +103,7 @@ export function createTimerWorkStream(options: TimerWorkStreamOptions): TimerWor
   const storage = async <T>(operation: () => Promise<T>): Promise<T> => {
     try { return await operation(); }
     catch (error) {
-      if (error instanceof StorageError && error.code === 'CONFLICT') throw new MayuraError('CONFLICT', 'The timer WorkStream changed concurrently.');
+      if (error instanceof StorageError && error.storageCode === 'CONFLICT') throw new MayuraError('CONFLICT', 'The timer WorkStream changed concurrently.');
       throw new MayuraError('STORAGE_UNAVAILABLE', 'Timer WorkStream storage is unavailable; retry the same stable command after recovery.');
     }
   };
@@ -127,7 +127,7 @@ export function createTimerWorkStream(options: TimerWorkStreamOptions): TimerWor
         await store.update({ scope: key(), id: streamId, expectedVersion: record.version, state: serialized, events: changed.events });
         return immutable(changed.result);
       } catch (error) {
-        if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+        if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
         throw new MayuraError('STORAGE_UNAVAILABLE', 'Timer WorkStream update could not be confirmed; retry the same stable command.');
       }
     }

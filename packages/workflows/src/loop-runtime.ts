@@ -3,6 +3,7 @@ import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLoopStateMatchesManifest, initialWorkflowLoopState, workflowLoopState,
   type StoredRecord, type WorkflowLoopBinding, type WorkflowLoopState, type WorkflowLoopStatus } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
+import { createSubmission, workflowStorageFailure } from './storage-failure.js';
 import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
   type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowLoop, loopManifest, type AnyWorkflowLoop } from './loop-definition.js';
@@ -63,8 +64,7 @@ function loopValue(binding: WorkflowLoopBinding, input: JsonValue, current: Json
 async function storage<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
   catch (error) {
-    if (error instanceof StorageError && error.code === 'CONFLICT') throw error;
-    throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow loop storage is unavailable; inspect current state before retrying.');
+    throw workflowStorageFailure(error, 'workflow loop run');
   }
 }
 
@@ -127,7 +127,7 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       // Progress recorded while paused never un-pauses the loop; only a terminal outcome or an explicit resume does.
       if (paused && !terminal.has(state.status) && type !== 'loop.run.resumed') state.status = 'paused';
       try { return await save(record, state, type, data); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
     }
     throw new MayuraError('CONFLICT', 'Workflow loop contention exceeded the bounded retry limit.');
   };
@@ -205,8 +205,8 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       const input = await checked(definition.input, freezeJson(jsonValue(command.input, { maxBytes: maxOutputBytes })), 'input');
       const state = initialWorkflowLoopState(loopManifest(definition), input, definition.digest, policy, options.maxCostMicros);
       const id = digest('mayura:workflow-loop-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
-      const created = await storage(() => store.create({ scope: scopeKey, id, idempotencyKey: `loop:${command.idempotencyKey}`,
-        definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'loop.run.created', data: {} }] }));
+      const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey: `loop:${command.idempotencyKey}`,
+        definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'loop.run.created', data: {} }] }), 'workflow loop run');
       verify(definition, created.record, decoded(created.record)); return view(created.record);
     },
     inspect: async id => view(await load(id)),

@@ -59,7 +59,7 @@ export async function createAggregate(tx: SchedulerSession, backend: SchedulerBa
     [input.scope, input.id, input.idempotencyKey, input.definitionHash, digest, input.events.length, JSON.stringify(input.state)]);
   if (rows[0]) { await appendAggregateEvents(tx, backend, input.scope, input.id, 0, input.events, now); return { row: rows[0], created: true }; }
   const existing = (await tx.query<AggregateRow>(`SELECT * FROM ${backend.prefix}mayura_aggregates WHERE scope = ? AND idempotency_key = ?${lockSql(backend)}`, [input.scope, input.idempotencyKey]))[0];
-  if (!existing || existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'Submission identity belongs to different content.');
+  if (!existing || existing.submission_digest !== digest) throw new StorageError('CONFLICT', 'This idempotency key was already used for a different submission (other input, definition or settings); resubmit exactly the same request, or use a new key.');
   return { row: existing, created: false };
 }
 /** Only internal semantic reducers call this after the aggregate lock; it is not a public replacement-state API. */

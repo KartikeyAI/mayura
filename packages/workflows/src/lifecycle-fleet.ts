@@ -129,13 +129,9 @@ function stateFrom(record: StoredRecord, scope: string, shard: string, maximum: 
     return { format: 1, shard, entries };
   } catch { throw new MayuraError('CONFLICT', 'Lifecycle fleet index failed integrity validation.'); }
 }
+/** Storage failures are MayuraErrors too (a full queue arrives as LIMIT_EXCEEDED); anything else is unavailable storage. */
 function failure(error: unknown): ErrorCode {
-  if (error instanceof MayuraError) return error.code;
-  if (error instanceof StorageError) {
-    if (error.code === 'QUEUE_FULL' || error.code === 'LIMIT_EXCEEDED') return 'LIMIT_EXCEEDED';
-    if (['INVALID_INPUT', 'CONFLICT', 'NOT_FOUND'].includes(error.code)) return error.code as 'INVALID_INPUT' | 'CONFLICT' | 'NOT_FOUND';
-  }
-  return 'STORAGE_UNAVAILABLE';
+  return error instanceof MayuraError ? error.code : 'STORAGE_UNAVAILABLE';
 }
 
 /** Durable sharded discovery over the base aggregate contract; the caller still owns storage lifecycle and scheduling. */
@@ -207,7 +203,7 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
           state: jsonValue(current.state) as JsonObject, events: [{ type: terminal.has(snapshot.status) ? 'lifecycle-index.removed' : 'lifecycle-index.updated',
             data: { runId: snapshot.id, version: snapshot.version, status: snapshot.status } }] }); return;
       } catch (error) {
-        if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+        if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
         throw new MayuraError('STORAGE_UNAVAILABLE', 'Lifecycle fleet index update could not be confirmed.');
       }
     }
@@ -240,7 +236,7 @@ export function createWorkflowLifecycleFleetRuntime(options: WorkflowLifecycleFl
         await store.update({ scope, id: current.record.id, expectedVersion: current.record.version, state: jsonValue({ format: 1, shard, entries: retained }) as JsonObject,
           events: [{ type: 'lifecycle-settled.recorded', data: { runId: snapshot.id, status: snapshot.status } }] }); return;
       } catch (error) {
-        if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+        if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
         throw new MayuraError('STORAGE_UNAVAILABLE', 'Lifecycle settled index update could not be confirmed.');
       }
     }

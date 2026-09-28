@@ -189,7 +189,8 @@ describe('finite registered graph coordinator', () => {
 
   it('sanitizes unknown adapter codes and exception accessors in failed-candidate reports', async () => {
     const source = fixture(); const getter = vi.fn(() => 'PRIVATE');
-    const error = Object.defineProperty(new StorageError('CONFLICT', 'PRIVATE'), 'code', { get: getter }); source.inspect.mockRejectedValueOnce(error);
+    // Both the general code and the exact storage condition are accessors here; neither may be invoked.
+    const error = Object.defineProperties(new StorageError('CONFLICT', 'PRIVATE'), { code: { get: getter }, storageCode: { get: getter } }); source.inspect.mockRejectedValueOnce(error);
     const report = await source.create().runPage(); expect(report).toMatchObject({ status: 'interrupted', code: 'STORAGE_UNAVAILABLE' });
     expect(report.outcomes[0]).toMatchObject({ kind: 'failed', code: 'STORAGE_UNAVAILABLE' });
     expect(getter).not.toHaveBeenCalled(); expect(JSON.stringify(report)).not.toContain('PRIVATE');

@@ -10,6 +10,7 @@ import { charged, digest, resolveBinding, type Binding } from './definition.js';
 import { assertWorkflowLifecycle, lifecycleManifest, type AnyWorkflowLifecycle,
   type WorkflowLifecycleNode } from './lifecycle-definition.js';
 import type { VerifiedHuman } from './runtime.js';
+import { createSubmission, workflowStorageFailure } from './storage-failure.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeEvidence, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
 export type { WorkflowMigrationResult } from './migration.js';
@@ -133,10 +134,7 @@ async function bounded<T>(operation: () => Promise<T>, timeoutMs: number): Promi
 
 async function storageCall<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
-  catch (error) {
-    if (error instanceof StorageError && error.code === 'CONFLICT') throw new StorageError('CONFLICT', 'Workflow lifecycle storage version changed.');
-    throw new MayuraError('STORAGE_UNAVAILABLE', 'Workflow lifecycle storage is unavailable; reconcile uncertain actions before retrying.');
-  }
+  catch (error) { throw workflowStorageFailure(error, 'workflow lifecycle run'); }
 }
 
 function stateFrom(record: StoredRecord): State {
@@ -290,7 +288,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       const record = await load(id, allowClosed); const state = stateFrom(record);
       if (!transition(state)) return record;
       try { return await save(record, state, type, data); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
     }
     throw new MayuraError('CONFLICT', 'Workflow lifecycle contention exceeded the bounded retry limit.');
   };
@@ -421,7 +419,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     if (node.kind === 'join') {
       step.output = dependencies.map(item => item.output); step.status = 'succeeded';
       try { await save(record, state, 'lifecycle.step.completed', { nodeId: node.id }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     if (step.kind !== 'tool') return;
@@ -430,7 +428,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     if (required.some(grant => !permissions.allow.includes(grant))) {
       step.status = 'blocked';
       try { await save(record, state, 'lifecycle.step.blocked', { nodeId: node.id, code: 'PERMISSION_DENIED' }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     let input: JsonValue;
@@ -439,7 +437,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     catch {
       step.status = 'failed';
       try { await save(record, state, 'lifecycle.step.failed', { nodeId: node.id, code: 'INVALID_INPUT' }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     const observedAtMs = now(); const previousExpiry = step.approval?.expiresAt ?? 0;
@@ -448,7 +446,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     if (node.approval && (step.status !== 'approved' || step.approval?.digest !== candidateHash || step.approval.expiresAt <= observedAtMs)) {
       step.status = 'waiting'; step.approval = { digest: candidateHash, expiresAt: reviewExpiry!, humanId: null }; state.status = 'waiting';
       try { await save(record, state, 'lifecycle.approval.requested', { nodeId: node.id, digest: candidateHash }); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; }
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
     const affordable = (current: State): boolean => node.tool.costMicros <= current.maxCostMicros - current.spentMicros - current.reservedMicros;
@@ -466,7 +464,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     state.reservedMicros += node.tool.costMicros; state.status = 'running';
     try { await save(record, state, 'lifecycle.step.dispatching', { nodeId: node.id, callId: step.callId }); }
     catch (error) {
-      if (error instanceof StorageError && error.code === 'CONFLICT' && claimRetries < 32) return executeNode(id, definition, node, claimRetries + 1);
+      if (error instanceof StorageError && error.storageCode === 'CONFLICT' && claimRetries < 32) return executeNode(id, definition, node, claimRetries + 1);
       throw error;
     }
     const controller = new AbortController(); const activeKey = `${id}/${node.id}`; active.set(activeKey, controller);
@@ -581,8 +579,8 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     const input = jsonValue(await controlled(() => validate(definition.input, inputSnapshot, 'input')), { maxBytes: under.maxOutputBytes });
     const state = initialWorkflowLifecycleState(lifecycleManifest(definition), input, definition.digest, under.digest, under.maxCostMicros);
     const id = digest('mayura:workflow-lifecycle-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
-    const created = await storageCall(() => store.create({ scope: scopeKey, id, idempotencyKey: `lifecycle:${command.idempotencyKey}`,
-      definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'lifecycle.run.created', data: {} }] }));
+    const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey: `lifecycle:${command.idempotencyKey}`,
+      definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'lifecycle.run.created', data: {} }] }), 'workflow lifecycle run');
     verifyDefinition(definition, created.record, stateFrom(created.record)); return publicSnapshot(created.record);
   };
 
@@ -642,7 +640,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
           } else next.status = steps.some(step => step.status === 'unknown') ? 'outcome_unknown'
             : steps.some(step => step.status === 'blocked') ? 'blocked' : 'failed';
           try { after = await save(after, next, 'lifecycle.run.completed', { status: next.status }); }
-          catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; after = await load(id); }
+          catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           return publicSnapshot(after);
         }
         if (after.version === before.version) {
@@ -650,7 +648,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
           if (waiting && next.status !== 'waiting') {
             next.status = 'waiting';
             try { after = await save(after, next, 'lifecycle.run.waiting'); }
-            catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; after = await load(id); }
+            catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           }
           return publicSnapshot(after);
         }

@@ -260,7 +260,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         expect(after!.idempotencyKey).toBe(before!.idempotencyKey); expect(after!.id).toBe(before!.id);
         expect((await engine.events(run.id)).slice(0, events.length)).toEqual(events);
         expect((await legacy.submit(definition, { input: { value: 2 }, idempotencyKey: 'attach' })).id).toBe(run.id);
-        await expect(store.update({ scope: key.scope, id: run.id, expectedVersion: attached.version, state: before!.state, events: [] })).rejects.toMatchObject({ code: 'SCHEDULED_WRITER_REQUIRED' });
+        await expect(store.update({ scope: key.scope, id: run.id, expectedVersion: attached.version, state: before!.state, events: [] })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'SCHEDULED_WRITER_REQUIRED' });
         await expect(legacy.runUntilSettled(definition, run.id)).rejects.toBeDefined(); expect(effects).toBe(0);
         expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(effects).toBe(1);
       } finally { legacy.close(); }
@@ -840,8 +840,8 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         await bounded(prepared.promise); const saved = await detail(run.id); const job = saved.jobs[0]!;
         await store.scheduler.initialize();
         expect(await store.scheduler.claim({ scope: job.scope, workerId: 'rogue', limit: 1, leaseMs: 1_000 })).toEqual([]);
-        await expect(store.scheduler.cancel({ scope: job.scope, jobId: job.jobId, commandId: 'rogue-cancel' })).rejects.toMatchObject({ code: 'SCHEDULED_WRITER_REQUIRED' });
-        await expect(store.scheduler.reserve({ scope: job.scope, jobId: 'rogue-job', reservationKey: 'rogue-reservation', runId: run.id, nodeId: 'rogue', invocationId: 'rogue-invocation', definitionHash: job.definitionHash, candidateHash: job.candidateHash, intent: { toolId: 'scheduled.write', callId: 'rogue-call' }, resourceKeys: [], delayMs: 0 })).rejects.toMatchObject({ code: 'SCHEDULED_WRITER_REQUIRED' });
+        await expect(store.scheduler.cancel({ scope: job.scope, jobId: job.jobId, commandId: 'rogue-cancel' })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'SCHEDULED_WRITER_REQUIRED' });
+        await expect(store.scheduler.reserve({ scope: job.scope, jobId: 'rogue-job', reservationKey: 'rogue-reservation', runId: run.id, nodeId: 'rogue', invocationId: 'rogue-invocation', definitionHash: job.definitionHash, candidateHash: job.candidateHash, intent: { toolId: 'scheduled.write', callId: 'rogue-call' }, resourceKeys: [], delayMs: 0 })).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'SCHEDULED_WRITER_REQUIRED' });
         expect((await detail(run.id)).jobs).toEqual(saved.jobs); expect(effects).toBe(0);
       } finally { continueClaim.resolve(); await execution; }
     });
@@ -860,7 +860,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
           () => store.scheduler.renew({ claim, leaseMs: 1_000 }),
           () => store.scheduler.recordReceipt({ scope: job.scope, jobId: job.jobId, fence: job.fence, evidenceId: 'rogue-evidence', receipt: { callId: `${run.id}/step:write`, toolId: 'scheduled.write', execution: 'succeeded', disclosure: 'withheld' } }),
           () => store.scheduler.complete({ claim, commandId: 'rogue-complete', evidenceId: 'rogue-evidence', outcome: 'succeeded', output: { value: 99 } }),
-        ]) await expect(operation()).rejects.toMatchObject({ code: 'SCHEDULED_WRITER_REQUIRED' });
+        ]) await expect(operation()).rejects.toMatchObject({ code: 'CONFLICT', storageCode: 'SCHEDULED_WRITER_REQUIRED' });
         expect((await engine.inspect(run.id)).steps['write']!.output).toBeNull();
       } finally { release.resolve({ value: 2 }); await execution; }
       expect((await engine.inspect(run.id)).status).toBe('succeeded');

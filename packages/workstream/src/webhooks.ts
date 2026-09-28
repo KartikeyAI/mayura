@@ -100,7 +100,7 @@ export function createWebhookRuntime(options: WebhookRuntimeOptions): WebhookRun
     try { return await Promise.race([operation, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(new MayuraError('TIMEOUT', 'Webhook callback timed out.')); }, timeout); })]); }
     finally { if (timer !== undefined) clearTimeout(timer); } };
   const storage = async <T>(operation: () => Promise<T>): Promise<T> => { try { return await operation(); }
-    catch (error) { if (error instanceof StorageError && error.code === 'CONFLICT') throw error;
+    catch (error) { if (error instanceof StorageError && error.storageCode === 'CONFLICT') throw error;
       throw new MayuraError('STORAGE_UNAVAILABLE', 'Webhook storage is unavailable; retry the stable delivery identity.'); } };
   const load = async (id: string) => { open(); if (!hashes.test(id)) throw new MayuraError('INVALID_INPUT', 'Webhook delivery ID is invalid.'); const scope = await scopePromise;
     const record = await storage(() => store.read(scope, id)); if (!record) throw new MayuraError('NOT_FOUND', 'Webhook delivery was not found.');
@@ -144,7 +144,7 @@ export function createWebhookRuntime(options: WebhookRuntimeOptions): WebhookRun
       // The store refuses a delivery identity already recorded with different content; that is the caller's conflict.
       const created = await storage(() => store.create({ scope, id, idempotencyKey: `webhook:${id}`,
         definitionHash: admitted.definitionHash, state: stable(initial, maxBody + 4096) as JsonObject, events: [{ type: 'webhook.admitted', data: {} }] }))
-        .catch((error: unknown) => { if (error instanceof StorageError && error.code === 'CONFLICT') throw new MayuraError('CONFLICT', 'Webhook delivery identity was reused with different content.'); throw error; });
+        .catch((error: unknown) => { if (error instanceof StorageError && error.storageCode === 'CONFLICT') throw new MayuraError('CONFLICT', 'Webhook delivery identity was reused with different content.'); throw error; });
       let record = created.record; const current = state(record);
       if (record.id !== id || record.scope !== scope || record.definitionHash !== admitted.definitionHash || current.requestDigest !== admitted.requestDigest
         || current.triggerId !== definition.id || current.deliveryId !== request.deliveryId) throw new MayuraError('CONFLICT', 'Webhook delivery identity was reused with different content.');
@@ -154,7 +154,7 @@ export function createWebhookRuntime(options: WebhookRuntimeOptions): WebhookRun
       const finish = async (status: 'succeeded' | 'outcome_unknown', output: JsonValue): Promise<StoredRecord> => {
         const terminal: State = { ...state(record), status, output };
         try { return await save(record, terminal, `webhook.${status}`); }
-        catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error;
+        catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error;
           const latest = await storage(() => store.read(scope, id)); if (!latest || latest.id !== id || latest.scope !== scope) throw error;
           const latestState = state(latest); if (latestState.status === 'succeeded' || latestState.status === 'outcome_unknown') return latest; throw error; }
       };
@@ -170,7 +170,7 @@ export function createWebhookRuntime(options: WebhookRuntimeOptions): WebhookRun
     inspect: async (id: string) => snapshot(await load(id)),
     recoverAbandoned: async (id: string) => { let record = await load(id); const current = state(record); if (current.status !== 'dispatching') return snapshot(record);
       try { record = await save(record, { ...current, status: 'outcome_unknown', output: null }, 'webhook.outcome_unknown'); }
-      catch (error) { if (!(error instanceof StorageError) || error.code !== 'CONFLICT') throw error; record = await load(id);
+      catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; record = await load(id);
         const observed = state(record); if (observed.status !== 'succeeded' && observed.status !== 'outcome_unknown') throw error; }
       return snapshot(record); },
     events: (id: string, after = 0) => { open(); if (!hashes.test(id) || !Number.isSafeInteger(after) || after < 0) return Promise.reject(new MayuraError('INVALID_INPUT', 'Webhook event query is invalid.'));

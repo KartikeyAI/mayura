@@ -21,7 +21,7 @@ aggregateConformance('SQLite', async () => {
 
 it('requires explicit initialization before record access', async () => {
   const store = createSqliteStore({ filename: ':memory:' });
-  try { await expect(store.read('scope', 'id')).rejects.toMatchObject({ code: 'STORE_NOT_INITIALIZED' }); }
+  try { await expect(store.read('scope', 'id')).rejects.toMatchObject({ code: 'INVALID_CONFIG', storageCode: 'STORE_NOT_INITIALIZED' }); }
   finally { await store.close(); }
 });
 

@@ -63,7 +63,7 @@ function decode(record: StoredRecord, scope: string, shard: string, maximum: num
   } catch { throw new MayuraError('CONFLICT', 'Composite workflow index failed integrity validation.'); }
 }
 function failure(error: unknown): ErrorCode { return error instanceof MayuraError ? error.code
-  : error instanceof StorageError && error.code === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : 'STORAGE_UNAVAILABLE'; }
+  : error instanceof StorageError && error.storageCode === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : 'STORAGE_UNAVAILABLE'; }
 
 /** Durable discovery and finite continuation for saga and loop parent aggregates. */
 export function createWorkflowCompositeFleetRuntime(options: WorkflowCompositeFleetOptions): WorkflowCompositeFleetRuntime {
@@ -97,7 +97,7 @@ export function createWorkflowCompositeFleetRuntime(options: WorkflowCompositeFl
       try { await store.update({ scope, id: current.record.id, expectedVersion: current.record.version,
         state: jsonValue(current.state) as JsonObject, events: [{ type: terminal ? 'composite-index.removed' : 'composite-index.updated',
           data: { kind: entry.kind, runId: entry.runId, version: entry.version } }] }); return; }
-      catch (error) { if (error instanceof StorageError && error.code === 'CONFLICT') continue;
+      catch (error) { if (error instanceof StorageError && error.storageCode === 'CONFLICT') continue;
         throw new MayuraError('STORAGE_UNAVAILABLE', 'Composite workflow index update could not be confirmed.'); }
     } throw new MayuraError('CONFLICT', 'Composite workflow index remained busy after bounded retries.'); };
   const cursor = (value: WorkflowCompositeCursor | null | undefined): WorkflowCompositeCursor => { if (!value) return { format: 1, scope, shard: 0, afterId: '' };
