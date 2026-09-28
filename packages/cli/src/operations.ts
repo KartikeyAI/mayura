@@ -40,7 +40,12 @@ export type OperationalWorkflowNodeKind = 'tool' | 'join' | 'wait' | 'child' | '
 export type OperationalWorkflowStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type OperationalWorkflowStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface OperationalWorkflowNode { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly dependsOn: readonly string[] }
-export interface OperationalWorkflowStep { readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly status: OperationalWorkflowStepStatus; readonly childRunId?: string }
+/** A tool step waiting for approval: approve it with `digest` (`workflow-approve --digest`) before `expiresAtMs`. */
+export interface OperationalWorkflowApproval { readonly digest: string; readonly expiresAtMs: number }
+export interface OperationalWorkflowStep {
+  readonly id: string; readonly kind: OperationalWorkflowNodeKind; readonly status: OperationalWorkflowStepStatus; readonly childRunId?: string;
+  readonly approval?: OperationalWorkflowApproval;
+}
 export interface OperationalWorkflow {
   readonly format: OperationalWorkflowFormat; readonly definitionId: string; readonly definitionVersion: string;
   readonly runId: string; readonly revision: number; readonly status: OperationalWorkflowStatus;
@@ -204,18 +209,37 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
   const statuses = new Set<OperationalWorkflowStepStatus>(['pending', 'waiting', 'approved', 'dispatching', 'succeeded', 'failed', 'blocked', 'unknown', 'skipped', 'timed_out']);
   const steps = new Map<string, OperationalWorkflowStep>();
   for (const raw of item['steps']) {
-    const source = record(raw); const keys = Object.keys(source); if (keys.some(key => !['id', 'kind', 'status', 'childRunId'].includes(key))
+    const source = record(raw); const keys = Object.keys(source); if (keys.some(key => !['id', 'kind', 'status', 'childRunId', 'approval'].includes(key))
       || !['id', 'kind', 'status'].every(key => Object.hasOwn(source, key))) return fail();
     const stepId = source['id']; const kind = source['kind'] as OperationalWorkflowNodeKind; const status = source['status'] as OperationalWorkflowStepStatus;
     const node = typeof stepId === 'string' ? nodes.get(stepId) : undefined; const childRunId = source['childRunId'];
     if (!node || steps.has(stepId as string) || kind !== node.kind || !statuses.has(status)
       || (kind === 'human' && !['pending', 'waiting', 'succeeded', 'timed_out', 'skipped'].includes(status))
       || (kind === 'timer' && !['pending', 'waiting', 'succeeded', 'skipped'].includes(status)) || (status === 'timed_out' && kind !== 'human')
-      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !workflowRunIdentifier.test(childRunId)))) return fail();
-    steps.set(stepId as string, Object.freeze({ id: stepId as string, kind, status, ...(childRunId === undefined ? {} : { childRunId: childRunId as string }) }));
+      || (childRunId !== undefined && (kind !== 'child' || typeof childRunId !== 'string' || !workflowRunIdentifier.test(childRunId)))
+      || (source['approval'] !== undefined && (kind !== 'tool' || status !== 'waiting'))) return fail();
+    const approval = source['approval'] === undefined ? undefined : pendingApproval(source['approval']);
+    steps.set(stepId as string, Object.freeze({ id: stepId as string, kind, status, ...(childRunId === undefined ? {} : { childRunId: childRunId as string }),
+      ...(approval === undefined ? {} : { approval }) }));
   }
   return Object.freeze({ format, definitionId, definitionVersion, runId: expectedId, revision: item['revision'] as number,
     status: item['status'] as OperationalWorkflowStatus, nodes: Object.freeze([...nodes.values()]), steps: Object.freeze([...steps.values()]) });
+}
+
+/**
+ * A waiting tool step's pending approval, in the shape the server sends. Only the digest and expiry are kept: the exact
+ * tool call the host may attach (`subject`) is checked but not kept, so the CLI never prints approval data.
+ */
+function pendingApproval(value: unknown): OperationalWorkflowApproval {
+  const approval = record(value); if (Object.keys(approval).some(key => !['digest', 'expiresAtMs', 'subject'].includes(key))) return fail();
+  const digest = approval['digest']; const expiresAtMs = approval['expiresAtMs'];
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/u.test(digest) || typeof expiresAtMs !== 'number' || !Number.isSafeInteger(expiresAtMs) || expiresAtMs <= 0) return fail();
+  if (approval['subject'] !== undefined) {
+    const subject = record(approval['subject']); exact(subject, ['toolId', 'toolVersion', 'input']);
+    const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u;
+    if (typeof subject['toolId'] !== 'string' || !identifier.test(subject['toolId']) || typeof subject['toolVersion'] !== 'string' || !identifier.test(subject['toolVersion'])) return fail();
+  }
+  return Object.freeze({ digest, expiresAtMs });
 }
 
 function workflowIndexEntry(value: unknown, settled = false): OperationalWorkflowIndexEntry {

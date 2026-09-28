@@ -260,6 +260,22 @@ describe('@mayura/cli authenticated operations', () => {
     { path: `/v1/workflow-runs/${workflowId}/pause`, body: { commandId: 'pause-1', revision: 5 } }]);
   });
 
+  it('shows the approval digest of a tool step that waits for approval, and never the tool call', async () => {
+    const workflowId = 'a'.repeat(64); const digest = 'd'.repeat(64);
+    const view = (approval: unknown, step: Record<string, unknown> = { id: 'refund', kind: 'tool', status: 'waiting' }) => async () => new Response(JSON.stringify({ workflow: {
+      format: 5, definitionId: 'refunds', definitionVersion: '1', runId: workflowId, revision: 2, status: 'waiting',
+      nodes: [{ id: 'refund', kind: 'tool', dependsOn: [] }], steps: [{ ...step, approval }] } }), { headers: { 'content-type': 'application/json' } });
+    const settings = { baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE' };
+    const pending = { digest, expiresAtMs: 1_900_000_000_000, subject: { toolId: 'orders.refund', toolVersion: '1', input: { order: 'PRIVATE-ORDER' } } };
+    const inspected = await inspectWorkflow({ ...settings, fetch: view(pending) }, workflowId);
+    expect(inspected.steps[0]).toEqual({ id: 'refund', kind: 'tool', status: 'waiting', approval: { digest, expiresAtMs: 1_900_000_000_000 } });
+    expect(JSON.stringify(inspected)).not.toContain('PRIVATE-ORDER');
+    // Anything else about an approval is still refused.
+    await expect(inspectWorkflow({ ...settings, fetch: view({ ...pending, extra: 1 }) }, workflowId)).rejects.toMatchObject({ code: 'INVALID_OUTPUT' });
+    await expect(inspectWorkflow({ ...settings, fetch: view({ digest: 'not-a-digest', expiresAtMs: 1 }) }, workflowId)).rejects.toMatchObject({ code: 'INVALID_OUTPUT' });
+    await expect(inspectWorkflow({ ...settings, fetch: view(pending, { id: 'refund', kind: 'tool', status: 'succeeded' }) }, workflowId)).rejects.toMatchObject({ code: 'INVALID_OUTPUT' });
+  });
+
   it('classifies a workflow revision conflict and performs one command request', async () => {
     let calls = 0; const workflowId = 'a'.repeat(64);
     await expect(cancelWorkflow({ baseUrl: 'https://agent.example.test', token: () => 'TOKEN_PRIVATE', fetch: async () => {

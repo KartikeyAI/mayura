@@ -360,7 +360,7 @@
       },
       "OperationalWorkflowStep": {
         "kind": "interface",
-        "declaration": "90b6e352b148f449"
+        "declaration": "1334a29efae61628"
       },
       "OperationalWorkflowStepStatus": {
         "kind": "type",
