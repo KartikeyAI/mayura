@@ -52,6 +52,17 @@ describe('mayura dev', () => {
     await expect(running).resolves.toEqual({ status: 'stopped' });
   }, 60_000);
 
+  it('runs a template project\'s dist/index.js when there is no dev entry or application', async () => {
+    const directory = await project(); directories.push(directory);
+    // The program a template builds: it records that it ran.
+    const program = "require('node:fs').appendFileSync('started.log', 'template' + String.fromCharCode(10));";
+    await writeFile(join(directory, 'build.js'), `const fs = require('node:fs'); fs.mkdirSync('dist', { recursive: true }); fs.writeFileSync('dist/index.js', ${JSON.stringify(program)});`);
+    const printed: string[] = [];
+    await runDev({ directory, bin: 'unused', watch: false, signal: new AbortController().signal, p: paint(false), print: line => { printed.push(line); } });
+    await until(async () => (await lines(directory)).length === 1);
+    expect(await lines(directory)).toEqual(['template']); expect(printed.some(line => line.includes('running dist/index.js'))).toBe(true);
+  }, 30_000);
+
   it('reads .env names for display and refuses to run outside a project', async () => {
     const directory = await project(); directories.push(directory);
     expect(dotEnv(directory)).toEqual({ values: { GREETING: 'hello' }, names: ['GREETING'] });

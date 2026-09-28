@@ -82,7 +82,11 @@ export async function runDev(options: DevOptions): Promise<{ readonly status: 's
     const entry = options.entry ?? (existsSync(join(directory, 'dist', 'src', 'dev.js')) ? 'dist/src/dev.js' : undefined);
     if (entry) { print(p.green(`● running ${entry}`)); children = [launch([entry])]; return; }
     const app = options.app ?? 'dist/src/app.js';
-    if (!existsSync(join(directory, app))) { print(p.red(`✖ Nothing to run: add dist/src/dev.js, or pass --app <module> or --entry <file>.`)); return; }
+    if (!existsSync(join(directory, app))) {
+      // A template is one program: run dist/index.js after each build.
+      if (options.app === undefined && existsSync(join(directory, 'dist', 'index.js'))) { print(p.green('● running dist/index.js')); children = [launch(['dist/index.js'])]; return; }
+      print(p.red(`✖ Nothing to run: add dist/src/dev.js (or dist/index.js), or pass --app <module> or --entry <file>.`)); return;
+    }
     // An application without a dev entry runs as in production: migrate once, then a server and a worker.
     const migrate = launch([options.bin, 'migrate', '--app', app]);
     const migrated = await new Promise<number | null>(resolve => migrate.on('close', resolve));

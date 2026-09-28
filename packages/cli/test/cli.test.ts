@@ -123,6 +123,9 @@ describe('@mayura/cli starters', () => {
     const planned = await run(['init', '--starter', 'approval-workflow', '--directory', target]);
     expect(planned.code).toBe(0); expect(JSON.parse(planned.stdout)).toMatchObject({ status: 'planned', plan: { starter: 'approval-workflow' } });
     expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent']);
+ 
+    // No command at all shows the help, even when piped (a script that forgot the command learns what they are).
+    const bare = await run([]); expect(bare.code).toBe(0); expect(bare.stdout).toContain('mayura <command>');
   });
 });
 

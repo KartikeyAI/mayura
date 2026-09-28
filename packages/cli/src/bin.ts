@@ -85,7 +85,8 @@ async function signalFile(path: string): Promise<JsonValue> {
 
 async function main(arguments_: readonly string[]): Promise<unknown> {
   const command = arguments_[0];
-  if (command === undefined && human) return { status: 'help' };
+  // No command: show what the commands are, in a terminal or not (a script that forgot one learns the same).
+  if (command === undefined) return { status: 'help' };
   if (command === '--version' || command === '-v' || command === 'version') { assertArguments(arguments_, []); return { status: 'succeeded', version: cliVersion() }; }
   // Help wins anywhere on the line, so `mayura init --help` shows how to use init instead of an argument error.
   if (command === 'help' || arguments_.includes('--help') || arguments_.includes('-h')) return { status: 'help' };
@@ -250,7 +251,7 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
       ...(childRunId === undefined ? {} : { childRunId }) }) };
   }
   // The unknown word is not echoed back: it could be a credential pasted in the wrong place.
-  throw usage(command === undefined ? 'No command given. Run mayura --help to see the commands.' : 'Unknown command. Run mayura --help to see the commands.');
+  throw usage('Unknown command. Run mayura --help to see the commands.');
 }
 
 try {
