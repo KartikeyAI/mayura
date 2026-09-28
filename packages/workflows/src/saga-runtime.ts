@@ -3,8 +3,8 @@ import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowSagaStateMatchesManifest, initialWorkflowSagaState, workflowSagaState,
   type StoredRecord, type WorkflowSagaState, type WorkflowSagaStatus, type WorkflowSagaStepState } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
-import { createWorkflowLifecycleRuntime, type WorkflowLifecycleRuntime,
-  type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
+import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
+  type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowSaga, sagaManifest, type AnyWorkflowSaga, type WorkflowSagaStep } from './saga-definition.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
@@ -109,40 +109,47 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
   }
   const lifecycle = createWorkflowLifecycleRuntime(options);
   const scopeKey = digest('mayura:scope:v1', scope);
-  const policy = digest('mayura:workflow-saga-policy:v1', { scope, permissions: [...options.permissions.allow].sort(),
-    policyVersion: options.policyVersion, maxCostMicros: options.maxCostMicros, maxOutputBytes,
-    approvalTtlMs: options.approvalTtlMs ?? 3_600_000 });
+  // Index n of `settings` and of `policies` is the same policy the lifecycle runtime knows at index n.
+  const settings = workflowPolicySettings(options);
+  const policies = settings.map(entry => workflowPolicyDigest('mayura:workflow-saga-policy:v1', scope, entry));
+  const policy = policies[0]!;
+  /** Index of the policy a saga was started with; its later children and limits keep that policy. */
+  const pinnedIndex = (state: WorkflowSagaState): number => {
+    const index = policies.indexOf(state.policy); if (index < 0) throw unknownWorkflowPolicy(); return index;
+  };
   let closed = false;
   const ensureOpen = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Workflow saga runtime is closed.'); };
   let pendingCallbacks = 0;
   const boundedValidate = async (schema: AnyWorkflowSaga['input'] | AnyWorkflowSaga['output'], value: unknown,
-    boundary: 'input' | 'output'): Promise<JsonValue> => {
+    boundary: 'input' | 'output', maxBytes = maxOutputBytes): Promise<JsonValue> => {
     if (pendingCallbacks >= maxPendingCallbacks) throw new MayuraError('LIMIT_EXCEEDED', 'Saga callback capacity is full.');
     pendingCallbacks += 1; let released = false;
     const release = (): void => { if (!released) { released = true; pendingCallbacks -= 1; } };
-    const validation = Promise.resolve().then(() => validate(schema, value, boundary, { maxBytes: maxOutputBytes }));
+    const validation = Promise.resolve().then(() => validate(schema, value, boundary, { maxBytes }));
     void validation.then(release, release);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const checked = await Promise.race([validation,
         new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new MayuraError('TIMEOUT', 'Saga schema validation timed out.')), callbackTimeoutMs); })]);
-      return jsonValue(checked, { maxBytes: maxOutputBytes });
+      return jsonValue(checked, { maxBytes });
     } finally { if (timer !== undefined) clearTimeout(timer); }
   };
-  const load = async (id: string): Promise<StoredRecord> => {
+  /** `anyPolicy` admits operator controls (pause, resume, cancel, migrate) on a saga whose settings are not listed. */
+  const load = async (id: string, anyPolicy = false): Promise<StoredRecord> => {
     ensureOpen();
     if (typeof id !== 'string' || !hashPattern.test(id)) throw new MayuraError('INVALID_INPUT', 'A workflow saga run ID is required.');
     const record = await storageCall(() => store.read(scopeKey, id));
     if (!record) throw new MayuraError('NOT_FOUND', 'Workflow saga run was not found in this scope.');
     if (record.scope !== scopeKey || record.id !== id) throw new MayuraError('CONFLICT', 'Stored saga identity does not match its requested scope.');
     const state = decoded(record);
-    if (state.policy !== policy) throw new MayuraError('CONFLICT', 'Stored saga policy does not match this runtime.');
+    if (!anyPolicy) pinnedIndex(state);
     return record;
   };
-  const verify = (definition: AnyWorkflowSaga, record: StoredRecord, state: WorkflowSagaState): void => {
-    if (record.definitionHash !== definition.digest || state.definition !== definition.digest || state.policy !== policy) {
-      throw new MayuraError('CONFLICT', 'Workflow saga definition or policy does not match persisted state.');
+  const verify = (definition: AnyWorkflowSaga, record: StoredRecord, state: WorkflowSagaState, anyPolicy = false): void => {
+    if (record.definitionHash !== definition.digest || state.definition !== definition.digest) {
+      throw new MayuraError('CONFLICT', 'Workflow saga definition does not match persisted state.');
     }
+    if (!anyPolicy) pinnedIndex(state);
     try { assertWorkflowSagaStateMatchesManifest(state, sagaManifest(definition)); }
     catch { throw new MayuraError('CONFLICT', 'Workflow saga state does not match its persisted definition.'); }
   };
@@ -150,9 +157,9 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
     storageCall(() => store.update({ scope: scopeKey, id: record.id, expectedVersion: record.version,
       state: jsonValue(state) as JsonObject, events: [{ type, data }] }));
   const mutate = async (id: string, transition: (state: WorkflowSagaState) => boolean, type: string,
-    data: JsonObject = {}): Promise<StoredRecord> => {
+    data: JsonObject = {}, anyPolicy = false): Promise<StoredRecord> => {
     for (let attempt = 0; attempt < 32; attempt++) {
-      const record = await load(id); const state = decoded(record); const paused = state.status === 'paused';
+      const record = await load(id, anyPolicy); const state = decoded(record); const paused = state.status === 'paused';
       if (!transition(state)) return record;
       // Progress recorded while paused (a child settling) never un-pauses the saga; only a terminal outcome replaces it.
       if (paused && !terminalSagaStatuses.has(state.status) && type !== 'saga.run.resumed') state.status = 'paused';
@@ -177,7 +184,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
     const workflow = phase === 'forward' ? step.forward : step.compensation!.workflow;
     const binding = phase === 'forward' ? step.input : step.compensation!.input;
     const input = resolveBinding(binding, state.input, outputs(state));
-    return lifecycle.submit(workflow, { input, idempotencyKey: childKey(runId, step.id, phase) });
+    return submitWorkflowLifecycleUnder(lifecycle, pinnedIndex(state), workflow, { input, idempotencyKey: childKey(runId, step.id, phase) });
   };
 
   const run = async (definition: AnyWorkflowSaga, id: string): Promise<WorkflowSagaSnapshot> => {
@@ -190,7 +197,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
         if (!step) {
           let output: JsonValue;
           try { output = await boundedValidate(definition.output,
-            resolveBinding(definition.result, state.input, outputs(state)), 'output'); }
+            resolveBinding(definition.result, state.input, outputs(state)), 'output', settings[pinnedIndex(state)]!.maxOutputBytes); }
           catch (error) {
             if (!(error instanceof MayuraError) || !['INVALID_INPUT', 'INVALID_OUTPUT'].includes(error.code)) throw error;
             state.status = 'compensating'; state.cursor = definition.steps.length;
@@ -330,18 +337,20 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       if (state.status === 'paused') return false;
       if (terminalSagaStatuses.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal saga cannot be paused.');
       state.status = 'paused'; return true;
-    }, 'saga.run.paused')),
+    }, 'saga.run.paused', {}, true)),
     resume: async id => snapshot(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused saga can be resumed.');
       const compensating = Object.values(state.steps).some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(step.status));
       state.status = compensating ? 'compensating' : 'running'; return true;
-    }, 'saga.run.resumed')),
+    }, 'saga.run.resumed', {}, true)),
     migrate: async (migration, command) => {
       ensureOpen(); assertWorkflowMigration(migration); assertWorkflowSaga(migration.from); assertWorkflowSaga(migration.to);
       const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
-      const record = await load(id); const state = decoded(record); verify(migration.from, record, state);
+      // A reviewed migration is the explicit way to move a saga onto the current settings, whichever it started under.
+      const record = await load(id, true); const state = decoded(record); verify(migration.from, record, state, true);
       const preconditions: MigrationBlocker[] = [];
       if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The saga is ${state.status}; pause it before migrating.` });
+      if (state.spentMicros > options.maxCostMicros) preconditions.push({ node: '*', reason: 'The saga already spent more than the current maxCostMicros.' });
       if (Object.values(state.steps).some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(step.status))) {
         preconditions.push({ node: '*', reason: 'The saga is compensating; only a saga in its forward phase can migrate.' });
       }
@@ -371,7 +380,8 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       for (const entry of plan.entries) if (entry.target) carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
       const steps = Object.fromEntries(toManifest.steps.map(step => [step.id, carried[step.id]!]));
       const cursor = toManifest.steps.findIndex(step => steps[step.id]!.status !== 'succeeded');
-      const next: WorkflowSagaState = { ...state, definition: migration.to.digest, steps, cursor: cursor < 0 ? toManifest.steps.length : cursor,
+      const next: WorkflowSagaState = { ...state, definition: migration.to.digest, policy, maxCostMicros: options.maxCostMicros,
+        steps, cursor: cursor < 0 ? toManifest.steps.length : cursor,
         spentMicros: Object.values(steps).reduce((sum, step) => sum + step.forwardSpentMicros + step.compensationSpentMicros, 0) };
       try { assertWorkflowSagaStateMatchesManifest(workflowSagaState({ id, state: jsonValue(next) as JsonObject }), toManifest); }
       catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated saga state does not satisfy the new definition.'); }
@@ -382,7 +392,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       return freezeJson(jsonValue({ plan, snapshot: snapshot(migrated) })) as unknown as WorkflowMigrationResult<WorkflowSagaSnapshot>;
     },
     cancel: async id => {
-      let record = await load(id); const state = decoded(record);
+      let record = await load(id, true); const state = decoded(record);
       if (terminalSagaStatuses.has(state.status)) return snapshot(record);
       const activeEntry = Object.entries(state.steps).find(([, step]) => step.status === 'forward_waiting' || step.status === 'compensation_waiting');
       const active = activeEntry?.[1]; const activeStepId = activeEntry?.[0];
@@ -397,7 +407,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
           if (linked === child.id) recordChild(current, activeStepId, phase, child);
         }
         current.status = 'cancelled'; return true;
-      }, 'saga.run.cancelled');
+      }, 'saga.run.cancelled', {}, true);
       return snapshot(record);
     },
     close: () => { if (!closed) { closed = true; lifecycle.close(); } },

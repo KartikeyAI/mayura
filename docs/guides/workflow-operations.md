@@ -148,6 +148,12 @@ change a workflow:
 3. **Or migrate** in-flight runs to the new version after reviewing a plan (below).
 4. **Retire the old version** once nothing uses it.
 
+Runs are also pinned to the runtime settings they started with (`permissions`, `policyVersion`, `maxCostMicros`,
+`maxOutputBytes`, `approvalTtlMs`). If the release changes any of them, for example to grant a tool the new version
+calls, pass the previous release's settings in `previousPolicies` on every runtime and host. Otherwise its in-flight
+runs stop with `CONFLICT`. Listed runs finish under their own settings and never gain the new grants; migrating a run
+moves it onto the new settings. See [Durable workflows](durable-workflows.md).
+
 ### Check before you deploy
 
 `inventoryWorkflowVersions` counts active runs per version. Run it against production storage before a deploy:

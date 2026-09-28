@@ -15,6 +15,7 @@ export {
   createWorkflowLifecycleRuntime,
   type WorkflowLifecycleRuntime,
   type WorkflowLifecycleRuntimeOptions,
+  type WorkflowLifecyclePolicy,
   type WorkflowLifecycleHumanRequest,
   type WorkflowLifecycleApprovalRequest,
   type WorkflowLifecycleSnapshot,

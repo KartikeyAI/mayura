@@ -3,8 +3,8 @@ import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLoopStateMatchesManifest, initialWorkflowLoopState, workflowLoopState,
   type StoredRecord, type WorkflowLoopBinding, type WorkflowLoopState, type WorkflowLoopStatus } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
-import { createWorkflowLifecycleRuntime, type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions,
-  type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
+import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
+  type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowLoop, loopManifest, type AnyWorkflowLoop } from './loop-definition.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
   type MigrationBlocker, type MigrationCommand, type WorkflowMigration, type WorkflowMigrationResult } from './migration.js';
@@ -86,27 +86,32 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
     throw new MayuraError('INVALID_CONFIG', 'Workflow loop callback limits are invalid.');
   }
   const lifecycle = createWorkflowLifecycleRuntime(options); const scopeKey = digest('mayura:scope:v1', scope);
-  const policy = digest('mayura:workflow-loop-policy:v1', { scope, permissions: [...options.permissions.allow].sort(),
-    policyVersion: options.policyVersion, maxCostMicros: options.maxCostMicros, maxOutputBytes,
-    approvalTtlMs: options.approvalTtlMs ?? 3_600_000 });
+  // Index n of `settings` and of `policies` is the same policy the lifecycle runtime knows at index n.
+  const settings = workflowPolicySettings(options);
+  const policies = settings.map(entry => workflowPolicyDigest('mayura:workflow-loop-policy:v1', scope, entry)); const policy = policies[0]!;
+  /** Index of the policy a loop was started with; its later iterations and limits keep that policy. */
+  const pinnedIndex = (state: WorkflowLoopState): number => {
+    const index = policies.indexOf(state.policy); if (index < 0) throw unknownWorkflowPolicy(); return index;
+  };
   let closed = false; let pendingCallbacks = 0;
   const ensureOpen = (): void => { if (closed) throw new MayuraError('CANCELLED', 'Workflow loop runtime is closed.'); };
   const checked = async (schema: AnyWorkflowLoop['input'] | AnyWorkflowLoop['output'], candidate: unknown,
-    boundary: 'input' | 'output'): Promise<JsonValue> => {
+    boundary: 'input' | 'output', maxBytes = maxOutputBytes): Promise<JsonValue> => {
     if (pendingCallbacks >= maxPendingCallbacks) throw new MayuraError('LIMIT_EXCEEDED', 'Loop callback capacity is full.');
     pendingCallbacks += 1; let released = false; const release = (): void => { if (!released) { released = true; pendingCallbacks -= 1; } };
-    const operation = Promise.resolve().then(() => validate(schema, candidate, boundary, { maxBytes: maxOutputBytes }));
+    const operation = Promise.resolve().then(() => validate(schema, candidate, boundary, { maxBytes }));
     void operation.then(release, release); let timer: ReturnType<typeof setTimeout> | undefined;
     try { return jsonValue(await Promise.race([operation, new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => reject(new MayuraError('TIMEOUT', 'Loop schema validation timed out.')), callbackTimeoutMs);
-    })]), { maxBytes: maxOutputBytes }); }
+    })]), { maxBytes }); }
     finally { if (timer !== undefined) clearTimeout(timer); }
   };
-  const load = async (id: string): Promise<StoredRecord> => {
+  /** `anyPolicy` admits operator controls (pause, resume, cancel, migrate) on a loop whose settings are not listed. */
+  const load = async (id: string, anyPolicy = false): Promise<StoredRecord> => {
     ensureOpen(); if (typeof id !== 'string' || !hashPattern.test(id)) throw new MayuraError('INVALID_INPUT', 'A workflow loop run ID is required.');
     const record = await storage(() => store.read(scopeKey, id)); if (!record) throw new MayuraError('NOT_FOUND', 'Workflow loop run was not found in this scope.');
     if (record.scope !== scopeKey || record.id !== id) throw new MayuraError('CONFLICT', 'Stored loop identity does not match its requested scope.');
-    if (decoded(record).policy !== policy) throw new MayuraError('CONFLICT', 'Stored loop policy does not match this runtime.'); return record;
+    if (!anyPolicy) pinnedIndex(decoded(record)); return record;
   };
   const verify = (definition: AnyWorkflowLoop, record: StoredRecord, state: WorkflowLoopState): void => {
     if (record.definitionHash !== definition.digest || state.definition !== definition.digest) throw new MayuraError('CONFLICT', 'Workflow loop definition does not match persisted state.');
@@ -116,9 +121,9 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
   const save = (record: StoredRecord, state: WorkflowLoopState, type: string, data: JsonObject = {}) =>
     storage(() => store.update({ scope: scopeKey, id: record.id, expectedVersion: record.version,
       state: jsonValue(state) as JsonObject, events: [{ type, data }] }));
-  const mutate = async (id: string, transition: (state: WorkflowLoopState) => boolean, type: string, data: JsonObject = {}) => {
+  const mutate = async (id: string, transition: (state: WorkflowLoopState) => boolean, type: string, data: JsonObject = {}, anyPolicy = false) => {
     for (let attempt = 0; attempt < 32; attempt++) {
-      const record = await load(id); const state = decoded(record); const paused = state.status === 'paused'; if (!transition(state)) return record;
+      const record = await load(id, anyPolicy); const state = decoded(record); const paused = state.status === 'paused'; if (!transition(state)) return record;
       // Progress recorded while paused never un-pauses the loop; only a terminal outcome or an explicit resume does.
       if (paused && !terminal.has(state.status) && type !== 'loop.run.resumed') state.status = 'paused';
       try { return await save(record, state, type, data); }
@@ -143,7 +148,8 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
           if (typeof condition !== 'boolean') throw new MayuraError('INVALID_OUTPUT', 'Loop continuation must resolve to a boolean.'); again = condition; }
         catch { state.status = 'failed'; record = await save(record, state, 'loop.condition.rejected'); return view(record); }
         if (!again) {
-          try { state.output = await checked(definition.output, loopValue(definition.result, state.input, state.current), 'output'); state.status = 'succeeded'; }
+          try { state.output = await checked(definition.output, loopValue(definition.result, state.input, state.current), 'output',
+            settings[pinnedIndex(state)]!.maxOutputBytes); state.status = 'succeeded'; }
           catch (error) {
             if (!(error instanceof MayuraError) || !['INVALID_INPUT', 'INVALID_OUTPUT'].includes(error.code)) throw error;
             state.status = 'failed';
@@ -158,7 +164,7 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
           : loopValue(definition.next, state.input, state.current); }
         catch { state.status = 'failed'; record = await save(record, state, 'loop.input.rejected'); return view(record); }
         let child: WorkflowLifecycleSnapshot;
-        try { child = await lifecycle.submit(definition.body, { input,
+        try { child = await submitWorkflowLifecycleUnder(lifecycle, pinnedIndex(state), definition.body, { input,
           idempotencyKey: digest('mayura:workflow-loop-child:v1', { loopRunId: id, iteration: state.iteration }) }); }
         catch (error) {
           if (!(error instanceof MayuraError) || !['INVALID_INPUT', 'INVALID_OUTPUT'].includes(error.code)) throw error;
@@ -210,18 +216,20 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       if (state.status === 'paused') return false;
       if (terminal.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal loop cannot be paused.');
       state.status = 'paused'; return true;
-    }, 'loop.run.paused')),
+    }, 'loop.run.paused', {}, true)),
     resume: async id => view(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused loop can be resumed.');
       state.status = 'running'; return true;
-    }, 'loop.run.resumed')),
+    }, 'loop.run.resumed', {}, true)),
     migrate: async (migration, command) => {
       ensureOpen(); assertWorkflowMigration(migration); assertWorkflowLoop(migration.from); assertWorkflowLoop(migration.to);
       const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
-      const record = await load(id); const state = decoded(record); verify(migration.from, record, state);
+      // A reviewed migration is the explicit way to move a loop onto the current settings, whichever it started under.
+      const record = await load(id, true); const state = decoded(record); verify(migration.from, record, state);
       const toManifest = loopManifest(migration.to);
       const preconditions: MigrationBlocker[] = [];
       if (state.status !== 'paused') preconditions.push({ node: '*', reason: `The loop is ${state.status}; pause it before migrating.` });
+      if (state.spentMicros > options.maxCostMicros) preconditions.push({ node: '*', reason: 'The loop already spent more than the current maxCostMicros.' });
       if (toManifest.maxIterations < state.iteration) preconditions.push({ node: 'control', reason: `The loop already ran ${state.iteration} iterations; the new maxIterations is ${toManifest.maxIterations}.` });
       let activeBody: string | undefined;
       if (state.childRunId !== null) {
@@ -239,7 +247,8 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
         steps: [{ id: 'body', status: state.childRunId !== null ? 'running' : 'pending' }, { id: 'control', status: 'pending' }], preconditions });
       if (dryRun) return freezeJson(jsonValue({ plan })) as unknown as WorkflowMigrationResult<WorkflowLoopSnapshot>;
       assertMigrationAllowed(plan);
-      const next: WorkflowLoopState = { ...state, definition: migration.to.digest, maxIterations: toManifest.maxIterations };
+      const next: WorkflowLoopState = { ...state, definition: migration.to.digest, maxIterations: toManifest.maxIterations,
+        policy, maxCostMicros: options.maxCostMicros };
       try { assertWorkflowLoopStateMatchesManifest(workflowLoopState({ id, state: jsonValue(next) as JsonObject }), toManifest); }
       catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated loop state does not satisfy the new definition.'); }
       if (typeof store.migrate !== 'function') throw new MayuraError('UNSUPPORTED_PROFILE', 'This store cannot migrate in-flight workflow runs.');
@@ -248,12 +257,12 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       verify(migration.to, migrated, decoded(migrated));
       return freezeJson(jsonValue({ plan, snapshot: view(migrated) })) as unknown as WorkflowMigrationResult<WorkflowLoopSnapshot>;
     },
-    cancel: async id => { let record = await load(id); const state = decoded(record); if (terminal.has(state.status)) return view(record);
+    cancel: async id => { let record = await load(id, true); const state = decoded(record); if (terminal.has(state.status)) return view(record);
       const child = state.childRunId ? await lifecycle.cancel(state.childRunId) : undefined;
       record = await mutate(id, current => { if (terminal.has(current.status)) return false;
         if (child && current.childRunId === child.id) account(current, child, false);
         current.status = 'cancelled'; return true;
-      }, 'loop.run.cancelled'); return view(record); },
+      }, 'loop.run.cancelled', {}, true); return view(record); },
     close: () => { if (!closed) { closed = true; lifecycle.close(); } },
     drain: async options => { const report = await lifecycle.drain(options); closed = true; return report; },
   });
