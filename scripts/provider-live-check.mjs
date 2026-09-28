@@ -4,18 +4,19 @@
 // Every check goes through the real runtime (defineAgent, createRuntime, createModelRouter). The harness never discovers
 // credentials or reads files, and its report never contains a credential, a prompt or a provider error body.
 // See CONTRIBUTING.md (Checking model providers against live accounts).
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
+import { crc32, deflateSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { createModelRouter, createRuntime, defineAgent, defineTool } from '@mayura/sdk';
+import { createModelRouter, createRuntime, defineAgent, defineTool, media, withMedia } from '@mayura/sdk';
 import { anthropicMessages } from '@mayura/provider-anthropic';
 import { openAICompatibleChat, openAIResponses } from '@mayura/provider-openai';
 import { z } from 'zod';
 
-export const CHECKS = Object.freeze(['structured', 'tools', 'streaming', 'router_failover', 'router_streaming']);
+export const CHECKS = Object.freeze(['structured', 'tools', 'streaming', 'router_failover', 'router_streaming', 'vision', 'vision_tools']);
 /** Per-call bounds each check may be charged at worst: a tool round trip may take 3 calls, a router call reserves both routes. */
-const WORST_CASE_BOUNDS = Object.freeze({ structured: 1, tools: 3, streaming: 1, router_failover: 2, router_streaming: 2 });
+const WORST_CASE_BOUNDS = Object.freeze({ structured: 1, tools: 3, streaming: 1, router_failover: 2, router_streaming: 2, vision: 1, vision_tools: 3 });
 /** Sent only as the router's first route, which must be refused by the provider. It is not a credential. */
 const INVALID_KEY = 'mayura-live-check-deliberately-invalid-key';
 const ROUTER_ID = 'live.router';
@@ -84,6 +85,11 @@ export function readConfig(env) {
       if (output !== 'json_schema' && output !== 'json_object') problems.push(`${prefix}_OUTPUT must be json_schema or json_object.`);
       const strict = text(`${prefix}_STRICT_TOOLS`) ?? 'false';
       if (strict !== 'true' && strict !== 'false') problems.push(`${prefix}_STRICT_TOOLS must be true or false.`);
+      // The images a compatible model can see; without it the vision checks are skipped for this provider.
+      const mediaTypes = text(`${prefix}_MEDIA`)?.split(',').map(item => item.trim()).filter(Boolean);
+      if (mediaTypes && mediaTypes.some(type => !['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'].includes(type))) {
+        problems.push(`${prefix}_MEDIA must list media types such as image/png,image/jpeg.`);
+      }
       const tokenLimitField = text(`${prefix}_TOKEN_LIMIT_FIELD`) ?? 'max_tokens';
       if (tokenLimitField !== 'max_tokens' && tokenLimitField !== 'max_completion_tokens') problems.push(`${prefix}_TOKEN_LIMIT_FIELD must be max_tokens or max_completion_tokens.`);
       let body;
@@ -93,7 +99,7 @@ export function readConfig(env) {
         catch { problems.push(`${prefix}_BODY must be a JSON object of extra request fields, such as {"thinking":{"type":"disabled"}}.`); body = undefined; }
       }
       providers.push({ provider: `compatible:${id}`, kind: 'compatible', id, adapterId: `openai-compatible.${id}`, endpoint, auth, model,
-        apiKey: gatewayToken ? optionalSecret(`${prefix}_KEY`) : secret(`${prefix}_KEY`), gatewayToken, output, strictTools: strict === 'true', tokenLimitField,
+        apiKey: gatewayToken ? optionalSecret(`${prefix}_KEY`) : secret(`${prefix}_KEY`), gatewayToken, output, strictTools: strict === 'true', tokenLimitField, ...(mediaTypes ? { mediaTypes } : {}),
         ...(body ? { body } : {}), pricing: pricing(prefix), variablePrefix: prefix });
     }
   } else skipped.push({ provider: 'compatible', reason: 'MAYURA_LIVE_COMPATIBLE is not set.' });
@@ -125,7 +131,8 @@ function adapterFor(config, provider, { outputJsonSchema, invalid = false, trans
   if (provider.kind === 'anthropic') return anthropicMessages({ apiKey, ...common });
   return openAICompatibleChat({ endpoint: provider.endpoint, remote: { id: provider.id, auth: provider.auth }, ...(apiKey ? { apiKey } : {}), ...common,
     ...(provider.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${invalid ? INVALID_KEY : provider.gatewayToken}` } } : {}),
-    output: provider.output, strictTools: provider.strictTools, tokenLimitField: provider.tokenLimitField, ...(provider.body ? { body: provider.body } : {}) });
+    output: provider.output, strictTools: provider.strictTools, tokenLimitField: provider.tokenLimitField,
+    ...(provider.mediaTypes ? { media: { types: provider.mediaTypes, urls: false } } : {}), ...(provider.body ? { body: provider.body } : {}) });
 }
 
 /** Only a Mayura public error's code and message are reported; anything else is reduced to a fixed code. */
@@ -157,6 +164,60 @@ const STREAMING = Object.freeze({
   output: z.object({ reply: z.string().min(40).max(2_000) }).strict(),
 });
 const questionInput = z.object({ question: z.string().min(1).max(500) }).strict();
+const VISION = Object.freeze({
+  instructions: 'Read the six-digit number written in the image. Answer with the digits only, in the seen field.',
+  toolInstructions: 'Call the screenshot tool, then read the six-digit number written in the screenshot it returns. Answer with the digits only, in the seen field.',
+  question: 'What is the number in the image?',
+  jsonSchema: strictObject({ seen: { type: 'string' } }),
+  output: z.object({ seen: z.string().min(1).max(64) }).strict(),
+});
+
+// ---- A PNG with a number drawn in it: large black seven-segment digits on white, as on a calculator, so no two digits
+// look alike. Only a model that reads the pixels can answer. The number is also stored in a tEXt chunk, which only the
+// dry run's fake provider reads.
+const SEGMENTS = { 0: 'abcdef', 1: 'bc', 2: 'abdeg', 3: 'abcdg', 4: 'bcfg', 5: 'acdfg', 6: 'acdefg', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg' };
+function pngChunk(type, data) {
+  const head = Buffer.alloc(8); head.writeUInt32BE(data.length, 0); head.write(type, 4, 'ascii');
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])) >>> 0, 0);
+  return Buffer.concat([head, data, crc]);
+}
+export function numberImage(code) {
+  const digitWidth = 60; const digitHeight = 110; const stroke = 12; const gap = 28; const margin = 40;
+  const width = margin * 2 + code.length * (digitWidth + gap) - gap; const height = margin * 2 + digitHeight;
+  const rows = Buffer.alloc((width + 1) * height, 255);
+  for (let y = 0; y < height; y++) rows[y * (width + 1)] = 0; // filter byte: none
+  const box = (left, top, boxWidth, boxHeight) => { for (let y = top; y < top + boxHeight; y++) rows.fill(0, y * (width + 1) + 1 + left, y * (width + 1) + 1 + left + boxWidth); };
+  [...code].forEach((digit, position) => {
+    const x = margin + position * (digitWidth + gap); const y = margin; const middle = y + (digitHeight - stroke) / 2;
+    const half = (digitHeight - stroke) / 2 + stroke;
+    const draw = { a: () => box(x, y, digitWidth, stroke), d: () => box(x, y + digitHeight - stroke, digitWidth, stroke), g: () => box(x, middle, digitWidth, stroke),
+      f: () => box(x, y, stroke, half), b: () => box(x + digitWidth - stroke, y, stroke, half),
+      e: () => box(x, middle, stroke, digitHeight - (middle - y)), c: () => box(x + digitWidth - stroke, middle, stroke, digitHeight - (middle - y)) };
+    for (const segment of SEGMENTS[digit]) draw[segment]();
+  });
+  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 0;
+  return new Uint8Array(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', header),
+    pngChunk('tEXt', Buffer.from(`mayura-code\0${code}`, 'latin1')), pngChunk('IDAT', deflateSync(rows)), pngChunk('IEND', Buffer.alloc(0))]));
+}
+/**
+ * Whether a model read the drawn number: at least five of its six digits, in place. The checks qualify that the image
+ * reaches the model, not how well the model reads; a model that could not see would match by chance about once in
+ * 20,000 tries.
+ */
+function readNumber(answer, code) {
+  const digits = String(answer).replace(/\D/gu, '');
+  return digits.length === code.length && [...code].filter((digit, index) => digits[index] === digit).length >= code.length - 1;
+}
+/** The number stored in a PNG's tEXt chunk (dry run only). */
+function numberInImage(bytes) {
+  const buffer = Buffer.from(bytes); let offset = 8;
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset); const type = buffer.toString('ascii', offset + 4, offset + 8);
+    if (type === 'tEXt') { const [key, value] = buffer.toString('latin1', offset + 8, offset + 8 + length).split('\0'); if (key === 'mayura-code') return value; }
+    offset += 12 + length;
+  }
+  return undefined;
+}
 
 /** A transparent pass-through that records each call's reported cost and how many deltas the provider streamed. */
 function metered(adapter) {
@@ -189,10 +250,10 @@ function metered(adapter) {
   return { adapter: wrapped, calls };
 }
 
-async function execute({ agent, input, grants, limits }) {
+async function execute({ agent, input, grants, limits, media: attached }) {
   const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: grants }, limits });
   try {
-    const handle = runtime.submit(agent, { input });
+    const handle = runtime.submit(agent, { input, ...(attached ? { media: attached } : {}) });
     const outcome = await handle.result(); const events = [];
     for await (const event of handle.observe()) events.push(event);
     const budget = runtime.inspect(handle).budget;
@@ -249,6 +310,10 @@ export async function runHarness({ env, transport, mode = 'live' }) {
       return { ...result, chargedMicros };
     };
     const outcomeFailure = result => result.outcome.status === 'succeeded' ? [] : [`The run ended ${result.outcome.status}.`];
+    // The vision checks need a model that can see PNG images.
+    const seesImages = make(VISION.jsonSchema).capabilities.media?.types.includes('image/png') === true;
+    const noVision = provider.kind === 'compatible' ? `The adapter declares no image input; set ${provider.variablePrefix}_MEDIA=image/png,image/jpeg for a model that can see.`
+      : 'The adapter declares no image input.';
 
     const implementations = {
       async structured() {
@@ -287,6 +352,35 @@ export async function runHarness({ env, transport, mode = 'live' }) {
       },
       async router_failover() { return routed(false); },
       async router_streaming() { return routed(true); },
+      // (e) The model reads an image sent with the input, and (f) one returned by a tool (such as a screenshot).
+      async vision() {
+        if (!seesImages) return { skip: noVision };
+        const code = String(randomInt(100_000, 1_000_000));
+        const meter = metered(make(VISION.jsonSchema));
+        const agent = defineAgent({ id: 'live.vision', version: '1', instructions: VISION.instructions, input: questionInput, output: VISION.output, tools: [], model: meter.adapter,
+          media: { accept: ['image/png'] } });
+        const result = await run('vision', WORST_CASE_BOUNDS.vision, { agent, meter, input: { question: VISION.question }, grants: [`model:${provider.adapterId}`],
+          media: [media(numberImage(code), 'image/png', { name: 'number.png' })] });
+        const failures = outcomeFailure(result);
+        if (result.outcome.status === 'succeeded' && !readNumber(result.outcome.output.seen, code)) failures.push('The model did not read the number in the image.');
+        return { failures, result, modelCalls: meter.calls.length };
+      },
+      async vision_tools() {
+        if (!seesImages) return { skip: noVision };
+        const code = String(randomInt(100_000, 1_000_000)); let taken = 0;
+        const screenshot = defineTool({ id: 'live.screenshot', version: '1', description: 'Takes a screenshot of the screen.',
+          input: z.object({}).strict(), output: z.object({ taken: z.boolean() }).strict(), inputJsonSchema: strictObject({}),
+          effects: 'none', capabilities: [], costMicros: 0, media: { accept: ['image/png'] },
+          execute: () => { taken += 1; return withMedia({ taken: true }, [media(numberImage(code), 'image/png', { name: 'screen.png' })]); } });
+        const meter = metered(make(VISION.jsonSchema));
+        const agent = defineAgent({ id: 'live.vision-tools', version: '1', instructions: VISION.toolInstructions, input: questionInput, output: VISION.output, tools: [screenshot], model: meter.adapter });
+        const result = await run('vision_tools', WORST_CASE_BOUNDS.vision_tools, { agent, meter, input: { question: VISION.question }, modelCalls: 3, toolCalls: 2,
+          grants: [`model:${provider.adapterId}`, 'tool:live.screenshot'] });
+        const failures = outcomeFailure(result);
+        if (taken < 1) failures.push('The model did not call the screenshot tool.');
+        if (result.outcome.status === 'succeeded' && !readNumber(result.outcome.output.seen, code)) failures.push('The model did not read the number in the tool\'s screenshot.');
+        return { failures, result, modelCalls: meter.calls.length };
+      },
     };
     /** Route 0 is this provider with a deliberately invalid key; route 1 is the valid one. */
     const routed = async streamed => {
@@ -318,7 +412,9 @@ export async function runHarness({ env, transport, mode = 'live' }) {
       if (!config.checks.includes(check)) { checks.push({ check, status: 'skipped', reason: 'Not selected by MAYURA_LIVE_CHECKS.' }); continue; }
       const started = performance.now(); let entry;
       try {
-        const { failures, result, modelCalls, details } = await implementations[check]();
+        const done = await implementations[check]();
+        if (done.skip) { checks.push({ check, status: 'skipped', reason: done.skip }); continue; }
+        const { failures, result, modelCalls, details } = done;
         entry = { check, status: failures.length === 0 ? 'passed' : 'failed', ...(failures.length ? { reasons: failures } : {}),
           ...(result.outcome.status === 'succeeded' ? {} : { error: safeError(result.outcome.error) }), chargedMicros: result.chargedMicros, modelCalls, ...(details ? { details } : {}) };
       } catch (error) {
@@ -379,7 +475,7 @@ const DRY_RUN_PRICES = { INPUT_MICROS_PER_MILLION_TOKENS: '2000000', OUTPUT_MICR
 const prices = prefix => Object.fromEntries(Object.entries(DRY_RUN_PRICES).map(([key, value]) => [`${prefix}_${key}`, value]));
 /** Fixture configuration for the dry run. The credentials are fixed placeholders, and hosts under .invalid cannot resolve. */
 export const DRY_RUN_ENV = Object.freeze({
-  MAYURA_LIVE_MAX_CALL_COST_MICROS: '5000', MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '300000', MAYURA_LIVE_MAX_OUTPUT_TOKENS: '256', MAYURA_LIVE_TIMEOUT_MS: '10000',
+  MAYURA_LIVE_MAX_CALL_COST_MICROS: '5000', MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '400000', MAYURA_LIVE_MAX_OUTPUT_TOKENS: '256', MAYURA_LIVE_TIMEOUT_MS: '10000',
   OPENAI_API_KEY: 'dry-run-openai-credential', MAYURA_LIVE_OPENAI_MODEL: 'dry-run-openai-model', ...prices('MAYURA_LIVE_OPENAI'),
   ANTHROPIC_API_KEY: 'dry-run-anthropic-credential', MAYURA_LIVE_ANTHROPIC_MODEL: 'dry-run-anthropic-model', ...prices('MAYURA_LIVE_ANTHROPIC'),
   MAYURA_LIVE_COMPATIBLE: 'groq,azure,cloudflare',
@@ -388,13 +484,13 @@ export const DRY_RUN_ENV = Object.freeze({
   MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT: 'json_object', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS: 'true',
   MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_BODY: '{"thinking":{"type":"enabled"}}', ...prices('MAYURA_LIVE_COMPATIBLE_CLOUDFLARE'),
   MAYURA_LIVE_COMPATIBLE_GROQ_URL: 'https://groq.dry-run.invalid/openai/v1/chat/completions', MAYURA_LIVE_COMPATIBLE_GROQ_KEY: 'dry-run-groq-credential',
-  MAYURA_LIVE_COMPATIBLE_GROQ_MODEL: 'dry-run-compatible-model', ...prices('MAYURA_LIVE_COMPATIBLE_GROQ'),
+  MAYURA_LIVE_COMPATIBLE_GROQ_MODEL: 'dry-run-compatible-model', MAYURA_LIVE_COMPATIBLE_GROQ_MEDIA: 'image/png,image/jpeg', ...prices('MAYURA_LIVE_COMPATIBLE_GROQ'),
   MAYURA_LIVE_COMPATIBLE_AZURE_URL: 'https://azure.dry-run.invalid/openai/deployments/fixture/chat/completions?api-version=2024-10-21',
   MAYURA_LIVE_COMPATIBLE_AZURE_AUTH: 'api-key', MAYURA_LIVE_COMPATIBLE_AZURE_KEY: 'dry-run-azure-credential',
   MAYURA_LIVE_COMPATIBLE_AZURE_MODEL: 'dry-run-compatible-model', ...prices('MAYURA_LIVE_COMPATIBLE_AZURE'),
 });
 /** Faults a dry run can inject to prove the checks fail when the behaviour they qualify is missing. */
-export const DRY_RUN_FAULTS = Object.freeze(['ignore-tool-result', 'single-chunk-stream', 'overcharge', 'accept-invalid-key']);
+export const DRY_RUN_FAULTS = Object.freeze(['ignore-tool-result', 'single-chunk-stream', 'overcharge', 'accept-invalid-key', 'blind']);
 
 const REPLY = 'Rivers carried trade into early cities. They still supply water and cool dense streets. Healthy banks also soften floods.';
 const json = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
@@ -426,13 +522,18 @@ export function dryRunTransport(provider, fault) {
         : { schema: body.response_format.type === 'json_object' ? JSON.parse(body.messages[0].content.split('JSON Schema:\n').at(-1)) : body.response_format.json_schema.schema,
           tool: body.tools?.[0]?.function.name, result: body.messages.find(message => message.role === 'tool')?.content };
     const properties = view.schema.properties;
-    const needsTool = 'code' in properties && view.tool !== undefined && view.result === undefined;
+    const needsTool = ('code' in properties || 'seen' in properties) && view.tool !== undefined && view.result === undefined;
+    // The fake "sees" the last image in the request, in each provider's own format, by its tEXt chunk.
+    const images = JSON.stringify(body).match(/(?:data:image\/png;base64,|"media_type":"image\/png","data":")([A-Za-z0-9+/=]+)/gu) ?? [];
+    const lastImage = images.at(-1)?.replace(/^.*(?:base64,|"data":")/u, '');
+    const seen = fault === 'blind' || !lastImage ? 'none' : numberInImage(Buffer.from(lastImage, 'base64')) ?? 'none';
     const answer = 'code' in properties ? { code: fault === 'ignore-tool-result' ? 'LC-00000000' : JSON.parse(view.result ?? '{}').code ?? 'missing' }
-      : 'reply' in properties ? { reply: REPLY } : { city: 'Paris', countryCode: 'FR' };
+      : 'seen' in properties ? { seen } : 'reply' in properties ? { reply: REPLY } : { city: 'Paris', countryCode: 'FR' };
     const text = JSON.stringify(answer); const pieces = chunks(text, fault === 'single-chunk-stream');
+    const toolArguments = 'seen' in properties ? {} : { name: 'alpha' };
     if (body.stream && needsTool) return new Response('{"error":"unsupported"}', { status: 500 });
     if (provider.kind === 'openai') {
-      const output = needsTool ? [{ type: 'function_call', id: 'fc_dry', call_id: 'call_dry_1', name: view.tool, arguments: '{"name":"alpha"}', status: 'completed' }]
+      const output = needsTool ? [{ type: 'function_call', id: 'fc_dry', call_id: 'call_dry_1', name: view.tool, arguments: JSON.stringify(toolArguments), status: 'completed' }]
         : [{ type: 'message', id: 'msg_dry', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }];
       const response = { id: 'resp_dry', status: 'completed', output, usage: { input_tokens: usage.input, output_tokens: usage.output } };
       return body.stream ? sse([...pieces.map(delta => ({ type: 'response.output_text.delta', delta })), { type: 'response.completed', response }]) : json(response);
@@ -444,7 +545,7 @@ export function dryRunTransport(provider, fault) {
           { type: 'content_block_stop', index: 0 }, { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: usage.output } }, { type: 'message_stop' }]);
       }
       return json({ id: 'msg_dry', type: 'message', role: 'assistant', stop_reason: needsTool ? 'tool_use' : 'end_turn', usage: { input_tokens: usage.input, output_tokens: usage.output },
-        content: needsTool ? [{ type: 'tool_use', id: 'toolu_dry_1', name: view.tool, input: { name: 'alpha' } }] : [{ type: 'text', text }] });
+        content: needsTool ? [{ type: 'tool_use', id: 'toolu_dry_1', name: view.tool, input: toolArguments }] : [{ type: 'text', text }] });
     }
     const tokens = { prompt_tokens: usage.input, completion_tokens: usage.output };
     if (body.stream) {
@@ -452,7 +553,7 @@ export function dryRunTransport(provider, fault) {
         { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }, { choices: [], usage: tokens }, '[DONE]']);
     }
     return json({ choices: [{ index: 0, finish_reason: needsTool ? 'tool_calls' : 'stop', message: needsTool
-      ? { role: 'assistant', content: null, reasoning_content: 'The code comes from the tool.', tool_calls: [{ id: 'call_dry_1', type: 'function', function: { name: view.tool, arguments: '{"name":"alpha"}' } }] }
+      ? { role: 'assistant', content: null, reasoning_content: 'The code comes from the tool.', tool_calls: [{ id: 'call_dry_1', type: 'function', function: { name: view.tool, arguments: JSON.stringify(toolArguments) } }] }
       : { role: 'assistant', content: text } }], usage: tokens });
   };
 }

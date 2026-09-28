@@ -40,7 +40,10 @@ describe('provider live-check harness (dry run)', () => {
       // A Cloudflare AI Gateway route to a DeepSeek-style model: gateway token, JSON mode, strict tools, reasoning sent back.
       ['compatible:cloudflare', 'passed']]);
     for (const provider of report.providers) {
-      expect(provider.checks.map(check => [check.check, check.status])).toEqual(['structured', 'tools', 'streaming', 'router_failover', 'router_streaming', 'cost'].map(check => [check, 'passed']));
+      // The vision checks run for adapters that see images: OpenAI, Anthropic, and the compatible one given _MEDIA.
+      const vision = ['openai', 'anthropic', 'compatible:groq'].includes(provider.provider) ? 'passed' : 'skipped';
+      expect(provider.checks.map(check => [check.check, check.status])).toEqual([...['structured', 'tools', 'streaming', 'router_failover', 'router_streaming'].map(check => [check, 'passed']),
+        ['vision', vision], ['vision_tools', vision], ['cost', 'passed']]);
       // The refused route is charged its full per-call bound (5,000) and the valid route its confirmed cost (480).
       for (const check of provider.checks.filter(entry => entry.check.startsWith('router_'))) expect(check).toMatchObject({ chargedMicros: 5_480, details: { confirmedMicros: 480 } });
     }
@@ -56,6 +59,8 @@ describe('provider live-check harness (dry run)', () => {
     ['single-chunk-stream', { streaming: 'failed', router_streaming: 'failed' }],
     ['accept-invalid-key', { router_failover: 'failed', router_streaming: 'failed' }],
     ['overcharge', { structured: 'failed', tools: 'failed', cost: 'failed' }],
+    // A model that ignores images: both vision checks fail, since they need the number drawn in the image.
+    ['blind', { vision: 'failed', vision_tools: 'failed' }],
   ])('fails the check that qualifies the behaviour a fault removes (%s)', async (fault, failed) => {
     const report = await dryRun(undefined, fault);
     expect(report.status).toBe('failed');
@@ -75,7 +80,8 @@ describe('provider live-check harness (dry run)', () => {
     expect(report.status).toBe('passed');
     expect(report.providers.map(provider => [provider.provider, provider.status])).toEqual([['openai', 'passed'], ['anthropic', 'skipped'], ['compatible', 'skipped']]);
     expect(report.providers[1]).toMatchObject({ reason: 'MAYURA_LIVE_ANTHROPIC_MODEL is not set.', checks: [] });
-    expect(statuses(report)).toEqual({ structured: 'passed', tools: 'skipped', streaming: 'passed', router_failover: 'skipped', router_streaming: 'skipped', cost: 'passed' });
+    expect(statuses(report)).toEqual({ structured: 'passed', tools: 'skipped', streaming: 'passed', router_failover: 'skipped', router_streaming: 'skipped',
+      vision: 'skipped', vision_tools: 'skipped', cost: 'passed' });
     expect(report.caps.plannedWorstCaseMicros).toBe(2 * 5_000);
   });
 });
@@ -94,7 +100,7 @@ describe('provider live-check harness (configuration)', () => {
     // A credential alone never selects a provider.
     expect(await refusal({ ...caps, OPENAI_API_KEY: 'fixture-credential-value' })).toEqual([expect.stringContaining('No provider is selected')]);
     const problems = await refusal({ ...caps, ...openai, MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '1000' });
-    expect(problems).toEqual([expect.stringContaining('below the planned worst case of 9000 micros')]);
+    expect(problems).toEqual([expect.stringContaining('below the planned worst case of 13000 micros')]);
     expect(JSON.stringify(problems)).not.toContain('fixture-credential-value');
   });
 
