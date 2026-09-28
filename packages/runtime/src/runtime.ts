@@ -1,10 +1,10 @@
 import {
   assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, publicError, validate,
   type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
-  type Outcome, type Permissions, type RunHandle, type Schema, type Scope,
+  type Outcome, type Permissions, type RunHandle, type Schema, type Scope, type Media, mediaSummary,
 } from '@mayura/core';
-import { readManagedGuardDefinition } from '@mayura/core/host';
-import { invokeTool, type AnyTool } from '@mayura/tools';
+import { admitMedia, readManagedGuardDefinition } from '@mayura/core/host';
+import { invokeTool, type AnyTool, type ToolOutcome } from '@mayura/tools';
 import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
@@ -27,6 +27,8 @@ export interface RuntimeLimits {
   readonly maxInputBytes?: number;
   readonly maxOutputBytes?: number;
   readonly maxContextBytes?: number;
+  /** All media in one run (with the input and from tools), in bytes. Counted apart from the JSON context. */
+  readonly maxMediaBytes?: number;
   readonly maxOutputTokens?: number;
   readonly maxCostMicros?: number;
   readonly maxEventRetention?: number;
@@ -69,8 +71,12 @@ export interface RuntimeOptions {
 }
 export interface Runtime {
   readonly profile: 'ephemeral';
-  submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
-  spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I> }): RunHandle<InferOutput<O>>;
+  /**
+   * Start a run. `media` holds images or PDFs for the model to see with the input; the agent must accept them
+   * (`defineAgent({ media })`), and they are checked against its limits before the run starts.
+   */
+  submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
+  spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
   inspect(handle: RunHandle<unknown>): RunInspection;
   /**
    * Run isolated speculative child branches under the parent's shared budget and promote at most one. Branches may
@@ -83,7 +89,7 @@ export interface Runtime {
 
 const defaults: Required<RuntimeLimits> = Object.freeze({
   maxSteps: 16, maxModelCalls: 16, maxToolCalls: 64, maxHookCalls: 128, maxDurationMs: 60_000,
-  maxInputBytes: 1_048_576, maxOutputBytes: 1_048_576, maxContextBytes: 2_097_152,
+  maxInputBytes: 1_048_576, maxOutputBytes: 1_048_576, maxContextBytes: 2_097_152, maxMediaBytes: 20_971_520,
   maxOutputTokens: 4_096, maxCostMicros: 0, maxEventRetention: 256, maxConcurrentRuns: 32,
   maxDescendantRuns: 64, maxDepth: 8, maxConcurrentOperations: 32,
 });
@@ -101,7 +107,8 @@ function limitsFor(options: RuntimeLimits | undefined): Required<RuntimeLimits> 
     throw new MayuraError('INVALID_CONFIG', 'Runtime limits exceed the supported counter or timer range.');
   }
   if (result.maxDepth > 32 || result.maxDescendantRuns > 1023 || result.maxConcurrentOperations > 1024
-    || result.maxConcurrentRuns > 1024 || result.maxModelCalls > 4096 || result.maxToolCalls > 4096 || result.maxHookCalls > 4096) {
+    || result.maxConcurrentRuns > 1024 || result.maxModelCalls > 4096 || result.maxToolCalls > 4096 || result.maxHookCalls > 4096
+    || result.maxMediaBytes > 268_435_456) {
     throw new MayuraError('INVALID_CONFIG', 'Runtime tree or operation limits exceed supported bounds.');
   }
   return Object.freeze(result);
@@ -279,6 +286,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   };
   const admitChild = <I extends Schema, O extends Schema>(
     parent: RunState, agent: AgentDefinition<I, O>, input: unknown, child: ChildOptions, inputAdmitted = false, signal?: AbortSignal, speculative = false,
+    media?: unknown,
   ): RunHandle<InferOutput<O>> => {
     if (Date.now() >= parent.deadline && !parent.controller.signal.aborted) parent.controller.abort(new MayuraError('TIMEOUT', 'The parent deadline elapsed.'));
     if (closed || !parent.accepting || parent.status !== 'running' || parent.controller.signal.aborted || signal?.aborted) {
@@ -299,12 +307,12 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     }
     const requested = permissionsFor(child.permissions, true);
     const permissions = permissionsFor({ allow: requested.allow.filter((grant) => parent.permissions.allow.includes(grant)) });
-    return start(agent, input, limits, permissions, parent, inputAdmitted, signal, speculative);
+    return start(agent, input, limits, permissions, parent, inputAdmitted, signal, speculative, media);
   };
 
   const start = <I extends Schema, O extends Schema>(
     agent: AgentDefinition<I, O>, suppliedInput: unknown, limits: Required<RuntimeLimits>, permissions: Permissions,
-    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false,
+    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false, suppliedMedia?: unknown,
   ): RunHandle<InferOutput<O>> => {
     if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot accept new runs.');
     assertAgent(agent);
@@ -312,6 +320,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     let input: JsonValue;
     try { input = freezeJson(jsonValue(suppliedInput, { maxBytes: limits.maxInputBytes })); }
     catch { throw new MayuraError('INVALID_INPUT', 'Submitted input must satisfy the JSON and size limits.'); }
+    // Media is checked and copied now, before the run exists: a refusal names what to change.
+    const inputMedia = admitMedia(suppliedMedia ?? [], agent.media, limits.maxMediaBytes, 'INVALID_INPUT', `Agent ${agent.id}`);
+    let mediaBytes = inputMedia.bytes;
     const id = crypto.randomUUID();
     const controller = new AbortController();
     const events = new EventBuffer(id, limits.maxEventRetention);
@@ -552,8 +563,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         checkCancelled(signal);
         consumeCall(state, toolBundle.entries[0]!, 'tool');
         events.emit('tool.started', { callId, toolId: tool.id });
-        let outcome = await invokeTool(tool, input, {
-          runId: id, callId, scope, signal, permissions, budget,
+        let outcome: ToolOutcome<unknown> = await invokeTool(tool, input, {
+          runId: id, callId, scope, signal, permissions, budget, maxMediaBytes: Math.max(0, limits.maxMediaBytes - mediaBytes),
           budgetBinding: bindToolBudgetTicket(tool, toolBundle.entries[0]!.ticket, { budget, runId: id, callId, scope, signal }),
           maxOutputBytes: limits.maxOutputBytes,
           acquireCallback: (callbackSignal: AbortSignal) => runOperations.acquire(callbackSignal),
@@ -605,13 +616,17 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           return { ...failure, ...(!failure.receipt && receipt ? { receipt } : {}) };
         }
         if (outcome.receipt) record(state, outcome.receipt);
-        events.emit('tool.completed', { callId, toolId: tool.id, status: 'succeeded', execution: 'succeeded', disclosure: 'released' });
+        const returnedMedia = outcome.status === 'succeeded' ? outcome.media ?? [] : [];
+        for (const item of returnedMedia) if ('data' in item) mediaBytes += item.data.byteLength;
+        events.emit('tool.completed', { callId, toolId: tool.id, status: 'succeeded', execution: 'succeeded', disclosure: 'released',
+          ...(returnedMedia.length > 0 ? { media: returnedMedia.length } : {}) });
         return Object.freeze({ ...outcome, output: toolOutput });
       } finally { toolBundle.close(); }
     };
 
     const execute = async (): Promise<Outcome<InferOutput<O>>> => {
-      events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}) });
+      events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}),
+        ...(inputMedia.media.length > 0 ? { media: inputMedia.media.length } : {}) });
       checkCancelled();
       if (parent) {
         // The parent's own hooks decide delegation, in the parent's context and under its hook ceiling.
@@ -622,9 +637,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         checkCancelled(); return await validate(agent.input, input, 'input', { maxBytes: limits.maxInputBytes });
       }), controller.signal);
       const approvedInput = await guarded(agent.guards.input, freezeJson(jsonValue(validated, { maxBytes: limits.maxInputBytes })), agent.input, 'input', 'input', limits.maxInputBytes);
-      const inputFailure = await control(Object.freeze({ stage: 'beforeExecution', input: approvedInput }), null);
+      const inputFailure = await control(Object.freeze({ stage: 'beforeExecution', input: approvedInput,
+        ...(inputMedia.media.length > 0 ? { media: Object.freeze(inputMedia.media.map(mediaSummary)) } : {}) }), null);
       if (inputFailure) return inputFailure;
-      const messages: ModelMessage[] = [{ role: 'user', content: approvedInput }];
+      const messages: ModelMessage[] = [{ role: 'user', content: approvedInput, ...(inputMedia.media.length > 0 ? { media: inputMedia.media } : {}) }];
       let continuation: JsonValue | undefined;
       /**
        * Consume a streamed model call. Only the configured string field of the final output is released, in batches,
@@ -687,18 +703,30 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           throw new MayuraError('PERMISSION_DENIED', 'The model adapter is not authorized.');
         }
         checkCalls(state, 'model', 1);
-        // Freeze a bounded copy: a provider cannot mutate history or the tool registry between checks.
-        const snapshot = freezeJson(jsonValue(messages, { maxBytes: limits.maxContextBytes })) as unknown as readonly ModelMessage[];
+        // Freeze a bounded copy: a provider cannot mutate history or the tool registry between checks. Media is not JSON:
+        // it is set aside, counted under maxMediaBytes instead of the context limit, and put back unchanged.
+        const mediaOf = messages.map(message => ('media' in message ? message.media : undefined));
+        const textual = messages.map(message => {
+          if (!('media' in message)) return message;
+          const { media: _media, ...rest } = message; return rest;
+        });
+        const snapshot = freezeJson(jsonValue(textual, { maxBytes: limits.maxContextBytes })) as unknown as readonly ModelMessage[];
         const modelTools = agent.tools.map((tool) => Object.freeze({ id: tool.id, description: tool.description,
           ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: freezeJson(jsonValue(tool.inputJsonSchema)) as typeof tool.inputJsonSchema }),
         }));
-        const requestData = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }), ...(agent.outputJsonSchema === undefined ? {} : { outputJsonSchema: agent.outputJsonSchema }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
+        const jsonRequest = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }), ...(agent.outputJsonSchema === undefined ? {} : { outputJsonSchema: agent.outputJsonSchema }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
+        const withMedia = (message: ModelMessage, index: number): ModelMessage => mediaOf[index] ? Object.freeze({ ...message, media: mediaOf[index] }) : message;
+        const requestData: Omit<ModelRequest, 'signal' | 'maxOutputTokens'> = mediaOf.some(Boolean)
+          ? Object.freeze({ ...jsonRequest, messages: Object.freeze(jsonRequest.messages.map(withMedia)) }) : jsonRequest;
+        // Hooks see what media there is (type and size by message), never its bytes.
+        const hookMedia = Object.freeze(mediaOf.flatMap((items, index) => items ? [Object.freeze({ message: index, media: Object.freeze(items.map(mediaSummary)) })] : []));
         const primaryBundle = operationBundle('model', agent.model.maxCostMicros);
         try {
           // A content-only projection: private instructions and provider continuation never
           // enter hook context. These immutable fields are the same ones sent to the adapter.
           const modelFailure = await control(Object.freeze({ stage: 'beforeModelCall', purpose: 'primary', modelId: agent.model.id,
-            request: Object.freeze({ messages: requestData.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens }) }), step);
+            request: Object.freeze({ messages: jsonRequest.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens,
+              ...(hookMedia.length > 0 ? { media: hookMedia } : {}) }) }), step);
           if (modelFailure) return { done: true, outcome: modelFailure };
           const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
             checkCancelled();
@@ -762,7 +790,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           for (const call of response.calls) {
             const outcome = await invokeRunTool(tools.get(call.toolId)!, call.input, call.id, step);
             if (outcome.status !== 'succeeded') return { done: true, outcome };
-            messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output });
+            const toolMedia = (outcome as ToolOutcome<JsonValue>).media;
+            messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output, ...(toolMedia && toolMedia.length > 0 ? { media: toolMedia } : {}) });
           }
           return { done: false };
         } finally { primaryBundle.close(); }
@@ -834,10 +863,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   };
   return Object.freeze({
     profile: 'ephemeral',
-    submit: <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: { readonly input: InferInput<I> }) =>
-      start(agent, submission.input, rootLimits, rootPermissions),
-    spawn: <I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, submission: ChildOptions & { readonly input: InferInput<I> }) =>
-      admitChild(lookup(parent), agent, submission.input, submission),
+    submit: <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: { readonly input: InferInput<I>; readonly media?: readonly Media[] }) =>
+      start(agent, submission.input, rootLimits, rootPermissions, undefined, false, undefined, false, submission.media),
+    spawn: <I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, submission: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }) =>
+      admitChild(lookup(parent), agent, submission.input, submission, false, undefined, false, submission.media),
     speculate: async <I extends Schema, O extends Schema>(parentHandle: RunHandle<unknown>, speculation: SpeculationOptions<I, O>): Promise<SpeculationResult<InferOutput<O>>> => {
       const parent = lookup(parentHandle);
       const branches = speculation?.branches; const verify = speculation?.verify;

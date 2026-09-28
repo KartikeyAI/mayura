@@ -1,4 +1,4 @@
-import { MayuraError, type JsonValue, type ModelRequest, type Outcome, type Scope } from '@mayura/core';
+import { MayuraError, type JsonValue, type MediaSummary, type ModelRequest, type Outcome, type Scope } from '@mayura/core';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { isAgentTool } from './composition.js';
 
@@ -13,12 +13,16 @@ export type TerminalHookStage = 'afterExecution' | 'onError' | 'onCancel' | 'onB
 
 /** Immutable stage-specific views. Control views may carry content; observer views never do. */
 export interface HookEvents {
-  readonly beforeExecution: { readonly stage: 'beforeExecution'; readonly input: JsonValue };
+  /** `media` summarizes the images or PDFs sent with the input (type and size); hooks never see their bytes. */
+  readonly beforeExecution: { readonly stage: 'beforeExecution'; readonly input: JsonValue; readonly media?: readonly MediaSummary[] };
   readonly beforeStep: { readonly stage: 'beforeStep'; readonly step: number };
   readonly beforeModelCall: {
     readonly stage: 'beforeModelCall'; readonly purpose: 'primary'; readonly modelId: string;
-    /** Content projection only; private instructions, continuation and execution authority are absent. */
-    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>>;
+    /**
+     * Content projection only; private instructions, continuation and execution authority are absent. Messages carry no
+     * media here: `media` summarizes it (type and size) by message index, and hooks never see its bytes.
+     */
+    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] };
   };
   /** Tool proposals are not final schema-transformed arguments. */
   readonly beforeToolCall: {
@@ -52,6 +56,8 @@ export interface TerminalView<S extends TerminalHookStage> {
   readonly stage: S; readonly status: Outcome<unknown>['status']; readonly error?: { readonly code: string };
 }
 export type HookEvent<S extends HookStage = HookStage> = HookEvents[S];
+/** The media of one model message, as hooks see it: its index in `request.messages`, and a summary of each item. */
+export interface HookMessageMedia { readonly message: number; readonly media: readonly MediaSummary[] }
 
 /** Correlation only: no account, dispatch ticket, grants, descriptor or executable gateway. */
 export interface HookContext {

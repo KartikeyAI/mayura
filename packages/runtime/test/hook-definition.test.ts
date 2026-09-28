@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { MayuraError, type JsonValue, type ModelAdapter, type ModelRequest } from '@mayura/core';
 import { defineTool, type AnyTool } from '@mayura/tools';
 import { z } from 'zod';
-import { defineHook, readHookDefinition, type HookContext, type HookDecision, type HookDefinition, type HookEvent, type HookOptions } from '../src/hooks.js';
+import { defineHook, readHookDefinition, type HookContext, type HookDecision, type HookDefinition, type HookEvent, type HookMessageMedia, type HookOptions } from '../src/hooks.js';
 import { agentAsTool, defineAgent } from '../src/index.js';
 import * as publicRuntime from '../src/index.js';
 
@@ -60,7 +60,7 @@ describe('opaque control hook definitions', () => {
       expectTypeOf(event).toEqualTypeOf<HookEvent<'beforeModelCall'>>();
       expectTypeOf(event.purpose).toEqualTypeOf<'primary'>();
       expectTypeOf(event.modelId).toEqualTypeOf<string>();
-      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>>>();
+      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] }>();
       expectTypeOf(ctx.step).toEqualTypeOf<number | null>();
       return { decision: 'continue' };
     } });

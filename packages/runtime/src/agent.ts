@@ -1,5 +1,5 @@
-import { assertSchema, freezeJson, jsonSchemaOf, jsonValue, MayuraError, type Guard, type JsonObject, type ManagedGuardDefinition, type InferInput, type InferOutput, type ModelAdapter, type Schema } from '@mayura/core';
-import { readManagedGuardDefinition, snapshotLocalGuards } from '@mayura/core/host';
+import { assertSchema, freezeJson, jsonSchemaOf, jsonValue, MayuraError, MEDIA_TYPES, type Guard, type JsonObject, type ManagedGuardDefinition, type InferInput, type InferOutput, type MediaPolicy, type MediaType, type ModelAdapter, type ModelMediaCapability, type Schema } from '@mayura/core';
+import { mediaPolicy, readManagedGuardDefinition, snapshotLocalGuards, type ResolvedMediaPolicy } from '@mayura/core/host';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { snapshotHooks, type HookDefinition } from './hooks.js';
 
@@ -21,6 +21,8 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly inputJsonSchema?: JsonObject;
   /** The output as JSON Schema, sent with every model request: given in the options or generated from `output`. */
   readonly outputJsonSchema?: JsonObject;
+  /** The media (images, PDFs) the agent accepts with its input, with defaults filled in; absent when it accepts none. */
+  readonly media?: ResolvedMediaPolicy;
 }
 
 /**
@@ -58,9 +60,32 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
    * validators can describe themselves); give it when yours cannot, or to tell the model something narrower.
    */
   readonly outputJsonSchema?: JsonObject;
+  /**
+   * Images or PDFs the agent accepts with its input (`runtime.submit(agent, { input, media })`), for a model that can
+   * see them. Nothing is accepted unless declared here.
+   */
+  readonly media?: MediaPolicy;
 }
 
 const definitions = new WeakSet<object>();
+
+/** The media a model could be sent by this agent: with its input, or returned by its tools. */
+function mediaNeeds(agentMedia: ResolvedMediaPolicy | undefined, tools: readonly AnyTool[]): { readonly types: readonly MediaType[]; readonly urls: boolean } | undefined {
+  const policies = [agentMedia, ...tools.map(tool => tool.media)].filter((policy): policy is ResolvedMediaPolicy => policy !== undefined);
+  if (policies.length === 0) return undefined;
+  const types = MEDIA_TYPES.filter(type => policies.some(policy => policy.accept.includes(type)));
+  return Object.freeze({ types: Object.freeze(types), urls: policies.some(policy => policy.urls.length > 0) });
+}
+
+/** A copy of a model's declared media capability, or undefined when it declares none (or an invalid one). */
+function mediaCapability(value: unknown): ModelMediaCapability | undefined {
+  if (value === undefined) return undefined;
+  const capability = value as Partial<ModelMediaCapability> | null;
+  if (!capability || !Array.isArray(capability.types) || capability.types.some(type => !MEDIA_TYPES.includes(type)) || typeof capability.urls !== 'boolean') {
+    throw new MayuraError('INVALID_CONFIG', 'A model adapter\'s capabilities.media must list media types and say whether it takes URLs.');
+  }
+  return Object.freeze({ types: Object.freeze([...new Set(capability.types)]), urls: capability.urls });
+}
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 
 /** Definition identifiers are bounded metadata, not arbitrary message or secret containers. */
@@ -148,6 +173,18 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   if (!model.capabilities.structuredOutput || (options.tools.length > 0 && !model.capabilities.tools)) {
     throw new MayuraError('INVALID_CONFIG', 'The model does not support the agent required capabilities.');
   }
+  // Media reaches the model with the input and from tools; the model must be able to see every type either may carry.
+  const agentMedia = options.media === undefined ? undefined : mediaPolicy(options.media, `Agent ${options.id}`);
+  const needs = mediaNeeds(agentMedia, options.tools);
+  const canSee = mediaCapability(model.capabilities.media);
+  if (needs) {
+    const unseen = needs.types.filter(type => !canSee?.types.includes(type));
+    if (unseen.length > 0) {
+      throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: its model (${model.id}) cannot see ${unseen.join(', ')}, which the agent accepts or its tools return. `
+        + (canSee ? `It can see ${canSee.types.join(', ') || 'no media'}.` : 'Its adapter declares no media capability; use a model that can see, or set the adapter\'s media option if it can.'));
+    }
+    if (needs.urls && !canSee?.urls) throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: its model (${model.id}) cannot take media URLs; remove media.urls and send the bytes.`);
+  }
   let outputJsonSchema: JsonObject | undefined;
   if (options.outputJsonSchema === undefined) outputJsonSchema = jsonSchemaOf(options.output);
   else {
@@ -159,7 +196,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   // The adapter checks now what it would otherwise refuse on the first call, such as a schema its provider rejects.
   if (typeof model.checkDefinition === 'function') {
     const tools = options.tools.map(tool => Object.freeze({ id: tool.id, description: tool.description, ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: tool.inputJsonSchema }) }));
-    try { model.checkDefinition(Object.freeze({ tools: Object.freeze(tools), ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }) })); }
+    try { model.checkDefinition(Object.freeze({ tools: Object.freeze(tools), ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }), ...(needs ? { media: needs } : {}) })); }
     catch (error) {
       if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: ${error.message}`);
       throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: the model adapter refused this agent's tools or output schema.`);
@@ -171,7 +208,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     instructions: options.instructions,
     model: Object.freeze({
       id: model.id,
-      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput }),
+      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput, ...(canSee ? { media: canSee } : {}) }),
       maxCostMicros: model.maxCostMicros,
       generate: model.generate.bind(model),
       ...(typeof model.stream === 'function' ? { stream: model.stream.bind(model) } : {}),
@@ -184,6 +221,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     ...(options.stream === undefined ? {} : { stream: streamPolicy(options.stream) }),
     ...(inputJsonSchema === undefined ? {} : { inputJsonSchema }),
     ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }),
+    ...(agentMedia === undefined ? {} : { media: agentMedia }),
   });
   definitions.add(definition);
   return definition;

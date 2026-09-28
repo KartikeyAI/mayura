@@ -1,6 +1,7 @@
 import type { PublicError } from './errors.js';
 import { MayuraError } from './errors.js';
 import type { JsonValue, JsonObject } from './json.js';
+import type { Media, MediaType } from './media.js';
 
 export interface Scope { readonly principalId: string; readonly projectId: string }
 export type Effect = 'none' | 'read' | 'write' | 'host';
@@ -62,10 +63,14 @@ export interface ModelTool {
   readonly description: string;
   readonly inputJsonSchema?: JsonObject;
 }
+/**
+ * One message of a model conversation. `media` holds images or PDFs the model should see: with the user's input, or
+ * returned by a tool. It is present only when there is some, and only for adapters that declare `capabilities.media`.
+ */
 export type ModelMessage =
-  | { readonly role: 'user'; readonly content: JsonValue }
+  | { readonly role: 'user'; readonly content: JsonValue; readonly media?: readonly Media[] }
   | { readonly role: 'assistant'; readonly calls: readonly ModelToolCall[] }
-  | { readonly role: 'tool'; readonly callId: string; readonly toolId: string; readonly result: JsonValue };
+  | { readonly role: 'tool'; readonly callId: string; readonly toolId: string; readonly result: JsonValue; readonly media?: readonly Media[] };
 export interface ModelToolCall { readonly id: string; readonly toolId: string; readonly input: JsonValue }
 export interface ModelRequest {
   readonly instructions: string;
@@ -81,8 +86,17 @@ export interface ModelRequest {
    */
   readonly outputJsonSchema?: JsonObject;
 }
-/** What `defineAgent` asks an adapter to check once, before any run: the tools and output schema it would be sent. */
-export interface ModelDefinitionCheck { readonly tools: readonly ModelTool[]; readonly outputJsonSchema?: JsonObject }
+/**
+ * What `defineAgent` asks an adapter to check once, before any run: the tools and output schema it would be sent, and
+ * the media the agent accepts with its input or its tools may return.
+ */
+export interface ModelDefinitionCheck {
+  readonly tools: readonly ModelTool[];
+  readonly outputJsonSchema?: JsonObject;
+  readonly media?: { readonly types: readonly MediaType[]; readonly urls: boolean };
+}
+/** The media a model can see: which types, and whether it can take a URL (which its provider then fetches). */
+export interface ModelMediaCapability { readonly types: readonly MediaType[]; readonly urls: boolean }
 export interface ModelUsage { readonly costMicros: number }
 /** A failed provider invocation may still have confirmed billable usage. No raw failure text is accepted. */
 export class ModelInvocationError extends MayuraError {
@@ -110,7 +124,7 @@ export function modelFailureMessage(reason: ModelFailureReason, httpStatus?: num
     case 'rejected': return `The model provider rejected the request${status}. Check the model name and the adapter's settings.`;
     case 'invalid_response': return 'The model provider returned a response Mayura could not use, for example an answer that is not the required JSON or no token usage.';
     case 'refused': return 'The model refused to answer, or stopped before finishing (for example at its token limit).';
-    case 'configuration': return `The model adapter could not send this request: a tool's input schema or the output schema breaks the provider's rules, or no output schema was given.`;
+    case 'configuration': return `The model adapter could not send this request: a tool's input schema or the output schema breaks the provider's rules, no output schema was given, or the request holds media this provider cannot take.`;
   }
 }
 /** A model call that failed for a known reason. `costMicros`, when given, is usage the provider confirmed before failing. */
@@ -146,7 +160,8 @@ export type ModelStreamEvent =
   | { readonly type: 'response'; readonly response: ModelResponse };
 export interface ModelAdapter {
   readonly id: string;
-  readonly capabilities: { readonly tools: boolean; readonly structuredOutput: boolean };
+  /** What the model can do. Without `media`, it cannot see images or PDFs, and agents that accept media refuse it. */
+  readonly capabilities: { readonly tools: boolean; readonly structuredOutput: boolean; readonly media?: ModelMediaCapability };
   readonly maxCostMicros: number;
   generate(request: ModelRequest): Promise<ModelResponse>;
   /** Optional streamed form of `generate`, used only for agents that opt into streaming. */

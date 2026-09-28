@@ -1,4 +1,4 @@
-import { isModelFailureReason, MayuraError, ModelProviderError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelDefinitionCheck, type ModelFailureReason, type ModelRequest, type ModelResponse, type ModelStreamEvent } from '@mayura/core';
+import { isModelFailureReason, MayuraError, ModelProviderError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelDefinitionCheck, type ModelFailureReason, type ModelRequest, type ModelResponse, type ModelStreamEvent, type MediaType } from '@mayura/core';
 import { streamModelCall } from '@mayura/core/host';
 import { isIdentifier } from './agent.js';
 import { modelCost, modelFailureCost } from './response.js';
@@ -172,7 +172,11 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
 
   return Object.freeze({
     id,
-    capabilities: Object.freeze({ tools: routes.every(route => route.capabilities.tools), structuredOutput: routes.every(route => route.capabilities.structuredOutput) }),
+    capabilities: Object.freeze({ tools: routes.every(route => route.capabilities.tools), structuredOutput: routes.every(route => route.capabilities.structuredOutput),
+      // Any route may answer, so the router sees only what every route can see.
+      ...(routes.every(route => route.capabilities.media) ? { media: Object.freeze({
+        types: Object.freeze(routes[0]!.capabilities.media!.types.filter((type: MediaType) => routes.every(route => route.capabilities.media!.types.includes(type)))),
+        urls: routes.every(route => route.capabilities.media!.urls) }) } : {}) }),
     maxCostMicros,
     status: () => Object.freeze(routes.map((adapter, index) => {
       const circuit = circuits[index]!; const open = circuit.openUntil !== null;

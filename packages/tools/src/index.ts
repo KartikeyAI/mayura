@@ -17,12 +17,14 @@ import {
   type InferInput,
   type InferOutput,
   type JsonObject,
+  type Media,
+  type MediaPolicy,
   type JsonValue,
   type Outcome,
   type Permissions,
   type Schema,
 } from '@mayura/core';
-import { snapshotLocalGuards } from '@mayura/core/host';
+import { admitMedia, mediaPolicy, readMediaResult, snapshotLocalGuards, type ResolvedMediaPolicy } from '@mayura/core/host';
 
 export { batchOutput, invokeBatch, type BatchCall, type BatchInput, type BatchOutputPathSegment,
   type BatchOutputReference, type InvokeBatchOptions, type BatchCallResult, type BatchOutcome,
@@ -51,6 +53,11 @@ export interface ToolOptions<I extends Schema, O extends Schema> {
   readonly costMicros?: number;
   readonly inputJsonSchema?: JsonObject;
   readonly guards?: { readonly input?: readonly Guard[]; readonly output?: readonly Guard[] };
+  /**
+   * The media this tool may return for the model to see, such as screenshots: `execute` returns
+   * `withMedia(output, [media(...)])`. Without it, a tool returning media fails.
+   */
+  readonly media?: MediaPolicy;
 }
 
 /** Immutable public metadata; intentionally does not expose a callable executor. */
@@ -65,7 +72,12 @@ export interface ToolDefinition<I extends Schema = Schema, O extends Schema = Sc
   readonly timeoutMs: number;
   readonly costMicros: number;
   readonly inputJsonSchema?: JsonObject;
+  /** The media the tool may return, with defaults filled in; absent when it returns none. */
+  readonly media?: ResolvedMediaPolicy;
 }
+
+/** A tool's outcome: on success, any media it returned for the model to see (see `withMedia`). */
+export type ToolOutcome<T> = Outcome<T> & { readonly media?: readonly Media[] };
 
 export type AnyTool = ToolDefinition<Schema, Schema>;
 export type ToolOutput<T extends AnyTool> = InferOutput<T['output']>;
@@ -75,6 +87,8 @@ export interface InvokeToolContext extends ExecutionContext {
   /** Trusted-host pre-reserved invocation; still subject to every ordinary broker admission check. */
   readonly budgetBinding?: ToolBudgetTicketBinding;
   readonly maxOutputBytes?: number;
+  /** The most bytes of media this call may return (default: the tool's own media limits). */
+  readonly maxMediaBytes?: number;
   /** Opaque trusted extension bindings; never copied into observable metadata or messages. */
   readonly contextBindings?: readonly ToolContextBinding[];
   /** Trusted operation limiter. Queuing conveys no permission; admission is rechecked afterward. */
@@ -102,7 +116,7 @@ function snapshotInvocation(value: InvokeToolContext): InvokeToolContext {
     if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
     const fields = Object.getOwnPropertyDescriptors(value);
     const required = ['runId', 'callId', 'scope', 'signal', 'permissions', 'budget'];
-    const optional = ['maxOutputBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
+    const optional = ['maxOutputBytes', 'maxMediaBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
     if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || ![...required, ...optional].includes(key))
       || required.some(key => !fields[key])) throw new Error();
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -223,6 +237,7 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
     timeoutMs,
     costMicros,
     ...(inputJsonSchema === undefined ? {} : { inputJsonSchema }),
+    ...(options.media === undefined ? {} : { media: mediaPolicy(options.media, `Tool ${options.id}`) }),
   });
   const execute = options.execute;
   registrations.set(definition, {
@@ -261,7 +276,7 @@ export function withPreflight<T extends AnyTool>(tool: T,
  */
 export async function invokeTool<T extends AnyTool>(
   tool: T, input: unknown, options: InvokeToolContext,
-): Promise<Outcome<ToolOutput<T>>> {
+): Promise<ToolOutcome<ToolOutput<T>>> {
   let execution: ExecutionReceipt['execution'] = 'not_started';
   let dispatched = false;
   // The executor declared, with ToolRefusal, that it caused no effect.
@@ -308,6 +323,8 @@ export async function invokeTool<T extends AnyTool>(
     if (onExecutionReceipt !== undefined && typeof onExecutionReceipt !== 'function') throw new MayuraError('INVALID_CONFIG', 'onExecutionReceipt must be a function.');
     const maxOutputBytes = options.maxOutputBytes ?? 1_048_576;
     assertPositiveInteger(maxOutputBytes, 'maxOutputBytes');
+    const maxMediaBytes = options.maxMediaBytes ?? (tool.media ? tool.media.maxBytes * tool.media.maxItems : 0);
+    if (!Number.isSafeInteger(maxMediaBytes) || maxMediaBytes < 0) throw new MayuraError('INVALID_CONFIG', 'maxMediaBytes must be a non-negative safe integer.');
     externalSignal = options.signal;
     controller = new AbortController();
     const signal = controller.signal;
@@ -480,12 +497,17 @@ export async function invokeTool<T extends AnyTool>(
       await persistReceipt();
       assertActive();
       if (releaseFailure) throw releaseFailure;
+      // Media returned with `withMedia` is checked against the tool's declared policy; the output itself as usual.
+      const withMediaResult = readMediaResult(rawOutput);
+      const returnedMedia = withMediaResult ? admitMedia(withMediaResult.media, tool.media, maxMediaBytes, 'INVALID_OUTPUT', `Tool ${tool.id}`).media : [];
+      if (withMediaResult) rawOutput = withMediaResult.output;
       const parsedOutput = freezeJson(jsonValue(await callback(() => validate(tool.output, rawOutput, 'output', { maxBytes: maxOutputBytes })), { maxBytes: maxOutputBytes }));
       assertActive();
       await barrier(registration.outputGuards, parsedOutput, 'output');
       assertActive();
       const successfulReceipt = receipt('released');
-      return Object.freeze({ status: 'succeeded' as const, output: parsedOutput as ToolOutput<T>, ...(successfulReceipt ? { receipt: successfulReceipt } : {}) });
+      return Object.freeze({ status: 'succeeded' as const, output: parsedOutput as ToolOutput<T>, ...(successfulReceipt ? { receipt: successfulReceipt } : {}),
+        ...(returnedMedia.length > 0 ? { media: returnedMedia } : {}) });
     };
 
     return await Promise.race([work(), bounded]);

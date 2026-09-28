@@ -1,4 +1,4 @@
-import { Budget, MayuraError, jsonValue, type ExecutionReceipt, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Outcome, type Scope } from '@mayura/core';
+import { Budget, MayuraError, MEDIA_TYPES, jsonValue, mediaFromBase64, type ExecutionReceipt, type Media, type ModelAdapter, type ModelMediaCapability, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Outcome, type Scope } from '@mayura/core';
 import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
 
 /**
@@ -7,10 +7,13 @@ import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
  *
  * It also streams, for agents with a stream policy: a final answer arrives as `output.delta` pieces of its JSON text
  * (`streamChunk` characters each, 16 by default), then the complete response, exactly as a provider adapter streams.
+ *
+ * It can "see" every media type and URLs, so agents that accept images or PDFs can be tested; a scripted step receives
+ * the request with its `media`. Pass `media: false` to test a model that cannot see.
  */
 export function scriptedModel(
   responses: readonly (ModelResponse | ((request: ModelRequest) => ModelResponse | Promise<ModelResponse>))[],
-  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number } = {},
+  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number; readonly media?: ModelMediaCapability | false } = {},
 ): ModelAdapter {
   const steps = [...responses];
   let position = 0;
@@ -26,7 +29,8 @@ export function scriptedModel(
   };
   return Object.freeze({
     id: options.id ?? 'scripted',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true }),
+    capabilities: Object.freeze({ tools: true, structuredOutput: true,
+      ...(options.media === false ? {} : { media: options.media ?? Object.freeze({ types: MEDIA_TYPES, urls: true }) }) }),
     maxCostMicros: options.maxCostMicros ?? 0,
     generate: next,
     async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
@@ -38,6 +42,17 @@ export function scriptedModel(
       yield { type: 'response', response };
     },
   });
+}
+
+/** A real 1×1 PNG, for tests of agents and tools that take or return images. */
+export function testImage(options: { readonly name?: string } = {}): Media {
+  return mediaFromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'image/png', options);
+}
+/** A minimal one-page PDF, for tests of agents and tools that take or return documents. */
+export function testPdf(options: { readonly name?: string } = {}): Media {
+  const text = ['%PDF-1.4', '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj', '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
+    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 72 72]>>endobj', 'trailer<</Root 1 0 R>>', '%%EOF', ''].join('\n');
+  return mediaFromBase64(btoa(text), 'application/pdf', options);
 }
 
 /** The grants a tool needs to run: `tool:<id>`, each of its capabilities, and its effect (unless it has none). */
