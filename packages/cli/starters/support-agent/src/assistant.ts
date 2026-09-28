@@ -46,7 +46,8 @@ export const returnOutput = z.strictObject({ status: z.enum(['opened', 'already_
   orderStatus: z.enum(['processing', 'shipped', 'delivered']).nullable(), returnId: identifier.nullable(), instructions: z.string().max(1_000).nullable() });
 const rememberInput = z.strictObject({ fact: z.string().min(3).max(500), category: z.enum(['fact', 'preference']) });
 export const rememberOutput = z.strictObject({ status: z.enum(['saved', 'already_known']), noteId: identifier, fact: z.string().max(4_096) });
-const recallInput = z.strictObject({ query: z.string().min(1).max(200).optional() });
+// Providers' strict tool schemas require every property, so "no query" is null rather than an optional field.
+const recallInput = z.strictObject({ query: z.string().min(1).max(200).nullable() });
 const note = z.strictObject({ noteId: z.string().max(128), category: z.string().max(32), fact: z.string().max(4_096), rememberedAt: z.string() });
 export const recallOutput = z.strictObject({ notes: z.array(note).max(20) });
 
@@ -146,7 +147,7 @@ export function supportAssistant(dependencies: AssistantDependencies) {
 
   const recall = defineTool({
     id: 'memory.recall', version: '1', effects: 'read', capabilities: ['memory:read'],
-    description: 'Look up what you remembered about the signed-in customer. Without a query, returns the most recent notes.',
+    description: 'Look up what you remembered about the signed-in customer. With a null query, returns the most recent notes.',
     input: recallInput, inputJsonSchema: jsonSchema(recallInput), output: recallOutput,
     execute: async ({ query }, context) => {
       const memory = memoryOf(context, ['memory:read']);
@@ -279,7 +280,7 @@ function plan(input: SupportInput, results: Results): Plan {
     case 'recall':
     case 'help':
       if (results.has('memory.recall')) return { final: notesReply(recallOutput.parse(results.get('memory.recall')), intent === 'recall') };
-      return { call: { toolId: 'memory.recall', input: {} } };
+      return { call: { toolId: 'memory.recall', input: { query: null } } };
   }
 }
 

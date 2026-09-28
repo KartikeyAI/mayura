@@ -33,6 +33,22 @@ describe('Anthropic Messages adapter', () => {
     expect(init?.body).not.toContain('explicit-anthropic-key');
   });
 
+  it('sends a tool without inputs, as schema generators write it, with its empty required list stated', async () => {
+    // Zod writes `z.strictObject({})` without `required`; such an object is strict as it stands.
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":1}' }]));
+    await anthropicMessages(options({ fetch })).generate(request({ tools: [{ id: 'orders/list', description: 'List orders.',
+      inputJsonSchema: { type: 'object', properties: {}, additionalProperties: false } }, { id: 'clock/now', description: 'Now.',
+      inputJsonSchema: { type: 'object', additionalProperties: false } }] }));
+    const body = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string);
+    expect(body.tools.map((tool: { input_schema: unknown }) => tool.input_schema)).toEqual([
+      { type: 'object', properties: {}, additionalProperties: false, required: [] }, { type: 'object', additionalProperties: false, properties: {}, required: [] }]);
+    // A property that is not required is still refused before anything is sent.
+    const refused = vi.fn<typeof globalThis.fetch>();
+    await expect(anthropicMessages(options({ fetch: refused })).generate(request({ tools: [{ id: 'orders/find', description: 'Find.',
+      inputJsonSchema: { type: 'object', properties: { query: { type: 'string' } }, additionalProperties: false } }] }))).rejects.toBeDefined();
+    expect(refused).not.toHaveBeenCalled();
+  });
+
   it('maps reversible aliases and multi-step tool history', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([
       { type: 'tool_use', id: 'call_2', name: 'tool_0', input: { value: 2 } },

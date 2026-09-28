@@ -6,10 +6,14 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { createClient, type ClientEvent, type MayuraClient } from 'mayura/client';
 import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from 'mayura/core';
-import { assistantId, supportOutputWire, type SupportInput } from '../src/assistant.js';
+import { anthropicMessages } from 'mayura/provider-anthropic';
+import { openAIResponses } from 'mayura/provider-openai';
+import type { MemoryIndexStore } from 'mayura/storage-contracts';
+import { assistantId, supportAssistant, supportOutputWire, type SupportInput } from '../src/assistant.js';
 import { newToken, tokenDigest } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { piiBackstop, redactionLabels } from '../src/guardrails.js';
+import { jsonSchema } from '../src/model.js';
 import { startServer } from '../src/server.js';
 import { openServices } from '../src/services.js';
 import { mintSessionToken, verifySessionToken } from '../src/session.js';
@@ -242,6 +246,26 @@ describe('support assistant', () => {
       await assert.rejects(as(mintSessionToken(randomBytes(32), 'cus-ada', 60_000)).agents(), { status: 401 });
       await assert.rejects(as(mintSessionToken(sessionSecret, 'cus-ada', 1_000, Date.now() - 5_000)).agents(), { status: 401 });
     } finally { await h.close(); }
+  });
+});
+
+describe('real model providers', () => {
+  it('accept every tool schema and the output schema (strict JSON Schema) before anything is sent', async () => {
+    // Nothing reaches a network: the fake transport records that a request was built, then fails it.
+    let requests = 0;
+    const fetch = async (): Promise<Response> => { requests += 1; return new Response('{}', { status: 500 }); };
+    const options = { apiKey: 'test-key-not-real', model: 'test-model', outputJsonSchema: jsonSchema(supportOutputWire), maxCostMicros: 1_000,
+      pricing: { inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 1 }, fetch };
+    const unused = (): never => { throw new Error('not used'); };
+    const { agent } = supportAssistant({ model: (await loadConfig({})).model, projectId: 'support', orders: { ordersFor: unused },
+      returns: { open: unused, remind: unused }, store: { memory: {} as MemoryIndexStore }, startFollowUp: unused });
+    const tools = agent.tools.map(tool => ({ id: tool.id, description: tool.description, ...(tool.inputJsonSchema ? { inputJsonSchema: tool.inputJsonSchema } : {}) }));
+    for (const model of [openAIResponses(options), anthropicMessages(options)]) {
+      const before = requests;
+      await assert.rejects(model.generate({ instructions: 'Help.', messages: [{ role: 'user', content: 'hi' }], tools, signal: AbortSignal.timeout(5_000), maxOutputTokens: 16 }),
+        (error: { code?: string }) => error.code !== 'INVALID_CONFIG');
+      assert.equal(requests, before + 1, `${model.id} refused a schema before sending`);
+    }
   });
 });
 

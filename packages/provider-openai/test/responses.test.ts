@@ -35,6 +35,21 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('Responses request contract', () => {
+  it('sends a function without inputs, as schema generators write it, with its empty required list stated', async () => {
+    // Zod writes `z.strictObject({})` without `required`; such an object is strict as it stands.
+    const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
+    await openAIResponses(options({ fetch: transport })).generate(request({ tools: [{ id: 'orders/list', description: 'List orders.',
+      inputJsonSchema: { type: 'object', properties: {}, additionalProperties: false } }, { id: 'clock/now', description: 'Now.',
+      inputJsonSchema: { type: 'object', additionalProperties: false } }] }));
+    expect((transmittedBody(transport)['tools'] as JsonObject[]).map(tool => tool['parameters'])).toEqual([
+      { type: 'object', properties: {}, additionalProperties: false, required: [] }, { type: 'object', additionalProperties: false, properties: {}, required: [] }]);
+    // A property that is not required is still refused before anything is sent.
+    const refused = vi.fn<typeof globalThis.fetch>();
+    await expect(openAIResponses(options({ fetch: refused })).generate(request({ tools: [{ id: 'orders/find', description: 'Find.',
+      inputJsonSchema: { type: 'object', properties: { query: { type: 'string' } }, additionalProperties: false } }] }))).rejects.toBeDefined();
+    expect(refused).not.toHaveBeenCalled();
+  });
+
   it('sends only explicit model/function/schema configuration to the fixed HTTPS endpoint', async () => {
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
     const adapter = openAIResponses(options({ fetch: transport }));

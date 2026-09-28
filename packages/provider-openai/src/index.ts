@@ -54,7 +54,12 @@ function strictSchema(schema: JsonObject): JsonObject {
   if (copy['type'] !== 'object') throw new MayuraError('INVALID_CONFIG', 'Provider schemas require a root JSON object.');
   const visit = (item: JsonObject): void => {
     if (item['type'] === 'object' || (Array.isArray(item['type']) && item['type'].includes('object'))) {
-      const properties = object(item['properties']); const required = item['required'];
+      // An object without properties is strict as it stands; schema generators (Zod's among them) leave out its
+      // empty `properties` or `required`, so the copy sent to the provider states them.
+      if (item['properties'] === undefined && item['required'] === undefined) item['properties'] = {};
+      const properties = object(item['properties']);
+      if (item['required'] === undefined && Object.keys(properties).length === 0) item['required'] = [];
+      const required = item['required'];
       if (item['additionalProperties'] !== false || !Array.isArray(required) || required.some(key => typeof key !== 'string') || new Set(required).size !== required.length || Object.keys(properties).length !== required.length || Object.keys(properties).some(key => !required.includes(key))) {
         throw new MayuraError('INVALID_CONFIG', 'Strict object schemas must require every property and prohibit additional properties.');
       }
