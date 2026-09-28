@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelProviderError, type JsonObject, type ModelRequest } from '@mayura/core';
-import { anthropicMessages, type AnthropicMessagesOptions } from '../src/index.js';
+import { anthropicMessages, type AnthropicMessagesOptions, type AnthropicMessagesSettings } from '../src/index.js';
 
 const schema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
 const toolSchema: JsonObject = { type: 'object', properties: { value: { type: 'number' } }, required: ['value'], additionalProperties: false };
-const options = (overrides: Partial<AnthropicMessagesOptions> = {}): AnthropicMessagesOptions => ({
+const options = (overrides: Partial<AnthropicMessagesSettings> & { readonly apiKey?: string } = {}): AnthropicMessagesOptions & { readonly apiKey: string } => ({
   apiKey: 'explicit-anthropic-key', model: 'claude-fixture', outputJsonSchema: schema, maxCostMicros: 100,
   pricing: { inputMicrosPerMillionTokens: 1_000, outputMicrosPerMillionTokens: 2_000 }, ...overrides,
 });
@@ -126,7 +126,7 @@ describe('Anthropic Messages adapter', () => {
   });
 
   it('captures configuration before caller mutation', async () => {
-    const mutable = options() as { -readonly [Key in keyof AnthropicMessagesOptions]: AnthropicMessagesOptions[Key] };
+    const mutable = options() as { -readonly [Key in keyof AnthropicMessagesSettings]: AnthropicMessagesSettings[Key] } & { apiKey: string };
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":1}' }]));
     mutable.fetch = fetch;
     const adapter = anthropicMessages(mutable);

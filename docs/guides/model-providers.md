@@ -76,8 +76,9 @@ const claude = anthropicMessages({
 
 ## Options
 
-All three adapters take these options. `openAICompatibleChat` adds `endpoint`, `remote` and `token`, and its `apiKey`
-is optional.
+All three adapters take these options. `openAICompatibleChat` adds `remote` and `token`, and its `apiKey` is optional.
+`openAIResponses` and `anthropicMessages` send to the provider's own API unless you give an `endpoint`, for example a
+gateway (see [Through a gateway](#through-a-gateway)).
 
 | Option | Required | Meaning |
 |---|---|---|
@@ -91,6 +92,8 @@ is optional.
 | `media` | no | What the model can see, `{ types, urls }`. `openAIResponses` and `anthropicMessages` see every type and URLs unless told otherwise (`false` for a model that cannot see); `openAICompatibleChat` sees nothing unless told. See [Vision](vision.md). |
 | `maxResponseBytes` | no | Largest response body. Default 1 MiB. |
 | `fetch` | no | A `fetch`-compatible function to send requests through, for tests or a proxy. The destination does not change. |
+| `endpoint` | no | Where requests go instead of the provider's API: an https URL ending in `/responses` (OpenAI) or `/messages` (Anthropic), without credentials, query or fragment. |
+| `headers` | no | Extra request headers, such as a gateway's `cf-aig-authorization`. Treated as credentials. They cannot replace the adapter's own credential and version headers, `Content-Type`, `Host` or cookies. With `endpoint` and a credential header, `apiKey` may be left out when the gateway holds the provider key. |
 
 Cost is computed from the token usage the provider reports and your prices, rounded up to a whole micro. Anthropic
 cache-creation and cache-read tokens are charged at the input price. This is your own accounting, not the provider's
@@ -250,6 +253,27 @@ function tools on Chat Completions only with reasoning turned off, which `body: 
 provider's 400 names the setting it refused.
 
 `mayura init` sets up both: pick DeepSeek or Cloudflare AI Gateway in the wizard.
+
+### Through a gateway
+
+`openAIResponses` and `anthropicMessages` can send their own protocol through a gateway or proxy, such as Cloudflare AI
+Gateway's provider endpoints. Give the full endpoint (not a prefix, whose convention differs between SDKs) and the
+gateway's credential in `headers`. When the gateway stores the provider key, leave `apiKey` out:
+
+```ts
+import { anthropicMessages } from 'mayura/provider-anthropic';
+import { openAIResponses } from 'mayura/provider-openai';
+
+const base = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
+const headers = { 'cf-aig-authorization': `Bearer ${process.env.CF_AIG_TOKEN}` };
+
+const gpt = openAIResponses({ endpoint: `${base}/openai/responses`, headers, model: 'gpt-6-luna', maxCostMicros: 10_000, pricing });
+const claude = anthropicMessages({ endpoint: `${base}/anthropic/v1/messages`, headers, model: 'claude-sonnet-5', maxCostMicros: 10_000, pricing });
+```
+
+The adapters' ids, and so their grants (`model:openai.responses`, `model:anthropic.messages`), stay the same. A gateway
+is where your prompts and outputs go: choose it as deliberately as the provider. Both adapters pass every
+`pnpm providers:live-check` check through Cloudflare AI Gateway this way.
 
 **Azure OpenAI** sends the key in the `api-key` header instead of `Authorization: Bearer`; set `auth: 'api-key'`.
 

@@ -60,14 +60,18 @@ export function readConfig(env) {
   }
 
   const providers = []; const skipped = [];
-  const openaiModel = text('MAYURA_LIVE_OPENAI_MODEL');
-  if (openaiModel) providers.push({ provider: 'openai', kind: 'openai', adapterId: 'openai.responses', model: openaiModel,
-    apiKey: secret('OPENAI_API_KEY'), pricing: pricing('MAYURA_LIVE_OPENAI') });
-  else skipped.push({ provider: 'openai', reason: 'MAYURA_LIVE_OPENAI_MODEL is not set.' });
-  const anthropicModel = text('MAYURA_LIVE_ANTHROPIC_MODEL');
-  if (anthropicModel) providers.push({ provider: 'anthropic', kind: 'anthropic', adapterId: 'anthropic.messages', model: anthropicModel,
-    apiKey: secret('ANTHROPIC_API_KEY'), pricing: pricing('MAYURA_LIVE_ANTHROPIC') });
-  else skipped.push({ provider: 'anthropic', reason: 'MAYURA_LIVE_ANTHROPIC_MODEL is not set.' });
+  // OpenAI and Anthropic directly, or through a gateway (Cloudflare AI Gateway's provider endpoints): `_URL` is the
+  // gateway's endpoint and `_GATEWAY_TOKEN` its token; with the token, the provider key may stay in the gateway.
+  const native = (kind, keyName, adapterId) => {
+    const prefix = `MAYURA_LIVE_${kind.toUpperCase()}`; const model = text(`${prefix}_MODEL`);
+    if (!model) { skipped.push({ provider: kind, reason: `${prefix}_MODEL is not set.` }); return; }
+    const endpoint = text(`${prefix}_URL`); const gatewayToken = optionalSecret(`${prefix}_GATEWAY_TOKEN`);
+    if (gatewayToken && !endpoint) problems.push(`${prefix}_GATEWAY_TOKEN needs ${prefix}_URL, the gateway's endpoint.`);
+    providers.push({ provider: kind, kind, adapterId, model, ...(endpoint ? { endpoint } : {}), gatewayToken,
+      apiKey: gatewayToken ? optionalSecret(keyName) : secret(keyName), pricing: pricing(prefix), variablePrefix: prefix });
+  };
+  native('openai', 'OPENAI_API_KEY', 'openai.responses');
+  native('anthropic', 'ANTHROPIC_API_KEY', 'anthropic.messages');
   const compatible = text('MAYURA_LIVE_COMPATIBLE');
   if (compatible) {
     const seen = new Set();
@@ -127,8 +131,10 @@ function adapterFor(config, provider, { outputJsonSchema, invalid = false, trans
   const common = { model: provider.model, outputJsonSchema, maxCostMicros: config.maxCallCostMicros, pricing: provider.pricing,
     timeoutMs: config.timeoutMs, ...(transport ? { fetch: transport } : {}) };
   const apiKey = invalid && !provider.gatewayToken ? INVALID_KEY : provider.apiKey;
-  if (provider.kind === 'openai') return openAIResponses({ apiKey, ...common });
-  if (provider.kind === 'anthropic') return anthropicMessages({ apiKey, ...common });
+  const gateway = { ...(provider.endpoint && provider.kind !== 'compatible' ? { endpoint: provider.endpoint } : {}),
+    ...(provider.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${invalid ? INVALID_KEY : provider.gatewayToken}` } } : {}) };
+  if (provider.kind === 'openai') return openAIResponses({ ...(apiKey ? { apiKey } : {}), ...common, ...gateway });
+  if (provider.kind === 'anthropic') return anthropicMessages({ ...(apiKey ? { apiKey } : {}), ...common, ...gateway });
   return openAICompatibleChat({ endpoint: provider.endpoint, remote: { id: provider.id, auth: provider.auth }, ...(apiKey ? { apiKey } : {}), ...common,
     ...(provider.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${invalid ? INVALID_KEY : provider.gatewayToken}` } } : {}),
     output: provider.output, strictTools: provider.strictTools, tokenLimitField: provider.tokenLimitField,
@@ -477,7 +483,9 @@ const prices = prefix => Object.fromEntries(Object.entries(DRY_RUN_PRICES).map((
 export const DRY_RUN_ENV = Object.freeze({
   MAYURA_LIVE_MAX_CALL_COST_MICROS: '5000', MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '400000', MAYURA_LIVE_MAX_OUTPUT_TOKENS: '256', MAYURA_LIVE_TIMEOUT_MS: '10000',
   OPENAI_API_KEY: 'dry-run-openai-credential', MAYURA_LIVE_OPENAI_MODEL: 'dry-run-openai-model', ...prices('MAYURA_LIVE_OPENAI'),
-  ANTHROPIC_API_KEY: 'dry-run-anthropic-credential', MAYURA_LIVE_ANTHROPIC_MODEL: 'dry-run-anthropic-model', ...prices('MAYURA_LIVE_ANTHROPIC'),
+  // Anthropic through a gateway endpoint that holds the provider key.
+  MAYURA_LIVE_ANTHROPIC_URL: 'https://gateway.dry-run.invalid/v1/account/gateway/anthropic/v1/messages',
+  MAYURA_LIVE_ANTHROPIC_GATEWAY_TOKEN: 'dry-run-anthropic-gateway-credential', MAYURA_LIVE_ANTHROPIC_MODEL: 'dry-run-anthropic-model', ...prices('MAYURA_LIVE_ANTHROPIC'),
   MAYURA_LIVE_COMPATIBLE: 'groq,azure,cloudflare',
   MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_URL: 'https://gateway.dry-run.invalid/v1/account/gateway/compat/chat/completions',
   MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'dry-run-gateway-credential', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_MODEL: 'deepseek/dry-run-model',
@@ -500,11 +508,11 @@ const chunks = (text, single) => single ? [text] : text.match(/[\s\S]{1,12}/gu);
 /** A scripted provider for one configured provider: it checks destination and credential, then answers by protocol. */
 export function dryRunTransport(provider, fault) {
   if (fault !== undefined && !DRY_RUN_FAULTS.includes(fault)) throw new Error('Unknown dry-run fault.');
-  const destination = provider.kind === 'openai' ? 'https://api.openai.com/v1/responses' : provider.kind === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : new URL(provider.endpoint).href;
+  const destination = provider.endpoint ? new URL(provider.endpoint).href : provider.kind === 'openai' ? 'https://api.openai.com/v1/responses' : 'https://api.anthropic.com/v1/messages';
   const usage = { input: 120, output: fault === 'overcharge' ? 10_000_000 : 30 };
   return async (url, init) => {
     const headers = init?.headers ?? {};
-    const presented = provider.kind === 'anthropic' ? headers['x-api-key'] : provider.gatewayToken ? headers['cf-aig-authorization']?.replace(/^Bearer /u, '')
+    const presented = provider.gatewayToken ? headers['cf-aig-authorization']?.replace(/^Bearer /u, '') : provider.kind === 'anthropic' ? headers['x-api-key']
       : provider.kind === 'compatible' && provider.auth === 'api-key' ? headers['api-key'] : headers['Authorization']?.replace(/^Bearer /u, '');
     const expected = provider.gatewayToken ?? provider.apiKey;
     if (String(url) !== destination || init?.method !== 'POST') return new Response('{"error":"not found"}', { status: 404 });

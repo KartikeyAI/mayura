@@ -101,6 +101,12 @@ describe('provider live-check harness (configuration)', () => {
     expect(await refusal({ ...caps, OPENAI_API_KEY: 'fixture-credential-value' })).toEqual([expect.stringContaining('No provider is selected')]);
     const problems = await refusal({ ...caps, ...openai, MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '1000' });
     expect(problems).toEqual([expect.stringContaining('below the planned worst case of 13000 micros')]);
+    // A native provider through a gateway: the token needs the gateway's endpoint, and then the provider key is optional.
+    const viaGateway = { ...caps, MAYURA_LIVE_ANTHROPIC_MODEL: 'model', MAYURA_LIVE_ANTHROPIC_GATEWAY_TOKEN: 'fixture-credential-value',
+      MAYURA_LIVE_ANTHROPIC_INPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_LIVE_ANTHROPIC_OUTPUT_MICROS_PER_MILLION_TOKENS: '1' };
+    expect(await refusal(viaGateway)).toEqual(expect.arrayContaining([expect.stringContaining('MAYURA_LIVE_ANTHROPIC_GATEWAY_TOKEN needs MAYURA_LIVE_ANTHROPIC_URL')]));
+    const { readConfig } = await harness();
+    expect(() => readConfig({ ...viaGateway, MAYURA_LIVE_ANTHROPIC_URL: 'https://gateway.ai.cloudflare.com/v1/account/default/anthropic/v1/messages' })).not.toThrow();
     expect(JSON.stringify(problems)).not.toContain('fixture-credential-value');
   });
 

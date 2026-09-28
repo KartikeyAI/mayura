@@ -1,9 +1,29 @@
 import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMediaCapability, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
-import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
-export interface OpenAIResponsesOptions {
-  readonly apiKey: string;
+/**
+ * How the adapter authenticates: with the provider's API key, or behind a gateway that holds it, with the gateway's
+ * `endpoint` and its credential in `headers`. One of the two is required.
+ */
+export type OpenAIResponsesCredentials =
+  | { readonly apiKey: string }
+  | { readonly apiKey?: undefined; readonly endpoint: string; readonly headers: Readonly<Record<string, string>> };
+export type OpenAIResponsesOptions = OpenAIResponsesSettings & OpenAIResponsesCredentials;
+/** Everything but the credential; see `OpenAIResponsesCredentials`. */
+export interface OpenAIResponsesSettings {
   readonly model: string;
+  /**
+   * Send requests to this URL instead of https://api.openai.com/v1/responses, for example through a gateway or proxy such as Cloudflare AI
+   * Gateway (`https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/openai/responses`). It must be https and end in
+   * `/responses`. The provider protocol, and the grant `model:openai.responses`, stay the same.
+   */
+  readonly endpoint?: string;
+  /**
+   * Extra request headers, such as a gateway's credential (`cf-aig-authorization`). Treated as credentials: never
+   * logged or reported. They cannot replace Authorization, Content-Type, Host or cookies. With `endpoint` and a
+   * credential header, `apiKey` may be left out when the gateway holds the provider key.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
   /**
    * The output as strict JSON Schema. Optional: without it, the adapter uses the schema the runtime sends with each
    * request, which `defineAgent` generates from the agent's output validator (or takes from its `outputJsonSchema`).
@@ -210,7 +230,14 @@ function hydrateResponsesInput(input: readonly JsonValue[], messages: readonly M
 
 /** Explicit, stateless-per-call Responses adapter. No credential discovery, retries or public raw deltas. */
 export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
-  if (typeof options.apiKey !== 'string' || !options.apiKey.trim() || /[\r\n]/.test(options.apiKey) || options.apiKey.length > 4096 || typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A model ID and bounded API key are required.');
+  if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A model ID and bounded API key are required.');
+  const endpoint = options.endpoint === undefined ? 'https://api.openai.com/v1/responses' : providerEndpoint(options.endpoint, '/responses', 'openAIResponses');
+  const extraHeaders = providerHeaders(options.headers, ['Authorization'], 'openAIResponses');
+  // The key may be left out only behind a gateway that authenticates the request and holds the provider key itself.
+  const keyless = options.apiKey === undefined && options.endpoint !== undefined && Object.keys(extraHeaders).length > 0;
+  if (!keyless && (typeof options.apiKey !== 'string' || !options.apiKey.trim() || /[\r\n]/.test(options.apiKey) || options.apiKey.length > 4096)) {
+    throw new MayuraError('INVALID_CONFIG', 'A model ID and bounded API key are required (behind a gateway that holds the key: an endpoint and its credential header).');
+  }
   const apiKey = options.apiKey; const model = options.model;
   const fixedOutput = options.outputJsonSchema === undefined ? undefined : strictJsonSchema(options.outputJsonSchema, `The adapter's outputJsonSchema`);
   const priceInput = options.pricing.inputMicrosPerMillionTokens;
@@ -254,8 +281,8 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
           max_output_tokens: request.maxOutputTokens,
           text: { format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } },
         }, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) }));
-        const response = await abortable(transport('https://api.openai.com/v1/responses', {
-          method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        const response = await abortable(transport(endpoint, {
+          method: 'POST', headers: { ...extraHeaders, ...(apiKey === undefined ? {} : { Authorization: `Bearer ${apiKey}` }), 'Content-Type': 'application/json' },
           body, signal, redirect: 'error',
         }).catch((): never => failed('unavailable')), signal);
         const payload = onDelta ? await completedStream(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);

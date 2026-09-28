@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MayuraError, ModelInvocationError, ModelProviderError, type JsonObject, type JsonValue, type ModelMessage, type ModelRequest } from '@mayura/core';
-import { openAIResponses, type OpenAIResponsesOptions } from '../src/index.js';
+import { openAIResponses, type OpenAIResponsesOptions, type OpenAIResponsesSettings } from '../src/index.js';
 
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
 const inputSchema: JsonObject = { type: 'object', properties: { left: { type: 'number' }, right: { type: 'number' } }, required: ['left', 'right'], additionalProperties: false };
@@ -8,7 +8,7 @@ const message = (text = '{"answer":5}', status = 'completed'): JsonObject => ({ 
 const functionCall = (overrides: JsonObject = {}): JsonObject => ({ type: 'function_call', id: 'fc_fixture', status: 'completed', call_id: 'call_1', name: 'math_add_v1', arguments: '{"left":2,"right":3}', ...overrides });
 const payload = (output: JsonValue[] = [message()], usage: JsonObject = { input_tokens: 10, output_tokens: 2 }): JsonObject => ({ status: 'completed', output, usage });
 const response = (value: JsonValue = payload(), init?: ResponseInit): Response => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' }, ...init });
-function options(overrides: Partial<OpenAIResponsesOptions> = {}): OpenAIResponsesOptions {
+function options(overrides: Partial<OpenAIResponsesSettings> & { readonly apiKey?: string } = {}): OpenAIResponsesOptions & { readonly apiKey: string } {
   return {
     apiKey: 'fixture-not-a-real-api-key', model: 'fixture-model', outputJsonSchema: outputSchema,
     maxCostMicros: 100, pricing: { inputMicrosPerMillionTokens: 2_000, outputMicrosPerMillionTokens: 5_000 },

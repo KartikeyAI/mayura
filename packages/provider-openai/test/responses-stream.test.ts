@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MayuraError, ModelProviderError, type JsonObject, type JsonValue, type ModelRequest, type ModelStreamEvent } from '@mayura/core';
-import { openAIResponses, type OpenAIResponsesOptions } from '../src/index.js';
+import { openAIResponses, type OpenAIResponsesOptions, type OpenAIResponsesSettings } from '../src/index.js';
 
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false };
-const options = (fetch: typeof globalThis.fetch, overrides: Partial<OpenAIResponsesOptions> = {}): OpenAIResponsesOptions => ({
+const options = (fetch: typeof globalThis.fetch, overrides: Partial<OpenAIResponsesSettings> & { readonly apiKey?: string } = {}): OpenAIResponsesOptions => ({
   apiKey: 'fixture-not-a-real-api-key', model: 'fixture-model', outputJsonSchema: outputSchema, maxCostMicros: 100,
   pricing: { inputMicrosPerMillionTokens: 2_000, outputMicrosPerMillionTokens: 5_000 }, fetch, ...overrides });
 const request = (overrides: Partial<ModelRequest> = {}): ModelRequest => ({ instructions: 'x', messages: [{ role: 'user', content: 'hi' }], tools: [],

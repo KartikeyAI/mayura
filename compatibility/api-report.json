@@ -1500,6 +1500,14 @@
         "kind": "function",
         "declaration": "e32fb5b14da575ed"
       },
+      "providerEndpoint": {
+        "kind": "function",
+        "declaration": "e1ec3c29f250571f"
+      },
+      "providerHeaders": {
+        "kind": "function",
+        "declaration": "cb43a3f988140685"
+      },
       "providerHttpFailure": {
         "kind": "function",
         "declaration": "fc80d0debedd2e6a"
@@ -2250,9 +2258,17 @@
         "kind": "function",
         "declaration": "a151c1d4328945f4"
       },
+      "AnthropicMessagesCredentials": {
+        "kind": "type",
+        "declaration": "0487fc767c110f40"
+      },
       "AnthropicMessagesOptions": {
+        "kind": "type",
+        "declaration": "5f4f11e1afa2e57d"
+      },
+      "AnthropicMessagesSettings": {
         "kind": "interface",
-        "declaration": "403f634bd9c524c2"
+        "declaration": "c792ef79e7984d4a"
       }
     },
     "@mayura/provider-openai": {
@@ -2276,9 +2292,17 @@
         "kind": "function",
         "declaration": "b131103cd89f76ea"
       },
+      "OpenAIResponsesCredentials": {
+        "kind": "type",
+        "declaration": "be994e8cc5fa0137"
+      },
       "OpenAIResponsesOptions": {
+        "kind": "type",
+        "declaration": "353a615efda3cdc8"
+      },
+      "OpenAIResponsesSettings": {
         "kind": "interface",
-        "declaration": "cfc6c9a0ae8a8cf3"
+        "declaration": "ad94e0403a29c98d"
       }
     },
     "@mayura/runtime": {
