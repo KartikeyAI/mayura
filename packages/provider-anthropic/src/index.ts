@@ -5,7 +5,10 @@ import {
   ModelProviderError,
   type JsonObject,
   type JsonValue,
+  type Media,
+  type MediaType,
   type ModelAdapter,
+  type ModelMediaCapability,
   type ModelDefinitionCheck,
   type ModelFailureReason,
   type ModelMessage,
@@ -14,7 +17,7 @@ import {
   type ModelStreamEvent,
   type ModelToolCall,
 } from '@mayura/core';
-import { checkStrictDefinition, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -37,7 +40,14 @@ export interface AnthropicMessagesOptions {
   readonly timeoutMs?: number;
   /** Trusted test/proxy transport. The adapter destination remains fixed. */
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * What the model can see. The default is every Mayura media type (PNG, JPEG, WebP, GIF, PDF) and URLs, as Claude
+   * models take them; narrow it for a model that sees less, or pass `false` for one that sees nothing.
+   */
+  readonly media?: ModelMediaCapability | false;
 }
+
+const ALL_MEDIA: readonly MediaType[] = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf']);
 
 /** A failed call, for a reason Mayura reports in its own words. The default is a response the adapter cannot use. */
 const failed = (reason: ModelFailureReason = 'invalid_response'): never => { throw new ModelProviderError(reason); };
@@ -109,13 +119,26 @@ async function responseBody(response: Response, limit: number, signal: AbortSign
   }
 }
 
+/** An image or document block: inline base64, or a URL Anthropic fetches. A named item is introduced by a text block. */
+function mediaBlocks(item: Media): JsonValue[] {
+  const source = 'data' in item ? { type: 'base64', media_type: item.mediaType, data: bytesToBase64(item.data) } : { type: 'url', url: item.url };
+  const block = item.mediaType === 'application/pdf'
+    ? { type: 'document', source, ...(item.name === undefined ? {} : { title: item.name }) }
+    : { type: 'image', source };
+  return item.name === undefined || item.mediaType === 'application/pdf' ? [block] : [{ type: 'text', text: `Image: ${item.name}` }, block];
+}
+
 function messagesForAnthropic(messages: readonly ModelMessage[], aliases: ReadonlyMap<string, string>): JsonValue[] {
   return messages.map(message => {
     if (message.role === 'user') {
-      return { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }] };
+      return { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }, ...(message.media ?? []).flatMap(mediaBlocks)] };
     }
     if (message.role === 'tool') {
-      return { role: 'user', content: [{ type: 'tool_result', tool_use_id: message.callId, content: JSON.stringify(message.result) }] };
+      // Images go inside the tool result; documents follow it in the same turn.
+      const media = message.media ?? [];
+      const images = media.filter(item => item.mediaType !== 'application/pdf'); const documents = media.filter(item => item.mediaType === 'application/pdf');
+      const result = images.length === 0 ? JSON.stringify(message.result) : [{ type: 'text', text: JSON.stringify(message.result) }, ...images.flatMap(mediaBlocks)];
+      return { role: 'user', content: [{ type: 'tool_result', tool_use_id: message.callId, content: result }, ...documents.flatMap(mediaBlocks)] };
     }
     return {
       role: 'assistant',
@@ -152,6 +175,10 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'Provider timeout exceeds the supported timer range.');
   const transport = options.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
+  const media = options.media === false ? undefined : options.media ?? { types: ALL_MEDIA, urls: true };
+  if (media !== undefined && (!Array.isArray(media.types) || media.types.some(type => !ALL_MEDIA.includes(type)) || typeof media.urls !== 'boolean')) {
+    throw new MayuraError('INVALID_CONFIG', 'media must be false, or list media types and say whether URLs are taken.');
+  }
 
   /** One Messages call. With `onDelta` it streams, reporting text as it arrives; the message is then parsed as usual. */
   const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
@@ -183,7 +210,8 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           requestObject['tools'] = tools;
           requestObject['tool_choice'] = { type: 'auto', disable_parallel_tool_use: false };
         }
-        const body = JSON.stringify(jsonValue(requestObject, { maxBytes: maxRequestBytes }));
+        // Encoded media is allowed on top of the JSON limit; the runtime already bounded it with maxMediaBytes.
+        const body = JSON.stringify(jsonValue(requestObject, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) }));
         const response = await abortable(transport(ENDPOINT, {
           method: 'POST',
           headers: { 'x-api-key': apiKey, 'anthropic-version': API_VERSION, 'content-type': 'application/json' },
@@ -286,7 +314,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
   };
   return Object.freeze({
     id: 'anthropic.messages',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true }),
+    capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media: Object.freeze({ types: Object.freeze([...media.types]), urls: media.urls }) } : {}) }),
     maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),

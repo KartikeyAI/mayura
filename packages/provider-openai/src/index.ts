@@ -1,5 +1,5 @@
-import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
-import { checkStrictDefinition, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMediaCapability, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
+import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 export interface OpenAIResponsesOptions {
   readonly apiKey: string;
@@ -16,6 +16,11 @@ export interface OpenAIResponsesOptions {
   readonly timeoutMs?: number;
   /** Trusted test/proxy transport; never selected from model output. Default destination is fixed. */
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * What the model can see. The default is every Mayura media type (PNG, JPEG, WebP, GIF, PDF) and URLs; narrow it
+   * for a model that sees less, or pass `false` for one that sees nothing.
+   */
+  readonly media?: ModelMediaCapability | false;
 }
 export interface OpenAICompatibleChatOptions {
   /**
@@ -68,6 +73,12 @@ export interface OpenAICompatibleChatOptions {
    * (model, messages, tools, output format, streaming and the output-token limit).
    */
   readonly body?: JsonObject;
+  /**
+   * What the model can see, when it can: for example `{ types: ['image/png', 'image/jpeg'], urls: true }`. Images are
+   * sent as `image_url` parts; PDFs (only if listed) as `file` parts, which not every provider takes, and only as bytes.
+   * Without it, the adapter declares no media, and agents that accept media refuse it.
+   */
+  readonly media?: ModelMediaCapability;
 }
 /** Request fields the compatible adapter owns; `body` cannot set them. */
 const ownedFields = new Set(['model', 'messages', 'tools', 'tool_choice', 'parallel_tool_calls', 'stream', 'stream_options', 'response_format', 'max_tokens', 'max_completion_tokens', 'n']);
@@ -134,18 +145,67 @@ async function responseBody(response: Response, limit: number, signal: AbortSign
   } finally { void reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
-function messagesToInput(messages: readonly ModelMessage[], hasContinuation: boolean, aliases: Map<string, string>): JsonValue[] {
-  const result: JsonValue[] = [];
-  for (const message of messages) {
-    if (message.role === 'user') result.push({ role: 'user', content: JSON.stringify(message.content) });
-    else if (message.role === 'tool') result.push({ type: 'function_call_output', call_id: message.callId, output: JSON.stringify(message.result) });
-    else if (!hasContinuation) for (const call of message.calls) {
+/** A declared media capability, checked; undefined for none. */
+function mediaOption(value: ModelMediaCapability | false | undefined, fallback: ModelMediaCapability | undefined): ModelMediaCapability | undefined {
+  const capability = value === false ? undefined : value ?? fallback;
+  if (capability === undefined) return undefined;
+  if (!capability || !Array.isArray(capability.types) || capability.types.some(type => !MEDIA_TYPES.includes(type)) || typeof capability.urls !== 'boolean') {
+    throw new MayuraError('INVALID_CONFIG', 'media must list media types and say whether URLs are taken.');
+  }
+  return Object.freeze({ types: Object.freeze([...new Set(capability.types)] as MediaType[]), urls: capability.urls });
+}
+const ALL_MEDIA: ModelMediaCapability = Object.freeze({ types: MEDIA_TYPES, urls: true });
+
+/** Tool-returned media follows the tool results in one user turn, since tool results themselves are text. */
+const TOOL_MEDIA_NOTE = 'Media returned by the tool calls above:';
+
+/**
+ * Responses input for `messages`, whose first is `request.messages[offset]`. Media appears as placeholders
+ * (`{ type: 'mayura_media', message, item }`) that `hydrateResponsesInput` replaces with the real parts, so the stored
+ * continuation never holds media bytes.
+ */
+function messagesToInput(messages: readonly ModelMessage[], offset: number, hasContinuation: boolean, aliases: Map<string, string>): JsonValue[] {
+  const result: JsonValue[] = []; let pending: JsonValue[] = [];
+  const marker = (message: number, count: number): JsonValue[] => Array.from({ length: count }, (_, item) => ({ type: 'mayura_media', message, item }));
+  const flush = (): void => { if (pending.length > 0) { result.push({ role: 'user', content: [{ type: 'input_text', text: TOOL_MEDIA_NOTE }, ...pending] }); pending = []; } };
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== 'tool') flush();
+    if (message.role === 'user') {
+      const count = message.media?.length ?? 0;
+      result.push(count === 0 ? { role: 'user', content: JSON.stringify(message.content) }
+        : { role: 'user', content: [{ type: 'input_text', text: JSON.stringify(message.content) }, ...marker(offset + index, count)] });
+    } else if (message.role === 'tool') {
+      result.push({ type: 'function_call_output', call_id: message.callId, output: JSON.stringify(message.result) });
+      pending.push(...marker(offset + index, message.media?.length ?? 0));
+    } else if (!hasContinuation) for (const call of message.calls) {
       const name = aliases.get(call.toolId); if (!name) return failed();
       result.push({ type: 'function_call', call_id: call.id, name, arguments: JSON.stringify(call.input) });
     }
     // Continuation already includes the provider's original function calls and reasoning items.
   }
+  flush();
   return result;
+}
+/** The Responses part for one piece of media. */
+function responsesMediaPart(item: Media): JsonValue {
+  if (item.mediaType === 'application/pdf') {
+    return 'data' in item ? { type: 'input_file', filename: item.name ?? 'document.pdf', file_data: mediaDataUrl(item) } : { type: 'input_file', file_url: item.url };
+  }
+  return { type: 'input_image', image_url: 'data' in item ? mediaDataUrl(item) : item.url, detail: 'auto' };
+}
+/** Replace media placeholders in our own user turns with the real parts, from the request's messages. */
+function hydrateResponsesInput(input: readonly JsonValue[], messages: readonly ModelMessage[]): JsonValue[] {
+  return input.map(entry => {
+    const item = entry as JsonObject;
+    if (!item || typeof item !== 'object' || item['role'] !== 'user' || !Array.isArray(item['content'])) return entry;
+    return { ...item, content: item['content'].map(part => {
+      const marker = part as JsonObject;
+      if (!marker || typeof marker !== 'object' || marker['type'] !== 'mayura_media') return part;
+      const message = messages[marker['message'] as number]; const media = message && 'media' in message ? message.media : undefined;
+      const found = typeof marker['item'] === 'number' ? media?.[marker['item']] : undefined;
+      return found ? responsesMediaPart(found) : failed();
+    }) };
+  });
 }
 
 /** Explicit, stateless-per-call Responses adapter. No credential discovery, retries or public raw deltas. */
@@ -163,6 +223,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'Provider timeout exceeds the supported timer range.');
   const transport = options.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fetch-compatible transport is required.');
+  const media = mediaOption(options.media, ALL_MEDIA);
   /** One Responses call. With `onDelta` it streams, reporting final-output text as it arrives; the parsing is shared. */
   const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
       const controller = new AbortController();
@@ -183,15 +244,16 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
           if (consumed > request.messages.length) return failed();
           history = previous['history'];
         }
-        const additions = messagesToInput(request.messages.slice(consumed), request.continuation !== undefined, aliases);
+        const additions = messagesToInput(request.messages.slice(consumed), consumed, request.continuation !== undefined, aliases);
         const input = [...history, ...additions];
         const tools = request.tools.map(tool => ({ type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool), strict: true }));
         const outputSchema = outputSchemaFor(fixedOutput, request.outputJsonSchema);
-        const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input, tools,
+        // Media placeholders become real parts only in the request body; encoded media is allowed on top of the JSON limit.
+        const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input: hydrateResponsesInput(input, request.messages), tools,
           store: false, stream: onDelta !== undefined, include: ['reasoning.encrypted_content'], parallel_tool_calls: true,
           max_output_tokens: request.maxOutputTokens,
           text: { format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } },
-        }, { maxBytes: maxRequestBytes }));
+        }, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) }));
         const response = await abortable(transport('https://api.openai.com/v1/responses', {
           method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body, signal, redirect: 'error',
@@ -261,7 +323,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
     return completed ?? failed();
   };
   return Object.freeze({
-    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -273,10 +335,30 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
  * the continuation), in order: they carry fields such as DeepSeek's `reasoning_content` that a thinking model requires
  * back, and each must match the calls Mayura recorded for that turn.
  */
+/** The Chat Completions part for one piece of media: an `image_url`, or a `file` for a PDF (bytes only). */
+function chatMediaPart(item: Media): JsonValue {
+  if (item.mediaType === 'application/pdf') {
+    if (!('data' in item)) throw new MayuraError('INVALID_CONFIG', 'Chat Completions providers take PDFs only as bytes, not URLs.');
+    return { type: 'file', file: { filename: item.name ?? 'document.pdf', file_data: mediaDataUrl(item) } };
+  }
+  return { type: 'image_url', image_url: { url: 'data' in item ? mediaDataUrl(item) : item.url } };
+}
 function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<string, string>, assistants: readonly JsonObject[]): JsonValue[] {
-  let turn = 0;
-  return messages.map(message => {
-    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+  const result: JsonValue[] = []; let pending: JsonValue[] = []; let turn = 0;
+  const flush = (): void => { if (pending.length > 0) { result.push({ role: 'user', content: [{ type: 'text', text: TOOL_MEDIA_NOTE }, ...pending] }); pending = []; } };
+  for (const message of messages) {
+    if (message.role !== 'tool') flush();
+    if (message.role === 'tool') pending.push(...(message.media ?? []).map(chatMediaPart));
+    result.push(compatibleMessage(message));
+  }
+  flush();
+  return result;
+  function compatibleMessage(message: ModelMessage): JsonValue {
+    if (message.role === 'user') {
+      const media = message.media ?? [];
+      return media.length === 0 ? { role: 'user', content: JSON.stringify(message.content) }
+        : { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }, ...media.map(chatMediaPart)] };
+    }
     if (message.role === 'tool') return { role: 'tool', tool_call_id: message.callId, content: JSON.stringify(message.result) };
     const calls = message.calls.map(call => {
       const name = aliases.get(call.toolId); if (!name) return failed();
@@ -287,7 +369,7 @@ function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<stri
     const ownCalls = own['tool_calls'];
     if (!Array.isArray(ownCalls) || ownCalls.length !== calls.length || ownCalls.some((call, index) => (call as JsonObject)['id'] !== calls[index]!.id)) return failed();
     return own;
-  });
+  }
 }
 /** The fields of a provider assistant turn worth sending back: its text, reasoning and tool calls, nothing else. */
 function assistantTurn(message: JsonObject): JsonObject {
@@ -338,6 +420,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   const outputMode = options.output ?? 'json_schema';
   if (outputMode !== 'json_schema' && outputMode !== 'json_object') throw new MayuraError('INVALID_CONFIG', 'output must be "json_schema" or "json_object".');
   if (options.strictTools !== undefined && typeof options.strictTools !== 'boolean') throw new MayuraError('INVALID_CONFIG', 'strictTools must be true or false.');
+  const media = mediaOption(options.media, undefined);
   const tokenLimitField = options.tokenLimitField ?? 'max_tokens';
   if (tokenLimitField !== 'max_tokens' && tokenLimitField !== 'max_completion_tokens') throw new MayuraError('INVALID_CONFIG', 'tokenLimitField must be "max_tokens" or "max_completion_tokens".');
   let extraBody: JsonObject = {};
@@ -395,7 +478,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           messages: [{ role: 'system', content: instructions }, ...compatibleMessages(request.messages, aliases, assistants)],
           ...(tools.length > 0 ? { tools, parallel_tool_calls: true } : {}), [tokenLimitField]: request.maxOutputTokens,
           response_format: outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
-        }, { maxBytes: maxRequestBytes }));
+        }, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) }));
         const headers: Record<string, string> = { ...extraHeaders, 'Content-Type': 'application/json' };
         const authorization = await credential(); if (authorization !== undefined) headers[authHeader] = authorization;
         const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }).catch((): never => failed('unavailable')), signal);
@@ -472,7 +555,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
       ...(calls.length > 0 ? { tool_calls: calls.map(entry => ({ type: 'function', id: entry.id ?? null, function: { name: entry.name, arguments: entry.arguments } })) } : {}) };
     return { choices: [{ message, finish_reason: finish }], usage };
   };
-  return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true }), maxCostMicros: options.maxCostMicros,
+  return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
