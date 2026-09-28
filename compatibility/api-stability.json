@@ -35,6 +35,7 @@
     "@mayura/storage-contracts",
     "@mayura/storage-postgres",
     "@mayura/storage-sqlite",
+    "@mayura/terminal",
     "@mayura/testing",
     "@mayura/tools",
     "@mayura/workflows",

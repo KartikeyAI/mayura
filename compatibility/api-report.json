@@ -2694,7 +2694,7 @@
       },
       "ToolRefusal": {
         "kind": "class",
-        "declaration": "94c84f584a9c0521"
+        "declaration": "25dc40f07bc36466"
       },
       "validate": {
         "kind": "function",
@@ -2703,6 +2703,10 @@
       "WaitingBatchOutcome": {
         "kind": "interface",
         "declaration": "38a84c9d67c2d915"
+      },
+      "withPreflight": {
+        "kind": "function",
+        "declaration": "693927acd44cb36a"
       }
     },
     "@mayura/server": {
@@ -4937,6 +4941,48 @@
         "declaration": "5273dfe8bed4aaed"
       }
     },
+    "@mayura/terminal": {
+      "agentCommandHelp": {
+        "kind": "function",
+        "declaration": "2a1dd9db899b049c"
+      },
+      "AgentCommandOptions": {
+        "kind": "interface",
+        "declaration": "da7ee6756c0f72cc"
+      },
+      "askPersonTool": {
+        "kind": "const",
+        "declaration": "426b3b4012baf103"
+      },
+      "ChatTurn": {
+        "kind": "interface",
+        "declaration": "0c02986466bff163"
+      },
+      "confirmBeforeRunning": {
+        "kind": "function",
+        "declaration": "2da986972803cd6a"
+      },
+      "outputText": {
+        "kind": "function",
+        "declaration": "2a68ea6fd33ac09e"
+      },
+      "parseAgentCommand": {
+        "kind": "function",
+        "declaration": "915a71b498f53577"
+      },
+      "runAgentCommand": {
+        "kind": "function",
+        "declaration": "4cda46a7e1582f91"
+      },
+      "runTerminalChat": {
+        "kind": "function",
+        "declaration": "618671c81823d955"
+      },
+      "TerminalChatOptions": {
+        "kind": "interface",
+        "declaration": "b6a6851663bcf1a4"
+      }
+    },
     "@mayura/testing": {
       "scriptedModel": {
         "kind": "function",
@@ -5046,11 +5092,15 @@
       },
       "ToolRefusal": {
         "kind": "class",
-        "declaration": "94c84f584a9c0521"
+        "declaration": "25dc40f07bc36466"
       },
       "WaitingBatchOutcome": {
         "kind": "interface",
         "declaration": "38a84c9d67c2d915"
+      },
+      "withPreflight": {
+        "kind": "function",
+        "declaration": "693927acd44cb36a"
       }
     },
     "@mayura/tools/host": {

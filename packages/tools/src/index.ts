@@ -147,7 +147,10 @@ function safeToolFailure(error: unknown): PublicError {
  * Throw it only when that is true; any other exception from a tool with effects is treated as possibly executed.
  */
 export class ToolRefusal extends MayuraError {
-  constructor() { super('TOOL_FAILED', 'The tool refused the call before any external effect.'); }
+  /** `reason` is shown to the model instead of the generic message, for example "The person declined this action." */
+  constructor(reason?: string) {
+    super('TOOL_FAILED', typeof reason === 'string' && reason.length > 0 && reason.length <= 512 ? reason : 'The tool refused the call before any external effect.');
+  }
 }
 
 export function assertTool(tool: AnyTool): void {
@@ -218,6 +221,28 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
 }
 
 /**
+ * The same tool, with `preflight` run on the validated input before its executor. A preflight that throws stops the
+ * call before any effect; throw `ToolRefusal` to record it as not started (for example when a person declines).
+ * `extraTimeoutMs` lengthens the tool's timeout for a preflight that waits, for example on a person.
+ */
+export function withPreflight<T extends AnyTool>(tool: T,
+  preflight: (input: InferOutput<T['input']>, context: ToolExecutionContext) => void | Promise<void>,
+  options: { readonly extraTimeoutMs?: number; readonly description?: string } = {}): T {
+  const registration = registrations.get(tool); if (!registration) throw new MayuraError('INVALID_CONFIG', 'Tool was not created by this tools package instance.');
+  if (typeof preflight !== 'function') throw new MayuraError('INVALID_CONFIG', 'A preflight function is required.');
+  const extra = options.extraTimeoutMs ?? 0;
+  if (!Number.isSafeInteger(extra) || extra < 0) throw new MayuraError('INVALID_CONFIG', 'extraTimeoutMs must be a non-negative integer.');
+  const timeoutMs = tool.timeoutMs + extra; if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'timeoutMs exceeds the supported timer range.');
+  if (options.description !== undefined) text(options.description, 'description', 4096);
+  const definition = Object.freeze({ ...tool, description: options.description ?? tool.description, timeoutMs }) as T;
+  registrations.set(definition, { ...registration, execute: async (input, context) => {
+    await preflight(input as InferOutput<T['input']>, context);
+    return registration.execute(input, context);
+  } });
+  return definition;
+}
+
+/**
  * The standalone tool broker: snapshot, authorize, validate, guard, reserve, execute, disclose.
  * Async work is bounded; trusted synchronous callbacks cannot be forcibly interrupted here.
  */
@@ -227,7 +252,7 @@ export async function invokeTool<T extends AnyTool>(
   let execution: ExecutionReceipt['execution'] = 'not_started';
   let dispatched = false;
   // The executor declared, with ToolRefusal, that it caused no effect.
-  let refused = false;
+  let refused = false; let refusalReason = 'The tool refused the call before any external effect.';
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let externalSignal: AbortSignal | undefined;
@@ -424,7 +449,8 @@ export async function invokeTool<T extends AnyTool>(
         handlerActive = false;
         // A refusal is believed only when the tool reported no usage: usage means something was spent.
         if (thrown instanceof ToolRefusal && !reportedUsage && execution === 'not_started') {
-          refused = true; settlement = Object.freeze({ knownCostMicros: 0, unknownCostMicros: 0 });
+          // The reason is the tool author's own words (ToolRefusal), unlike raw exceptions, which stay withheld.
+          refused = true; refusalReason = thrown.message; settlement = Object.freeze({ knownCostMicros: 0, unknownCostMicros: 0 });
         } else if (execution !== 'unknown') execution = tool.effects === 'none' ? 'failed' : 'unknown';
         const observed = usage();
         reservation.settleUsage(observed.knownCostMicros, observed.unknownCostMicros);
@@ -461,7 +487,7 @@ export async function invokeTool<T extends AnyTool>(
       || (persistenceStarted && !persistenceConfirmed);
     const safeError = unknown
       ? { code: 'OUTCOME_UNKNOWN' as const, message: 'The external operation may have occurred. Reconcile its outcome before retrying.' }
-      : refused ? { code: 'TOOL_FAILED' as const, message: 'The tool refused the call before any external effect.' }
+      : refused ? { code: 'TOOL_FAILED' as const, message: refusalReason }
         : safeToolFailure(error);
     const status = unknown ? 'outcome_unknown' as const
       : safeError.code === 'CANCELLED' ? 'cancelled' as const

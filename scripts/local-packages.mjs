@@ -43,7 +43,9 @@ export function cli(kind) {
 /** The installed directory of `name` as Node resolves it from `parent` (a pnpm-linked package), or undefined. */
 export function findInstalled(name, parent) {
   const require = createRequire(join(parent, 'package.json'));
-  const candidates = (require.resolve.paths(name) ?? []).map(path => join(path, name, 'package.json'));
+  // Node's lookup climbs past the workspace (for example to a node_modules folder in the home directory); only the
+  // workspace's own installation counts, so anything installed above it is ignored rather than packed.
+  const candidates = (require.resolve.paths(name) ?? []).filter(path => inside(workspace, path)).map(path => join(path, name, 'package.json'));
   candidates.push(join(workspace, 'node_modules', '.pnpm', 'node_modules', name, 'package.json'));
   const found = candidates.find(existsSync); if (!found) return undefined;
   const directory = dirname(realpathSync(found)); assert(inside(resolve(workspace, '..', '..'), directory), `Dependency path is outside the local installation: ${name}`);

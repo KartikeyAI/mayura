@@ -149,6 +149,10 @@
       "types": "./dist/storage-sqlite.d.ts",
       "import": "./dist/storage-sqlite.js"
     },
+    "./terminal": {
+      "types": "./dist/terminal.d.ts",
+      "import": "./dist/terminal.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
@@ -248,6 +252,7 @@
     "@mayura/storage-postgres": "workspace:*",
     "@mayura/storage-sql": "workspace:*",
     "@mayura/storage-sqlite": "workspace:*",
+    "@mayura/terminal": "workspace:*",
     "@mayura/testing": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/workflows": "workspace:*",

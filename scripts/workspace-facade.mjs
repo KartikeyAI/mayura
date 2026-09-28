@@ -36,7 +36,8 @@ async function facade() {
     exports: Object.fromEntries(Object.entries(exportsMap).sort(([a], [b]) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b))),
     dependencies: Object.fromEntries(Object.entries(dependencies).sort()),
   }, null, 2)}\n`);
-  files.set('tsconfig.json', `${JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { rootDir: 'src', outDir: 'dist' }, include: ['src/**/*.ts'], references }, null, 2)}\n`);
+  // Node types: some entry points (terminal, server-node, storage) name Node.js stream and file types in their API.
+  files.set('tsconfig.json', `${JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { rootDir: 'src', outDir: 'dist', types: ['node'] }, include: ['src/**/*.ts'], references }, null, 2)}\n`);
   return files;
 }
 

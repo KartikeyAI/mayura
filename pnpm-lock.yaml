@@ -528,6 +528,9 @@ importers:
       '@mayura/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
+      '@mayura/terminal':
+        specifier: workspace:*
+        version: link:../terminal
       '@mayura/testing':
         specifier: workspace:*
         version: link:../testing
@@ -699,6 +702,21 @@ importers:
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
+
+  packages/terminal:
+    dependencies:
+      '@clack/prompts':
+        specifier: 1.8.1
+        version: 1.8.1
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/testing:
     dependencies:

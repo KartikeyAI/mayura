@@ -7,6 +7,7 @@
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },
+    { "path": "packages/terminal" },
     { "path": "packages/runtime" },
     { "path": "packages/testing" },
     { "path": "packages/storage-contracts" },
