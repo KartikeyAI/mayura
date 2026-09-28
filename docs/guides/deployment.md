@@ -32,7 +32,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { hostname } from 'node:os';
 import { defineMayuraApplication } from 'mayura/cli';
 import { listenProductionServer, type ServerIdentity } from 'mayura/server-node';
-import { createAggregateSubmissionJournal } from 'mayura/storage-contracts';
+import { createAggregateRunRecords } from 'mayura/storage-contracts';
 import { createPostgresStore } from 'mayura/storage-postgres';
 import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowLeadership, createWorkflowOperatorTransports,
   createWorkflowWorker, lifecycleOperatorTarget } from 'mayura/workflows';
@@ -74,7 +74,8 @@ export default defineMayuraApplication({
     return listenProductionServer({
       agents: [{ agent: assistant, permissions: { allow: ['model:openai.responses'] }, limits: { maxCostMicros: 200_000 } }],
       authenticate,
-      submissionJournal: createAggregateSubmissionJournal(store),
+      // Every server replica can read, stream and cancel every agent run, and claims submission keys durably.
+      runRecords: createAggregateRunRecords(store),
       inspector: true,
       ...operator,
       publicOrigin: env('MAYURA_PUBLIC_ORIGIN'),
@@ -190,7 +191,8 @@ docker compose up --build
 ```
 
 The server speaks plain HTTP on port 8080. Put your TLS proxy or load balancer in front of it, forwarding the
-original `Host` header of the public origin.
+original `Host` header of the public origin. If the proxy rewrites `Host`, pass its addresses as `trustedProxies` and
+have it set `X-Forwarded-Host` (see [Server and client](server-and-client.md#hosting-on-node)).
 
 ## Environment and secrets
 
@@ -250,10 +252,12 @@ setups. See [Storage](storage.md) for installation, backups and schema versions.
 
 - **Workers** scale freely. Leadership lets one replica advance the fleet at a time, and a crashed leader's lease
   expires so another takes over. Operators can hold the whole fleet from the console or CLI during an incident.
-- **Servers** can run several replicas for durable workflow operations. Agent runs submitted over HTTP, however, live
-  in the memory of the replica that started them, so route each caller's follow-up reads for a run to that replica,
-  or submit long or important work as durable workflows. The `submissionJournal` in the example makes a retried
-  submission after a restart fail safely instead of starting a second run.
+- **Servers** scale to several replicas behind a load balancer, with no sticky sessions. With `runRecords` (as in the
+  example), each agent run executes on the replica that accepted it, and any replica can read it, stream its events,
+  wait for it and cancel it; a retried submission on any replica gets the same run. If a replica dies, its runs end as
+  `outcome_unknown` once their lease lapses (30 seconds by default), never silently lost. Keep replica clocks in sync.
+  Work that must continue after its replica dies belongs in durable workflows. See
+  [Several server replicas](server-and-client.md#several-server-replicas).
 
 ## Production server settings
 
@@ -269,7 +273,9 @@ setups. See [Storage](storage.md) for installation, backups and schema versions.
 | `maxConnections` | Default 1,024. |
 | `hstsMaxAgeSeconds` | Default one year; 0 turns the header off. |
 | `limits` | Request, run, stream and size caps (see [Server and client](server-and-client.md)). |
-| `allowedOrigins` | Browser origins allowed to call the API. |
+| `allowedOrigins` | Browser origins other than `publicOrigin` allowed to call the API. |
+| `trustedProxies` | IP addresses of proxies that rewrite `Host` and send `X-Forwarded-Host`. |
+| `runRecords` | Durable agent run records, for several server replicas. |
 
 Each registered agent also needs run `limits` that fit production, including `maxCostMicros` for paid models: the
 default cost limit is 0. See [Costs and budgets](../concepts/costs-and-budgets.md).

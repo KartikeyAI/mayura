@@ -50,10 +50,22 @@ See [Server and client](../guides/server-and-client.md) for setting up authentic
 
 - Each command sends its request **once**. Nothing is retried automatically, and redirects are refused.
 - A request times out after 10 seconds.
-- Responses are checked strictly. Output never includes a run's output or error payload, approval data, a signal
-  value or a server error body.
-- Server errors map to stable codes: `PERMISSION_DENIED` (401, 403, or a redirect), `NOT_FOUND` (404), `CONFLICT`
-  (409, 412), `TIMEOUT`, and `TOOL_FAILED` when the server could not be reached or rejected the request otherwise.
+- Responses are checked strictly. Output never includes a run's output or error payload, approval data or a signal
+  value.
+- A refused request reports a stable `code`, the HTTP `status` and the server's own `serverCode` with its message, for
+  example:
+
+  ```json
+  { "status": "failed", "error": { "code": "PERMISSION_DENIED", "message": "The operational server refused the request (HTTP 403 CAPABILITY_REQUIRED): The access token lacks the capability this request needs (see capability).", "status": 403, "serverCode": "CAPABILITY_REQUIRED", "capability": "workflows:read" } }
+  ```
+
+  `serverCode` is one of the codes in [Server and client](../guides/server-and-client.md#errors), such as
+  `RUN_NOT_FOUND`, `AUTH_EXPIRED`, `WORKFLOW_CONFLICT` (with `currentRevision` when the token may read the run) or
+  `RUN_LIMIT` (with `retryAfterMs`). It is `null` when the answer did not come from Mayura, for example a proxy's error
+  page. Only a well-formed code and a short printable message are shown; nothing else from the answer is printed.
+- The stable `code` is `PERMISSION_DENIED` (401, 403, or a redirect), `NOT_FOUND` (404, 410), `CONFLICT` (409, 412),
+  `OUTCOME_UNKNOWN` (`SUBMISSION_OUTCOME_UNKNOWN`), `LIMIT_EXCEEDED` (413, 429), `INVALID_INPUT` (400, 415), `TIMEOUT`
+  (408, or no answer within 10 seconds), and `TOOL_FAILED` when the server could not be reached or failed otherwise.
   `INVALID_OUTPUT` means the server's reply was not what the CLI expected.
 
 ## Server health and tools
@@ -124,7 +136,8 @@ status of every step.
 Every command that changes a workflow run takes two extra options:
 
 - `--revision <n>`: the run's revision from `workflow-get` or `workflow-list`. If the run has changed since you read
-  it, the server refuses the command with `CONFLICT`. Read the run again and decide again.
+  it, the server refuses the command with `CONFLICT` (`serverCode` `WORKFLOW_CONFLICT`). Read the run again and decide
+  again.
 - `--command-id <id>`: an id you choose for this action, such as `pause-incident-42`. Servers built with Mayura's
   workflow operator transports record command ids, so sending the same command again with the same id does not
   apply it twice. Reuse the id when you retry after an unclear failure; use a new id for a new action.

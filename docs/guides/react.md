@@ -23,7 +23,7 @@ cancels. Your event handlers call the store's methods when you decide to.
 
 ## A live run in React
 
-This submits a question, follows the run's events while it works, and shows tool activity, streamed text and the
+This submits a question, follows the run's events until it completes, and shows tool activity, streamed text and the
 final reply.
 
 ```tsx
@@ -36,21 +36,12 @@ import { z } from 'zod';
 const Reply = z.object({ reply: z.string() });
 const client = createClient({ baseUrl: `${window.location.origin}/`, token: () => sessionToken() });
 
-/** Follow the run until it settles: a stream can close before the run ends, so check and follow again. */
-async function follow(store: HeadlessRunStore): Promise<void> {
-  for (;;) {
-    await store.observe().catch(() => undefined);
-    const state = await store.refresh(); // throws on real failures, such as an expired session
-    if (state.snapshot?.status !== 'running') return;
-  }
-}
-
 function RunView({ store }: { readonly store: HeadlessRunStore }) {
   const state = useMayuraRun(store);
   const activity = useMayuraRunActivity(state);
   return (
     <section>
-      <p>{state.snapshot?.status ?? state.connection}</p>
+      <p>{state.connection === 'reconnecting' ? 'Reconnecting…' : state.snapshot?.status ?? state.connection}</p>
       <ul>
         {activity.items.filter(item => item.kind === 'tool').map(item => <li key={item.id}>{item.label}: {item.status}</li>)}
       </ul>
@@ -69,7 +60,8 @@ export function Ask() {
     const next = createHeadlessRunStore({ run });
     setStore(next);
     setReply(null);
-    await follow(next);
+    // Follows the run to its end, reconnecting by itself if the stream drops; throws on real failures.
+    await next.observe();
     const outcome = await run.result(Reply);
     setReply(outcome?.status === 'succeeded' ? outcome.output.reply : 'Something went wrong.');
   }
@@ -95,7 +87,7 @@ sign-in and styling.
 | Method | What it does |
 | --- | --- |
 | `refresh()` | Reads the run's current snapshot once. |
-| `observe()` | Follows the run's event stream until the stream ends, then reads the snapshot. One at a time. |
+| `observe()` | Follows the run's events until `run.completed`, then reads the snapshot. The client reconnects dropped streams from the last sequence (see [Streaming run events](server-and-client.md#streaming-run-events)). One at a time. |
 | `cancel()` | Asks the server to cancel the run. Never retried. |
 | `subscribe(listener)`, `getSnapshot()` | The external-store contract React and other frameworks use. |
 | `dispose()` | Stops everything the store started and removes listeners. |
@@ -104,13 +96,13 @@ The state from `getSnapshot()` is immutable and changes identity on every update
 
 | Field | Meaning |
 | --- | --- |
-| `connection` | `idle`, `loading`, `observing`, `stopped`, `error` or `disposed`. |
+| `connection` | `idle`, `loading`, `observing`, `reconnecting` (the stream dropped and is being reopened; `errorCode` says why), `stopped`, `error` or `disposed`. |
 | `snapshot` | The last run snapshot (`status`, `budget`, tool receipts), or `null`. |
 | `events`, `lastSequence` | The latest events (up to `maxEvents`, default 256) and the last sequence seen. |
 | `hasGap` | Some events were missed; treat the timeline as incomplete and trust `snapshot`. |
 | `activity` | How many model, tool and hook calls are in progress (`null` after a gap). |
 | `streamedOutput` | For agents that stream an output field: the text so far for the latest model call, plus `withheld` (a stream guard stopped it) and `complete`. The final output from `run.result()` is what counts. |
-| `errorCode` | The last error code, safe to show or log. |
+| `errorCode` | The last error code, safe to show or log: the server's own code (for example `RUN_NOT_FOUND` or `AUTH_EXPIRED`) when it sent one. |
 
 `createRunActivityProjection(state)` (or the `useMayuraRunActivity` hook) turns the events into a timeline of run,
 step, model, tool, hook and delegate items, each `active`, `completed`, `failed`, `blocked`, `cancelled`,
@@ -246,7 +238,8 @@ export function WorkflowRun({ client, initial }: { readonly client: MayuraClient
 ```
 
 A command that finds the run changed (another operator, a fleet sweep) ends in `conflict`: read the run again and
-decide. The caller needs `workflows:read` and `workflows:control`; see [Workflow operations](workflow-operations.md).
+decide. The thrown `ClientError` has the server's code (`WORKFLOW_CONFLICT`) and, when the token may read the run,
+`details.currentRevision`. The caller needs `workflows:read` and `workflows:control`; see [Workflow operations](workflow-operations.md).
 
 ## Other frameworks
 

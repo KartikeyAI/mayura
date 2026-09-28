@@ -75,6 +75,7 @@ schema keeps one application's data apart from another's; it is not an authoriza
 | [Durable budgets](../concepts/costs-and-budgets.md) | `store.durableBudgets` | `await store.durableBudgets.initialize()` once |
 | Scheduled jobs | `store.scheduler`, a low-level leased job queue | `await store.scheduler.initialize()` once |
 | [Server](server-and-client.md) submission journal | `createAggregateSubmissionJournal(store)` from `mayura/storage-contracts` | None |
+| [Server](server-and-client.md#several-server-replicas) run records, for several server replicas | `createAggregateRunRecords(store)` from `mayura/storage-contracts` | None |
 
 A typical application opens one store and shares it:
 
