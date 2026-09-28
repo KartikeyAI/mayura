@@ -739,6 +739,9 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/tools:
     dependencies:

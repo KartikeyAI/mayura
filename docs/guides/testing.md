@@ -8,8 +8,8 @@ model is just an adapter you pass to `defineAgent`, so tests pass a scripted one
 the runtime checks permissions, validates tool inputs and outputs, runs guards and hooks, and keeps the budget, exactly
 as in production.
 
-`mayura/testing` exports one function, `scriptedModel`: a model adapter that plays back responses you write, in
-order, with no inference and no network.
+`mayura/testing` has two helpers: `scriptedModel`, a model adapter that plays back responses you write, in order,
+with no inference and no network; and `testTool`, which runs one tool on its own.
 
 ```ts
 import assert from 'node:assert/strict';
@@ -58,7 +58,7 @@ test('looks the order up before answering', async () => {
 ## scriptedModel
 
 ```text
-scriptedModel(responses, { id?, maxCostMicros? })
+scriptedModel(responses, { id?, maxCostMicros?, streamChunk? })
 ```
 
 - **`responses`** is a list. Each model call takes the next entry. An entry is either a response object, or a function
@@ -69,10 +69,10 @@ scriptedModel(responses, { id?, maxCostMicros? })
 - **`id`** is the adapter id, `'scripted'` by default, so grant `model:scripted`. Give each model its own id when a
   test has several agents and you want to grant them separately.
 - **`maxCostMicros`** is the per-call bound, 0 by default.
+- **`streamChunk`** is the size of the streamed pieces (16 characters by default); see "Streaming" below.
 
 Running past the end of the script is an error, never a made-up answer: the run ends `failed` with `MODEL_FAILED`.
-A scripted model is consumed as it runs, so create a new one for each test run. It has no `stream` method; see
-"Streaming" below.
+A scripted model is consumed as it runs, so create a new one for each test run.
 
 ## Patterns
 
@@ -113,23 +113,25 @@ for await (const event of run.observe()) {
 assert.deepEqual(tools, ['orders.lookup']);
 ```
 
-**Test a tool on its own.** `invokeTool` runs one tool through the same checks the runtime applies: permissions, input
-and output validation, guards and budget. It returns an outcome with a receipt.
+**Test a tool on its own.** `testTool` runs one tool through the same checks a run applies: permissions, input and
+output validation, guards, timeout, cost and the `outcome_unknown` rules. By default it grants exactly what the tool
+needs (`toolGrants(tool)`) and a budget of the tool's own `costMicros`.
 
 ```ts
-import { Budget, invokeTool } from 'mayura';
+import { testTool } from 'mayura/testing';
 
-const outcome = await invokeTool(lookupOrder, { orderId: 'A1' }, {
-  runId: 'test-run', callId: 'call-1',
-  scope: { principalId: 'tester', projectId: 'test' },
-  signal: new AbortController().signal,
-  permissions: { allow: ['tool:orders.lookup', 'effect:read'] },
-  budget: new Budget(0, 1), // no money, one call
-});
+const { outcome, spentMicros, receipt } = await testTool(lookupOrder, { orderId: 'A1' });
 assert.equal(outcome.status, 'succeeded');
+assert.equal(receipt?.execution, 'succeeded');
+
+// Leave a grant out to test the refusal; the tool never runs.
+const denied = await testTool(lookupOrder, { orderId: 'A1' }, { permissions: ['tool:orders.lookup'] });
+assert.equal(denied.outcome.status, 'blocked');
 ```
 
-An agent exposed with `agentAsTool` cannot run through `invokeTool`; test it inside a runtime.
+Options: `permissions`, `scope`, `budgetMicros`, `signal`, `runId` and `callId`. The result has the `outcome`, what the
+call was charged (`spentMicros`, and `reservedMicros` still held for an uncertain call) and its execution `receipt`.
+An agent exposed with `agentAsTool` needs a runtime to start the child; test it inside a runtime.
 
 **Test child agents.** Give the parent and child scripted models with different ids, and grant `agent:delegate` plus
 both model ids. The [complete example](https://github.com/KartikeyAI/mayura/blob/main/examples/agent-orchestration.mjs)
@@ -137,28 +139,23 @@ runs a parent that calls a child through `agentAsTool`, with no key and no netwo
 
 ## Streaming
 
-To test an agent with a stream policy, write a small adapter with a `stream` method. It yields pieces of the final
-output's JSON text, then the complete response:
+`scriptedModel` streams too. For an agent with a stream policy, a scripted final answer arrives as `output.delta`
+pieces of its JSON text, then the complete response, as a provider's would:
 
 ```ts
-import type { JsonValue, ModelAdapter, ModelStreamEvent } from 'mayura';
+import { defineAgent } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
+import { z } from 'zod';
 
-function streamingModel(output: JsonValue): ModelAdapter {
-  const response = { type: 'final', output, usage: { costMicros: 0 } } as const;
-  return {
-    id: 'streamer', capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0,
-    async generate() { return response; },
-    async *stream(): AsyncIterable<ModelStreamEvent> {
-      const text = JSON.stringify(output);
-      for (let index = 0; index < text.length; index += 5) yield { type: 'output.delta', text: text.slice(index, index + 5) };
-      yield { type: 'response', response };
-    },
-  };
-}
+const writer = defineAgent({
+  id: 'writer', version: '1', instructions: 'Write.', input: z.string(), output: z.object({ reply: z.string() }), tools: [],
+  model: scriptedModel([{ type: 'final', output: { reply: 'Hello, streamed.' }, usage: { costMicros: 0 } }], { streamChunk: 4 }),
+  stream: { field: ['reply'], guards: [] },
+});
 ```
 
-Collect the `output.delta` events from `run.observe()` and compare their joined text with the final output. Grant
-`model:streamer`.
+Collect the `output.delta` events from `run.observe()` and compare their joined text with the final output. To test a
+stream that differs from the final answer, or one that fails partway, write an adapter with your own `stream` method.
 
 ## Test provider settings without a network
 
