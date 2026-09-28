@@ -185,7 +185,7 @@ Commonly used endpoints (check each provider's current documentation):
 | Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `{ id: 'gemini' }` |
 | Cloudflare AI Gateway | `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions` (see below) | `{ id: 'cloudflare' }` |
 
-**Check your provider with a small budget before you rely on it**; Mayura's own checks run against fake servers. The
+**Check your provider with a small budget before you rely on it** (`pnpm providers:live-check` in the Mayura repository does this through the real runtime). Mayura's CI runs against fake servers; DeepSeek and Cloudflare AI Gateway have also passed the live check. The
 adapter needs tool calls, structured output and reported token usage (for streaming, `stream_options.include_usage`).
 A provider that answers differently, or leaves out usage, fails the call with a clear reason rather than being guessed
 at. Providers that differ from OpenAI in known ways are configured with these options:
@@ -194,6 +194,7 @@ at. Providers that differ from OpenAI in known ways are configured with these op
 |---|---|
 | `output: 'json_object'` | Providers with JSON mode but no JSON Schema output, such as DeepSeek. The schema goes into the instructions; Mayura still validates the answer. The default is `'json_schema'`. |
 | `strictTools: true` | Sends `strict: true` on every function, for providers with strict tool calls (DeepSeek's `/beta` endpoint). |
+| `tokenLimitField: 'max_completion_tokens'` | Sends the output-token limit as `max_completion_tokens`. OpenAI's newer models, directly or as `openai/...` through a gateway, refuse `max_tokens` (the default). |
 | `headers` | Extra headers, such as Cloudflare AI Gateway's `cf-aig-authorization`. Treated as credentials; they cannot replace the key header, `Content-Type`, `Host` or cookies. |
 | `body` | Extra request fields a provider defines, such as DeepSeek's `thinking`. They cannot replace the fields the adapter sets. |
 
@@ -239,6 +240,11 @@ const gateway = openAICompatibleChat({
   pricing,
 });
 ```
+
+For an OpenAI model behind the gateway (`openai/...`), leave `output` at its default, set
+`tokenLimitField: 'max_completion_tokens'`, and check the model's own rules: some of OpenAI's reasoning models accept
+function tools on Chat Completions only with reasoning turned off, which `body: { reasoning_effort: 'none' }` does. The
+provider's 400 names the setting it refused.
 
 `mayura init` sets up both: pick DeepSeek or Cloudflare AI Gateway in the wizard.
 

@@ -1,5 +1,6 @@
 import { MayuraError } from './errors.js';
-import type { ModelResponse, ModelStreamEvent } from './contracts.js';
+import { ModelProviderError, type ModelResponse, type ModelStreamEvent } from './contracts.js';
+import { providerHttpFailure } from './model-schema.js';
 
 export interface ServerSentEvent {
   /** The `event:` field, or `message` when absent. */
@@ -28,6 +29,9 @@ export async function* readServerSentEvents(response: Response, limits: ServerSe
   }
   if (!response.ok || response.redirected || !response.body || !/^text\/event-stream(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) {
     void response.body?.cancel().catch(() => undefined);
+    // A refused stream fails for the provider's reason (credentials, rate limit, ...), as a refused call does.
+    if (response.redirected) throw new ModelProviderError('rejected');
+    if (!response.ok) throw providerHttpFailure(response.status);
     throw failure();
   }
   const reader = response.body.getReader(); const decoder = new TextDecoder('utf-8', { fatal: true }); const encoder = new TextEncoder();

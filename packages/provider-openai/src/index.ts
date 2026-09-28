@@ -54,6 +54,11 @@ export interface OpenAICompatibleChatOptions {
   /** Send `strict: true` on every function, for providers with strict tool calls (DeepSeek's beta endpoint, for example). */
   readonly strictTools?: boolean;
   /**
+   * The request field that carries the output-token limit. `max_tokens` (the default) is what most compatible providers
+   * take; OpenAI's newer models, directly or through a gateway, accept only `max_completion_tokens`.
+   */
+  readonly tokenLimitField?: 'max_tokens' | 'max_completion_tokens';
+  /**
    * Extra request headers, such as Cloudflare AI Gateway's `cf-aig-authorization`. Treated as credentials: never logged
    * or reported. They cannot replace the credential header, `Content-Type`, `Host` or cookies.
    */
@@ -333,6 +338,8 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   const outputMode = options.output ?? 'json_schema';
   if (outputMode !== 'json_schema' && outputMode !== 'json_object') throw new MayuraError('INVALID_CONFIG', 'output must be "json_schema" or "json_object".');
   if (options.strictTools !== undefined && typeof options.strictTools !== 'boolean') throw new MayuraError('INVALID_CONFIG', 'strictTools must be true or false.');
+  const tokenLimitField = options.tokenLimitField ?? 'max_tokens';
+  if (tokenLimitField !== 'max_tokens' && tokenLimitField !== 'max_completion_tokens') throw new MayuraError('INVALID_CONFIG', 'tokenLimitField must be "max_tokens" or "max_completion_tokens".');
   let extraBody: JsonObject = {};
   if (options.body !== undefined) {
     let copy: JsonValue;
@@ -386,7 +393,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           : request.instructions;
         const body = JSON.stringify(jsonValue({ ...extraBody, model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}),
           messages: [{ role: 'system', content: instructions }, ...compatibleMessages(request.messages, aliases, assistants)],
-          ...(tools.length > 0 ? { tools, parallel_tool_calls: true } : {}), max_tokens: request.maxOutputTokens,
+          ...(tools.length > 0 ? { tools, parallel_tool_calls: true } : {}), [tokenLimitField]: request.maxOutputTokens,
           response_format: outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
         }, { maxBytes: maxRequestBytes }));
         const headers: Record<string, string> = { ...extraHeaders, 'Content-Type': 'application/json' };

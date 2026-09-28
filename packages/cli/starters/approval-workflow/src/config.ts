@@ -33,6 +33,8 @@ const schema = z.object({
   // a Cloudflare AI Gateway token (sent as cf-aig-authorization; with keys stored in the gateway, no API key is needed).
   compatibleOutput: z.enum(['json_schema', 'json_object']).default('json_schema'),
   compatibleStrictTools: z.enum(['true', 'false']).default('false'),
+  // The field for the output-token limit: OpenAI's newer models (also through a gateway) take only max_completion_tokens.
+  compatibleTokenLimitField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
   gatewayToken: z.string().min(1).optional(),
   modelName: z.string().min(1).max(128).optional(),
   inputMicrosPerMillionTokens: micros.optional(),
@@ -49,6 +51,7 @@ export type ModelSettings =
   | { readonly provider: 'compatible'; readonly apiKey: string | undefined; readonly name: string; readonly maxCallCostMicros: number;
     readonly endpoint: string; readonly providerId: string; readonly auth: 'bearer' | 'api-key';
     readonly output: 'json_schema' | 'json_object'; readonly strictTools: boolean; readonly gatewayToken: string | undefined;
+    readonly tokenLimitField: 'max_tokens' | 'max_completion_tokens' | undefined;
     readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number } };
 
 export interface Config {
@@ -74,7 +77,7 @@ export async function loadConfig(source: Readonly<Record<string, string | undefi
       operatorTokens: 'MAYURA_OPERATOR_TOKEN_SHA256', intakeTokens: 'MAYURA_INTAKE_TOKEN_SHA256',
       modelProvider: 'MAYURA_MODEL_PROVIDER', openaiApiKey: 'OPENAI_API_KEY', anthropicApiKey: 'ANTHROPIC_API_KEY',
       compatibleEndpoint: 'MAYURA_MODEL_ENDPOINT', compatibleId: 'MAYURA_MODEL_PROVIDER_ID', compatibleAuth: 'MAYURA_MODEL_AUTH', compatibleApiKey: 'MAYURA_MODEL_API_KEY',
-      compatibleOutput: 'MAYURA_MODEL_OUTPUT', compatibleStrictTools: 'MAYURA_MODEL_STRICT_TOOLS', gatewayToken: 'MAYURA_MODEL_GATEWAY_TOKEN', modelName: 'MAYURA_MODEL',
+      compatibleOutput: 'MAYURA_MODEL_OUTPUT', compatibleStrictTools: 'MAYURA_MODEL_STRICT_TOOLS', compatibleTokenLimitField: 'MAYURA_MODEL_TOKEN_LIMIT_FIELD', gatewayToken: 'MAYURA_MODEL_GATEWAY_TOKEN', modelName: 'MAYURA_MODEL',
       inputMicrosPerMillionTokens: 'MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS', outputMicrosPerMillionTokens: 'MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS',
       maxCallCostMicros: 'MAYURA_MODEL_MAX_CALL_COST_MICROS', maxRunCostMicros: 'MAYURA_MAX_RUN_COST_MICROS', refundLimitCents: 'REFUND_LIMIT_CENTS',
     },
@@ -111,6 +114,7 @@ function modelSettings(value: z.infer<typeof schema>): ModelSettings {
   const pricing = { inputMicrosPerMillionTokens: value.inputMicrosPerMillionTokens, outputMicrosPerMillionTokens: value.outputMicrosPerMillionTokens };
   if (value.modelProvider === 'compatible') return { provider: 'compatible', apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros,
     endpoint: value.compatibleEndpoint!, providerId: value.compatibleId!, auth: value.compatibleAuth, pricing,
-    output: value.compatibleOutput, strictTools: value.compatibleStrictTools === 'true', gatewayToken: value.gatewayToken };
+    output: value.compatibleOutput, strictTools: value.compatibleStrictTools === 'true', gatewayToken: value.gatewayToken,
+    tokenLimitField: value.compatibleTokenLimitField };
   return { provider: value.modelProvider, apiKey: apiKey!, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros, pricing };
 }

@@ -84,6 +84,8 @@ export function readConfig(env) {
       if (output !== 'json_schema' && output !== 'json_object') problems.push(`${prefix}_OUTPUT must be json_schema or json_object.`);
       const strict = text(`${prefix}_STRICT_TOOLS`) ?? 'false';
       if (strict !== 'true' && strict !== 'false') problems.push(`${prefix}_STRICT_TOOLS must be true or false.`);
+      const tokenLimitField = text(`${prefix}_TOKEN_LIMIT_FIELD`) ?? 'max_tokens';
+      if (tokenLimitField !== 'max_tokens' && tokenLimitField !== 'max_completion_tokens') problems.push(`${prefix}_TOKEN_LIMIT_FIELD must be max_tokens or max_completion_tokens.`);
       let body;
       const rawBody = text(`${prefix}_BODY`);
       if (rawBody !== undefined) {
@@ -91,7 +93,7 @@ export function readConfig(env) {
         catch { problems.push(`${prefix}_BODY must be a JSON object of extra request fields, such as {"thinking":{"type":"disabled"}}.`); body = undefined; }
       }
       providers.push({ provider: `compatible:${id}`, kind: 'compatible', id, adapterId: `openai-compatible.${id}`, endpoint, auth, model,
-        apiKey: gatewayToken ? optionalSecret(`${prefix}_KEY`) : secret(`${prefix}_KEY`), gatewayToken, output, strictTools: strict === 'true',
+        apiKey: gatewayToken ? optionalSecret(`${prefix}_KEY`) : secret(`${prefix}_KEY`), gatewayToken, output, strictTools: strict === 'true', tokenLimitField,
         ...(body ? { body } : {}), pricing: pricing(prefix), variablePrefix: prefix });
     }
   } else skipped.push({ provider: 'compatible', reason: 'MAYURA_LIVE_COMPATIBLE is not set.' });
@@ -123,7 +125,7 @@ function adapterFor(config, provider, { outputJsonSchema, invalid = false, trans
   if (provider.kind === 'anthropic') return anthropicMessages({ apiKey, ...common });
   return openAICompatibleChat({ endpoint: provider.endpoint, remote: { id: provider.id, auth: provider.auth }, ...(apiKey ? { apiKey } : {}), ...common,
     ...(provider.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${invalid ? INVALID_KEY : provider.gatewayToken}` } } : {}),
-    output: provider.output, strictTools: provider.strictTools, ...(provider.body ? { body: provider.body } : {}) });
+    output: provider.output, strictTools: provider.strictTools, tokenLimitField: provider.tokenLimitField, ...(provider.body ? { body: provider.body } : {}) });
 }
 
 /** Only a Mayura public error's code and message are reported; anything else is reduced to a fixed code. */

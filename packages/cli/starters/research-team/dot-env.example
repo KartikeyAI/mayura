@@ -34,6 +34,8 @@ MAYURA_MODEL_PROVIDER=offline
 # DeepSeek answers in JSON mode and has strict tools on https://api.deepseek.com/beta/chat/completions:
 # MAYURA_MODEL_OUTPUT=json_object
 # MAYURA_MODEL_STRICT_TOOLS=true
+# OpenAI's newer models (directly or as openai/... through a gateway) take only max_completion_tokens:
+# MAYURA_MODEL_TOKEN_LIMIT_FIELD=max_completion_tokens
 # Cloudflare AI Gateway: https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions, models named
 # provider/model, and the gateway token of an authenticated gateway (the API key may stay in the gateway):
 # MAYURA_MODEL_GATEWAY_TOKEN=

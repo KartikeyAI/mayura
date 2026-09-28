@@ -18,6 +18,7 @@ export function selectModel(settings: ModelSettings, offline: ModelAdapter): Mod
   if (settings.provider === 'compatible') {
     return openAICompatibleChat({ ...options, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}), endpoint: settings.endpoint,
       remote: { id: settings.providerId, auth: settings.auth }, output: settings.output, strictTools: settings.strictTools,
+      ...(settings.tokenLimitField ? { tokenLimitField: settings.tokenLimitField } : {}),
       ...(settings.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${settings.gatewayToken}` } } : {}) });
   }
   return settings.provider === 'openai' ? openAIResponses({ ...options, apiKey: settings.apiKey }) : anthropicMessages({ ...options, apiKey: settings.apiKey });

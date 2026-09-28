@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
-import { azureEndpoint, cloudflareEndpoint, DEEPSEEK_DIALECT, dollarsToMicros, endpointProblem, providerEnvironment } from '../src/providers.js';
+import { azureEndpoint, cloudflareEndpoint, DEEPSEEK_DIALECT, dollarsToMicros, endpointProblem, gatewayDialect, providerEnvironment } from '../src/providers.js';
 
 const plain = paint(false);
 const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -190,6 +190,12 @@ describe('interactive init', () => {
     for (const line of [`MAYURA_MODEL_ENDPOINT=${cloudflareEndpoint(account, 'agents')}`, 'MAYURA_MODEL_PROVIDER_ID=cloudflare', 'MAYURA_MODEL=deepseek/deepseek-flash',
       `MAYURA_MODEL_GATEWAY_TOKEN=${token}`, 'MAYURA_MODEL_OUTPUT=json_object', 'MAYURA_MODEL_STRICT_TOOLS=true']) expect(cloudflareEnv).toContain(line);
     expect(cloudflareEnv).not.toContain('MAYURA_MODEL_API_KEY'); expect(cloudflare.screen).not.toContain(token);
+    expect(cloudflareEnv).not.toContain('MAYURA_MODEL_TOKEN_LIMIT_FIELD');
+    // OpenAI's models through the gateway take only max_completion_tokens (found by the live check).
+    expect(gatewayDialect('openai/gpt-6-luna')).toEqual({ tokenLimitField: 'max_completion_tokens' }); expect(gatewayDialect('groq/llama')).toBeUndefined();
+    expect(providerEnvironment({ provider: 'compatible', apiKey: '', model: 'openai/gpt-6-luna', inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 1,
+      maxCallCostMicros: 1, maxRunCostMicros: 1, compatible: { id: 'cloudflare', endpoint: cloudflareEndpoint(account, 'agents'), auth: 'bearer',
+        dialect: gatewayDialect('openai/gpt-6-luna')!, gatewayToken: token } })).toContain('MAYURA_MODEL_TOKEN_LIMIT_FIELD=max_completion_tokens');
   }, 60_000);
 
   it('keeps an existing .env and chooses no provider for templates', async () => {

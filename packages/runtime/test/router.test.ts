@@ -64,7 +64,7 @@ describe('createModelRouter', () => {
     expect(attempts.map(attempt => [attempt.modelId, attempt.outcome, attempt.failure])).toEqual([['revoked', 'failed', 'authentication'], ['backup', 'succeeded', undefined]]);
     const limited = adapter('limited', 5, () => { throw new ModelProviderError('rate_limited', { httpStatus: 429, costMicros: 0 }); });
     await expect(createModelRouter({ id: 'router.all', routes: [revoked, limited] }).generate(request()))
-      .rejects.toMatchObject({ code: 'MODEL_FAILED', reason: 'rate_limited', message: expect.stringContaining('rate limit') });
+      .rejects.toMatchObject({ code: 'MODEL_FAILED', reason: 'rate_limited', httpStatus: 429, message: expect.stringContaining('(HTTP 429)') });
   });
 
   it('reports the total confirmed cost when every route fails with a known cost, and fails closed when any cost is unknown', async () => {

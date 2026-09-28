@@ -30,6 +30,7 @@ describe('OpenAI-compatible dialects', () => {
     expect(body['response_format']).toEqual({ type: 'json_object' });
     const system = (body['messages'] as JsonObject[])[0]!;
     expect(system['content']).toContain('Answer with one JSON object'); expect(system['content']).toContain(JSON.stringify(outputSchema));
+    expect(body['max_tokens']).toBe(64); expect(body).not.toHaveProperty('max_completion_tokens');
     // The default stays strict JSON Schema.
     await make({}, transport).generate(request());
     expect(sent(transport, 1).body['response_format']).toMatchObject({ type: 'json_schema', json_schema: { strict: true, schema: outputSchema } });
@@ -50,8 +51,17 @@ describe('OpenAI-compatible dialects', () => {
       [{ body: { model: 'other' } }, /body cannot set "model"/u],
       [{ body: { messages: [] } }, /body cannot set "messages"/u],
       [{ output: 'yaml' as 'json_object' }, /output must be/u],
+      [{ tokenLimitField: 'max' as 'max_tokens' }, /tokenLimitField must be/u],
+      [{ body: { max_completion_tokens: 5 } }, /body cannot set "max_completion_tokens"/u],
       [{ apiKey: undefined }, /require an apiKey, a token source, or a credential header/u],
     ] as const) expect(() => make(options as Partial<OpenAICompatibleChatOptions>, transport)).toThrow(message);
+  });
+
+  it('send the output limit as max_completion_tokens for models that refuse max_tokens (found by the live check)', async () => {
+    const transport = vi.fn<typeof globalThis.fetch>(async () => reply({ content: '{"answer":"ok"}' }));
+    await make({ tokenLimitField: 'max_completion_tokens' }, transport).generate(request());
+    const { body } = sent(transport);
+    expect(body['max_completion_tokens']).toBe(64); expect(body).not.toHaveProperty('max_tokens');
   });
 
   it('send a thinking model\'s reasoning back with its turn, and refuse a continuation from another model or endpoint', async () => {
@@ -81,6 +91,14 @@ describe('OpenAI-compatible dialects', () => {
     for await (const event of make({}, async () => stream).stream!(request())) events.push(event);
     expect(events.filter(event => event.type === 'output.delta').map(event => (event as { text: string }).text).join('')).toBe('{"answer":"ok"}');
     await expect(make({}, async () => reply({ content: '' }, 'insufficient_system_resource')).generate(request())).rejects.toMatchObject({ reason: 'unavailable' });
+  });
+
+  it('report a refused stream for the provider\'s reason, as a refused call is (found by the live check)', async () => {
+    const refused = async (): Promise<Response> => new Response('{"error":"PRIVATE bad token"}', { status: 401, headers: { 'Content-Type': 'application/json' } });
+    const failure = async (source: AsyncIterable<ModelStreamEvent>): Promise<unknown> => { try { for await (const _ of source) { /* drain */ } } catch (error) { return error; } return undefined; };
+    expect(await failure(make({}, refused).stream!(request()))).toMatchObject({ code: 'MODEL_FAILED', reason: 'authentication', httpStatus: 401 });
+    expect(await failure(make({}, async () => new Response('busy', { status: 429 })).stream!(request()))).toMatchObject({ reason: 'rate_limited', httpStatus: 429 });
+    expect(JSON.stringify(await failure(make({}, refused).stream!(request())))).not.toContain('PRIVATE');
   });
 
   it('run a tool-using agent end to end against a provider that requires its reasoning back', async () => {

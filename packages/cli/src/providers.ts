@@ -14,10 +14,12 @@ export interface ProviderOption {
   /** The provider's dialect: JSON mode instead of JSON Schema output, and strict tool calls. */
   readonly dialect?: ProviderDialect;
 }
-/** How an OpenAI-compatible provider differs from OpenAI: see `output` and `strictTools` of openAICompatibleChat. */
-export interface ProviderDialect { readonly output?: 'json_object'; readonly strictTools?: boolean }
+/** How an OpenAI-compatible provider differs from OpenAI: see `output`, `strictTools` and `tokenLimitField` of openAICompatibleChat. */
+export interface ProviderDialect { readonly output?: 'json_object'; readonly strictTools?: boolean; readonly tokenLimitField?: 'max_completion_tokens' }
 /** DeepSeek offers JSON mode but not JSON Schema output, and strict tool calls on its beta endpoint. */
 export const DEEPSEEK_DIALECT: ProviderDialect = Object.freeze({ output: 'json_object', strictTools: true });
+/** OpenAI's models through a gateway: its newer models accept only `max_completion_tokens` for the output limit. */
+export const OPENAI_CHAT_DIALECT: ProviderDialect = Object.freeze({ tokenLimitField: 'max_completion_tokens' });
 
 const compatible = (id: string, label: string, endpoint: string, extra: Partial<ProviderOption> = {}): ProviderOption =>
   ({ id, label, hint: 'OpenAI-compatible', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', endpoint, auth: 'bearer', ...extra });
@@ -86,7 +88,8 @@ export function cloudflareEndpoint(accountId: string, gatewayId: string): string
   return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}/compat/chat/completions`;
 }
 /** The dialect of a model reached through a gateway, from its `provider/model` name. */
-export const gatewayDialect = (model: string): ProviderDialect | undefined => /^deepseek\//iu.test(model) ? DEEPSEEK_DIALECT : undefined;
+export const gatewayDialect = (model: string): ProviderDialect | undefined =>
+  /^deepseek\//iu.test(model) ? DEEPSEEK_DIALECT : /^openai\//iu.test(model) ? OPENAI_CHAT_DIALECT : undefined;
 
 /** The Azure OpenAI chat-completions URL for a resource, deployment and API version. */
 export function azureEndpoint(resource: string, deployment: string, apiVersion: string): string {
@@ -104,6 +107,7 @@ export function providerEnvironment(choice: ProviderChoice): string {
       `MAYURA_MODEL_AUTH=${choice.compatible.auth}`,
       ...(choice.compatible.dialect?.output ? [`MAYURA_MODEL_OUTPUT=${choice.compatible.dialect.output}`] : []),
       ...(choice.compatible.dialect?.strictTools ? ['MAYURA_MODEL_STRICT_TOOLS=true'] : []),
+      ...(choice.compatible.dialect?.tokenLimitField ? [`MAYURA_MODEL_TOKEN_LIMIT_FIELD=${choice.compatible.dialect.tokenLimitField}`] : []),
       ...(choice.compatible.gatewayToken ? [`MAYURA_MODEL_GATEWAY_TOKEN=${choice.compatible.gatewayToken}`] : [])] : []),
     ...(choice.apiKey ? [`${keyVariable}=${choice.apiKey}`] : []),
     `MAYURA_MODEL=${choice.model}`,

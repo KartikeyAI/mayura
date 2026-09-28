@@ -114,9 +114,9 @@ describe('provider live-check harness (configuration)', () => {
     const { readConfig } = await harness();
     expect(() => readConfig({ ...gateway, MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'fixture-credential-value' })).not.toThrow();
     const problems = await refusal({ ...gateway, MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'fixture-credential-value', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT: 'yaml',
-      MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS: 'yes', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_BODY: '[1]' });
+      MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS: 'yes', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_BODY: '[1]', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_TOKEN_LIMIT_FIELD: 'max' });
     expect(problems).toEqual(expect.arrayContaining([expect.stringContaining('_OUTPUT must be json_schema or json_object'), expect.stringContaining('_STRICT_TOOLS must be true or false'),
-      expect.stringContaining('_BODY must be a JSON object')]));
+      expect.stringContaining('_BODY must be a JSON object'), expect.stringContaining('_TOKEN_LIMIT_FIELD must be max_tokens or max_completion_tokens')]));
     expect(JSON.stringify(problems)).not.toContain('fixture-credential-value');
   });
 

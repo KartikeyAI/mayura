@@ -50,7 +50,7 @@ For a starter, the wizard offers:
 | Offline (the default) | Nothing. The starter uses rule-based stand-in models. |
 | OpenAI, Anthropic | Model (Anthropic defaults to `claude-sonnet-5`) and API key |
 | Groq, Google Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together, Fireworks | Model and API key. These use the provider's OpenAI-compatible chat-completions endpoint. DeepSeek is set up with its beta endpoint, JSON mode and strict tool calls (`MAYURA_MODEL_OUTPUT=json_object`, `MAYURA_MODEL_STRICT_TOOLS=true`), and its model defaults to `deepseek-flash`. |
-| Cloudflare AI Gateway | Account ID, gateway name, the gateway token (for an authenticated gateway, saved as `MAYURA_MODEL_GATEWAY_TOKEN`), a `provider/model` name such as `deepseek/deepseek-flash`, and the provider's key (optional when the gateway stores it). A `deepseek/` model gets DeepSeek's settings. |
+| Cloudflare AI Gateway | Account ID, gateway name, the gateway token (for an authenticated gateway, saved as `MAYURA_MODEL_GATEWAY_TOKEN`), a `provider/model` name such as `deepseek/deepseek-flash`, and the provider's key (optional when the gateway stores it). A `deepseek/` model gets DeepSeek's settings, and an `openai/` model sends its output limit as `max_completion_tokens` (`MAYURA_MODEL_TOKEN_LIMIT_FIELD`). |
 | Azure OpenAI | Resource name, deployment name, API version, model and API key |
 | Another OpenAI-compatible provider | An HTTPS URL ending in `/chat/completions`, a short id for the provider, model and API key |
 

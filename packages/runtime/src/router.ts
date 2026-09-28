@@ -42,6 +42,15 @@ export interface ModelRouter extends ModelAdapter {
   status(): readonly ModelRouterRouteStatus[];
 }
 
+/** The HTTP status a genuine `ModelProviderError` carries, so the router's own failure keeps it. */
+function failureStatus(error: unknown): number | undefined {
+  try {
+    const descriptor = error instanceof ModelProviderError ? Object.getOwnPropertyDescriptor(error, 'httpStatus') : undefined;
+    const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 100 && value <= 599 ? value : undefined;
+  } catch { return undefined; }
+}
+
 /** The reason a genuine `ModelProviderError` names; exception accessors cannot supply one. */
 function failureReason(error: unknown): ModelFailureReason | undefined {
   try {
@@ -120,8 +129,8 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
     if (request.signal.aborted) throw new MayuraError('CANCELLED', 'The model call was cancelled.');
     const pin = pinned(request.continuation);
     const order = pin ? [pin.route, ...routes.map((_, index) => index).filter(index => index !== pin.route)] : routes.map((_, index) => index);
-    let spent = 0; let unknown = false; let attempts = 0; let last: ModelFailureReason = 'unavailable';
-    const stop = (): never => { throw new ModelProviderError(last, unknown ? {} : { costMicros: spent }); };
+    let spent = 0; let unknown = false; let attempts = 0; let last: ModelFailureReason = 'unavailable'; let lastStatus: number | undefined;
+    const stop = (): never => { throw new ModelProviderError(last, { ...(lastStatus === undefined ? {} : { httpStatus: lastStatus }), ...(unknown ? {} : { costMicros: spent }) }); };
     for (const index of order) {
       if (attempts >= maxAttempts) break;
       const adapter = routes[index]!;
@@ -139,6 +148,7 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
         const final = (error instanceof MayuraError && noFailover.has(error.code)) || committed();
         const timedOut = !final && error instanceof MayuraError && error.code === 'CANCELLED';
         last = timedOut ? 'timeout' : failureReason(error) ?? (error instanceof MayuraError && error.code === 'INVALID_CONFIG' ? 'configuration' : 'invalid_response');
+        lastStatus = failureStatus(error);
         observe({ route: index, modelId: adapter.id, outcome: 'failed', reason: timedOut ? 'timeout' : 'failed', failure: last, costMicros: known ?? null });
         if (final) return stop();
         continue;
