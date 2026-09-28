@@ -4,4 +4,4 @@ Experimental bounded local artifact storage for Node.js. Content is staged, veri
 
 Disclosure is always a download, requires an explicit classification policy and rejects active markup by default. The package does not authenticate users, persist application metadata, scan content, encrypt backups, schedule backups, manage remote retention or provide shared object storage.
 
-See the [local artifact boundary](../../docs/specs/local-artifacts.md).
+See the [local artifact boundary](../../docs/guides/artifacts.md).

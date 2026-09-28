@@ -1,0 +1,291 @@
+---
+title: "Deployment"
+description: "Run a Mayura app in production: one application module, mayura migrate, serve and worker processes, containers, PostgreSQL, probes and graceful drain."
+---
+
+A production Mayura app is one compiled application module run in three roles from the same build:
+
+- `mayura migrate` prepares storage, once per release, before anything new serves traffic.
+- `mayura serve` runs the HTTP server: your agents' API, the operator API and, if you enable it, the
+  [operator console](operator-console.md).
+- `mayura worker` advances durable workflows: timers, retries, human waits and scheduled work. Run as many replicas as
+  you like; one leader works at a time and a standby takes over if it dies.
+
+All of them share one PostgreSQL database. The CLI owns the process lifecycle (signals, probes for workers, drain and
+shutdown); your module owns everything else. Every starter project (see [mayura init](../cli/init.md)) ships this
+setup ready to run, with a `Dockerfile` and `compose.yaml`.
+
+```text
+   clients ──HTTPS──▶ TLS proxy ──HTTP──▶ mayura serve (1..n)  ──┐
+                                                                 ├──▶ PostgreSQL
+                                          mayura worker (1..n) ──┘
+                                          mayura migrate (once per release)
+```
+
+## The application module
+
+The module's default export says how to start each role. This one serves an agent and the workflow operator API,
+runs a workflow worker, and reads all of its configuration from the environment:
+
+```ts
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { hostname } from 'node:os';
+import { defineMayuraApplication } from 'mayura/cli';
+import { listenProductionServer, type ServerIdentity } from 'mayura/server-node';
+import { createAggregateSubmissionJournal } from 'mayura/storage-contracts';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createWorkflowCommandJournal, createWorkflowFleetControl, createWorkflowLeadership, createWorkflowOperatorTransports,
+  createWorkflowWorker, lifecycleOperatorTarget } from 'mayura/workflows';
+import { createWorkflowLifecycleFleetRuntime, createWorkflowLifecycleHost } from 'mayura/workflows/lifecycle';
+import { assistant } from './assistant.js'; // your agent
+import { definitions } from './workflows.js'; // every workflow definition version that still has runs
+
+function env(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required.`);
+  return value;
+}
+
+const scope = { principalId: 'orders-service', projectId: 'orders' };
+const store = createPostgresStore({ connectionString: env('DATABASE_URL') });
+const fleet = createWorkflowFleetControl({ store, scope });
+const workflowOptions = { store, scope, permissions: { allow: ['tool:orders.refund'] }, policyVersion: '1', maxCostMicros: 0 };
+let initialized: Promise<void> | undefined;
+const ready = () => (initialized ??= store.initialize());
+
+// Operators get 64-hex tokens; configuration holds only their SHA-256 digests.
+const operatorDigests = env('MAYURA_OPERATOR_TOKEN_SHA256').split(',');
+async function authenticate({ token }: { readonly token: string }): Promise<ServerIdentity | null> {
+  if (!/^[a-f0-9]{64}$/.test(token)) return null;
+  const supplied = createHash('sha256').update(token).digest();
+  let matched = false; // compare against every digest, so timing does not reveal which one matched
+  for (const digest of operatorDigests) matched = timingSafeEqual(supplied, Buffer.from(digest, 'hex')) || matched;
+  if (!matched) return null;
+  return { scope, agentIds: [assistant.id], expiresAtMs: Date.now() + 60_000,
+    capabilities: ['runs:read', 'operations:read', 'workflows:read', 'workflows:control'] };
+}
+
+export default defineMayuraApplication({
+  async server() {
+    await ready();
+    const runtime = createWorkflowLifecycleFleetRuntime(workflowOptions);
+    const operator = createWorkflowOperatorTransports({ store, scope, fleet, journal: createWorkflowCommandJournal({ store, scope }),
+      targets: [lifecycleOperatorTarget({ runtime, store, scope, definitions })] });
+    return listenProductionServer({
+      agents: [{ agent: assistant, permissions: { allow: ['model:openai.responses'] }, limits: { maxCostMicros: 200_000 } }],
+      authenticate,
+      submissionJournal: createAggregateSubmissionJournal(store),
+      inspector: true,
+      ...operator,
+      publicOrigin: env('MAYURA_PUBLIC_ORIGIN'),
+      hostname: process.env['MAYURA_BIND'] ?? '0.0.0.0',
+      port: Number(process.env['PORT'] ?? 8080),
+      tls: { terminatedBy: 'proxy' },
+      readiness: async () => { await store.read('readiness', 'probe'); return true; },
+    });
+  },
+  async worker() {
+    await ready();
+    const host = createWorkflowLifecycleHost({ ...workflowOptions, definitions, hold: fleet });
+    const leadership = createWorkflowLeadership({ store, scope, role: 'workflows',
+      holderId: process.env['MAYURA_WORKER_ID'] ?? `${hostname()}-${process.pid}` });
+    return createWorkflowWorker({ units: [host], leadership });
+  },
+  // Storage schema version 1 is the baseline. Later releases add explicit migrations here.
+  async migrate() { await ready(); return { schemaVersion: 1 }; },
+  async shutdown() { await store.close(); },
+});
+```
+
+- `server()` returns a running server with `isAccepting()` and `close()`; `listenProductionServer` gives you one.
+- `worker()` returns a worker with `start()`, `isReady()` and `drain()`; `createWorkflowWorker` gives you one. Don't
+  start it yourself: the CLI calls `start()`.
+- `migrate()` returns any JSON report, which the CLI prints.
+- `shutdown()` runs after the server has closed or the worker has drained. Close storage here.
+
+The module must be a compiled `.js` or `.mjs` file. Real apps usually split it into files as the starters do
+(`config.ts`, `services.ts`, `server.ts`, `worker.ts`, `app.ts`). For your app's own user authentication, see
+[Server and client](server-and-client.md).
+
+## Run the three commands
+
+After building (`tsc`), run them from the project directory:
+
+```bash
+mayura migrate --app dist/app.js
+mayura serve --app dist/app.js
+mayura worker --app dist/app.js --probe-host 0.0.0.0 --probe-port 9090
+```
+
+Run `migrate` to completion before starting new servers and workers. Run the server and the worker as separate
+processes (or containers); both read the same environment. See [CLI: serve, worker and migrate](../cli/run.md) for
+every flag.
+
+## Containers
+
+The starters' `Dockerfile` builds once and runs any role; the command picks which. It compiles in one stage, keeps
+only production dependencies, and runs as an unprivileged user:
+
+```dockerfile
+FROM node:24.14.1-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --no-audit --no-fund
+COPY tsconfig.json ./
+COPY src ./src
+RUN npx tsc -p tsconfig.json && npm prune --omit=dev
+
+FROM node:24.14.1-alpine
+WORKDIR /app
+COPY --from=build --chown=65532:65532 /app/package.json ./
+COPY --from=build --chown=65532:65532 /app/node_modules ./node_modules
+COPY --from=build --chown=65532:65532 /app/dist ./dist
+USER 65532:65532
+ENV NODE_ENV=production
+EXPOSE 8080 9090
+ENTRYPOINT ["node", "node_modules/mayura/lib/cli/dist/bin.js"]
+CMD ["serve", "--app", "dist/app.js"]
+```
+
+The entry point is the `mayura` CLI inside the installed package. The starters also pin the base image by digest,
+and their `.dockerignore` keeps `.env`, local data and SQLite files out of the image.
+
+Their `compose.yaml` is a production-shaped local stack: PostgreSQL, a one-shot migration, the server and a worker.
+
+```yaml
+services:
+  postgres:
+    image: postgres:17
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}", POSTGRES_DB: app }
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U app -d app"], interval: 2s, timeout: 5s, retries: 30 }
+  migrate:
+    build: .
+    command: ["migrate", "--app", "dist/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/app" }
+    depends_on: { postgres: { condition: service_healthy } }
+  server:
+    build: .
+    command: ["serve", "--app", "dist/app.js"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/app" }
+    ports: ["8080:8080"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+  worker:
+    build: .
+    command: ["worker", "--app", "dist/app.js", "--probe-host", "0.0.0.0", "--probe-port", "9090"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/app" }
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9090/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"], interval: 5s, timeout: 5s, retries: 30 }
+volumes:
+  postgres-data:
+```
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+The server speaks plain HTTP on port 8080. Put your TLS proxy or load balancer in front of it, forwarding the
+original `Host` header of the public origin.
+
+## Environment and secrets
+
+Mayura itself reads no environment variables. Your module decides what it reads, and nothing is discovered
+implicitly: no config files, no default credentials. The starters use these names:
+
+| Variable | Used for |
+| --- | --- |
+| `MAYURA_ENV` | `production` turns on the production server and the checks below. |
+| `MAYURA_PUBLIC_ORIGIN` | The exact `https://` origin clients use. Required in production. |
+| `PORT`, `MAYURA_BIND` | Where the server listens (default `8080` on `0.0.0.0`). |
+| `MAYURA_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API. |
+| `DATABASE_URL` | PostgreSQL. Without it the starters fall back to a local SQLite file. |
+| `MAYURA_OPERATOR_TOKEN_SHA256` | Comma-separated SHA-256 digests of operator tokens. Several digests let you rotate. |
+| `MAYURA_SESSION_SECRET` | The key that signs user sessions (support-agent starter). Same value on every replica. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | Model provider keys, plus price and cost-limit settings. |
+| `MAYURA_WORKER_ID` | A stable name for the worker's leadership lease. Defaults to host name and process id. |
+
+Validate configuration once at startup and fail fast. The starters do this with `validatedEnvironment` from
+`mayura/helpers` and a Zod schema, and refuse to start in production without a public origin or operator token
+digests. Keep secrets in your platform's secret store, never in the image, and never ship a server secret
+or provider key to a browser. Each starter has `npm run token`, which prints a new token and the digest to configure.
+
+## Probes
+
+| Process | Endpoint | Answers 200 when |
+| --- | --- | --- |
+| Server | `GET /livez` | The process is up and not shutting down. |
+| Server | `GET /readyz` | The server is accepting traffic and your `readiness` callback returned `true` within 2 seconds. |
+| Worker | `GET /livez` on `--probe-port` | The worker is not stopping. |
+| Worker | `GET /readyz` on `--probe-port` | The worker has started, is not draining, and has reached storage recently. |
+
+Probes need no token, return only a status word, and skip the server's `Host` check, so orchestrators can call pods
+directly. Worker probes are off unless you pass `--probe-port`; `--probe-host` defaults to `127.0.0.1`, so use
+`0.0.0.0` inside a container.
+
+## Graceful shutdown
+
+On `SIGTERM` or `SIGINT`, the first signal starts a graceful stop and a second one forces the process to exit.
+
+- **Server**: readiness fails at once so load balancers stop routing, the listener stops accepting, in-flight requests
+  get up to `shutdownGraceMs` (30 seconds by default) to finish, then open streams and runs are closed and your
+  `shutdown()` runs.
+- **Worker**: readiness fails, work in progress gets up to `--drain-timeout-ms` (30 seconds by default, at most 300
+  seconds) to settle, the leadership lease is released so a standby takes over immediately, then `shutdown()` runs.
+  The CLI reports whether everything settled in time and how much work it had to interrupt.
+
+Give containers a stop grace period longer than these timeouts (Docker's `stop_grace_period`, Kubernetes'
+`terminationGracePeriodSeconds`). An effect that was in flight when a process died is never repeated automatically;
+it is recorded as unknown and waits for an operator to reconcile it (see [Workflow operations](workflow-operations.md)).
+
+## PostgreSQL and scaling
+
+Use PostgreSQL in production. The server, workers and migrations are separate processes that share workflow state,
+idempotency records, the fleet hold and leadership leases through it. SQLite suits development and single-machine
+setups. See [Storage](storage.md) for installation, backups and schema versions.
+
+- **Workers** scale freely. Leadership lets one replica advance the fleet at a time, and a crashed leader's lease
+  expires so another takes over. Operators can hold the whole fleet from the console or CLI during an incident.
+- **Servers** can run several replicas for durable workflow operations. Agent runs submitted over HTTP, however, live
+  in the memory of the replica that started them, so route each caller's follow-up reads for a run to that replica,
+  or submit long or important work as durable workflows. The `submissionJournal` in the example makes a retried
+  submission after a restart fail safely instead of starting a second run.
+
+## Production server settings
+
+`listenProductionServer` has no hidden defaults for where it listens. The settings that matter most:
+
+| Setting | Notes |
+| --- | --- |
+| `publicOrigin` | Exact `https://` origin. Requests with any other `Host` get 421. |
+| `hostname`, `port` | Required bind address and port. |
+| `tls` | `{ terminatedBy: 'proxy' }` behind a TLS proxy, or `{ key, cert }` to terminate TLS in the process (TLS 1.2 or later). |
+| `readiness` | Checks your dependencies for `/readyz`, for example a storage read. |
+| `shutdownGraceMs` | Default 30,000, at most 120,000. |
+| `maxConnections` | Default 1,024. |
+| `hstsMaxAgeSeconds` | Default one year; 0 turns the header off. |
+| `limits` | Request, run, stream and size caps (see [Server and client](server-and-client.md)). |
+| `allowedOrigins` | Browser origins allowed to call the API. |
+
+Each registered agent also needs run `limits` that fit production, including `maxCostMicros` for paid models: the
+default cost limit is 0. See [Costs and budgets](../concepts/costs-and-budgets.md).
+
+## Good to know
+
+- Mayura sends no telemetry. To export logs, traces or metrics, configure an exporter yourself (see
+  [Observability](observability.md)).
+- The server does not serve your web app's static files. Serve them from your proxy or a static host.
+- Keep every workflow definition version that still has runs in flight registered in `definitions`, on both server
+  and worker, until those runs finish or are migrated.
+
+## Related
+
+- [Server and client](server-and-client.md)
+- [CLI: serve, worker and migrate](../cli/run.md)
+- [Storage](storage.md)
+- [Workflow operations](workflow-operations.md)
+- [Observability](observability.md)

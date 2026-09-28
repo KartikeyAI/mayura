@@ -34,4 +34,4 @@ Scopes and capabilities must come from trusted application authorization, never 
 
 This first slice has hard limits of 128 lifetime record IDs per scope and 768 KiB total JSON. IDs retained by tombstones count toward capacity. It is an intentionally bounded correctness implementation, not repository-scale semantic memory. Search is case-insensitive token matching, not vector/meaning-based retrieval. The separate optional `mayura/memory-remote` package can use this store as canonical authority for external semantic indexes. Scalable native indexes, replacement-state import, graph memory and consolidation remain future work.
 
-The source repository contains `docs/specs/native-memory.md` with exact data, pagination, deletion and verification guarantees; it is not a relative file inside the npm archive. The caller owns and closes the underlying storage adapter.
+See [Memory and context](../../docs/guides/memory-and-context.md). The caller owns and closes the underlying storage adapter.

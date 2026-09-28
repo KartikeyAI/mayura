@@ -328,7 +328,7 @@ describe('browser durable workflow view client', () => {
       const runtime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: [] }, policyVersion: '1', maxCostMicros: 0, now: () => 100 });
       const run = await runtime.submit(timer, { input: { fireAtMs: 500 }, idempotencyKey: 'e2e' }); await runtime.runUntilSettled(timer, run.id);
       const control = createWorkflowFleetControl({ store, scope }); const targets = [lifecycleFleetTarget(runtime)];
-      // The same adapter shape documented in docs/how-to/fleet-control.md.
+      // The same adapter shape documented in docs/guides/workflow-operations.md.
       const workflowFleet: NonNullable<AgentServerOptions['workflowFleet']> = {
         inspect: () => control.inspect(), hold: () => control.hold(), release: () => control.release(),
         sweep: async ({ phase, cursor, limit }) => {
@@ -630,7 +630,7 @@ describe('browser workflow migration client', () => {
           nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind, dependsOn: [...(node.dependsOn ?? [])] })),
           steps: definition.nodes.map(node => ({ id: node.id, kind: node.kind, status: snapshot.steps[node.id]!.status })) } as never;
       };
-      // The adapter shape documented in docs/how-to/workflow-migrations.md.
+      // The adapter shape documented in docs/guides/workflow-operations.md.
       const workflowMigrations: NonNullable<AgentServerOptions['workflowMigrations']> = {
         list: ({ runId }) => service.list(runId), plan: ({ runId, migrationId }) => service.plan(runId, migrationId) as never,
         apply: async ({ runId, migrationId, revision, actorId, commandId }) => {

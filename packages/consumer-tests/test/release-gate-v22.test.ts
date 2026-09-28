@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, '..', '..', '..');
 describe('V22 open-source release trust', () => {
   it('binds the source tree to complete Apache-2.0 legal and release governance', async () => {
     const [license, notice, governance, support, security, contributing, releasing] = await Promise.all(
-      ['LICENSE', 'NOTICE', 'GOVERNANCE.md', 'SUPPORT.md', 'SECURITY.md', 'CONTRIBUTING.md', 'docs/releasing.md']
+      ['LICENSE', 'NOTICE', 'GOVERNANCE.md', 'SUPPORT.md', 'SECURITY.md', 'CONTRIBUTING.md', 'RELEASING.md']
         .map(path => readFile(resolve(root, path), 'utf8')),
     );
     expect(license).toContain('Apache License');

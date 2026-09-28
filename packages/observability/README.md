@@ -4,4 +4,4 @@ Experimental, metadata-only local run observation. Subscribe explicitly to autho
 
 Optional sinks receive strictly validated metadata through bounded isolated delivery. Disconnecting or closing an observer never cancels a run. This package depends only on core; optional `mayura/exporter-otlp` reuses its validator for explicit OTLP log delivery. Neither facility is required durable audit.
 
-See [native observability](../../docs/specs/native-observability.md) for event allowlists, bounds, delivery failure handling, and limitations.
+See [native observability](../../docs/guides/observability.md) for event allowlists, bounds, delivery failure handling, and limitations.

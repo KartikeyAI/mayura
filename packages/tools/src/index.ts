@@ -139,20 +139,24 @@ function safeToolFailure(error: unknown): PublicError {
   return { code, message: errorMessages[code] };
 }
 
-/** Rejects forged or foreign-instance tool metadata before any model or effect dispatch. */
 /**
  * Throw from a tool's `execute` to say it refused the call before causing any external effect, for example because
  * the ticket does not exist or the request is not allowed. The call is recorded as not started: its outcome is
  * `failed` (never `outcome_unknown`), its reservation is released, and a durable run needs no reconciliation.
  * Throw it only when that is true; any other exception from a tool with effects is treated as possibly executed.
+ * A refusal ends an agent's run; to let the model continue instead, return a result that says what happened.
  */
 export class ToolRefusal extends MayuraError {
-  /** `reason` is shown to the model instead of the generic message, for example "The person declined this action." */
+  /**
+   * `reason` (at most 512 characters) replaces the generic message in the failed outcome, where the application and
+   * the person see it, for example "The person declined this action." It is not sent to the model.
+   */
   constructor(reason?: string) {
     super('TOOL_FAILED', typeof reason === 'string' && reason.length > 0 && reason.length <= 512 ? reason : 'The tool refused the call before any external effect.');
   }
 }
 
+/** Rejects forged or foreign-instance tool metadata before any model or effect dispatch. */
 export function assertTool(tool: AnyTool): void {
   if (!registrations.has(tool)) throw new MayuraError('INVALID_CONFIG', 'Tool was not created by this tools package instance.');
 }

@@ -10,4 +10,4 @@ Experimental content processors and required guard barriers. Native helpers prov
 
 Only core is a runtime dependency. There are no hidden providers, credentials, retries, paid calls or new ledgers. Model moderation and translation remain fallible; local detectors are not complete privacy or injection defenses. Durable runtime integration is not implemented.
 
-See [managed moderation](../../docs/how-to/managed-guardrails.md), [native processors](../../docs/specs/processors.md) and [caller-wired auxiliary helpers](../../docs/specs/auxiliary-guardrails.md) for admission, evidence, cancellation, retention and integration limitations.
+See [managed moderation](../../docs/guides/guardrails.md), [native processors](../../docs/guides/guardrails.md) and [caller-wired auxiliary helpers](../../docs/guides/guardrails.md) for admission, evidence, cancellation, retention and integration limitations.

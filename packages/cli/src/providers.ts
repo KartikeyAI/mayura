@@ -16,7 +16,7 @@ export interface ProviderOption {
 const compatible = (id: string, label: string, endpoint: string): ProviderOption =>
   ({ id, label, hint: 'OpenAI-compatible', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', endpoint, auth: 'bearer' });
 /**
- * Offline, the two native adapters, then OpenAI-compatible endpoints as documented in docs/how-to/model-providers.md.
+ * Offline, the two native adapters, then OpenAI-compatible endpoints as documented in docs/guides/model-providers.md.
  * Mayura has not qualified the compatible ones against live accounts; `pnpm providers:live-check` does that.
  */
 export const PROVIDERS: readonly ProviderOption[] = Object.freeze([

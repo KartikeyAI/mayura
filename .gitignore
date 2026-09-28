@@ -10,3 +10,4 @@ coverage/
 *.sqlite-wal
 .artifacts/
 .claude/
+internal-docs/

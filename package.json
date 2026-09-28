@@ -24,6 +24,7 @@
     "test:starters": "node scripts/starter-check.mjs",
     "local:init": "node scripts/local-init.mjs",
     "test:bundle": "node scripts/bundle-check.mjs",
+    "docs:check": "node scripts/docs-check.mjs",
     "test:integration": "node node_modules/vitest/vitest.mjs run --project integration",
     "example": "node examples/first-agent.mjs",
     "providers:live-check": "node scripts/provider-live-check.mjs",

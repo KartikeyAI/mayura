@@ -8,7 +8,7 @@ name: Mayura release
 # GitHub Packages is not used: its npm registry accepts only scoped packages, and `mayura` is unscoped.
 # Nothing is published until the repository variable MAYURA_RELEASE is `enabled`; until then every run is a complete dry
 # run. Publishing also waits for the protected `release` environment (configure required reviewers). See
-# docs/how-to/releasing.md.
+# RELEASING.md.
 on:
   workflow_run:
     workflows: ['Mayura qualification']

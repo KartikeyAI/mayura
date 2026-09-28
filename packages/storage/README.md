@@ -52,4 +52,4 @@ This is a **trusted application-side ledger**, not an authentication service, fi
 
 The standalone job ledger has hard bounds: 128 claim generations, 32 resource keys, 16 evidence records per generation, 64 successful control commands, 4 KiB intent, 64 KiB output and one MiB internal job state. Leases are 1–300 seconds. There is no automatic uncertain-effect retry, quarantine clearance or history compaction. An open store can retain late evidence; closing it or losing the process can leave an unknown result requiring later reconciliation.
 
-In the source checkout, see the [aggregate contract](../../docs/specs/storage-aggregate.md) and [scheduler specification](../../docs/specs/leased-scheduler.md) for exact transactional, retry, clock, scope and qualification boundaries.
+In the source checkout, see the [aggregate contract](../../docs/guides/storage.md) and [scheduler specification](../../docs/guides/storage.md) for exact transactional, retry, clock, scope and qualification boundaries.

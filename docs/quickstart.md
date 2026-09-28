@@ -1,59 +1,196 @@
-# First agent, without an account
+---
+title: "Quickstart"
+description: "Create a Mayura project in one command, or add a first agent to your own project and run it offline or on a real model."
+---
 
-This development preview runs from the checkout; package names are private placeholders and are not published npm install instructions. Use Node 24.14.1 and pnpm 10.17.1, then run:
+There are two ways to start: let the CLI create a complete project for you, or add Mayura to a project you already
+have. Both take a few minutes.
 
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm check
-pnpm example
+## Option 1: create a project
+
+```bash
+npx mayura init
 ```
 
-The executed [example](../examples/first-agent.mjs) uses only public package exports. It defines a typed addition tool, grants that tool to an agent, executes a deterministic test model, and returns `{"status":"succeeded","output":{"answer":5}}`. No provider credential, Docker service or network request is needed to execute the example after installation. The full maintainer checkout includes optional database dependencies for testing; those are not dependencies of the base agent packages.
+The wizard asks three things:
 
-## Authoring model
+1. **A starter or a template.** Starters are complete projects with a server, a worker, a UI, tests and deployment
+   files. Templates are single files that show one feature.
+2. **A model provider.** Offline (no key needed; rule-based stand-in models), OpenAI, Anthropic, an
+   OpenAI-compatible provider such as Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together or Fireworks, Azure
+   OpenAI, or any other compatible endpoint.
+3. **Your API key, prices and spending caps**, for a real provider. The key is typed masked and written only to the
+   new project's `.env`, which git ignores.
 
-The small `mayura` facade provides tools, agents and core contracts through one import. It adds no infrastructure dependency and uses the same definitions and admission broker as direct package imports.
+It shows the plan, writes the files when you confirm, and prints the next steps. For a starter those are:
 
-1. `defineTool` declares input/output schemas, effects, capabilities and a trusted handler.
-2. `defineAgent` declares instructions, a model adapter, tools and result schemas.
-3. `createRuntime({profile:'ephemeral', permissions})` configures bounded process-local execution. No grants are implied by registering a tool.
-4. `runtime.submit(agent,{input})` returns a handle immediately. `result()` returns a discriminated outcome; `observe()` exposes bounded metadata events, and `cancel()` requests cooperative cancellation.
-5. `runtime.close()` stops admissions, requests cancellation and waits for accepted runs to reach reported terminal outcomes. It cannot kill arbitrary trusted synchronous JavaScript or undo a remote effect.
+```bash
+cd my-agent
+npm install
+npm run dev
+```
 
-Zod is the reference validator, not a mandatory framework runtime dependency. Other Standard Schema-compatible validators can be used. TypeScript inference is backed by runtime validation at input, tool and result boundaries. Schemas must produce bounded plain JSON; unsupported values fail before disclosure.
+`npm run dev` runs `mayura dev`: it builds the project, starts it, and rebuilds and restarts whenever you save. See
+[mayura init](cli/init.md) for every starter and template.
 
-## Adding a real model
+## Option 2: add Mayura to your project
 
-The optional `mayura/provider-openai` Responses adapter is implemented and tested with mocked HTTP. It has not been qualified against a live model in this checkout. Select a model supporting both function calls and strict structured output; supply its exact model ID, your API key, a strict portable output JSON Schema and explicit pricing/budget bounds. Do not reuse the zero-cost fixture configuration for a paid model.
+Install Mayura and Zod, the schema library used in these docs (any
+[Standard Schema](https://standardschema.dev) validator works):
 
-The adapter constructor is `openAIResponses({apiKey, model, outputJsonSchema, maxCostMicros, pricing})`. Pricing fields are `inputMicrosPerMillionTokens` and `outputMicrosPerMillionTokens`. Configure the runtime's `limits.maxCostMicros` too, and grant `model:openai.responses`. Every exposed tool needs `inputJsonSchema` as well as its local runtime validator. See [provider contract](specs/model-provider-contract.md) for schema constraints, accounting, private continuation and official protocol references.
+```bash
+npm install mayura zod
+```
 
-Credentials stay in trusted server-side configuration. There is no automatic key discovery, automatic provider fallback, ambient network destination change, public raw reasoning stream or claim that application-calculated costs equal an invoice. Real provider use incurs external charges and requires separate testing authorization/configuration.
+Mayura is an ES module package, so your project needs `"type": "module"` in `package.json` (or `.mts` files).
 
-## Progressive adoption
+### A first agent, offline
 
-| Need | Select | Important boundary |
-| --- | --- | --- |
-| One bounded agent | `mayura/runtime` + tools and a model adapter | Explicitly non-durable. |
-| Parallel or dependent tools | `invokeBatch` + `batchOutput` from `mayura/tools` | Exact predecessor JSON paths are revalidated by the broker; handles are process-local and resource keys are not distributed locks. |
-| Restartable tool graph and approvals | `mayura/workflows` + selected SQLite/PostgreSQL adapter | Current conservative engine never automatically replays an uncertain effect. |
-| Durable event waits | `mayura/workstream` + storage | Register and exit; no timer service or signal-to-graph integration yet. |
-| Existing scheduled-run completion joins | `mayura/workstream/executions` + the same selected store | Finite drains return terminal metadata, including explicit unknown outcomes, not source output. |
-| Wait inside a scheduled workflow | `mayura/workflows/graphs` + selected storage | [Format-3 graphs](how-to/workflow-graph-waits.md) pin existing references at submission; explicit driving resumes without holding a waiting worker. |
-| Find unfinished graphs after restart | `createWorkflowGraphDiscovery` from `mayura/workflows/graphs` | [Bounded candidate pages](how-to/workflow-graph-discovery.md), not readiness promises or automatic dispatch; the application owns its page budget and definition registry. |
-| Continue a trusted graph catalog | `createWorkflowGraphCoordinator` from `mayura/workflows/graphs` | [One shared driver](how-to/workflow-graph-coordinator.md), finite pages and original-cursor retry reports; no submissions, approvals or polling service. |
-| Run durable workflow trees | `createWorkflowTreeRuntime` from `mayura/workflows/children` | [Root-local tools and one-level owned children](how-to/workflow-tree-children.md), narrowed authority, exact verified approvals and joins. |
-| Persist shared financial accounting | Selected store's `durableBudgets` capability | [Root-transaction reservations](how-to/durable-budgets.md) and exact late evidence; standalone trusted-host primitive, not automatic workflow/child dispatch enforcement. |
-| Native content checks | `mayura/guardrails` | Required parallel barrier; native PII/literal helpers have documented limits. |
-| Runtime-owned moderation | `defineModerationGuard` with agent guards | [Shared limits and protected output-check capacity](how-to/managed-guardrails.md); model verdicts remain fallible. |
-| Required lifecycle control | `defineHook` + `defineAgent({ hooks })` | [Four awaited stages](how-to/lifecycle-hooks.md), no transforms or permission escalation; action tools use the owning run's broker. |
+This agent uses a tool to add two numbers. It runs on a **scripted model** that replays fixed responses, so it needs
+no API key and no network. It's the same way you test agents.
 
-These packages are experimental surfaces. Self-hosted HTTP, browser clients, child-agent orchestration, provider integrations, full memory/context and qualified Code Mode remain governed by the release ledger. A convenient import is not a promise that an unimplemented deployment profile exists.
+```ts
+import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { scriptedModel } from 'mayura/testing';
+import { z } from 'zod';
 
-The [storage installation guide](how-to/storage-installation.md) separates `mayura/storage-sqlite` from `mayura/storage-postgres`. Existing `mayura/storage` imports continue to select both adapters; custom storage implementations use only the driver-free contracts.
+const add = defineTool({
+  id: 'math.add', version: '1', description: 'Add two numbers.',
+  input: z.object({ left: z.number(), right: z.number() }),
+  output: z.object({ sum: z.number() }),
+  effects: 'none', capabilities: [],
+  execute: ({ left, right }) => ({ sum: left + right }),
+});
 
-## Interpreting outcomes
+const agent = defineAgent({
+  id: 'calculator', version: '1', instructions: 'Use the addition tool to answer.',
+  input: z.object({ request: z.string() }), output: z.object({ answer: z.number() }), tools: [add],
+  model: scriptedModel([
+    { type: 'tool_calls', calls: [{ id: 'add-1', toolId: 'math.add', input: { left: 2, right: 3 } }], usage: { costMicros: 0 } },
+    { type: 'final', output: { answer: 5 }, usage: { costMicros: 0 } },
+  ]),
+});
 
-Always switch on `status` before reading `output`. `blocked` is a denied admission/disclosure, not a successful empty response. A tool can execute successfully while its output is withheld; inspect its receipt before deciding whether to retry. `outcome_unknown` means the application must reconcile the original operation instead of blindly executing it again. `cancelled` does not promise that an in-flight external action was undone.
+const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:scripted', 'tool:math.add'] } });
+try {
+  const result = await runtime.submit(agent, { input: { request: 'Add 2 and 3.' } }).result();
+  console.log(result); // { status: 'succeeded', output: { answer: 5 } }
+} finally {
+  await runtime.close();
+}
+```
 
-A tool with effects that throws is treated as possibly executed (`outcome_unknown`). When a tool can tell it refused the call before doing anything (the record does not exist, the request is not allowed), it should throw `ToolRefusal` from `mayura/tools` (also exported by `mayura`): the call is recorded as not started, the outcome is `failed`, nothing is charged, and a durable run needs no reconciliation. Only throw it when no effect can have happened, and never after reporting usage. To let the model recover instead of failing the run, return a structured result (for example `{ found: false }`) rather than throwing.
+Save it as `agent.ts` and run it. Node.js 24 runs TypeScript directly; on Node.js 22, use `npx tsx agent.ts` or
+compile with `tsc`.
+
+```bash
+node agent.ts
+```
+
+Four things happened:
+
+- `defineTool` declared a tool: schemas for its input and output, what kind of **effect** it has (`none`, `read`,
+  `write` or `host`), and the function that does the work. Mayura validates the input before calling it and the
+  output after.
+- `defineAgent` declared an agent: instructions, schemas, tools and a model.
+- `createRuntime` created the runtime that runs agents, with an explicit **allow-list**. The agent can use
+  `math.add` only because `tool:math.add` is granted; remove it and the run is blocked.
+- `runtime.submit` started a run and `result()` waited for its **outcome**. Always check `result.status` before
+  reading `result.output`: a run can also end `failed`, `blocked`, `cancelled` or `outcome_unknown`. See
+  [Outcomes](concepts/outcomes.md).
+
+### Use a real model
+
+Swap the scripted model for a provider. Real models need a JSON Schema for each tool's input and for the agent's
+output (Zod converts its schemas), your model's prices, and cost caps: a run is allowed to spend nothing until you
+set `limits.maxCostMicros`. Costs are in **micros**, millionths of a dollar.
+
+```ts
+import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { anthropicMessages } from 'mayura/provider-anthropic';
+import { z } from 'zod';
+
+const jsonSchema = (schema: z.ZodType) => {
+  const { $schema, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema)));
+  return plain;
+};
+
+const addInput = z.object({ left: z.number(), right: z.number() });
+const add = defineTool({
+  id: 'math.add', version: '1', description: 'Add two numbers.',
+  input: addInput, inputJsonSchema: jsonSchema(addInput),
+  output: z.object({ sum: z.number() }),
+  effects: 'none', capabilities: [],
+  execute: ({ left, right }) => ({ sum: left + right }),
+});
+
+const output = z.object({ answer: z.number() });
+const agent = defineAgent({
+  id: 'calculator', version: '1', instructions: 'Use the addition tool to answer.',
+  input: z.object({ request: z.string() }), output, tools: [add],
+  model: anthropicMessages({
+    apiKey: process.env.ANTHROPIC_API_KEY!, model: 'claude-sonnet-5', outputJsonSchema: jsonSchema(output),
+    pricing: { inputMicrosPerMillionTokens: 3_000_000, outputMicrosPerMillionTokens: 15_000_000 }, // check your model's prices
+    maxCostMicros: 50_000, // at most 5 cents per model call
+  }),
+});
+
+const runtime = createRuntime({
+  profile: 'ephemeral',
+  permissions: { allow: ['model:anthropic.messages', 'tool:math.add'] },
+  limits: { maxCostMicros: 200_000 }, // at most 20 cents per run
+});
+```
+
+The rest of the program is unchanged. OpenAI (`openAIResponses`) and OpenAI-compatible providers
+(`openAICompatibleChat`) work the same way; each is granted as `model:` followed by its adapter id. See
+[Model providers](guides/model-providers.md). Mayura never reads API keys from the environment by itself: you pass
+them in, so where they come from is up to you.
+
+### Watch a run
+
+A run reports what it's doing as events. `observe()` returns them as an async iterable, and `runtime.inspect` shows
+what the run has spent:
+
+```ts
+const run = runtime.submit(agent, { input: { request: 'Add 2 and 3.' } });
+for await (const event of run.observe()) {
+  if (event.type === 'tool.started') console.log('using', event.metadata.toolId);
+}
+const result = await run.result();
+console.log(runtime.inspect(run).budget.spentMicros);
+```
+
+Events carry metadata such as ids, steps, statuses and costs, not your prompts or tool inputs and outputs. The one
+exception is `output.delta`, which carries streamed answer text (below).
+
+### Stream the answer
+
+To show an answer while it's being written, give the agent a `stream` policy naming the output field to stream, and
+print the `output.delta` events:
+
+```ts
+import { defineAgent } from 'mayura';
+
+const assistant = defineAgent({
+  id: 'assistant', version: '1', instructions: 'Answer helpfully.',
+  input, output, tools: [], model,
+  stream: { field: ['reply'], guards: [] }, // stream output.reply
+});
+
+const run = runtime.submit(assistant, { input: { question: 'What is Mayura?' } });
+for await (const event of run.observe()) {
+  if (event.type === 'output.delta') process.stdout.write(String(event.metadata.text));
+}
+```
+
+The final `result()` is still validated against the output schema; the streamed text is a preview. See
+[Streaming](guides/streaming.md).
+
+## Next steps
+
+- [Agents](concepts/agent.md), [tools](concepts/tools.md) and the [runtime](concepts/runtime.md) in depth.
+- [Durable workflows](guides/durable-workflows.md): steps, approvals and timers that survive restarts.
+- [Serve agents over HTTP](guides/server-and-client.md) and call them from a browser or [React](guides/react.md).
+- [Chat with an agent in the terminal](guides/terminal.md).
+- [Deploy](guides/deployment.md) a Mayura application.

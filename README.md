@@ -1,55 +1,174 @@
 # Mayura
 
-An independent TypeScript framework for building agents, typed tools and durable workflows.
+[![npm](https://img.shields.io/npm/v/mayura?label=npm)](https://www.npmjs.com/package/mayura)
+[![CI](https://github.com/KartikeyAI/mayura/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KartikeyAI/mayura/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**Pre-1.0 — not yet published.** The public API is classified stable for 1.0 and gated by an API report ([policy](docs/api-stability.md)), but no package is published. Owner-held release steps remain; see the [v1 release plan](docs/v1-release-plan.md). Mayura is Apache-2.0 licensed; the currently qualified platforms are intentionally narrow. See [development status](docs/development-status.md) and the [support matrix](docs/support-matrix.md).
+Mayura is a TypeScript framework for building AI agents, typed tools and durable workflows. You describe an agent with
+schemas for what goes in and what comes out, give it tools, and run it on any major model provider. Mayura enforces
+the rest: an agent can use only the models and tools you allow, every run has cost, step and time limits, inputs and
+outputs are validated at every boundary, and when something can't be known for sure (did that payment go through?)
+Mayura says so rather than guessing. When a task outgrows a single run, the same agents and tools become steps in
+durable workflows that wait for people, timers and events, and survive restarts. It is one npm package, `mayura`,
+with a CLI that scaffolds, runs and operates your project.
 
-Mayura is one npm package, `mayura` (not yet published). `mayura` is the SDK, and each part has its own entry point:
+## Features
+
+- **Typed agents and tools.** Zod (or any Standard Schema validator) for inputs and outputs, validated at runtime and
+  inferred in TypeScript.
+- **Any model.** OpenAI, Anthropic, and OpenAI-compatible providers such as Groq, Gemini, Mistral, DeepSeek, xAI,
+  OpenRouter, Together, Fireworks, Azure OpenAI and local servers. Route between providers with automatic failover.
+- **Explicit permissions.** A run can use only the models, tools and effects you grant; nothing is implied by
+  registering a tool.
+- **Cost control.** Model prices, per-call and per-run cost caps, and step, tool-call and time limits on every run;
+  budgets shared across agents and workflows.
+- **Durable workflows.** Steps, approvals, timers, signals, fan-out, sagas and loops that survive restarts, on SQLite
+  or PostgreSQL.
+- **People in the loop.** Approvals and typed questions for people, answered from code, the CLI, a React form or the
+  operator console.
+- **Streaming.** Stream an agent's answer as it is written, with guards on every batch.
+- **Guardrails and hooks.** Input and output guards, PII redaction, moderation, and lifecycle hooks that can stop a
+  run.
+- **Memory and context.** Native memory with keyword, semantic and hybrid search, plus Mem0, Supermemory and
+  OpenViking adapters.
+- **Skills, MCP and Code Mode.** Load `SKILL.md` skills on demand, call MCP tools, and run model-written code in a
+  QuickJS or Docker sandbox.
+- **Multi-agent.** Child agents, agents as tools and speculative branches under one shared budget.
+- **Serve it anywhere.** An authenticated HTTP server with live events, a browser client, React hooks and components,
+  an operator console, and terminal chat or one-shot commands.
+- **Observability.** Run events, workflow tracing and OpenTelemetry (OTLP) export. Nothing is sent anywhere unless you
+  configure it.
+- **Test offline.** Scripted models run agents, tools and workflows without a network or an API key.
+
+## Quickstart
+
+Mayura runs on Node.js 22 (22.12 or later) or 24 (24.14.1 or later).
+
+```bash
+npm install mayura zod
+```
+
+An agent that answers weather questions with a tool, on OpenAI:
 
 ```ts
-import { createRuntime, defineAgent } from 'mayura';
-import { defineWorkflowLifecycle, fanOut } from 'mayura/workflows/lifecycle';
-import { createSqliteStore } from 'mayura/storage-sqlite'; // with the optional peer: npm install better-sqlite3
+import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { openAIResponses } from 'mayura/provider-openai';
+import { z } from 'zod';
+
+// Model providers take plain JSON Schema; Zod converts its own schemas.
+const jsonSchema = (schema: z.ZodType) => {
+  const { $schema, ...plain } = JSON.parse(JSON.stringify(z.toJSONSchema(schema)));
+  return plain;
+};
+
+const weatherInput = z.object({ city: z.string() });
+const getWeather = defineTool({
+  id: 'weather.get', version: '1', description: 'Current weather for a city.',
+  input: weatherInput, inputJsonSchema: jsonSchema(weatherInput),
+  output: z.object({ celsius: z.number(), sky: z.string() }),
+  effects: 'read', capabilities: [],
+  execute: async ({ city }) => ({ celsius: 21, sky: 'clear' }), // call your weather API here
+});
+
+const answer = z.object({ reply: z.string() });
+const agent = defineAgent({
+  id: 'weather-assistant', version: '1',
+  instructions: 'Answer questions about the weather. Use the weather tool.',
+  input: z.object({ question: z.string() }), output: answer, tools: [getWeather],
+  model: openAIResponses({
+    apiKey: process.env.OPENAI_API_KEY!, model: 'gpt-5-mini', outputJsonSchema: jsonSchema(answer),
+    // Your model's prices, in micros (millionths of a dollar) per million tokens, and a cap per model call.
+    pricing: { inputMicrosPerMillionTokens: 250_000, outputMicrosPerMillionTokens: 2_000_000 },
+    maxCostMicros: 20_000,
+  }),
+});
+
+// Nothing is allowed unless you allow it, and every run has limits (here, at most 10 cents).
+const runtime = createRuntime({
+  profile: 'ephemeral',
+  permissions: { allow: ['model:openai.responses', 'tool:weather.get', 'effect:read'] },
+  limits: { maxCostMicros: 100_000 },
+});
+
+const result = await runtime.submit(agent, { input: { question: 'Do I need an umbrella in Paris?' } }).result();
+if (result.status === 'succeeded') console.log(result.output.reply);
+else console.error(result.status, result.error.message);
+await runtime.close();
 ```
 
-`npx mayura init` creates a project. Native SQLite, PostgreSQL, QuickJS and React are optional peers: install
-`better-sqlite3`, `pg`, `quickjs-emscripten-core` with `@jitl/quickjs-wasmfile-release-sync`, or `react` only when you
-use the part that needs it. Inside this repository the same entry points come from `packages/mayura`, a generated
-facade over the workspace packages (`@mayura/*`, which are internal and never published).
+No API key yet? Swap the model for a scripted one and everything else runs offline, which is also how you test
+agents:
 
-## Developing this checkout
+```ts
+import { scriptedModel } from 'mayura/testing';
 
-Mayura supports Node.js 22 LTS (>= 22.12.0) and 24 (>= 24.14.1); the maintainer workspace uses Node.js 24.14.1 and pnpm 10.17.1. Consumer applications will not need this workspace build system.
-
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm check
-pnpm example
+const model = scriptedModel([
+  { type: 'tool_calls', calls: [{ id: 'call-1', toolId: 'weather.get', input: { city: 'Paris' } }], usage: { costMicros: 0 } },
+  { type: 'final', output: { reply: 'Clear skies and 21°C, so no umbrella needed.' }, usage: { costMicros: 0 } },
+]);
+// Grant 'model:scripted' instead of 'model:openai.responses'.
 ```
 
-The basic SDK requires no Docker, native database, server or hosted account. [Select SQLite or PostgreSQL explicitly](docs/how-to/storage-installation.md); existing `mayura/storage` imports remain a both-adapter compatibility option. Docker is used only for integration testing/deployment profiles that select it.
+Anthropic (`anthropicMessages` from `mayura/provider-anthropic`) and OpenAI-compatible providers
+(`openAICompatibleChat` from `mayura/provider-openai`) are drop-in replacements for the model. The
+[quickstart](docs/quickstart.md) goes further: streaming, a durable workflow, and serving the agent over HTTP.
 
-## Current development slices
+## CLI
 
-- Typed agents and tools, bounded process-local tool DAGs with exact predecessor-output references, and [required child agents](docs/how-to/agent-orchestration.md) with shared authority, budgets and cancellation.
-- [Workflow-as-tool composition](docs/how-to/workflow-composition.md) for explicit approval-free ephemeral graphs, without installing database drivers.
-- Optional SQL-backed workflows, approvals, signals, memory/context foundations and a [standalone leased job ledger](docs/specs/leased-scheduler.md). Explicit [scheduled workflows](docs/scheduled-workflows.md) couple claims, approvals, fixed costs and workflow transitions atomically.
-- [Durable completion waits](docs/how-to/execution-completion-waits.md) over existing scheduled workflows, without keeping a worker or callback alive while waiting.
-- [Versioned workflow graph waits](docs/how-to/workflow-graph-waits.md) with immutable existing-run targets, explicit resumption and metadata-only results before downstream tools or approvals.
-- [Finite graph discovery](docs/how-to/workflow-graph-discovery.md) for finding unfinished persisted graphs after restart, with bounded examined-owner pages and explicit application-owned continuation.
-- [Registered graph continuation](docs/how-to/workflow-graph-coordinator.md) through one shared driver, with finite pages, exact per-definition resource plans and safe partial-page retry reports.
-- [Durable shared budgets](docs/how-to/durable-budgets.md) for trusted hosts, with atomic financial/call reservations, unknown-cost retention and committed overrun evidence. Existing workflows are not automatically enrolled.
-- Local processors and [metered auxiliary guardrails](docs/specs/auxiliary-guardrails.md), including explicit moderation and protected-segment language processing.
-- [Required lifecycle hooks](docs/how-to/lifecycle-hooks.md) with immutable proposals, mediated read/pure-tool actions, shared limits and output withholding.
-- An authenticated Fetch API, browser-safe client and optional [loopback-only Hono/Node host](docs/how-to/local-server.md). This is not production or durable multi-host serving.
-- Authenticated, revision-bound [workflow signal delivery](docs/specs/workflow-signal-transport.md) across server, browser client and Node CLI, with application-owned durable journaling.
-- Optional [native metadata observability](docs/specs/native-observability.md) with bounded history, explicit gaps and isolated sinks, plus a separate experimental [OTLP/HTTP JSON log exporter](docs/specs/otlp-http-json-logs.md); neither is mandatory durable audit.
-- Optional [local artifact storage](docs/specs/local-artifacts.md) with scoped content addressing, staged promotion, integrity-checked reads, bounded attachment disclosure and staging cleanup.
+The `mayura` command comes with the package. Start a new project with the interactive wizard: pick a starter, pick a
+model provider and paste its API key (it goes into the project's `.env`, never anywhere else).
 
-The retained verification history includes a clean 2,525-test two-process checkpoint with PostgreSQL and live Docker, later focused slices, packed-consumer profiles, cross-platform base installation checks and exact V01–V22 evidence. Passing those finite gates does not qualify untested production environments; see the [status ledger](docs/development-status.md) and [closure ledger](docs/release-gate-closure.md).
+```bash
+npx mayura init
+```
+
+Or without prompts, for scripts and CI:
+
+```bash
+npx mayura starters
+npx mayura init --starter support-agent --directory my-agent
+npx mayura init --starter support-agent --directory my-agent --apply
+```
+
+`init` always shows its plan first and writes only with `--apply`. The four starters are complete projects with a
+server, a worker, tests and deployment files: `support-agent`, `approval-workflow`, `research-team` and
+`event-automation`. There are also eight small single-file templates (`mayura templates`).
+
+Inside a project:
+
+```bash
+mayura dev
+mayura migrate --app dist/src/app.js
+mayura serve --app dist/src/app.js
+mayura worker --app dist/src/app.js
+```
+
+`mayura dev` builds, runs and restarts on every change, and loads `.env`. `migrate`, `serve` and `worker` run your
+application in production. The CLI also operates a running server: runs, workflows, approvals and fleet control. The
+token is always piped, never typed as an argument:
+
+```bash
+echo "$MAYURA_OPERATOR_TOKEN" | mayura workflow-list --url https://agents.example.com --token-stdin
+```
+
+Output is readable in a terminal and JSON when piped (or with `--json`). `mayura --help` lists every command.
 
 ## Documentation
 
-Start with the [quickstart](docs/quickstart.md), [documentation index](docs/README.md), and [architecture](docs/adr/0001-foundation.md).
+- [Introduction](docs/introduction.md): what Mayura is and how its parts fit together.
+- [Quickstart](docs/quickstart.md): from `npm install` to a served agent.
+- [Concepts](docs/README.md#concepts): agents, tools, the runtime, outcomes, permissions, costs and workflows.
+- [Guides](docs/README.md): model providers, streaming, durable workflows, storage, memory, guardrails, servers,
+  React, deployment and more.
+- [CLI](docs/cli/overview.md) and the [entry point reference](docs/reference/entry-points.md).
+- [Using Mayura with AI coding agents](docs/ai-agents.md): `llms.txt`, and documentation that ships inside the package.
 
-Mayura is open source under Apache-2.0. Workspace manifests remain private as a publication safety control; the controlled release process creates reviewed public artifacts only after registry/repository ownership and provenance are verified.
+The documentation also ships in the npm package (`node_modules/mayura/docs`), so your editor's AI assistant can read
+the docs for the exact version you have installed.
+
+## Author and team
+
+Mayura is created by **Aryabh** ([dev@rokad.co](mailto:dev@rokad.co)). The team section is coming soon.
+
+Mayura is open source under the [Apache-2.0 license](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute,
+[SECURITY.md](SECURITY.md) to report a vulnerability and [SUPPORT.md](SUPPORT.md) for support.

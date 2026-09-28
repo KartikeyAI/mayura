@@ -3,7 +3,7 @@
 //   pnpm providers:live-check --dry-run    offline: the same checks against deterministic local fake transports
 // Every check goes through the real runtime (defineAgent, createRuntime, createModelRouter). The harness never discovers
 // credentials or reads files, and its report never contains a credential, a prompt or a provider error body.
-// See docs/how-to/live-provider-checks.md.
+// See CONTRIBUTING.md (Checking model providers against live accounts).
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -425,7 +425,7 @@ export function dryRunTransport(provider, fault) {
 
 // ---- Command line.
 
-const USAGE = 'Usage: node scripts/provider-live-check.mjs [--dry-run [--dry-run-fault=<fault>]]\nSee docs/how-to/live-provider-checks.md for the environment variables.';
+const USAGE = 'Usage: node scripts/provider-live-check.mjs [--dry-run [--dry-run-fault=<fault>]]\nSee CONTRIBUTING.md for the environment variables.';
 async function main(argv) {
   const dryRun = argv.includes('--dry-run'); const faultArgument = argv.find(argument => argument.startsWith('--dry-run-fault='));
   const fault = faultArgument?.slice('--dry-run-fault='.length);
