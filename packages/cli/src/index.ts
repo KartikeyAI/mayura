@@ -4,6 +4,7 @@ import { lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeF
 import { basename, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
+import { agentGuide } from './agent-guide.js';
 
 export { approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth, inspectServerTools, inspectWorkflow, inspectWorkflows,
   holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, signalWorkflow, sweepWorkflowFleet, waitForRun,
@@ -192,6 +193,9 @@ export async function planProject(template: TemplateName, directory: string): Pr
     }, include: ['src/**/*.ts'] }, null, 2)}\n`],
     ['mayura.project.json', projectManifest(name, template)], ['README.md', readme], ['src/index.ts', source],
   ]);
+  // Guidance for AI coding assistants: where the installed version's documentation is, and the rules they miss most.
+  files.set('AGENTS.md', agentGuide({ kind: 'template', scripts: (JSON.parse(files.get('package.json')!) as { scripts?: Record<string, string> }).scripts ?? {} }));
+  files.set('CLAUDE.md', '@AGENTS.md\n');
   const { changes, before } = await planChanges(target, files);
   const planDigest = digest(JSON.stringify({ template, directory: target, changes }));
   const plan = Object.freeze({ format: 'mayura.init-plan.v1' as const, template, directory: target, digest: planDigest, changes: Object.freeze(changes) });
@@ -271,6 +275,9 @@ export async function planStarter(starter: StarterName, directory: string): Prom
   files.set('package.json', await starterManifest(manifest, name));
   const catalog = validateProject(JSON.parse(project)); if (catalog.template !== starter) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter project manifest names another starter.');
   files.set('mayura.project.json', `${JSON.stringify({ ...catalog, name }, null, 2)}\n`);
+  // Guidance for AI coding assistants, unless the starter brings its own.
+  if (!files.has('AGENTS.md')) files.set('AGENTS.md', agentGuide({ kind: 'starter', scripts: (JSON.parse(files.get('package.json')!) as { scripts?: Record<string, string> }).scripts ?? {} }));
+  if (!files.has('CLAUDE.md')) files.set('CLAUDE.md', '@AGENTS.md\n');
   const { changes, before } = await planChanges(target, files);
   const planDigest = digest(JSON.stringify({ starter, directory: target, changes }));
   const plan = Object.freeze({ format: 'mayura.init-plan.v1' as const, starter, directory: target, digest: planDigest, changes: Object.freeze(changes) });

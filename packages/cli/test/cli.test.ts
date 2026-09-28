@@ -43,6 +43,10 @@ describe('@mayura/cli initialization', () => {
     expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8')).dependencies).toEqual({
       mayura: cliVersion, zod: '4.6.5',
     });
+    // Coding assistants are pointed at the documentation inside the installed package, and at this project's scripts.
+    const guide = await readFile(join(target, 'AGENTS.md'), 'utf8');
+    expect(guide).toContain('node_modules/mayura/docs/README.md'); expect(guide).toContain('node_modules/mayura/llms-full.txt');
+    expect(guide).toContain('`npm run build`'); expect(await readFile(join(target, 'CLAUDE.md'), 'utf8')).toBe('@AGENTS.md\n');
   });
 
   it('shows a bounded diff and requires exact confirmation before replacement', async () => {
@@ -81,7 +85,7 @@ describe('@mayura/cli starters', () => {
     const paths = plan.changes.map(change => change.path);
     expect(plan.changes.every(change => change.operation === 'create')).toBe(true);
     expect(paths).toEqual(expect.arrayContaining(['package.json', 'mayura.project.json', 'README.md', '.gitignore', '.env.example',
-      '.github/workflows/ci.yml', 'src/app.ts', 'src/workflow.ts', 'test/refunds.test.ts']));
+      '.github/workflows/ci.yml', 'src/app.ts', 'src/workflow.ts', 'test/refunds.test.ts', 'AGENTS.md', 'CLAUDE.md']));
     expect(paths.some(path => /(^|\/)(node_modules|dist|\.data)(\/|$)|dot-|tsbuildinfo/u.test(path))).toBe(false);
     await expect(readFile(join(target, 'package.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     await applyProjectPlan(plan);

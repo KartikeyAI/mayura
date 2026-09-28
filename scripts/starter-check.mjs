@@ -54,14 +54,15 @@ if (!skipPacked) {
     const { starter } = report; const directory = join(output, starter); const started = performance.now();
     const plan = await planStarter(starter, directory); assert(plan.changes.every(change => change.operation === 'create')); await applyProjectPlan(plan);
     assert.equal((await readProject(join(directory, 'mayura.project.json'))).template, starter);
-    // The published CLI must ship every file the initializer generates from the repository copy (its `files` patterns
-    // are explicit, so a new kind of starter file would otherwise be dropped silently).
-    // The published package (`mayura`, bundled) must ship every file the initializer generates from the repository copy.
+    // The published package (`mayura`, bundled) must ship every file the initializer copies from the repository copy.
+    // AGENTS.md and CLAUDE.md are written by the initializer itself, unless a starter brings its own.
     const published = await packClosure([['mayura', join(workspace, 'packages', 'cli')]]).then(() => packages.get('mayura'));
     const prefix = `lib/cli/starters/${starter}/`;
     const shipped = new Set(archivePaths(await readFile(fileURLToPath(published.archive))).filter(path => path.startsWith(prefix))
       .map(path => path.slice(prefix.length).split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/')));
-    assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).sort(), `mayura does not ship exactly the ${starter} files.`);
+    const generated = ['AGENTS.md', 'CLAUDE.md'].filter(path => !shipped.has(path));
+    assert.deepEqual(generated.filter(path => !plan.changes.some(change => change.path === path)), [], `${starter} is missing its guidance for coding assistants.`);
+    assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).filter(path => !generated.includes(path)).sort(), `mayura does not ship exactly the ${starter} files.`);
     const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const cliVersion = JSON.parse(await readFile(join(workspace, 'packages', 'cli', 'package.json'), 'utf8')).version;
     assert.equal(manifest.dependencies.mayura, cliVersion, `${starter} must pin mayura to the CLI's version.`);

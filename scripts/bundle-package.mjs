@@ -97,7 +97,7 @@ export async function bundle(output) {
     type: 'module', sideEffects: false, engines: cli.manifest.engines,
     bin: { mayura: `./lib/cli/${cli.manifest.bin.mayura.replace(/^\.\//u, '')}` },
     exports: Object.fromEntries(Object.entries(exportsMap).sort(([a], [b]) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b))),
-    files: ['lib', 'README.md', 'LICENSE', 'NOTICE'],
+    files: ['lib', 'docs', 'llms.txt', 'llms-full.txt', 'README.md', 'LICENSE', 'NOTICE'],
     dependencies: Object.fromEntries(Object.entries(dependencies).sort()),
     peerDependencies: Object.fromEntries(Object.entries(peers).sort()),
     peerDependenciesMeta: Object.fromEntries(Object.keys(peers).sort().map(name => [name, { optional: true }])),
@@ -106,6 +106,10 @@ export async function bundle(output) {
   await writeFile(join(output, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const file of ['LICENSE', 'NOTICE']) await cp(join(workspace, file), join(output, file));
   await cp(join(workspace, 'README.md'), join(output, 'README.md'));
+  // The documentation for this exact version, for people and for AI coding assistants reading node_modules.
+  await cp(join(workspace, 'docs'), join(output, 'docs'), { recursive: true });
+  const { llmsTxt, llmsFullTxt } = await import('./docs-index.mjs');
+  await writeFile(join(output, 'llms.txt'), llmsTxt({ full: true })); await writeFile(join(output, 'llms-full.txt'), llmsFullTxt());
   return { output, packages: packages.length, entryPoints: Object.keys(exportsMap).length - 1, rewritten, dependencies: Object.keys(dependencies), peers: Object.keys(peers) };
 }
 

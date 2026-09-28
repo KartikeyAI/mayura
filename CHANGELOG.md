@@ -79,8 +79,16 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - The `upgrade:compat` cross-version resume check.
   - The `api:report` public-surface gate and the `perf` suite for the plan §21.3 targets.
   - A threat model, and a stable API, support and deprecation policy.
+- **Documentation for people and AI coding assistants.**
+  - New public documentation in `docs/`: introduction, quickstart, concepts, guides, CLI, entry-point reference and project policies.
+  - The `mayura` package ships it (`docs/`), with `llms.txt` and a one-file `llms-full.txt`, so assistants read the docs of the installed version.
+  - `mayura init` writes an `AGENTS.md` (and a `CLAUDE.md` that imports it) into every new project, pointing assistants at those docs and at the rules they most often get wrong.
+  - `pnpm docs:check` type-checks every documentation snippet against the real entry points, checks links and headings, checks CLI commands, and keeps `llms.txt` current.
 
 ### Fixed
+
+- The support-agent starter could not use any real model provider: every model call failed before it was sent. Its `orders.list` tool takes no input, and the JSON Schema Zod writes for an empty object has no `required` list, which the provider adapters' strict check refused. Its `memory.recall` tool had an optional field, which strict schemas cannot express. The OpenAI, Anthropic and compatible adapters now accept an object with no properties and no `required` (and send `required: []`), `memory.recall` takes a nullable `query`, and the starter's tests hand every tool schema to both real adapters.
+- `mayura workflow-get` (and the workflow cancel, pause, resume and signal commands) refused the server's view of a run whose tool step was waiting for approval, because the view includes the pending approval. The CLI now accepts it and shows the digest to pass to `workflow-approve --digest`; the approved tool call itself is checked but never printed.
 
 - A release would have published `@mayura/cli` without its starters: staging copied only fixed folders, npm packs a folder matched by a `files` glob only with `/**`, and the archive check refused the starters' test folders. Staging now follows each package's `files`, the CLI's patterns are recursive, and the check verifies the starters are in the archive. Published packages now also name their repository, as npm provenance requires.
 

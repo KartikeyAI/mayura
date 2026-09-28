@@ -97,6 +97,7 @@ assert(Object.values(packedManifest.peerDependenciesMeta).every(meta => meta.opt
 assert.equal(packedManifest.peerDependencies.react, '>=18.3.0 <20', 'React peer contract changed.');
 assert(Object.keys(packedManifest.exports).length >= 40 && packedManifest.exports['.'] && packedManifest.exports['./workflows/lifecycle'], 'mayura entry points are incomplete.');
 assert([...files.keys()].some(path => path.startsWith('lib/cli/starters/research-team/src/')), 'The CLI is missing its starters.');
+for (const path of ['docs/README.md', 'docs/quickstart.md', 'llms.txt', 'llms-full.txt']) assert(files.has(path), `mayura is missing its documentation: ${path}`);
 for (const [path, content] of files) {
   // A starter's own tests are part of the project `mayura init` creates, so the CLI ships them.
   const starterTest = /^lib\/cli\/starters\/[a-z][a-z0-9-]*\/test\//u.test(path);
