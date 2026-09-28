@@ -6,6 +6,16 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Added
 
+- **Vision: agents that see images and PDFs.** `runtime.submit(agent, { input, media })` sends PNG, JPEG, WebP, GIF or PDF files with an agent's input; tools return them with `withMedia(output, [...])`, for example a screenshot. Media is its own channel, never base64 inside JSON input.
+  - `media()`, `mediaUrl()` and `mediaFromBase64()` create media; its type is read from the file's own leading bytes, so a mislabelled file is refused before any provider sees it. `mediaFromArtifact` (mayura/artifacts) reads a stored file for a scope.
+  - Nothing is accepted unless declared: `defineAgent({ media: { accept, maxItems, maxBytes, urls } })` for input, `defineTool({ media })` for what a tool returns. URLs are accepted only under listed https prefixes, and are fetched by the provider, never by Mayura. The runtime limit `maxMediaBytes` (20 MiB) bounds a run's media apart from its JSON limits.
+  - Adapters declare `capabilities.media`, and `defineAgent` refuses an agent whose model cannot see what it accepts, naming the types; a router sees what every route sees. `openAIResponses` and `anthropicMessages` see every type and URLs (option `media`); `openAICompatibleChat` sees what its new `media` option lists. Each sends media in its provider's own format; tool media goes inside Anthropic tool results and in a user turn after OpenAI tool results; continuations never store media bytes.
+  - Hooks see a summary (type, size, name), never bytes: `beforeExecution.media` and `beforeModelCall.request.media`. Events carry counts.
+  - The server accepts `media` in `POST /v1/runs` (base64, allowed URLs, or artifact references through the new `mediaArtifacts` option), checks it before starting the run with a precise `400 INVALID_MEDIA`, includes it in the idempotency key, and allows `maxMediaBodyBytes` (16 MiB) for run submissions when an agent accepts media. `client.submit` sends media.
+  - `agentStep` takes `media`, resolved when the step runs, so workflow state keeps only references.
+  - `runAgentCommand` takes `--attach <file>` for agents that accept media; the cli-agent starter uses it with a model that can see (`MAYURA_MODEL_MEDIA` for compatible providers).
+  - `scriptedModel` sees media, and `testImage()` and `testPdf()` return small valid files. The live-provider check gains `vision` and `vision_tools`, which read a random number drawn in a PNG; Cloudflare AI Gateway (`openai/gpt-6-luna`) passes both.
+
 - **Production operations.**
   - A TLS/proxy production host with liveness and readiness probes, canonical-origin enforcement and HSTS.
   - A durable submission journal.

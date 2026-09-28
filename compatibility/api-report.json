@@ -164,6 +164,10 @@
         "kind": "interface",
         "declaration": "9a3e1d23a5a98d00"
       },
+      "mediaFromArtifact": {
+        "kind": "function",
+        "declaration": "da317e7dbe60b4f4"
+      },
       "PlanArtifactReconciliationOptions": {
         "kind": "interface",
         "declaration": "ac457c47c6793b16"
@@ -480,9 +484,13 @@
         "kind": "type",
         "declaration": "7b430484aedf8214"
       },
+      "ClientMedia": {
+        "kind": "type",
+        "declaration": "9dd9dd70b9d4b7fb"
+      },
       "ClientOptions": {
         "kind": "interface",
-        "declaration": "4c12ce47c7c2b7e7"
+        "declaration": "1b9b9d168b1ed307"
       },
       "ClientSchema": {
         "kind": "interface",
@@ -506,7 +514,7 @@
       },
       "MayuraClient": {
         "kind": "interface",
-        "declaration": "85fc3200a8d99eb1"
+        "declaration": "42d16a24b735d70b"
       },
       "RemoteFeature": {
         "kind": "type",
@@ -1290,13 +1298,49 @@
         "kind": "class",
         "declaration": "848343d8162e01ee"
       },
+      "media": {
+        "kind": "function",
+        "declaration": "84780c8a786aeb59"
+      },
+      "Media": {
+        "kind": "type",
+        "declaration": "6bf9c69c06f0a07d"
+      },
+      "MEDIA_TYPES": {
+        "kind": "const",
+        "declaration": "5eac309291fc5fe3"
+      },
+      "mediaFromBase64": {
+        "kind": "function",
+        "declaration": "2f57a49352bccca3"
+      },
+      "MediaPolicy": {
+        "kind": "interface",
+        "declaration": "0ad80010ad8f564e"
+      },
+      "mediaSummary": {
+        "kind": "function",
+        "declaration": "7c573c7b2e772b72"
+      },
+      "MediaSummary": {
+        "kind": "interface",
+        "declaration": "51ce227f5ea9eded"
+      },
+      "MediaType": {
+        "kind": "type",
+        "declaration": "60cd1d452e1cf97f"
+      },
+      "mediaUrl": {
+        "kind": "function",
+        "declaration": "639492723eaba723"
+      },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "4da0b8511d54c413"
+        "declaration": "df4e97ee6268e166"
       },
       "ModelDefinitionCheck": {
         "kind": "interface",
-        "declaration": "b53c10a601b2523b"
+        "declaration": "f77f8b85b4e86e1d"
       },
       "modelFailureMessage": {
         "kind": "function",
@@ -1310,9 +1354,13 @@
         "kind": "class",
         "declaration": "0618a28bc84985a3"
       },
+      "ModelMediaCapability": {
+        "kind": "interface",
+        "declaration": "2a1eed40063b48af"
+      },
       "ModelMessage": {
         "kind": "type",
-        "declaration": "fe6bc01ce052e687"
+        "declaration": "d9b92b2aa215fcef"
       },
       "ModelProviderError": {
         "kind": "class",
@@ -1378,19 +1426,43 @@
         "kind": "interface",
         "declaration": "80e9f980babcec72"
       },
+      "sniffMediaType": {
+        "kind": "function",
+        "declaration": "fecf8d53c3329171"
+      },
       "validate": {
         "kind": "function",
         "declaration": "4d36489959cc4162"
+      },
+      "withMedia": {
+        "kind": "function",
+        "declaration": "d3cc60a33e1cbdfa"
       }
     },
     "@mayura/core/host": {
+      "admitMedia": {
+        "kind": "function",
+        "declaration": "7d62b8aafb4b043f"
+      },
       "assertBudgetTicket": {
         "kind": "function",
         "declaration": "30d6d9284b80dcb7"
       },
+      "base64ToBytes": {
+        "kind": "function",
+        "declaration": "5deadd6a52aebdf9"
+      },
+      "bytesToBase64": {
+        "kind": "function",
+        "declaration": "d09a15e65eb95615"
+      },
       "checkStrictDefinition": {
         "kind": "function",
         "declaration": "a1fe980db09af895"
+      },
+      "encodedMediaBytes": {
+        "kind": "function",
+        "declaration": "fc0c905ea93ed408"
       },
       "evaluateLifecycleControl": {
         "kind": "function",
@@ -1416,6 +1488,14 @@
         "kind": "interface",
         "declaration": "59b6e09faacb8f53"
       },
+      "mediaDataUrl": {
+        "kind": "function",
+        "declaration": "ce262eb1661d5add"
+      },
+      "mediaPolicy": {
+        "kind": "function",
+        "declaration": "df21dfa618313d05"
+      },
       "modelToolNames": {
         "kind": "function",
         "declaration": "e32fb5b14da575ed"
@@ -1428,6 +1508,10 @@
         "kind": "function",
         "declaration": "f7ecaedb51091283"
       },
+      "readMediaResult": {
+        "kind": "function",
+        "declaration": "ec1b860f67e48984"
+      },
       "readServerSentEvents": {
         "kind": "function",
         "declaration": "43b66de410c2a766"
@@ -1435,6 +1519,10 @@
       "registerManagedGuardDefinition": {
         "kind": "function",
         "declaration": "27d9d4a939efa8fe"
+      },
+      "ResolvedMediaPolicy": {
+        "kind": "interface",
+        "declaration": "19d67b23811cba7f"
       },
       "ServerSentEvent": {
         "kind": "interface",
@@ -2164,7 +2252,7 @@
       },
       "AnthropicMessagesOptions": {
         "kind": "interface",
-        "declaration": "4ceb334e2fefce82"
+        "declaration": "403f634bd9c524c2"
       }
     },
     "@mayura/provider-openai": {
@@ -2174,7 +2262,7 @@
       },
       "OpenAICompatibleChatOptions": {
         "kind": "interface",
-        "declaration": "ed1182205c8c9150"
+        "declaration": "c1c62ae32ad7e236"
       },
       "openAIEmbeddings": {
         "kind": "function",
@@ -2190,7 +2278,7 @@
       },
       "OpenAIResponsesOptions": {
         "kind": "interface",
-        "declaration": "3513b9e7ed5194f0"
+        "declaration": "cfc6c9a0ae8a8cf3"
       }
     },
     "@mayura/runtime": {
@@ -2200,7 +2288,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "954680309d0d7f93"
+        "declaration": "debd2b8766bb1b64"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2208,7 +2296,7 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "c92f7f8790abacef"
+        "declaration": "0b27da3b6c775f06"
       },
       "AgentOutput": {
         "kind": "type",
@@ -2266,6 +2354,10 @@
         "kind": "type",
         "declaration": "70d11253992ca482"
       },
+      "HookMessageMedia": {
+        "kind": "interface",
+        "declaration": "50607cff12043d29"
+      },
       "HookOptions": {
         "kind": "type",
         "declaration": "6c7d2a0f9d3de295"
@@ -2296,11 +2388,11 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "0493ade04413ccc7"
+        "declaration": "4fc82571aa37c40c"
       },
       "RuntimeLimits": {
         "kind": "interface",
-        "declaration": "79ea139b2349386a"
+        "declaration": "ec60dbae94edfabb"
       },
       "RuntimeOptions": {
         "kind": "interface",
@@ -2326,7 +2418,7 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "954680309d0d7f93"
+        "declaration": "debd2b8766bb1b64"
       },
       "AgentGuard": {
         "kind": "type",
@@ -2334,7 +2426,7 @@
       },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "c92f7f8790abacef"
+        "declaration": "0b27da3b6c775f06"
       },
       "AgentOutput": {
         "kind": "type",
@@ -2528,6 +2620,10 @@
         "kind": "type",
         "declaration": "70d11253992ca482"
       },
+      "HookMessageMedia": {
+        "kind": "interface",
+        "declaration": "50607cff12043d29"
+      },
       "HookOptions": {
         "kind": "type",
         "declaration": "6c7d2a0f9d3de295"
@@ -2554,11 +2650,11 @@
       },
       "invokeTool": {
         "kind": "function",
-        "declaration": "b3d891eec26453cb"
+        "declaration": "7db94a37287b3354"
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "6ce45f030685b12c"
+        "declaration": "b074c318a95e9e65"
       },
       "isModelFailureReason": {
         "kind": "function",
@@ -2624,13 +2720,49 @@
         "kind": "class",
         "declaration": "848343d8162e01ee"
       },
+      "media": {
+        "kind": "function",
+        "declaration": "84780c8a786aeb59"
+      },
+      "Media": {
+        "kind": "type",
+        "declaration": "6bf9c69c06f0a07d"
+      },
+      "MEDIA_TYPES": {
+        "kind": "const",
+        "declaration": "5eac309291fc5fe3"
+      },
+      "mediaFromBase64": {
+        "kind": "function",
+        "declaration": "2f57a49352bccca3"
+      },
+      "MediaPolicy": {
+        "kind": "interface",
+        "declaration": "0ad80010ad8f564e"
+      },
+      "mediaSummary": {
+        "kind": "function",
+        "declaration": "7c573c7b2e772b72"
+      },
+      "MediaSummary": {
+        "kind": "interface",
+        "declaration": "51ce227f5ea9eded"
+      },
+      "MediaType": {
+        "kind": "type",
+        "declaration": "60cd1d452e1cf97f"
+      },
+      "mediaUrl": {
+        "kind": "function",
+        "declaration": "639492723eaba723"
+      },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "4da0b8511d54c413"
+        "declaration": "df4e97ee6268e166"
       },
       "ModelDefinitionCheck": {
         "kind": "interface",
-        "declaration": "b53c10a601b2523b"
+        "declaration": "f77f8b85b4e86e1d"
       },
       "modelFailureMessage": {
         "kind": "function",
@@ -2644,9 +2776,13 @@
         "kind": "class",
         "declaration": "0618a28bc84985a3"
       },
+      "ModelMediaCapability": {
+        "kind": "interface",
+        "declaration": "2a1eed40063b48af"
+      },
       "ModelMessage": {
         "kind": "type",
-        "declaration": "fe6bc01ce052e687"
+        "declaration": "d9b92b2aa215fcef"
       },
       "ModelProviderError": {
         "kind": "class",
@@ -2726,11 +2862,11 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "0493ade04413ccc7"
+        "declaration": "4fc82571aa37c40c"
       },
       "RuntimeLimits": {
         "kind": "interface",
-        "declaration": "79ea139b2349386a"
+        "declaration": "ec60dbae94edfabb"
       },
       "RuntimeOptions": {
         "kind": "interface",
@@ -2747,6 +2883,10 @@
       "SkippedBatchOutcome": {
         "kind": "interface",
         "declaration": "1250833df3f32730"
+      },
+      "sniffMediaType": {
+        "kind": "function",
+        "declaration": "fecf8d53c3329171"
       },
       "SpeculationBranch": {
         "kind": "interface",
@@ -2774,7 +2914,7 @@
       },
       "ToolDefinition": {
         "kind": "interface",
-        "declaration": "84e1e8c3a3d02b5f"
+        "declaration": "94591dfc06a6b277"
       },
       "ToolExecutionContext": {
         "kind": "interface",
@@ -2782,7 +2922,11 @@
       },
       "ToolOptions": {
         "kind": "interface",
-        "declaration": "822827eba0d1cfd8"
+        "declaration": "a2f12e44b3052b79"
+      },
+      "ToolOutcome": {
+        "kind": "type",
+        "declaration": "4b5e73446b73b90e"
       },
       "ToolOutput": {
         "kind": "type",
@@ -2800,6 +2944,10 @@
         "kind": "interface",
         "declaration": "38a84c9d67c2d915"
       },
+      "withMedia": {
+        "kind": "function",
+        "declaration": "d3cc60a33e1cbdfa"
+      },
       "withPreflight": {
         "kind": "function",
         "declaration": "693927acd44cb36a"
@@ -2812,7 +2960,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "716ecd6808f893a5"
+        "declaration": "2504755b55983e4b"
       },
       "createAgentServer": {
         "kind": "function",
@@ -5148,7 +5296,7 @@
     "@mayura/terminal": {
       "agentCommandHelp": {
         "kind": "function",
-        "declaration": "2a1dd9db899b049c"
+        "declaration": "1084570be749fb2e"
       },
       "AgentCommandOptions": {
         "kind": "interface",
@@ -5176,7 +5324,7 @@
       },
       "parseAgentCommand": {
         "kind": "function",
-        "declaration": "915a71b498f53577"
+        "declaration": "2c088df2c292d58f"
       },
       "runAgentCommand": {
         "kind": "function",
@@ -5194,7 +5342,15 @@
     "@mayura/testing": {
       "scriptedModel": {
         "kind": "function",
-        "declaration": "720a0be7ade9f527"
+        "declaration": "4359d4656cea6d0e"
+      },
+      "testImage": {
+        "kind": "function",
+        "declaration": "02fb9d64d700cfc4"
+      },
+      "testPdf": {
+        "kind": "function",
+        "declaration": "500463684938d3cd"
       },
       "testTool": {
         "kind": "function",
@@ -5276,11 +5432,11 @@
       },
       "invokeTool": {
         "kind": "function",
-        "declaration": "b3d891eec26453cb"
+        "declaration": "7db94a37287b3354"
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "6ce45f030685b12c"
+        "declaration": "b074c318a95e9e65"
       },
       "SkippedBatchOutcome": {
         "kind": "interface",
@@ -5300,7 +5456,7 @@
       },
       "ToolDefinition": {
         "kind": "interface",
-        "declaration": "84e1e8c3a3d02b5f"
+        "declaration": "94591dfc06a6b277"
       },
       "ToolExecutionContext": {
         "kind": "interface",
@@ -5308,7 +5464,11 @@
       },
       "ToolOptions": {
         "kind": "interface",
-        "declaration": "822827eba0d1cfd8"
+        "declaration": "a2f12e44b3052b79"
+      },
+      "ToolOutcome": {
+        "kind": "type",
+        "declaration": "4b5e73446b73b90e"
       },
       "ToolOutput": {
         "kind": "type",

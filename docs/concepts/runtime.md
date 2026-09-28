@@ -67,7 +67,8 @@ and `maxConcurrentOperations` also apply to the runtime as a whole. Child runs c
 | `maxDurationMs` | `60000` | Wall-clock time for the run. |
 | `maxInputBytes` | `1048576` | Size of the submitted input and of each tool input. |
 | `maxOutputBytes` | `1048576` | Size of the final output and of each tool output. |
-| `maxContextBytes` | `2097152` | Size of the conversation sent to the model. |
+| `maxContextBytes` | `2097152` | Size of the conversation sent to the model, without media. |
+| `maxMediaBytes` | `20971520` | All images and PDFs in one run, with the input and from tools. See [Vision](../guides/vision.md). |
 | `maxOutputTokens` | `4096` | Output tokens the model may generate per call. |
 | `maxCostMicros` | `0` | Total cost of the run, in micros. See [Costs and budgets](./costs-and-budgets.md). |
 | `maxEventRetention` | `256` | Events kept in memory per run for `observe()`. |

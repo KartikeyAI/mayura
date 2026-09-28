@@ -28,6 +28,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Model providers](guides/model-providers.md): OpenAI, Anthropic and OpenAI-compatible providers.
 - [Model routing](guides/model-routing.md): failover between providers.
 - [Streaming](guides/streaming.md): show an answer while it is written.
+- [Vision](guides/vision.md): agents that see images and PDFs, from the input or from tools.
 - [Child agents](guides/child-agents.md): agents that delegate to other agents.
 - [Skills](guides/skills.md): `SKILL.md` folders an agent loads on demand.
 - [MCP tools](guides/mcp.md): call tools on an MCP server.

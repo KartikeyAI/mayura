@@ -58,7 +58,7 @@ test('looks the order up before answering', async () => {
 ## scriptedModel
 
 ```text
-scriptedModel(responses, { id?, maxCostMicros?, streamChunk? })
+scriptedModel(responses, { id?, maxCostMicros?, streamChunk?, media? })
 ```
 
 - **`responses`** is a list. Each model call takes the next entry. An entry is either a response object, or a function
@@ -70,6 +70,9 @@ scriptedModel(responses, { id?, maxCostMicros?, streamChunk? })
   test has several agents and you want to grant them separately.
 - **`maxCostMicros`** is the per-call bound, 0 by default.
 - **`streamChunk`** is the size of the streamed pieces (16 characters by default); see "Streaming" below.
+- **`media`** is what the model can see: every media type and URLs by default, so agents that accept images or PDFs
+  can be tested. Pass `false` to test an agent with a model that cannot see. A scripted step receives each message's
+  `media`; `testImage()` and `testPdf()` return small valid files to send. See [Vision](vision.md).
 
 Running past the end of the script is an error, never a made-up answer: the run ends `failed` with `MODEL_FAILED`.
 A scripted model is consumed as it runs, so create a new one for each test run.

@@ -151,6 +151,22 @@ must survive restarts, submit a [durable workflow](durable-workflows.md) from yo
 The client never retries anything by itself. Commands on durable workflows use the same idea with a `commandId` and
 the run's `revision`: a retried command id never applies twice, and a stale revision gets 409.
 
+## Sending images and PDFs
+
+For an agent that accepts media (see [Vision](vision.md)), `POST /v1/runs` takes `media` next to `input`. Each item is
+one of `{ mediaType, data }` (base64 bytes), `{ mediaType, url }` (an https URL under one of the agent's allowed
+prefixes) or `{ artifact }` (a stored [artifact](artifacts.md) reference), each with an optional `name`. The client
+sends bytes, URLs and references the same way: `client.submit(agentId, input, { idempotencyKey, media })`.
+
+- The server checks media against the agent before starting the run, and answers `400 INVALID_MEDIA` with a message
+  that names the item and the problem, such as `media 1: These bytes are image/png, not image/jpeg.`
+- Media is part of the idempotency key: the same key with other media is `409 IDEMPOTENCY_CONFLICT`.
+- A run submission may be up to `maxMediaBodyBytes` (16 MiB by default) when a registered agent accepts media; all other
+  requests keep `maxBodyBytes`. Base64 is about a third larger than the bytes it holds.
+- Artifact references need `mediaArtifacts`, which reads them for the caller's scope, for example
+  `mediaArtifacts: (reference, scope) => mediaFromArtifact(store, reference, scope)`. Without it they are refused
+  with `NOT_ENABLED`. A caller can only use artifacts of its own scope.
+
 ## Streaming run events
 
 `run.events()` reads the run's server-sent events stream: one frame per run event, with the event's sequence as the
@@ -325,7 +341,7 @@ them from the store.
 | --- | --- |
 | `GET /v1/session` | Any valid token: its scope, agents, capabilities, expiry and the optional APIs it can use (`client.session()`). |
 | `GET /v1/agents` | `runs:read` |
-| `POST /v1/runs` | `runs:submit` (body `{ agentId, input }`, `Idempotency-Key` header) |
+| `POST /v1/runs` | `runs:submit` (body `{ agentId, input }`, optionally with `media`; `Idempotency-Key` header) |
 | `GET /v1/runs/:id`, `GET /v1/runs/:id/events?after=N` | `runs:read` |
 | `POST /v1/runs/:id/cancel` | `runs:cancel` |
 | `GET /v1/operations/health`, `GET /v1/tools` | `operations:read` |
@@ -395,6 +411,7 @@ try {
 | `INVALID_CURSOR` | 400 | A bad `after` or `limit`. | Use a cursor the server returned; `limit` 1 to 100. |
 | `INVALID_JSON` | 400 | The body is not UTF-8 JSON. | Send JSON. |
 | `INVALID_REQUEST` | 400 | The body has other fields or types; the message names the expected ones. | Fix the body. |
+| `INVALID_MEDIA` | 400 | The run's `media` was refused; the message names the item and why (type, size, URL prefix, or the agent accepts none). | Fix the media or the agent's `media` policy. |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | `POST /v1/runs` without a valid `Idempotency-Key`. | Send one key per user action. |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Not `application/json`, or compressed. | Send plain JSON. |
 | `BODY_TOO_LARGE` | 413 | Larger than `maxBodyBytes` (`limitBytes`). | Send less. |
@@ -465,6 +482,7 @@ Pass `limits` to cap the server's memory and concurrency. When a limit is reache
 | Limit | Default | Limit | Default |
 | --- | --- | --- | --- |
 | `maxRuns` | 512 | `maxBodyBytes` | 1 MiB |
+| `maxMediaBodyBytes` (run submissions, when an agent accepts media) | 16 MiB | | |
 | `maxRuntimes` | 128 | `maxResponseBytes` | 4 MiB |
 | `maxRequests` | 64 | `requestTimeoutMs` | 10 s |
 | `maxStreams` | 64 | `streamDurationMs` | 30 s |

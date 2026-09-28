@@ -27,6 +27,8 @@ with a CLI that scaffolds, runs and operates your project.
 - **People in the loop.** Approvals and typed questions for people, answered from code, the CLI, a React form or the
   operator console.
 - **Streaming.** Stream an agent's answer as it is written, with guards on every batch.
+- **Vision.** Agents that see images and PDFs, with the input or from tools such as screenshots; checked by their
+  own bytes, limited, and never shown to hooks or logs.
 - **Guardrails and hooks.** Input and output guards, PII redaction, moderation, and lifecycle hooks that can stop a
   run.
 - **Memory and context.** Native memory with keyword, semantic and hybrid search, plus Mem0, Supermemory and

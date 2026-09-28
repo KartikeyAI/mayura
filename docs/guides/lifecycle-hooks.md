@@ -46,9 +46,9 @@ Control stages are awaited before the step they protect. Each handler returns `{
 
 | Stage | Runs | The event contains |
 | --- | --- | --- |
-| `beforeExecution` | After the input schema and input guards, before the first model call | `input` |
+| `beforeExecution` | After the input schema and input guards, before the first model call | `input`, and `media` (a summary of each image or PDF: type, size, name) when there is some |
 | `beforeStep` | Before each reasoning step | `step` |
-| `beforeModelCall` | Before each primary model call | `modelId`, `purpose`, and `request` with `messages`, `tools`, `maxOutputTokens` |
+| `beforeModelCall` | Before each primary model call | `modelId`, `purpose`, and `request` with `messages`, `tools`, `maxOutputTokens`, and `media` (summaries by message index) when there is some; hooks never see media bytes |
 | `beforeToolCall` | Before each tool call the model proposed | `proposal` with `callId`, `toolId`, `input` |
 | `beforeDelegate` | Before a child agent starts (on the parent's hooks) | `childRunId`, `childAgentId`, `input` |
 | `beforeOutputRelease` | After output guards, before a tool result enters the conversation or the final answer is released | `source` (`agent` or `tool`), `callId`, `toolId`, `candidate` |

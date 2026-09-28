@@ -87,7 +87,8 @@ is optional.
 | `maxCostMicros` | yes | The most one model call may cost. Reserved from the run budget before each call. |
 | `pricing` | yes | `inputMicrosPerMillionTokens` and `outputMicrosPerMillionTokens`, as non-negative integers. |
 | `timeoutMs` | no | Deadline for one call. Default 30,000. |
-| `maxRequestBytes` | no | Largest request body. Default 1 MiB. |
+| `maxRequestBytes` | no | Largest request body, not counting images and PDFs (bounded by the run's `maxMediaBytes`). Default 1 MiB. |
+| `media` | no | What the model can see, `{ types, urls }`. `openAIResponses` and `anthropicMessages` see every type and URLs unless told otherwise (`false` for a model that cannot see); `openAICompatibleChat` sees nothing unless told. See [Vision](vision.md). |
 | `maxResponseBytes` | no | Largest response body. Default 1 MiB. |
 | `fetch` | no | A `fetch`-compatible function to send requests through, for tests or a proxy. The destination does not change. |
 
@@ -197,6 +198,7 @@ at. Providers that differ from OpenAI in known ways are configured with these op
 | `tokenLimitField: 'max_completion_tokens'` | Sends the output-token limit as `max_completion_tokens`. OpenAI's newer models, directly or as `openai/...` through a gateway, refuse `max_tokens` (the default). |
 | `headers` | Extra headers, such as Cloudflare AI Gateway's `cf-aig-authorization`. Treated as credentials; they cannot replace the key header, `Content-Type`, `Host` or cookies. |
 | `body` | Extra request fields a provider defines, such as DeepSeek's `thinking`. They cannot replace the fields the adapter sets. |
+| `media` | What the model can see, such as `{ types: ['image/png', 'image/jpeg'], urls: true }`. Images are sent as `image_url` parts; PDFs, if listed, as `file` parts and only as bytes. See [Vision](vision.md). |
 
 **Thinking models.** Some providers return the model's reasoning with a tool call and require it back on the next
 request (DeepSeek answers 400 without it). The adapter keeps each such turn, reasoning included, in the run's private
@@ -319,6 +321,9 @@ export const myModel: ModelAdapter = {
   above: the outcome then carries Mayura's message for that reason. Pass `costMicros` when the provider reported
   usage before failing, so the known cost is charged; otherwise the call keeps its full `maxCostMicros` reservation.
   Any other error is reported with a generic message, since an adapter's own text never reaches an outcome.
+- `capabilities.media`, `{ types, urls }`, declares the images and PDFs the model can see. Messages then carry
+  `media` (bytes as `data`, or a `url`); `bytesToBase64`, `mediaDataUrl` and `encodedMediaBytes` from
+  `mayura/core/host` help encode them. Leave it out for a model that cannot see. See [Vision](vision.md).
 - An optional `checkDefinition(definition)` method lets `defineAgent` check the agent's tools and output schema once,
   so a problem shows when the agent is defined. `checkStrictDefinition` from `mayura/core/host` implements the strict
   rules above.

@@ -131,6 +131,20 @@ The quality of authentication is yours: a weak `authenticate` callback weakens e
 - **Errors are safe to log.** Mayura's public errors carry a code and a fixed message, never a credential or a raw
   provider response.
 
+## Images and PDFs
+
+- Media is refused unless an agent (or a tool, for what it returns) declares it, with bounded counts and sizes, and a
+  run-wide `maxMediaBytes`. Each item's type is read from its own leading bytes, so a file labelled as an image is
+  refused unless it is one; SVG, HTML and other active formats are never accepted.
+- A URL is accepted only under a prefix the agent lists, and only over https. The model provider fetches it, not
+  Mayura, so no URL makes the server request an address.
+- Hooks, events and guards never receive media bytes: hooks see a summary (type, size, name), events a count.
+- Over HTTP, media is checked before a run starts, is part of the idempotency key, and artifact references are read
+  only within the caller's scope. The larger media body limit applies only to run submissions, and only when an agent
+  accepts media.
+- A model can be misled by text inside an image just as by text in a message. Treat what an image says as untrusted
+  input, as you would a document.
+
 ## Limits
 
 - Mayura has no built-in protection against denial of service beyond its request limits. Put rate limiting in front
