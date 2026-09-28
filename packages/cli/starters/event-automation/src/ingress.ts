@@ -1,11 +1,9 @@
-import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { MayuraError } from 'mayura/core';
 import { StorageError } from 'mayura/storage-contracts';
 import { createWebhookRuntime, defineWebhookTrigger } from 'mayura/workstream/webhooks';
 import type { Config } from './config.js';
-import { jsonSchema } from './model.js';
 import type { Services } from './services.js';
 import { webhookHeaders } from './signing.js';
 import { ticketCreated } from './triage.js';
@@ -15,8 +13,6 @@ const maxBodyBytes = 65_536;
 const maxInFlight = 32;
 /** Deliveries signed more than five minutes before or after our clock are refused, so a captured request goes stale. */
 const replayWindowMs = 300_000;
-// Pins the payload schema into every stored delivery: a schema change is a new trigger version, never a silent reinterpretation.
-const schemaDigest = createHash('sha256').update(JSON.stringify(jsonSchema(ticketCreated))).digest('hex');
 
 export interface WebhookIngress { readonly url: string; isAccepting(): boolean; close(): Promise<void> }
 
@@ -35,7 +31,9 @@ export async function startWebhookIngress(config: Config, services: Services): P
     resolveSecret: async () => new Uint8Array(secret),
   });
   const trigger = defineWebhookTrigger({
-    id: 'tickets.created', version: '1', secretId: 'tracker-webhook', schemaId: 'tickets.created.v1', schemaDigest, input: ticketCreated,
+    id: 'tickets.created', version: '1', secretId: 'tracker-webhook', schemaId: 'tickets.created.v1', input: ticketCreated,
+    // No schemaDigest: Mayura derives it from `ticketCreated` and pins it into every stored delivery, so a schema change
+    // is a new trigger version, never a silent reinterpretation.
     // Runs once per new delivery, after verification. `commandId` is stable for the delivery, so the intake run is
     // idempotent on it too: even a dispatch retried after a crash finds the run it already started.
     dispatch: async (event, { deliveryId, commandId }) => {
