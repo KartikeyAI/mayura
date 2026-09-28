@@ -14,11 +14,13 @@ import type { ModelSettings } from './config.js';
 export function selectModel(settings: ModelSettings, offline: ModelAdapter): ModelAdapter {
   if (settings.provider === 'offline') return offline;
   // Generous: a turn may wait for tool results between calls, but each call itself is one request.
-  const options = { apiKey: settings.apiKey, model: settings.name, maxCostMicros: settings.maxCallCostMicros, pricing: settings.pricing, timeoutMs: 60_000 };
+  const options = { model: settings.name, maxCostMicros: settings.maxCallCostMicros, pricing: settings.pricing, timeoutMs: 60_000 };
   if (settings.provider === 'compatible') {
-    return openAICompatibleChat({ ...options, endpoint: settings.endpoint, remote: { id: settings.providerId, auth: settings.auth } });
+    return openAICompatibleChat({ ...options, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}), endpoint: settings.endpoint,
+      remote: { id: settings.providerId, auth: settings.auth }, output: settings.output, strictTools: settings.strictTools,
+      ...(settings.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${settings.gatewayToken}` } } : {}) });
   }
-  return settings.provider === 'openai' ? openAIResponses(options) : anthropicMessages(options);
+  return settings.provider === 'openai' ? openAIResponses({ ...options, apiKey: settings.apiKey }) : anthropicMessages({ ...options, apiKey: settings.apiKey });
 }
 
 /** Runtimes must allow each model explicitly, as `model:<adapter id>`. */

@@ -9,12 +9,18 @@ export interface ProviderOption {
   readonly id: string; readonly label: string; readonly hint: string;
   /** What MAYURA_MODEL_PROVIDER becomes; undefined for offline. */
   readonly provider?: StarterProvider; readonly keyVariable?: string; readonly defaultModel?: string;
-  /** OpenAI-compatible presets: a fixed endpoint, or `azure` / `other` to ask for it. */
-  readonly endpoint?: string; readonly ask?: 'azure' | 'other'; readonly auth?: ProviderAuth;
+  /** OpenAI-compatible presets: a fixed endpoint, or `azure` / `cloudflare` / `other` to ask for it. */
+  readonly endpoint?: string; readonly ask?: 'azure' | 'cloudflare' | 'other'; readonly auth?: ProviderAuth;
+  /** The provider's dialect: JSON mode instead of JSON Schema output, and strict tool calls. */
+  readonly dialect?: ProviderDialect;
 }
+/** How an OpenAI-compatible provider differs from OpenAI: see `output` and `strictTools` of openAICompatibleChat. */
+export interface ProviderDialect { readonly output?: 'json_object'; readonly strictTools?: boolean }
+/** DeepSeek offers JSON mode but not JSON Schema output, and strict tool calls on its beta endpoint. */
+export const DEEPSEEK_DIALECT: ProviderDialect = Object.freeze({ output: 'json_object', strictTools: true });
 
-const compatible = (id: string, label: string, endpoint: string): ProviderOption =>
-  ({ id, label, hint: 'OpenAI-compatible', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', endpoint, auth: 'bearer' });
+const compatible = (id: string, label: string, endpoint: string, extra: Partial<ProviderOption> = {}): ProviderOption =>
+  ({ id, label, hint: 'OpenAI-compatible', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', endpoint, auth: 'bearer', ...extra });
 /**
  * Offline, the two native adapters, then OpenAI-compatible endpoints as documented in docs/guides/model-providers.md.
  * Mayura has not qualified the compatible ones against live accounts; `pnpm providers:live-check` does that.
@@ -26,19 +32,23 @@ export const PROVIDERS: readonly ProviderOption[] = Object.freeze([
   compatible('groq', 'Groq', 'https://api.groq.com/openai/v1/chat/completions'),
   compatible('gemini', 'Google Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'),
   compatible('mistral', 'Mistral', 'https://api.mistral.ai/v1/chat/completions'),
-  compatible('deepseek', 'DeepSeek', 'https://api.deepseek.com/chat/completions'),
+  compatible('deepseek', 'DeepSeek', 'https://api.deepseek.com/beta/chat/completions', { defaultModel: 'deepseek-flash', dialect: DEEPSEEK_DIALECT }),
   compatible('xai', 'xAI', 'https://api.x.ai/v1/chat/completions'),
   compatible('openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1/chat/completions'),
   compatible('together', 'Together', 'https://api.together.xyz/v1/chat/completions'),
   compatible('fireworks', 'Fireworks', 'https://api.fireworks.ai/inference/v1/chat/completions'),
+  { id: 'cloudflare', label: 'Cloudflare AI Gateway', hint: 'any model through your gateway', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'cloudflare', auth: 'bearer' },
   { id: 'azure', label: 'Azure OpenAI', hint: 'your resource and deployment', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'azure', auth: 'api-key' },
   { id: 'other', label: 'Another OpenAI-compatible provider', hint: 'any HTTPS /chat/completions endpoint', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'other', auth: 'bearer' },
 ]);
 
 export interface ProviderChoice {
+  /** The provider's key; empty only for a gateway that stores the key itself (then `gatewayToken` authenticates). */
   readonly provider: StarterProvider; readonly apiKey: string; readonly model: string;
-  /** For `compatible`: the endpoint, a short id naming its adapter, and how it takes the key. */
-  readonly compatible?: { readonly id: string; readonly endpoint: string; readonly auth: ProviderAuth };
+  /** For `compatible`: the endpoint, a short id naming its adapter, how it takes the key, and its dialect. */
+  readonly compatible?: { readonly id: string; readonly endpoint: string; readonly auth: ProviderAuth; readonly dialect?: ProviderDialect;
+    /** Cloudflare AI Gateway's token, for an authenticated gateway (sent as `cf-aig-authorization`). */
+    readonly gatewayToken?: string };
   /** Micro-dollars per million tokens. */
   readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number;
   /** The most one model call, and one agent run, may cost, in micro-dollars. */
@@ -71,6 +81,13 @@ export function endpointProblem(value: string | undefined): string | undefined {
   }
   return undefined;
 }
+/** Cloudflare AI Gateway's OpenAI-compatible endpoint for an account and gateway. Models are named `provider/model`. */
+export function cloudflareEndpoint(accountId: string, gatewayId: string): string {
+  return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}/compat/chat/completions`;
+}
+/** The dialect of a model reached through a gateway, from its `provider/model` name. */
+export const gatewayDialect = (model: string): ProviderDialect | undefined => /^deepseek\//iu.test(model) ? DEEPSEEK_DIALECT : undefined;
+
 /** The Azure OpenAI chat-completions URL for a resource, deployment and API version. */
 export function azureEndpoint(resource: string, deployment: string, apiVersion: string): string {
   return `https://${resource}.openai.azure.com/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
@@ -84,8 +101,11 @@ export function providerEnvironment(choice: ProviderChoice): string {
     '# (.gitignore excludes it). Production reads these settings from its own environment instead.',
     `MAYURA_MODEL_PROVIDER=${choice.provider}`,
     ...(choice.compatible ? [`MAYURA_MODEL_PROVIDER_ID=${choice.compatible.id}`, `MAYURA_MODEL_ENDPOINT=${choice.compatible.endpoint}`,
-      `MAYURA_MODEL_AUTH=${choice.compatible.auth}`] : []),
-    `${keyVariable}=${choice.apiKey}`,
+      `MAYURA_MODEL_AUTH=${choice.compatible.auth}`,
+      ...(choice.compatible.dialect?.output ? [`MAYURA_MODEL_OUTPUT=${choice.compatible.dialect.output}`] : []),
+      ...(choice.compatible.dialect?.strictTools ? ['MAYURA_MODEL_STRICT_TOOLS=true'] : []),
+      ...(choice.compatible.gatewayToken ? [`MAYURA_MODEL_GATEWAY_TOKEN=${choice.compatible.gatewayToken}`] : [])] : []),
+    ...(choice.apiKey ? [`${keyVariable}=${choice.apiKey}`] : []),
     `MAYURA_MODEL=${choice.model}`,
     `MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=${choice.inputMicrosPerMillionTokens}`,
     `MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS=${choice.outputMicrosPerMillionTokens}`,

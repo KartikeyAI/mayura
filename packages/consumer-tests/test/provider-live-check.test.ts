@@ -28,7 +28,7 @@ const refusal = async (env: Record<string, string>): Promise<string[]> => {
   try { readConfig(env); } catch (error) { if (error instanceof Refusal) return error.problems; throw error; }
   throw new Error('Expected the configuration to be refused.');
 };
-const credentials = (env: Record<string, string>): string[] => Object.entries(env).filter(([name]) => /_KEY$/u.test(name)).map(([, value]) => value);
+const credentials = (env: Record<string, string>): string[] => Object.entries(env).filter(([name]) => /_(?:KEY|TOKEN)$/u.test(name)).map(([, value]) => value);
 
 describe('provider live-check harness (dry run)', () => {
   it('passes every check for every configured provider through the runtime, within the caps, without printing credentials', async () => {
@@ -36,7 +36,9 @@ describe('provider live-check harness (dry run)', () => {
     const report = await dryRun();
     expect(report).toMatchObject({ status: 'passed', mode: 'dry-run' });
     expect(report.providers.map(provider => [provider.provider, provider.status])).toEqual([
-      ['openai', 'passed'], ['anthropic', 'passed'], ['compatible:groq', 'passed'], ['compatible:azure', 'passed']]);
+      ['openai', 'passed'], ['anthropic', 'passed'], ['compatible:groq', 'passed'], ['compatible:azure', 'passed'],
+      // A Cloudflare AI Gateway route to a DeepSeek-style model: gateway token, JSON mode, strict tools, reasoning sent back.
+      ['compatible:cloudflare', 'passed']]);
     for (const provider of report.providers) {
       expect(provider.checks.map(check => [check.check, check.status])).toEqual(['structured', 'tools', 'streaming', 'router_failover', 'router_streaming', 'cost'].map(check => [check, 'passed']));
       // The refused route is charged its full per-call bound (5,000) and the valid route its confirmed cost (480).
@@ -102,6 +104,20 @@ describe('provider live-check harness (configuration)', () => {
       MAYURA_LIVE_COMPATIBLE_ACME_INPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_LIVE_COMPATIBLE_ACME_OUTPUT_MICROS_PER_MILLION_TOKENS: '1' });
     expect(problems).toEqual([expect.stringMatching(/^MAYURA_LIVE_COMPATIBLE_ACME configuration was refused by the adapter: /u)]);
     expect(await refusal({ ...caps, MAYURA_LIVE_COMPATIBLE: 'Bad_Id' })).toEqual([expect.stringContaining('lower-case provider ids'), expect.stringContaining('No provider is selected')]);
+  });
+
+  it('accepts a gateway token instead of a provider key, and refuses unknown dialect settings', async () => {
+    const gateway = { ...caps, MAYURA_LIVE_COMPATIBLE: 'cloudflare', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_URL: 'https://gateway.ai.cloudflare.com/v1/account/gateway/compat/chat/completions',
+      MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_MODEL: 'deepseek/deepseek-flash', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_INPUT_MICROS_PER_MILLION_TOKENS: '1',
+      MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT_MICROS_PER_MILLION_TOKENS: '1' };
+    expect(await refusal(gateway)).toEqual(['MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_KEY is required for the selected provider.']);
+    const { readConfig } = await harness();
+    expect(() => readConfig({ ...gateway, MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'fixture-credential-value' })).not.toThrow();
+    const problems = await refusal({ ...gateway, MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'fixture-credential-value', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT: 'yaml',
+      MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS: 'yes', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_BODY: '[1]' });
+    expect(problems).toEqual(expect.arrayContaining([expect.stringContaining('_OUTPUT must be json_schema or json_object'), expect.stringContaining('_STRICT_TOOLS must be true or false'),
+      expect.stringContaining('_BODY must be a JSON object')]));
+    expect(JSON.stringify(problems)).not.toContain('fixture-credential-value');
   });
 
   it('exits 0 for a passing dry run and 2 for a refused live run, which prints nothing on stdout', async () => {

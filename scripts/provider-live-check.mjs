@@ -43,6 +43,7 @@ export function readConfig(env) {
     if (typeof value !== 'string' || value.trim() === '') { problems.push(`${name} is required for the selected provider.`); return undefined; }
     secrets.push(value); return value;
   };
+  const optionalSecret = name => { const value = env[name]; if (typeof value !== 'string' || value.trim() === '') return undefined; secrets.push(value); return value; };
   const pricing = prefix => ({ inputMicrosPerMillionTokens: amount(`${prefix}_INPUT_MICROS_PER_MILLION_TOKENS`),
     outputMicrosPerMillionTokens: amount(`${prefix}_OUTPUT_MICROS_PER_MILLION_TOKENS`) });
 
@@ -77,8 +78,21 @@ export function readConfig(env) {
       if (!endpoint) problems.push(`${prefix}_URL is required for the selected provider.`);
       if (!model) problems.push(`${prefix}_MODEL is required for the selected provider.`);
       if (auth !== 'bearer' && auth !== 'api-key') problems.push(`${prefix}_AUTH must be bearer or api-key.`);
+      // A gateway (Cloudflare AI Gateway) takes its own token; with keys stored in the gateway, no provider key is sent.
+      const gatewayToken = optionalSecret(`${prefix}_GATEWAY_TOKEN`);
+      const output = text(`${prefix}_OUTPUT`) ?? 'json_schema';
+      if (output !== 'json_schema' && output !== 'json_object') problems.push(`${prefix}_OUTPUT must be json_schema or json_object.`);
+      const strict = text(`${prefix}_STRICT_TOOLS`) ?? 'false';
+      if (strict !== 'true' && strict !== 'false') problems.push(`${prefix}_STRICT_TOOLS must be true or false.`);
+      let body;
+      const rawBody = text(`${prefix}_BODY`);
+      if (rawBody !== undefined) {
+        try { body = JSON.parse(rawBody); if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error(); }
+        catch { problems.push(`${prefix}_BODY must be a JSON object of extra request fields, such as {"thinking":{"type":"disabled"}}.`); body = undefined; }
+      }
       providers.push({ provider: `compatible:${id}`, kind: 'compatible', id, adapterId: `openai-compatible.${id}`, endpoint, auth, model,
-        apiKey: secret(`${prefix}_KEY`), pricing: pricing(prefix), variablePrefix: prefix });
+        apiKey: gatewayToken ? optionalSecret(`${prefix}_KEY`) : secret(`${prefix}_KEY`), gatewayToken, output, strictTools: strict === 'true',
+        ...(body ? { body } : {}), pricing: pricing(prefix), variablePrefix: prefix });
     }
   } else skipped.push({ provider: 'compatible', reason: 'MAYURA_LIVE_COMPATIBLE is not set.' });
   if (providers.length === 0) problems.push('No provider is selected: set MAYURA_LIVE_OPENAI_MODEL, MAYURA_LIVE_ANTHROPIC_MODEL or MAYURA_LIVE_COMPATIBLE.');
@@ -100,12 +114,16 @@ export function readConfig(env) {
   return Object.freeze({ ...config, warnings, plannedWorstCaseMicros });
 }
 
-function adapterFor(config, provider, { outputJsonSchema, apiKey = provider.apiKey, transport }) {
+/** The adapter for one provider. `invalid` replaces its credential (the gateway token, when it has one) with a wrong one. */
+function adapterFor(config, provider, { outputJsonSchema, invalid = false, transport }) {
   const common = { model: provider.model, outputJsonSchema, maxCostMicros: config.maxCallCostMicros, pricing: provider.pricing,
     timeoutMs: config.timeoutMs, ...(transport ? { fetch: transport } : {}) };
+  const apiKey = invalid && !provider.gatewayToken ? INVALID_KEY : provider.apiKey;
   if (provider.kind === 'openai') return openAIResponses({ apiKey, ...common });
   if (provider.kind === 'anthropic') return anthropicMessages({ apiKey, ...common });
-  return openAICompatibleChat({ endpoint: provider.endpoint, remote: { id: provider.id, auth: provider.auth }, apiKey, ...common });
+  return openAICompatibleChat({ endpoint: provider.endpoint, remote: { id: provider.id, auth: provider.auth }, ...(apiKey ? { apiKey } : {}), ...common,
+    ...(provider.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${invalid ? INVALID_KEY : provider.gatewayToken}` } } : {}),
+    output: provider.output, strictTools: provider.strictTools, ...(provider.body ? { body: provider.body } : {}) });
 }
 
 /** Only a Mayura public error's code and message are reported; anything else is reduced to a fixed code. */
@@ -214,7 +232,7 @@ export async function runHarness({ env, transport, mode = 'live' }) {
 
   for (const provider of config.providers) {
     const fetch = transport?.(provider);
-    const make = (outputJsonSchema, apiKey) => adapterFor(config, provider, { outputJsonSchema, apiKey, transport: fetch });
+    const make = (outputJsonSchema, invalid = false) => adapterFor(config, provider, { outputJsonSchema, invalid, transport: fetch });
     const bound = config.maxCallCostMicros;
     const costRecords = [];
     /** Run one agent under a run budget of `bounds` per-call bounds, charging the harness ledger conservatively. */
@@ -272,7 +290,7 @@ export async function runHarness({ env, transport, mode = 'live' }) {
     const routed = async streamed => {
       const check = streamed ? 'router_streaming' : 'router_failover'; const spec = streamed ? STREAMING : STRUCTURED;
       const attempts = []; const guardChecks = { count: 0 };
-      const router = createModelRouter({ id: ROUTER_ID, routes: [make(spec.jsonSchema, INVALID_KEY), make(spec.jsonSchema)], onAttempt: attempt => attempts.push(attempt) });
+      const router = createModelRouter({ id: ROUTER_ID, routes: [make(spec.jsonSchema, true), make(spec.jsonSchema)], onAttempt: attempt => attempts.push(attempt) });
       const meter = metered(router);
       const agent = defineAgent({ id: `live.${check.replace('_', '-')}`, version: '1', instructions: spec.instructions, input: questionInput, output: spec.output, tools: [], model: meter.adapter,
         ...(streamed ? { stream: { field: ['reply'], guards: [{ id: 'live.batch-allow', check: () => { guardChecks.count += 1; return { decision: 'allow' }; } }], batch: { minChars: 8, maxChars: 64 } } } : {}) });
@@ -359,10 +377,14 @@ const DRY_RUN_PRICES = { INPUT_MICROS_PER_MILLION_TOKENS: '2000000', OUTPUT_MICR
 const prices = prefix => Object.fromEntries(Object.entries(DRY_RUN_PRICES).map(([key, value]) => [`${prefix}_${key}`, value]));
 /** Fixture configuration for the dry run. The credentials are fixed placeholders, and hosts under .invalid cannot resolve. */
 export const DRY_RUN_ENV = Object.freeze({
-  MAYURA_LIVE_MAX_CALL_COST_MICROS: '5000', MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '200000', MAYURA_LIVE_MAX_OUTPUT_TOKENS: '256', MAYURA_LIVE_TIMEOUT_MS: '10000',
+  MAYURA_LIVE_MAX_CALL_COST_MICROS: '5000', MAYURA_LIVE_MAX_TOTAL_COST_MICROS: '300000', MAYURA_LIVE_MAX_OUTPUT_TOKENS: '256', MAYURA_LIVE_TIMEOUT_MS: '10000',
   OPENAI_API_KEY: 'dry-run-openai-credential', MAYURA_LIVE_OPENAI_MODEL: 'dry-run-openai-model', ...prices('MAYURA_LIVE_OPENAI'),
   ANTHROPIC_API_KEY: 'dry-run-anthropic-credential', MAYURA_LIVE_ANTHROPIC_MODEL: 'dry-run-anthropic-model', ...prices('MAYURA_LIVE_ANTHROPIC'),
-  MAYURA_LIVE_COMPATIBLE: 'groq,azure',
+  MAYURA_LIVE_COMPATIBLE: 'groq,azure,cloudflare',
+  MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_URL: 'https://gateway.dry-run.invalid/v1/account/gateway/compat/chat/completions',
+  MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_GATEWAY_TOKEN: 'dry-run-gateway-credential', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_MODEL: 'deepseek/dry-run-model',
+  MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT: 'json_object', MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS: 'true',
+  MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_BODY: '{"thinking":{"type":"enabled"}}', ...prices('MAYURA_LIVE_COMPATIBLE_CLOUDFLARE'),
   MAYURA_LIVE_COMPATIBLE_GROQ_URL: 'https://groq.dry-run.invalid/openai/v1/chat/completions', MAYURA_LIVE_COMPATIBLE_GROQ_KEY: 'dry-run-groq-credential',
   MAYURA_LIVE_COMPATIBLE_GROQ_MODEL: 'dry-run-compatible-model', ...prices('MAYURA_LIVE_COMPATIBLE_GROQ'),
   MAYURA_LIVE_COMPATIBLE_AZURE_URL: 'https://azure.dry-run.invalid/openai/deployments/fixture/chat/completions?api-version=2024-10-21',
@@ -384,13 +406,23 @@ export function dryRunTransport(provider, fault) {
   const usage = { input: 120, output: fault === 'overcharge' ? 10_000_000 : 30 };
   return async (url, init) => {
     const headers = init?.headers ?? {};
-    const presented = provider.kind === 'anthropic' ? headers['x-api-key'] : provider.kind === 'compatible' && provider.auth === 'api-key' ? headers['api-key'] : headers['Authorization']?.replace(/^Bearer /u, '');
+    const presented = provider.kind === 'anthropic' ? headers['x-api-key'] : provider.gatewayToken ? headers['cf-aig-authorization']?.replace(/^Bearer /u, '')
+      : provider.kind === 'compatible' && provider.auth === 'api-key' ? headers['api-key'] : headers['Authorization']?.replace(/^Bearer /u, '');
+    const expected = provider.gatewayToken ?? provider.apiKey;
     if (String(url) !== destination || init?.method !== 'POST') return new Response('{"error":"not found"}', { status: 404 });
-    if (presented !== provider.apiKey && !(fault === 'accept-invalid-key' && presented === INVALID_KEY)) return new Response('{"error":{"message":"invalid key"}}', { status: 401 });
+    if (presented !== expected && !(fault === 'accept-invalid-key' && presented === INVALID_KEY)) return new Response('{"error":{"message":"invalid key"}}', { status: 401 });
     const body = JSON.parse(init.body);
+    // Like DeepSeek with thinking on: a request with tools must carry back the reasoning of every earlier assistant turn.
+    if (provider.body?.thinking?.type === 'enabled' && body.messages?.some(message => message.role === 'assistant' && typeof message.reasoning_content !== 'string')) {
+      return new Response('{"error":{"message":"reasoning_content must be passed back"}}', { status: 400 });
+    }
+    if (provider.output === 'json_object' && (body.response_format?.type !== 'json_object' || (body.tools ?? []).some(tool => tool.function.strict !== true))) {
+      return new Response('{"error":{"message":"unsupported response_format or non-strict tool"}}', { status: 400 });
+    }
     const view = provider.kind === 'openai' ? { schema: body.text.format.schema, tool: body.tools[0]?.name, result: body.input.find(item => item.type === 'function_call_output')?.output }
       : provider.kind === 'anthropic' ? { schema: body.output_config.format.schema, tool: body.tools?.[0]?.name, result: body.messages.flatMap(message => message.content).find(block => block.type === 'tool_result')?.content }
-        : { schema: body.response_format.json_schema.schema, tool: body.tools[0]?.function.name, result: body.messages.find(message => message.role === 'tool')?.content };
+        : { schema: body.response_format.type === 'json_object' ? JSON.parse(body.messages[0].content.split('JSON Schema:\n').at(-1)) : body.response_format.json_schema.schema,
+          tool: body.tools?.[0]?.function.name, result: body.messages.find(message => message.role === 'tool')?.content };
     const properties = view.schema.properties;
     const needsTool = 'code' in properties && view.tool !== undefined && view.result === undefined;
     const answer = 'code' in properties ? { code: fault === 'ignore-tool-result' ? 'LC-00000000' : JSON.parse(view.result ?? '{}').code ?? 'missing' }
@@ -418,7 +450,7 @@ export function dryRunTransport(provider, fault) {
         { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }, { choices: [], usage: tokens }, '[DONE]']);
     }
     return json({ choices: [{ index: 0, finish_reason: needsTool ? 'tool_calls' : 'stop', message: needsTool
-      ? { role: 'assistant', content: null, tool_calls: [{ id: 'call_dry_1', type: 'function', function: { name: view.tool, arguments: '{"name":"alpha"}' } }] }
+      ? { role: 'assistant', content: null, reasoning_content: 'The code comes from the tool.', tool_calls: [{ id: 'call_dry_1', type: 'function', function: { name: view.tool, arguments: '{"name":"alpha"}' } }] }
       : { role: 'assistant', content: text } }], usage: tokens });
   };
 }

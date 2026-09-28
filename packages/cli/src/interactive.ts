@@ -4,7 +4,7 @@ import { relative, resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { applyProjectPlan, planProject, planStarter, starters, templates, type InitPlan, type StarterInitPlan, type StarterName, type TemplateName } from './index.js';
 import { nextSteps, wrap, type Paint } from './output.js';
-import { azureEndpoint, dollarsToMicros, endpointProblem, modelPattern, PROVIDERS, providerIdPattern, validKey, writeProviderEnvironment, type ProviderChoice } from './providers.js';
+import { azureEndpoint, cloudflareEndpoint, dollarsToMicros, endpointProblem, gatewayDialect, modelPattern, PROVIDERS, providerIdPattern, validKey, writeProviderEnvironment, type ProviderChoice } from './providers.js';
 
 /** The part of a description before its first colon or full stop: short enough for a menu hint. */
 const summary = (description: string): string => description.split(/[:.]/u)[0]!.trim();
@@ -43,8 +43,19 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
       // OpenAI-compatible: a preset endpoint, or the pieces of one.
       let compatible: ProviderChoice['compatible'];
       if (details.provider === 'compatible') {
-        let endpoint = details.endpoint; let id = details.id;
-        if (details.ask === 'azure') {
+        let endpoint = details.endpoint; let id = details.id; let gatewayToken: string | undefined;
+        if (details.ask === 'cloudflare') {
+          const account = await prompts.text({ ...io, message: 'Cloudflare account ID', placeholder: 'in the dashboard URL or Account home',
+            validate: value => /^[a-f0-9]{32}$/u.test(value ?? '') ? undefined : 'Enter the 32-character account ID.' });
+          if (prompts.isCancel(account)) return cancelled();
+          const gateway = await prompts.text({ ...io, message: 'Gateway name', placeholder: 'default', defaultValue: 'default',
+            validate: value => /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(value || 'default') ? undefined : 'Enter the gateway name from AI Gateway.' });
+          if (prompts.isCancel(gateway)) return cancelled();
+          const token = await prompts.password({ ...io, message: 'Gateway token (leave empty if the gateway is not authenticated)', mask: '•',
+            validate: value => !value || validKey(value) ? undefined : 'Paste the token: at least 8 visible characters, no spaces.' });
+          if (prompts.isCancel(token)) return cancelled();
+          endpoint = cloudflareEndpoint(account, gateway || 'default'); gatewayToken = token || undefined;
+        } else if (details.ask === 'azure') {
           const resource = await prompts.text({ ...io, message: 'Azure OpenAI resource name', placeholder: 'the <resource> in https://<resource>.openai.azure.com',
             validate: value => /^[a-z0-9][a-z0-9-]{1,62}$/u.test(value ?? '') ? undefined : 'Enter the resource name: lower-case letters, digits and dashes.' });
           if (prompts.isCancel(resource)) return cancelled();
@@ -66,15 +77,23 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
           if (prompts.isCancel(named)) return cancelled();
           id = named || suggested;
         }
-        compatible = { id, endpoint: endpoint!, auth: details.auth ?? 'bearer' };
+        compatible = { id, endpoint: endpoint!, auth: details.auth ?? 'bearer', ...(details.dialect ? { dialect: details.dialect } : {}), ...(gatewayToken ? { gatewayToken } : {}) };
       }
-      const model = await prompts.text({ ...io, message: `${details.label} model`, placeholder: details.defaultModel ?? 'the model id from your account',
+      const model = await prompts.text({ ...io, message: `${details.label} model`,
+        placeholder: details.defaultModel ?? (details.ask === 'cloudflare' ? 'provider/model, such as deepseek/deepseek-flash' : 'the model id from your account'),
         ...(details.defaultModel ? { defaultValue: details.defaultModel } : {}),
         validate: value => (value || details.defaultModel) && modelPattern.test(value || details.defaultModel!) ? undefined : 'Enter a model id, such as the one in your provider dashboard.' });
       if (prompts.isCancel(model)) return cancelled();
-      // Masked, and written only to the project's .env: never printed, logged or put in the plan.
-      const apiKey = await prompts.password({ ...io, message: `${details.label} API key`, mask: '•',
-        validate: value => validKey(value) ? undefined : 'Paste the key: at least 8 visible characters, no spaces.' });
+      // Through a gateway, the model's provider sets the dialect (DeepSeek answers in JSON mode, for example).
+      if (details.ask === 'cloudflare' && compatible) {
+        const dialect = gatewayDialect(model || '');
+        compatible = { ...compatible, ...(dialect ? { dialect } : {}) };
+      }
+      // Masked, and written only to the project's .env: never printed, logged or put in the plan. A gateway with a
+      // token may keep the provider's key itself, so the key may be left empty there.
+      const keyOptional = details.ask === 'cloudflare' && compatible?.gatewayToken !== undefined;
+      const apiKey = await prompts.password({ ...io, message: keyOptional ? 'Provider API key (leave empty if the gateway stores it)' : `${details.label} API key`, mask: '•',
+        validate: value => (keyOptional && !value) || validKey(value) ? undefined : 'Paste the key: at least 8 visible characters, no spaces.' });
       if (prompts.isCancel(apiKey)) return cancelled();
       prompts.log.message(p.dim(wrap('Mayura accounts every call conservatively, so it needs your prices (from the provider\'s pricing page) and a spending cap.', 76, '')), io);
       const price = async (message: string, defaultValue?: string): Promise<number | symbol> => {

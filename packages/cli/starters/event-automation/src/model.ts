@@ -12,12 +12,14 @@ import type { ModelSettings } from './config.js';
  */
 export function selectModel(settings: ModelSettings, agent: { readonly outputJsonSchema: JsonObject; readonly offline: ModelAdapter }): ModelAdapter {
   if (settings.provider === 'offline') return agent.offline;
-  const options = { apiKey: settings.apiKey, model: settings.name, outputJsonSchema: agent.outputJsonSchema,
+  const options = { model: settings.name, outputJsonSchema: agent.outputJsonSchema,
     maxCostMicros: settings.maxCallCostMicros, pricing: settings.pricing, timeoutMs: 30_000 };
   if (settings.provider === 'compatible') {
-    return openAICompatibleChat({ ...options, endpoint: settings.endpoint, remote: { id: settings.providerId, auth: settings.auth } });
+    return openAICompatibleChat({ ...options, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}), endpoint: settings.endpoint,
+      remote: { id: settings.providerId, auth: settings.auth }, output: settings.output, strictTools: settings.strictTools,
+      ...(settings.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${settings.gatewayToken}` } } : {}) });
   }
-  return settings.provider === 'openai' ? openAIResponses(options) : anthropicMessages(options);
+  return settings.provider === 'openai' ? openAIResponses({ ...options, apiKey: settings.apiKey }) : anthropicMessages({ ...options, apiKey: settings.apiKey });
 }
 
 /** Runtimes must allow each model explicitly, as `model:<adapter id>`. */

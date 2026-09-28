@@ -5,7 +5,7 @@ import { openAIResponses, type OpenAIResponsesOptions } from '../src/index.js';
 const outputSchema: JsonObject = { type: 'object', properties: { answer: { type: 'number' } }, required: ['answer'], additionalProperties: false };
 const inputSchema: JsonObject = { type: 'object', properties: { left: { type: 'number' }, right: { type: 'number' } }, required: ['left', 'right'], additionalProperties: false };
 const message = (text = '{"answer":5}', status = 'completed'): JsonObject => ({ type: 'message', role: 'assistant', status, content: [{ type: 'output_text', text }] });
-const functionCall = (overrides: JsonObject = {}): JsonObject => ({ type: 'function_call', id: 'fc_fixture', status: 'completed', call_id: 'call_1', name: 'tool_0', arguments: '{"left":2,"right":3}', ...overrides });
+const functionCall = (overrides: JsonObject = {}): JsonObject => ({ type: 'function_call', id: 'fc_fixture', status: 'completed', call_id: 'call_1', name: 'math_add_v1', arguments: '{"left":2,"right":3}', ...overrides });
 const payload = (output: JsonValue[] = [message()], usage: JsonObject = { input_tokens: 10, output_tokens: 2 }): JsonObject => ({ status: 'completed', output, usage });
 const response = (value: JsonValue = payload(), init?: ResponseInit): Response => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' }, ...init });
 function options(overrides: Partial<OpenAIResponsesOptions> = {}): OpenAIResponsesOptions {
@@ -87,7 +87,7 @@ describe('Responses request contract', () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     const body = transmittedBody(transport);
     expect(body).toMatchObject({ model: 'fixture-model', store: false, stream: false, include: ['reasoning.encrypted_content'], parallel_tool_calls: true, max_output_tokens: 128 });
-    expect(body['tools']).toEqual([{ type: 'function', name: 'tool_0', description: 'Add numbers.', parameters: inputSchema, strict: true }]);
+    expect(body['tools']).toEqual([{ type: 'function', name: 'math_add_v1', description: 'Add numbers.', parameters: inputSchema, strict: true }]);
     expect(body['text']).toEqual({ format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } });
     expect(JSON.stringify(body)).not.toContain('fixture-not-a-real-api-key');
   });

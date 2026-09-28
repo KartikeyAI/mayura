@@ -127,8 +127,11 @@ providers accept no open objects, records or maps.
 The agent's `output` validator still checks the provider's answer after it arrives, so it may be stricter than the
 JSON Schema.
 
-Mayura sends tools to the provider under neutral names (`tool_0`, `tool_1`, ...) and maps them back, so the model
-identifies a tool by its `description`. Write descriptions that say what the tool does and when to use it.
+Mayura sends each tool under its own id, made safe for provider function names: letters, digits, `_` and `-`, at most
+64 characters. So `orders.list` reaches the model as `orders_list`, and instructions that name tools by id still
+match. Two ids that come out the same (`orders.list` and `orders/list`) get `_2`, `_3` and so on. Mayura maps the
+names back, and a call to a name that is not one of the agent's tools ends the run. Write descriptions that say what
+each tool does and when to use it: the model chooses by name and description.
 
 ## OpenAI-compatible providers
 
@@ -175,16 +178,69 @@ Commonly used endpoints (check each provider's current documentation):
 | Together | `https://api.together.xyz/v1/chat/completions` | `{ id: 'together' }` |
 | Fireworks | `https://api.fireworks.ai/inference/v1/chat/completions` | `{ id: 'fireworks' }` |
 | Mistral | `https://api.mistral.ai/v1/chat/completions` | `{ id: 'mistral' }` |
-| DeepSeek | `https://api.deepseek.com/chat/completions` | `{ id: 'deepseek' }` |
+| DeepSeek | `https://api.deepseek.com/beta/chat/completions` (with `output: 'json_object'`, `strictTools: true`; see below) | `{ id: 'deepseek' }` |
 | OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `{ id: 'openrouter' }` |
 | xAI | `https://api.x.ai/v1/chat/completions` | `{ id: 'xai' }` |
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<version>` | `{ id: 'azure', auth: 'api-key' }` |
 | Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `{ id: 'gemini' }` |
+| Cloudflare AI Gateway | `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions` (see below) | `{ id: 'cloudflare' }` |
 
-**Mayura has not verified these providers against live accounts.** "Compatible" is partial: Mayura needs strict tool
-calls, a strict JSON Schema `response_format` and reported token usage (for streaming, `stream_options.include_usage`).
-A provider or model that answers in another dialect, or leaves out usage, fails the call with `MODEL_FAILED` rather
-than being guessed at. Try your provider and model with a small budget before you rely on it.
+**Check your provider with a small budget before you rely on it**; Mayura's own checks run against fake servers. The
+adapter needs tool calls, structured output and reported token usage (for streaming, `stream_options.include_usage`).
+A provider that answers differently, or leaves out usage, fails the call with a clear reason rather than being guessed
+at. Providers that differ from OpenAI in known ways are configured with these options:
+
+| Option | What it is for |
+|---|---|
+| `output: 'json_object'` | Providers with JSON mode but no JSON Schema output, such as DeepSeek. The schema goes into the instructions; Mayura still validates the answer. The default is `'json_schema'`. |
+| `strictTools: true` | Sends `strict: true` on every function, for providers with strict tool calls (DeepSeek's `/beta` endpoint). |
+| `headers` | Extra headers, such as Cloudflare AI Gateway's `cf-aig-authorization`. Treated as credentials; they cannot replace the key header, `Content-Type`, `Host` or cookies. |
+| `body` | Extra request fields a provider defines, such as DeepSeek's `thinking`. They cannot replace the fields the adapter sets. |
+
+**Thinking models.** Some providers return the model's reasoning with a tool call and require it back on the next
+request (DeepSeek answers 400 without it). The adapter keeps each such turn, reasoning included, in the run's private
+state and sends it back, so thinking models can use tools. The reasoning is never released as output or put in
+events.
+
+**DeepSeek.** It offers JSON mode but not JSON Schema output, and strict tool calls on its beta endpoint:
+
+```ts
+import { openAICompatibleChat } from 'mayura/provider-openai';
+
+const deepseek = openAICompatibleChat({
+  endpoint: 'https://api.deepseek.com/beta/chat/completions',
+  remote: { id: 'deepseek' },
+  apiKey: process.env.DEEPSEEK_API_KEY!,
+  model: 'deepseek-flash',
+  output: 'json_object',
+  strictTools: true,
+  maxCostMicros: 10_000,
+  pricing, // check DeepSeek's current prices
+});
+```
+
+Grant it as `model:openai-compatible.deepseek`. To turn thinking off, add `body: { thinking: { type: 'disabled' } }`.
+
+**Cloudflare AI Gateway** fronts many providers with one OpenAI-compatible endpoint. Models are named
+`provider/model`, such as `deepseek/deepseek-flash`. An authenticated gateway takes its token in `cf-aig-authorization`;
+when the gateway stores the provider's key, no `apiKey` is needed. Use the dialect of the provider behind it:
+
+```ts
+import { openAICompatibleChat } from 'mayura/provider-openai';
+
+const gateway = openAICompatibleChat({
+  endpoint: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`,
+  remote: { id: 'cloudflare' },
+  headers: { 'cf-aig-authorization': `Bearer ${process.env.CF_AIG_TOKEN}` },
+  model: 'deepseek/deepseek-flash',
+  output: 'json_object', // DeepSeek behind the gateway
+  strictTools: true,
+  maxCostMicros: 10_000,
+  pricing,
+});
+```
+
+`mayura init` sets up both: pick DeepSeek or Cloudflare AI Gateway in the wizard.
 
 **Azure OpenAI** sends the key in the `api-key` header instead of `Authorization: Bearer`; set `auth: 'api-key'`.
 
@@ -202,8 +258,8 @@ const vertex = openAICompatibleChat({
 });
 ```
 
-The compatible adapter sends the whole conversation on every call. It does not support OpenAI's reasoning
-continuation; use `openAIResponses` for OpenAI itself.
+The compatible adapter sends the whole conversation on every call. For OpenAI itself, use `openAIResponses`, which
+keeps OpenAI's reasoning items between calls.
 
 ## Errors
 

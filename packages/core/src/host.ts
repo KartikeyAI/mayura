@@ -4,4 +4,4 @@ export { snapshotLocalGuards } from './local-guards.js';
 export { registerManagedGuardDefinition, readManagedGuardDefinition, type ManagedGuardDescriptor, type ManagedGuardLimits } from './managed-guards.js';
 export { evaluateLifecycleControl, evaluateLifecycleObserver, lifecycleHookTimeout, frozenView, snapshotHookOptions } from './lifecycle.js';
 export { readServerSentEvents, streamModelCall, type ServerSentEvent, type ServerSentEventLimits } from './event-stream.js';
-export { checkStrictDefinition, providerHttpFailure, strictJsonSchema } from './model-schema.js';
+export { checkStrictDefinition, modelToolNames, providerHttpFailure, strictJsonSchema } from './model-schema.js';

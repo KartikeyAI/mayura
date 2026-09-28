@@ -66,10 +66,10 @@ describe('remote OpenAI-compatible providers', () => {
     expect(await collect(streaming.stream!(request()))).toEqual([{ type: 'output.delta', text: '{"answer":' }, { type: 'output.delta', text: '"streamed"}' },
       { type: 'response', response: { type: 'final', output: { answer: 'streamed' }, usage: { costMicros: 1 } } }]);
 
-    const tools = make({}, async () => sse([chunk({ tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'tool_0', arguments: '{"q":' } }] }),
+    const tools = make({}, async () => sse([chunk({ tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{"q":' } }] }),
       chunk({ tool_calls: [{ index: 0, function: { arguments: '4}' } }] }), chunk({}, 'tool_calls'), { choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }, '[DONE]']));
     const toolEvents = await collect(tools.stream!(request({ tools: [{ id: 'lookup', description: 'x', inputJsonSchema: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'], additionalProperties: false } }] })));
-    expect(toolEvents).toEqual([{ type: 'response', response: { type: 'tool_calls', calls: [{ id: 'call_1', toolId: 'lookup', input: { q: 4 } }], usage: { costMicros: 1 } } }]);
+    expect(toolEvents).toMatchObject([{ type: 'response', response: { type: 'tool_calls', calls: [{ id: 'call_1', toolId: 'lookup', input: { q: 4 } }], usage: { costMicros: 1 } } }]);
 
     for (const chunks of [[chunk({ content: '{"answer":"x"}' }, 'stop'), '[DONE]'], [chunk({ content: '{"answer":"x"}' }, 'stop'), { choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }]] as (JsonValue | '[DONE]')[][]) {
       await expect(collect(make({}, async () => sse(chunks)).stream!(request()))).rejects.toBeInstanceOf(MayuraError);

@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
-import { azureEndpoint, dollarsToMicros, endpointProblem, providerEnvironment } from '../src/providers.js';
+import { azureEndpoint, cloudflareEndpoint, DEEPSEEK_DIALECT, dollarsToMicros, endpointProblem, providerEnvironment } from '../src/providers.js';
 
 const plain = paint(false);
 const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -81,9 +81,12 @@ describe('provider settings', () => {
   it('writes only variables every starter reads', async () => {
     const common = { apiKey: 'sk-test-12345678', model: 'm', inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 2, maxCallCostMicros: 3, maxRunCostMicros: 4 };
     const text = providerEnvironment({ provider: 'anthropic', ...common }) + providerEnvironment({ provider: 'openai', ...common })
-      + providerEnvironment({ provider: 'compatible', ...common, compatible: { id: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', auth: 'bearer' } });
+      + providerEnvironment({ provider: 'compatible', ...common, compatible: { id: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', auth: 'bearer' } })
+      + providerEnvironment({ provider: 'compatible', ...common, apiKey: '', compatible: { id: 'cloudflare', endpoint: cloudflareEndpoint('a'.repeat(32), 'default'), auth: 'bearer',
+        dialect: DEEPSEEK_DIALECT, gatewayToken: 'gateway-token-123' } });
     const names = [...new Set(text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!))];
-    expect(names).toEqual(expect.arrayContaining(['MAYURA_MODEL_PROVIDER_ID', 'MAYURA_MODEL_ENDPOINT', 'MAYURA_MODEL_AUTH', 'MAYURA_MODEL_API_KEY']));
+    expect(names).toEqual(expect.arrayContaining(['MAYURA_MODEL_PROVIDER_ID', 'MAYURA_MODEL_ENDPOINT', 'MAYURA_MODEL_AUTH', 'MAYURA_MODEL_API_KEY',
+      'MAYURA_MODEL_OUTPUT', 'MAYURA_MODEL_STRICT_TOOLS', 'MAYURA_MODEL_GATEWAY_TOKEN']));
     for (const starter of starters()) {
       const config = await readFile(fileURLToPath(new URL(`../starters/${starter.name}/src/config.ts`, import.meta.url)), 'utf8');
       for (const name of names) expect(config, `${starter.name} reads ${name}`).toContain(`'${name}'`);
@@ -167,6 +170,26 @@ describe('interactive init', () => {
     expect(azure.result.status).toBe('succeeded');
     const azureEnv = await readFile(join(root, 'azure', '.env'), 'utf8');
     expect(azureEnv).toContain(`MAYURA_MODEL_ENDPOINT=${azureEndpoint('my-resource', 'gpt-deploy', '2024-10-21')}`); expect(azureEnv).toContain('MAYURA_MODEL_AUTH=api-key');
+  }, 60_000);
+
+  it('sets up DeepSeek in JSON mode with strict tools, and Cloudflare AI Gateway with a gateway token and no provider key', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const up = '\u001b[A';
+    const rest = (target: string) => ['1', enter, '2', enter, enter, enter, ...target, enter, enter];
+    // DeepSeek is the seventh provider; its model defaults to deepseek-flash.
+    const deepseek = await drive([enter, down, down, enter, ...Array(6).fill(down), enter, enter, ...'sk-test-deepseek-123', enter, ...rest(join(root, 'deepseek'))]);
+    expect(deepseek.result.status).toBe('succeeded');
+    const deepseekEnv = await readFile(join(root, 'deepseek', '.env'), 'utf8');
+    for (const line of ['MAYURA_MODEL_ENDPOINT=https://api.deepseek.com/beta/chat/completions', 'MAYURA_MODEL=deepseek-flash', 'MAYURA_MODEL_OUTPUT=json_object',
+      'MAYURA_MODEL_STRICT_TOOLS=true']) expect(deepseekEnv).toContain(line);
+    // Cloudflare AI Gateway is third from last: account, gateway, token, then a provider/model name and an empty key.
+    const account = 'f'.repeat(32); const token = 'cf-gateway-token-DO-NOT-SHOW';
+    const cloudflare = await drive([enter, down, down, enter, up, up, up, enter, ...account, enter, ...'agents', enter, ...token, enter,
+      ...'deepseek/deepseek-flash', enter, enter, ...rest(join(root, 'cloudflare'))]);
+    expect(cloudflare.result.status).toBe('succeeded');
+    const cloudflareEnv = await readFile(join(root, 'cloudflare', '.env'), 'utf8');
+    for (const line of [`MAYURA_MODEL_ENDPOINT=${cloudflareEndpoint(account, 'agents')}`, 'MAYURA_MODEL_PROVIDER_ID=cloudflare', 'MAYURA_MODEL=deepseek/deepseek-flash',
+      `MAYURA_MODEL_GATEWAY_TOKEN=${token}`, 'MAYURA_MODEL_OUTPUT=json_object', 'MAYURA_MODEL_STRICT_TOOLS=true']) expect(cloudflareEnv).toContain(line);
+    expect(cloudflareEnv).not.toContain('MAYURA_MODEL_API_KEY'); expect(cloudflare.screen).not.toContain(token);
   }, 60_000);
 
   it('keeps an existing .env and chooses no provider for templates', async () => {

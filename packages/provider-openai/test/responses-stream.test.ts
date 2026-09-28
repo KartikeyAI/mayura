@@ -33,7 +33,7 @@ describe('Responses streaming', () => {
 
   it('parses tool calls from the completed response and never reports their argument fragments', async () => {
     const transport = vi.fn<typeof globalThis.fetch>(async () => sse([{ type: 'response.function_call_arguments.delta', delta: '{"q":1' }, { type: 'response.completed', response: {
-      status: 'completed', output: [{ type: 'function_call', status: 'completed', call_id: 'call_1', name: 'tool_0', arguments: '{"q":1}' }], usage: { input_tokens: 1, output_tokens: 1 } } }]));
+      status: 'completed', output: [{ type: 'function_call', status: 'completed', call_id: 'call_1', name: 'lookup', arguments: '{"q":1}' }], usage: { input_tokens: 1, output_tokens: 1 } } }]));
     const events = await collect(openAIResponses(options(transport)).stream!(request({ tools: [{ id: 'lookup', description: 'x', inputJsonSchema: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'], additionalProperties: false } }] })));
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'response', response: { type: 'tool_calls', calls: [{ id: 'call_1', toolId: 'lookup', input: { q: 1 } }] } });

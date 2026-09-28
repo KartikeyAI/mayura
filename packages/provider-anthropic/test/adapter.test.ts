@@ -49,7 +49,7 @@ describe('Anthropic Messages adapter', () => {
     expect(init?.redirect).toBe('error');
     const body = JSON.parse(init?.body as string);
     expect(body).toMatchObject({ model: 'claude-fixture', max_tokens: 64, stream: false,
-      output_config: { format: { type: 'json_schema', schema } }, tools: [{ name: 'tool_0', input_schema: toolSchema, strict: true }] });
+      output_config: { format: { type: 'json_schema', schema } }, tools: [{ name: 'value_read', input_schema: toolSchema, strict: true }] });
     expect(init?.body).not.toContain('explicit-anthropic-key');
   });
 
@@ -71,7 +71,7 @@ describe('Anthropic Messages adapter', () => {
 
   it('maps reversible aliases and multi-step tool history', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([
-      { type: 'tool_use', id: 'call_2', name: 'tool_0', input: { value: 2 } },
+      { type: 'tool_use', id: 'call_2', name: 'value_read', input: { value: 2 } },
     ], 'tool_use'));
     const result = await anthropicMessages(options({ fetch })).generate(request({ messages: [
       { role: 'user', content: { value: 1 } },
@@ -80,7 +80,7 @@ describe('Anthropic Messages adapter', () => {
     ] }));
     expect(result).toEqual({ type: 'tool_calls', calls: [{ id: 'call_2', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1 } });
     const body = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string);
-    expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 1 } }] });
+    expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'value_read', input: { value: 1 } }] });
     expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '{"value":2}' }] });
   });
 
@@ -99,13 +99,13 @@ describe('Anthropic Messages adapter', () => {
   it('accepts text before a tool call and drops it, but rejects unknown blocks after preserving confirmed usage', async () => {
     const pricing = { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 1_000_000 };
     const narrated = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([
-      { type: 'text', text: 'PRIVATE narration' }, { type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 2 } },
+      { type: 'text', text: 'PRIVATE narration' }, { type: 'tool_use', id: 'call_1', name: 'value_read', input: { value: 2 } },
     ], 'tool_use', { input_tokens: 2, output_tokens: 1 }));
     const called = await anthropicMessages(options({ fetch: narrated, pricing })).generate(request());
     expect(called).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_1', input: { value: 2 } }], usage: { costMicros: 3 } });
     expect(JSON.stringify(called)).not.toContain('PRIVATE');
     for (const content of [
-      [{ type: 'image', source: 'PRIVATE' }, { type: 'tool_use', id: 'call_1', name: 'tool_0', input: { value: 2 } }],
+      [{ type: 'image', source: 'PRIVATE' }, { type: 'tool_use', id: 'call_1', name: 'value_read', input: { value: 2 } }],
       [{ type: 'text', text: 'PRIVATE only text' }],
     ]) {
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(content, 'tool_use', { input_tokens: 2, output_tokens: 1 }));

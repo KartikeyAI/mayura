@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Budget, jsonSchemaOf, MayuraError, modelFailureMessage, ModelProviderError, type Schema } from '../src/index.js';
-import { checkStrictDefinition, providerHttpFailure, strictJsonSchema } from '../src/host.js';
+import { checkStrictDefinition, modelToolNames, providerHttpFailure, strictJsonSchema } from '../src/host.js';
 
 describe('JSON Schemas for models', () => {
   it('describes a validator that can describe itself, closing objects and dropping the dialect marker', () => {
@@ -37,6 +37,17 @@ describe('JSON Schemas for models', () => {
     expect(() => checkStrictDefinition({ tools: [{ id: 'orders.find', description: 'Find.' }], outputJsonSchema: output })).toThrow(/Tool "orders.find" has no inputJsonSchema/u);
     expect(() => checkStrictDefinition({ tools: [] })).toThrow(/no output JSON Schema/u);
     expect(() => checkStrictDefinition({ tools: [] }, output)).not.toThrow(); // the adapter has its own
+  });
+});
+
+describe('tool names for models', () => {
+  it('keep the real id, made safe and unique', () => {
+    const long = `a.${'b'.repeat(80)}`;
+    const names = modelToolNames(['orders.list', 'orders/list', 'skills.load', 'lookup', long, `${long}x`]);
+    expect([...names.values()].slice(0, 4)).toEqual(['orders_list', 'orders_list_2', 'skills_load', 'lookup']);
+    expect(names.get(long)).toHaveLength(64); expect(names.get(`${long}x`)).toMatch(/^a_b+_2$/u); expect(names.get(`${long}x`)).toHaveLength(64);
+    expect(new Set(names.values()).size).toBe(6);
+    for (const name of names.values()) expect(name).toMatch(/^[A-Za-z0-9_-]{1,64}$/u);
   });
 });
 

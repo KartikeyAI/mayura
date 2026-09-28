@@ -32,6 +32,12 @@ MAYURA_MODEL_PROVIDER=offline
 # MAYURA_MODEL_PROVIDER_ID=groq
 # MAYURA_MODEL_AUTH=bearer
 # MAYURA_MODEL_API_KEY=
+# DeepSeek answers in JSON mode and has strict tools on https://api.deepseek.com/beta/chat/completions:
+# MAYURA_MODEL_OUTPUT=json_object
+# MAYURA_MODEL_STRICT_TOOLS=true
+# Cloudflare AI Gateway: https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions, models named
+# provider/model, and the gateway token of an authenticated gateway (the API key may stay in the gateway):
+# MAYURA_MODEL_GATEWAY_TOKEN=
 # MAYURA_MODEL=
 # Prices in micro-dollars per million tokens, and the most one call and one run may cost.
 # MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS=

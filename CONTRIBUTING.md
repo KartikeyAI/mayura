@@ -54,9 +54,24 @@ A provider is selected only by its model variable; a credential on its own selec
 |---|---|---|
 | OpenAI (`openAIResponses`) | `MAYURA_LIVE_OPENAI_MODEL` | `OPENAI_API_KEY`, `MAYURA_LIVE_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS`, `MAYURA_LIVE_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS` |
 | Anthropic (`anthropicMessages`) | `MAYURA_LIVE_ANTHROPIC_MODEL` | `ANTHROPIC_API_KEY`, `MAYURA_LIVE_ANTHROPIC_INPUT_MICROS_PER_MILLION_TOKENS`, `MAYURA_LIVE_ANTHROPIC_OUTPUT_MICROS_PER_MILLION_TOKENS` |
-| Remote OpenAI-compatible (`openAICompatibleChat` with `remote`) | `MAYURA_LIVE_COMPATIBLE=<id>,<id>…` | per id: `MAYURA_LIVE_COMPATIBLE_<ID>_URL`, `_KEY`, `_MODEL`, optional `_AUTH` (`bearer` or `api-key`), and `_INPUT_MICROS_PER_MILLION_TOKENS` / `_OUTPUT_MICROS_PER_MILLION_TOKENS` |
+| Remote OpenAI-compatible (`openAICompatibleChat` with `remote`) | `MAYURA_LIVE_COMPATIBLE=<id>,<id>…` | per id: `MAYURA_LIVE_COMPATIBLE_<ID>_URL`, `_KEY`, `_MODEL`, optional `_AUTH` (`bearer` or `api-key`), and `_INPUT_MICROS_PER_MILLION_TOKENS` / `_OUTPUT_MICROS_PER_MILLION_TOKENS`; optional `_OUTPUT` (`json_object` for JSON-mode providers such as DeepSeek), `_STRICT_TOOLS` (`true`), `_BODY` (a JSON object of extra request fields) and `_GATEWAY_TOKEN` (Cloudflare AI Gateway's token, sent as `cf-aig-authorization`; with it, `_KEY` is optional) |
 
-`<ID>` is the id in upper case with `-` replaced by `_` (`groq` becomes `GROQ`). Before sending anything, the harness computes a worst case of 9 per-call bounds per provider (`structured` 1, `tools` 3, `streaming` 1, `router_failover` 2, `router_streaming` 2) and refuses to run when that exceeds the total cap. The router checks deliberately send the invalid key `mayura-live-check-deliberately-invalid-key` to the real endpoint, so expect one failed-authentication entry per router check in the provider's logs.
+`<ID>` is the id in upper case with `-` replaced by `_` (`groq` becomes `GROQ`). Before sending anything, the harness computes a worst case of 9 per-call bounds per provider (`structured` 1, `tools` 3, `streaming` 1, `router_failover` 2, `router_streaming` 2) and refuses to run when that exceeds the total cap. The router checks deliberately send the invalid key `mayura-live-check-deliberately-invalid-key` to the real endpoint, so expect one failed-authentication entry per router check in the provider's logs (for a gateway provider, the gateway token is the one made invalid).
+
+For example, DeepSeek directly and through Cloudflare AI Gateway:
+
+```sh
+MAYURA_LIVE_COMPATIBLE=deepseek,cloudflare
+MAYURA_LIVE_COMPATIBLE_DEEPSEEK_URL=https://api.deepseek.com/beta/chat/completions
+MAYURA_LIVE_COMPATIBLE_DEEPSEEK_MODEL=deepseek-flash
+MAYURA_LIVE_COMPATIBLE_DEEPSEEK_OUTPUT=json_object
+MAYURA_LIVE_COMPATIBLE_DEEPSEEK_STRICT_TOOLS=true
+MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_URL=https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions
+MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_MODEL=deepseek/deepseek-flash
+MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_OUTPUT=json_object
+MAYURA_LIVE_COMPATIBLE_CLOUDFLARE_STRICT_TOOLS=true
+# plus each id's _KEY or _GATEWAY_TOKEN, its two prices, and the caps
+```
 
 The JSON report lists each provider and check with `status` (`passed`, `failed` or `skipped`), duration, charge and model calls. Exit code 0 means every selected check passed, 1 that one failed or the total exceeded the cap, and 2 that the run was refused before anything was sent. A pass qualifies that account, model and endpoint today, not prices, model quality or future behaviour; run it again when you change models or upgrade Mayura.
 

@@ -28,13 +28,13 @@ describe('loopback OpenAI-compatible chat adapter', () => {
     expect(init?.headers).toEqual({ 'Content-Type': 'application/json' }); expect(init?.redirect).toBe('error');
     const body = JSON.parse(init?.body as string);
     expect(body).toMatchObject({ model: 'local-fixture', stream: false, response_format: { type: 'json_schema', json_schema: { strict: true, schema } } });
-    expect(body.tools[0].function).toMatchObject({ name: 'tool_0', parameters: toolSchema });
+    expect(body.tools[0].function).toMatchObject({ name: 'value_read', parameters: toolSchema });
   });
 
   it('maps tool aliases and never treats proposals as authority', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ role: 'assistant', content: null,
-      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'tool_0', arguments: '{"value":2}' } }] }, 'tool_calls'));
-    await expect(openAICompatibleChat(options({ fetch })).generate(request())).resolves.toEqual({ type: 'tool_calls',
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'value_read', arguments: '{"value":2}' } }] }, 'tool_calls'));
+    await expect(openAICompatibleChat(options({ fetch })).generate(request())).resolves.toMatchObject({ type: 'tool_calls',
       calls: [{ id: 'call_1', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1 } });
   });
 

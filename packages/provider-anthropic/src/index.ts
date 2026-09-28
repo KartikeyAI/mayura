@@ -14,7 +14,7 @@ import {
   type ModelStreamEvent,
   type ModelToolCall,
 } from '@mayura/core';
-import { checkStrictDefinition, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { checkStrictDefinition, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -163,7 +163,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
         if (request.continuation !== undefined) return failed();
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
-        const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
+        const aliases = new Map(modelToolNames(request.tools.map(tool => tool.id)));
         const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
         if (aliases.size !== request.tools.length || aliases.size > 128) return failed();
         const tools = request.tools.map(tool => {

@@ -111,3 +111,19 @@ export function checkStrictDefinition(definition: ModelDefinitionCheck, fixedOut
   }
   strictJsonSchema(definition.outputJsonSchema, 'The output schema');
 }
+
+/**
+ * The names a provider sees for tools: each Mayura tool id made safe for provider function names (letters, digits,
+ * `_` and `-`, at most 64 characters), so `orders.list` becomes `orders_list` and the model can match the names in
+ * the instructions. Two ids that sanitize alike get `_2`, `_3`, ... so every name is unique. The map is id -> name.
+ */
+export function modelToolNames(ids: readonly string[]): ReadonlyMap<string, string> {
+  const names = new Map<string, string>(); const taken = new Set<string>();
+  for (const id of ids) {
+    const base = (id.replace(/[^A-Za-z0-9_-]/gu, '_') || 'tool').slice(0, 64);
+    let name = base;
+    for (let suffix = 2; taken.has(name); suffix++) name = `${base.slice(0, 64 - String(suffix).length - 1)}_${suffix}`;
+    taken.add(name); names.set(id, name);
+  }
+  return names;
+}

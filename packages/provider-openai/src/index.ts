@@ -1,5 +1,5 @@
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
-import { checkStrictDefinition, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { checkStrictDefinition, modelToolNames, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 export interface OpenAIResponsesOptions {
   readonly apiKey: string;
@@ -44,7 +44,30 @@ export interface OpenAICompatibleChatOptions {
   readonly maxResponseBytes?: number;
   readonly timeoutMs?: number;
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * How the provider is asked for structured output. `json_schema` (the default) sends the strict JSON Schema as
+   * `response_format`. `json_object` is for providers that only offer JSON mode (DeepSeek, for example): it asks for a
+   * JSON object and puts the schema in the instructions. Either way Mayura validates the answer against the agent's
+   * output schema before using it.
+   */
+  readonly output?: 'json_schema' | 'json_object';
+  /** Send `strict: true` on every function, for providers with strict tool calls (DeepSeek's beta endpoint, for example). */
+  readonly strictTools?: boolean;
+  /**
+   * Extra request headers, such as Cloudflare AI Gateway's `cf-aig-authorization`. Treated as credentials: never logged
+   * or reported. They cannot replace the credential header, `Content-Type`, `Host` or cookies.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * Extra request fields a provider defines, such as DeepSeek's `thinking`. They cannot replace the fields Mayura sets
+   * (model, messages, tools, output format, streaming and the output-token limit).
+   */
+  readonly body?: JsonObject;
 }
+/** Request fields the compatible adapter owns; `body` cannot set them. */
+const ownedFields = new Set(['model', 'messages', 'tools', 'tool_choice', 'parallel_tool_calls', 'stream', 'stream_options', 'response_format', 'max_tokens', 'max_completion_tokens', 'n']);
+/** Headers the compatible adapter owns; `headers` cannot set them. */
+const ownedHeaders = new Set(['authorization', 'api-key', 'content-type', 'content-length', 'host', 'cookie', 'transfer-encoding', 'connection']);
 /** A failed call, for a reason Mayura reports in its own words. The default is a response the adapter cannot use. */
 const failed = (reason: ModelFailureReason = 'invalid_response'): never => { throw new ModelProviderError(reason); };
 /** The reason a caught failure carries, for charging known usage without losing why the call failed. */
@@ -144,7 +167,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
-        const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
+        const aliases = new Map(modelToolNames(request.tools.map(tool => tool.id)));
         const ids = new Map([...aliases].map(([id, name]) => [name, id]));
         if (aliases.size !== request.tools.length || request.tools.length > 128) return failed();
         let history: JsonValue[] = []; let consumed = 0;
@@ -240,15 +263,32 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
   });
 }
 
-function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<string, string>): JsonValue[] {
+/**
+ * The conversation in Chat Completions form. `assistants` are the provider's own earlier assistant turns in this run (from
+ * the continuation), in order: they carry fields such as DeepSeek's `reasoning_content` that a thinking model requires
+ * back, and each must match the calls Mayura recorded for that turn.
+ */
+function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<string, string>, assistants: readonly JsonObject[]): JsonValue[] {
+  let turn = 0;
   return messages.map(message => {
     if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
     if (message.role === 'tool') return { role: 'tool', tool_call_id: message.callId, content: JSON.stringify(message.result) };
-    return { role: 'assistant', content: null, tool_calls: message.calls.map(call => {
+    const calls = message.calls.map(call => {
       const name = aliases.get(call.toolId); if (!name) return failed();
       return { id: call.id, type: 'function', function: { name, arguments: JSON.stringify(call.input) } };
-    }) };
+    });
+    const own = assistants[turn++];
+    if (!own) return { role: 'assistant', content: null, tool_calls: calls };
+    const ownCalls = own['tool_calls'];
+    if (!Array.isArray(ownCalls) || ownCalls.length !== calls.length || ownCalls.some((call, index) => (call as JsonObject)['id'] !== calls[index]!.id)) return failed();
+    return own;
   });
+}
+/** The fields of a provider assistant turn worth sending back: its text, reasoning and tool calls, nothing else. */
+function assistantTurn(message: JsonObject): JsonObject {
+  return { role: 'assistant', content: typeof message['content'] === 'string' ? message['content'] : null,
+    ...(typeof message['reasoning_content'] === 'string' ? { reasoning_content: message['reasoning_content'] } : {}),
+    tool_calls: message['tool_calls'] as JsonValue };
 }
 
 /** Loopback-only Chat Completions adapter for explicitly selected compatible local model servers. */
@@ -278,8 +318,29 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   if (options.token !== undefined && (typeof options.token !== 'function' || options.apiKey !== undefined)) {
     throw new MayuraError('INVALID_CONFIG', 'Give either an apiKey or a token source, not both.');
   }
-  if (remote !== undefined && options.apiKey === undefined && options.token === undefined) {
-    throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers require an apiKey or a token source.');
+  const extraHeaders: Record<string, string> = {};
+  if (options.headers !== undefined) {
+    const entries = options.headers && typeof options.headers === 'object' ? Object.entries(options.headers) : undefined;
+    if (!entries || entries.length > 8 || entries.some(([name, value]) => !/^[A-Za-z0-9-]{1,64}$/u.test(name) || ownedHeaders.has(name.toLowerCase())
+      || typeof value !== 'string' || !value || /[\r\n]/u.test(value) || value.length > 8_192)) {
+      throw new MayuraError('INVALID_CONFIG', 'headers must be at most 8 extra header values; they cannot replace Authorization, api-key, Content-Type, Host or cookies.');
+    }
+    for (const [name, value] of entries) extraHeaders[name] = value;
+  }
+  if (remote !== undefined && options.apiKey === undefined && options.token === undefined && Object.keys(extraHeaders).length === 0) {
+    throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers require an apiKey, a token source, or a credential header (such as a gateway token in headers).');
+  }
+  const outputMode = options.output ?? 'json_schema';
+  if (outputMode !== 'json_schema' && outputMode !== 'json_object') throw new MayuraError('INVALID_CONFIG', 'output must be "json_schema" or "json_object".');
+  if (options.strictTools !== undefined && typeof options.strictTools !== 'boolean') throw new MayuraError('INVALID_CONFIG', 'strictTools must be true or false.');
+  let extraBody: JsonObject = {};
+  if (options.body !== undefined) {
+    let copy: JsonValue;
+    try { copy = jsonValue(options.body, { maxBytes: 16_384 }); } catch { throw new MayuraError('INVALID_CONFIG', 'body must be plain JSON of at most 16 KiB.'); }
+    if (!copy || typeof copy !== 'object' || Array.isArray(copy)) throw new MayuraError('INVALID_CONFIG', 'body must be a JSON object of extra request fields.');
+    const owned = Object.keys(copy).find(key => ownedFields.has(key));
+    if (owned !== undefined) throw new MayuraError('INVALID_CONFIG', `body cannot set "${owned}"; the adapter sets it.`);
+    extraBody = copy;
   }
   if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) throw new MayuraError('INVALID_CONFIG', 'A bounded local model ID is required.');
   const url = endpoint.href; const apiKey = options.apiKey; const tokenSource = options.token; const model = options.model;
@@ -304,18 +365,31 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
       try {
         const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
         if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
-        if (request.continuation !== undefined) return failed();
+        // The run's private state: the provider's own earlier assistant turns, for the model and endpoint that made them.
+        let assistants: JsonObject[] = [];
+        if (request.continuation !== undefined) {
+          const previous = object(jsonValue(request.continuation, { maxBytes: maxRequestBytes }));
+          if (previous['provider'] !== 'openai-compatible.chat.v1' || previous['model'] !== model || previous['endpoint'] !== url || !Array.isArray(previous['assistants'])) return failed();
+          assistants = previous['assistants'].map(item => object(item));
+        }
+        if (assistants.length > request.messages.filter(message => message.role === 'assistant').length) return failed();
         assertPositiveInteger(request.maxOutputTokens, 'maxOutputTokens');
-        const aliases = new Map(request.tools.map((tool, index) => [tool.id, `tool_${index}`]));
+        const aliases = new Map(modelToolNames(request.tools.map(tool => tool.id)));
         const ids = new Map([...aliases].map(([toolId, alias]) => [alias, toolId]));
         if (aliases.size !== request.tools.length || aliases.size > 128) return failed();
-        const tools = request.tools.map(tool => ({ type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool) } }));
+        const tools = request.tools.map(tool => ({ type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool),
+          ...(options.strictTools ? { strict: true } : {}) } }));
         const outputSchema = outputSchemaFor(fixedOutput, request.outputJsonSchema);
-        const body = JSON.stringify(jsonValue({ model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}), messages: [{ role: 'system', content: request.instructions }, ...compatibleMessages(request.messages, aliases)],
-          tools, parallel_tool_calls: true, max_tokens: request.maxOutputTokens,
-          response_format: { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
+        // JSON mode has no schema parameter, so the schema goes into the instructions; the answer is validated anyway.
+        const instructions = outputMode === 'json_object'
+          ? `${request.instructions}\n\nAnswer with one JSON object, and nothing else, that matches this JSON Schema:\n${JSON.stringify(outputSchema)}`
+          : request.instructions;
+        const body = JSON.stringify(jsonValue({ ...extraBody, model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}),
+          messages: [{ role: 'system', content: instructions }, ...compatibleMessages(request.messages, aliases, assistants)],
+          ...(tools.length > 0 ? { tools, parallel_tool_calls: true } : {}), max_tokens: request.maxOutputTokens,
+          response_format: outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
         }, { maxBytes: maxRequestBytes }));
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const headers: Record<string, string> = { ...extraHeaders, 'Content-Type': 'application/json' };
         const authorization = await credential(); if (authorization !== undefined) headers[authHeader] = authorization;
         const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }).catch((): never => failed('unavailable')), signal);
         const payload = onDelta ? await assembledCompletion(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
@@ -334,9 +408,12 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
               || seen.has(callId) || typeof alias !== 'string' || !ids.has(alias) || typeof fn['arguments'] !== 'string') return failed();
             seen.add(callId); return { id: callId, toolId: ids.get(alias)!, input: jsonValue(JSON.parse(fn['arguments'])) };
           });
-          return { type: 'tool_calls', calls, usage: { costMicros: knownCost } };
+          // Keep this turn as the provider sent it (with any reasoning) for the next call of the run.
+          const continuation = jsonValue({ provider: 'openai-compatible.chat.v1', model, endpoint: url, assistants: [...assistants, assistantTurn(message)] }, { maxBytes: maxRequestBytes });
+          return { type: 'tool_calls', calls, usage: { costMicros: knownCost }, continuation };
         }
         if (choice['finish_reason'] === 'length' || choice['finish_reason'] === 'content_filter' || typeof message['refusal'] === 'string') return failed('refused');
+        if (choice['finish_reason'] === 'insufficient_system_resource' || choice['finish_reason'] === 'aborted') return failed('unavailable');
         if (choice['finish_reason'] !== 'stop' || typeof message['content'] !== 'string') return failed();
         return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost } };
       } catch (error) {
@@ -353,7 +430,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
    * tool-call fragments are only assembled by index, and usage must arrive in a final chunk (`include_usage`).
    */
   const assembledCompletion = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
-    let content = ''; let finish: JsonValue = null; let usage: JsonValue | undefined; let finished = false;
+    let content = ''; let reasoning = ''; let finish: JsonValue = null; let usage: JsonValue | undefined; let finished = false;
     const calls: { id?: JsonValue; name: string; arguments: string }[] = [];
     for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
       if (finished) return failed();
@@ -368,6 +445,8 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
       if (choice['delta'] === undefined || choice['delta'] === null) continue;
       const delta = object(choice['delta']);
       if (typeof delta['content'] === 'string' && delta['content']) { content += delta['content']; onDelta(delta['content']); }
+      // Reasoning is kept only to send back with the turn; it is never released as output.
+      if (typeof delta['reasoning_content'] === 'string') reasoning += delta['reasoning_content'];
       if (delta['tool_calls'] !== undefined && delta['tool_calls'] !== null) {
         if (!Array.isArray(delta['tool_calls'])) return failed();
         for (const raw of delta['tool_calls']) {
@@ -382,7 +461,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
       }
     }
     if (!finished || usage === undefined) return failed();
-    const message: JsonObject = { role: 'assistant', content: calls.length > 0 && !content ? null : content,
+    const message: JsonObject = { role: 'assistant', content: calls.length > 0 && !content ? null : content, ...(reasoning ? { reasoning_content: reasoning } : {}),
       ...(calls.length > 0 ? { tool_calls: calls.map(entry => ({ type: 'function', id: entry.id ?? null, function: { name: entry.name, arguments: entry.arguments } })) } : {}) };
     return { choices: [{ message, finish_reason: finish }], usage };
   };
