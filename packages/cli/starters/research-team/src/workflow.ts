@@ -1,7 +1,6 @@
 import type { ArtifactReference, ArtifactScope, LocalArtifactStore } from 'mayura/artifacts';
-import { createRuntime, defineTool, type AgentDefinition, type InferInput, type InferOutput, type RuntimeLimits, type Schema,
-  type ToolExecutionContext } from 'mayura';
-import { defineWorkflowLifecycle, fanOut, type WorkflowLifecycleNode } from 'mayura/workflows/lifecycle';
+import { defineTool, type RunHandle, type ToolExecutionContext } from 'mayura';
+import { agentStep, defineWorkflowLifecycle, fanOut, type WorkflowLifecycleNode } from 'mayura/workflows/lifecycle';
 import { z } from 'zod';
 import { MAX_RESEARCHERS, type ModelSettings } from './config.js';
 import { libraryTools, sourceId, type SourceLibrary } from './library/index.js';
@@ -62,48 +61,62 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
   const planner = plannerAgent(dependencies.model);
   const writer = writerAgent(dependencies.model);
 
-  const plan = defineTool({
-    id: 'research.plan', version: '1', effects: 'none', capabilities: ['research:plan'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
+  // Each agent step runs its agent in the run's scope with its own grants and limits (agentStep), and charges the run
+  // what the agent spent. The agent's spans nest under the step's span in the research run's trace.
+  const traced = (run: RunHandle<unknown>, context: ToolExecutionContext) => { const watch = telemetry.watch(context, run); return () => watch.end(); };
+  const limits = (bounds: { readonly maxSteps: number; readonly maxModelCalls: number; readonly maxToolCalls: number }) =>
+    ({ ...bounds, maxDurationMs: agentDurationMs, maxCostMicros: ceiling });
+
+  const plan = agentStep(planner.agent, {
+    id: 'research.plan', version: '1', capabilities: ['research:plan'], timeoutMs: stepTimeoutMs,
     description: 'Run the planner agent: split the research question into sub-questions, one per research slot.',
-    input: researchRequest, output: planStepOutput,
-    execute: async (request, context) => {
-      const planned = await runAgent(planner, { question: request.question, maxSubQuestions: MAX_RESEARCHERS },
-        { context, telemetry, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
+    input: researchRequest, output: planStepOutput, permissions: planner.permissions,
+    limits: limits({ maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 }), onRun: traced,
+    prepare: request => ({ question: request.question, maxSubQuestions: MAX_RESEARCHERS }),
+    finish: (planned, request) => {
       const subQuestions = [...new Set(planned.subQuestions)].slice(0, MAX_RESEARCHERS);
       return { question: request.question, assignments: subQuestions.map(item => ({ question: request.question, subQuestion: item })) };
     },
   });
 
-  const investigate = defineTool({
-    id: 'research.investigate', version: '1', effects: 'none', capabilities: ['research:investigate'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
+  // Each researcher gets fresh library tools, which record the documents it actually read.
+  const reads = new WeakMap<ToolExecutionContext, Set<string>>();
+  const libraryGrants = libraryTools(library).permissions;
+  const investigate = agentStep((_task: z.infer<typeof assignment>, context: ToolExecutionContext) => {
+    const read = new Set<string>(); reads.set(context, read);
+    return researcherAgent(dependencies.model, libraryTools(library, id => read.add(id)).tools).agent;
+  }, {
+    id: 'research.investigate', version: '1', capabilities: ['research:investigate'], timeoutMs: stepTimeoutMs, effects: 'read',
     description: 'Run one researcher agent on one sub-question over the source library, returning cited findings.',
-    input: assignment, output: researchStepOutput,
-    execute: async (task, context) => {
-      const asked = task.subQuestion;
-      // Fresh tool instances per step record which documents this researcher actually read.
-      const read = new Set<string>();
-      const tools = libraryTools(library, id => read.add(id));
-      const researcher = researcherAgent(dependencies.model, tools.tools);
-      const found = await runAgent({ ...researcher, permissions: [...researcher.permissions, ...tools.permissions] },
-        { question: task.question, subQuestion: asked }, { context, telemetry, ceiling, limits: { maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 } });
+    input: assignment, output: researchStepOutput, permissions: [...researcherAgent(dependencies.model, []).permissions, ...libraryGrants],
+    limits: limits({ maxSteps: 6, maxModelCalls: 5, maxToolCalls: 8 }), onRun: traced,
+    prepare: task => ({ question: task.question, subQuestion: task.subQuestion }),
+    finish: (found, task, context) => {
       // Trust, then verify: a finding may cite only documents this researcher read through library.read.
+      const read = reads.get(context) ?? new Set<string>();
       if (found.findings.some(item => item.sourceIds.some(id => !read.has(id)))) throw new Error('A finding cites a document its researcher did not read.');
-      return { question: task.question, subQuestion: asked, findings: found.findings };
+      return { question: task.question, subQuestion: task.subQuestion, findings: found.findings };
     },
   });
 
-  const write = defineTool({
-    id: 'research.write', version: '1', effects: 'none', capabilities: ['research:write'], costMicros: ceiling, timeoutMs: stepTimeoutMs,
+  const write = agentStep(writer.agent, {
+    id: 'research.write', version: '1', capabilities: ['research:write'], timeoutMs: stepTimeoutMs,
     description: 'Run the writer agent over every researcher\'s findings and render the cited report.',
     // The join's output: one entry per slot, `null` for a slot the plan did not use.
-    input: z.array(researchStepOutput.nullable()).length(MAX_RESEARCHERS), output: writeStepOutput,
-    execute: async (slots, context) => {
+    input: z.array(researchStepOutput.nullable()).length(MAX_RESEARCHERS), output: writeStepOutput, permissions: writer.permissions,
+    limits: limits({ maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 }), onRun: traced,
+    prepare: slots => {
       const research = slots.filter(item => item !== null);
       const asked = research[0]?.question ?? (() => { throw new Error('No researcher ran.'); })();
       const sections = research.map(item => ({ subQuestion: item.subQuestion, findings: item.findings }));
       const reported = new Set(sections.flatMap(section => section.findings.flatMap(item => item.sourceIds)));
       if (reported.size === 0) throw new Error('No researcher found a source for any sub-question; there is nothing to report.');
-      const draft = await runAgent(writer, { question: asked, sections }, { context, telemetry, ceiling, limits: { maxSteps: 2, maxModelCalls: 2, maxToolCalls: 0 } });
+      return { question: asked, sections };
+    },
+    finish: async (draft, slots) => {
+      const research = slots.filter(item => item !== null);
+      const asked = research[0]!.question;
+      const reported = new Set(research.flatMap(item => item.findings.flatMap(finding => finding.sourceIds)));
       // The writer may only cite what researchers reported, and every citation must resolve in the library.
       const cited = [...new Set(draft.sections.flatMap(section => section.sourceIds))];
       if (cited.some(id => !reported.has(id))) throw new Error('The writer cited a source no researcher reported.');
@@ -152,46 +165,20 @@ export function researchWorkflows(dependencies: ResearchDependencies) {
     latest,
     /** Every version that may still have runs in flight. Add, never edit, when you change the workflow. */
     definitions: [latest],
-    /** What the workflow runtime must allow: each step tool, each capability it declares, and the write effect. */
+    /**
+     * What the workflow runtime must allow: each step tool, each capability it declares, the researchers' read effect
+     * (their library tools read) and the store's write effect.
+     */
     permissions: ['tool:research.plan', 'tool:research.investigate', 'tool:research.write', 'tool:research.store',
-      'research:plan', 'research:investigate', 'research:write', 'artifacts:write', 'effect:write'],
+      'research:plan', 'research:investigate', 'research:write', 'artifacts:write', 'effect:read', 'effect:write'],
   } as const;
 }
 
-// ---- Running an agent inside a step ------------------------------------------------------------------------------------
+// ---- Agent step bounds ---------------------------------------------------------------------------------------------------
 
 /** A step may run a little longer than its agent, so a timed-out agent is reported by the agent runtime first. */
 const agentDurationMs = 120_000;
 const stepTimeoutMs = agentDurationMs + 15_000;
-
-/**
- * Agent steps are `effects: 'none'`: they read the library and ask a model, and change nothing outside the run, so a
- * failure is a plain failure rather than an uncertain external effect. Their spending is still bounded: the agent
- * runs with `maxCostMicros` = the step ceiling, and the step reports what it actually spent.
- */
-async function runAgent<I extends Schema, O extends Schema>(
-  setup: { readonly agent: AgentDefinition<I, O>; readonly permissions: readonly string[] },
-  input: InferInput<I>,
-  options: { readonly context: ToolExecutionContext; readonly telemetry: Telemetry; readonly ceiling: number; readonly limits: RuntimeLimits },
-): Promise<InferOutput<O>> {
-  const { context } = options;
-  const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions: { allow: [...setup.permissions] },
-    limits: { ...options.limits, maxDurationMs: agentDurationMs, maxCostMicros: options.ceiling } });
-  try {
-    const handle = runtime.submit(setup.agent, { input });
-    // The agent's spans nest under this step's span in the research run's trace.
-    const watch = options.telemetry.watch(context, handle);
-    const stop = (): void => handle.cancel();
-    context.signal.addEventListener('abort', stop, { once: true });
-    try {
-      const outcome = await handle.result();
-      const spent = runtime.inspect(handle).budget.spentMicros;
-      context.reportUsage({ knownCostMicros: typeof spent === 'number' ? Math.min(spent, options.ceiling) : options.ceiling, unknownCostMicros: 0 });
-      if (outcome.status !== 'succeeded') throw new Error(`The ${setup.agent.id} agent ended ${outcome.status}.`);
-      return outcome.output;
-    } finally { context.signal.removeEventListener('abort', stop); await watch.end(); }
-  } finally { await runtime.close(); }
-}
 
 /** Used by the desk's report tool: the stored reference as the artifact store expects it. */
 export const asArtifactReference = (value: ResearchResult['artifact']): ArtifactReference => value as ArtifactReference;

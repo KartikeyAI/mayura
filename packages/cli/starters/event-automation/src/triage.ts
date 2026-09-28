@@ -1,5 +1,6 @@
 import type { ModelAdapter, ModelRequest, ModelResponse } from 'mayura/core';
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { defineAgent, defineTool } from 'mayura';
+import { agentStep } from 'mayura/workflows/lifecycle';
 import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 import { jsonSchema, modelPermission, selectModel } from './model.js';
@@ -76,29 +77,22 @@ export function triageAgent(dependencies: TriageDependencies) {
 export type TriageAgent = ReturnType<typeof triageAgent>;
 
 /**
- * The agent as one durable workflow step. The step is a write: if the agent stops part-way (a refused tool, a model
- * error, a timeout, a crash), the tracker may already hold some of its changes, so the workflow records the outcome
- * as unknown for an operator to reconcile and never runs the agent again on its own.
+ * The agent as one durable workflow step (`agentStep`). The step runs the agent with its own grants and limits in the
+ * run's scope, and charges the run what the agent spent. Its outcome follows the agent's:
+ *
+ * - the agent failed or was refused a tool: the step fails. Every tracker call it made has a known result, so nothing
+ *   needs reconciling, although labels or comments it already added stay on the ticket;
+ * - a tracker call's result is unknown (the tracker did not answer), or the step was interrupted while the agent could
+ *   be mid-call (a timeout, a cancelled run): the step is unknown and the run ends `outcome_unknown`, for an operator
+ *   to reconcile. The workflow never runs the agent again on its own.
+ *
+ * The agent's tools write, so the workflow must also grant `effect:write` to run this step.
  */
 export function triagePhase(triage: TriageAgent) {
-  return defineTool({
-    id: 'tickets.triage.run', version: '1', effects: 'write', capabilities: ['tickets:triage'],
+  return agentStep(triage.agent, {
+    id: 'tickets.triage.run', version: '1', capabilities: ['tickets:triage'],
     description: 'Run the triage agent on one new ticket.',
-    costMicros: triage.limits.maxCostMicros, timeoutMs: 90_000,
-    input: ticket, output: triageOutput,
-    execute: async (input, context) => {
-      const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions: { allow: triage.grants }, limits: triage.limits });
-      const stop = (): void => { void runtime.close(); };
-      context.signal.addEventListener('abort', stop, { once: true });
-      try {
-        const run = runtime.submit(triage.agent, { input });
-        const outcome = await run.result();
-        const spent = runtime.inspect(run).budget.spentMicros;
-        if (typeof spent === 'number') context.reportUsage({ knownCostMicros: spent, unknownCostMicros: 0 });
-        if (outcome.status !== 'succeeded') throw new Error(`The triage agent stopped (${outcome.status}).`);
-        return outcome.output;
-      } finally { context.signal.removeEventListener('abort', stop); await runtime.close(); }
-    },
+    permissions: triage.grants, limits: triage.limits, timeoutMs: 90_000,
   });
 }
 

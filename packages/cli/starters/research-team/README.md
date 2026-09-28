@@ -91,8 +91,8 @@ machinery without solving variable fan-out. *Graphs* add waits on other runs, wh
 lower-level primitive whose guide warns that calling it separately from the workflow is not a restart-safe
 integration; the lifecycle budget is written in the same record update that claims each step.
 
-**One shared budget.** `RESEARCH_BUDGET_MICROS` is the budget of a whole research run. Every agent step declares a
-ceiling (`MAYURA_MAX_RUN_COST_MICROS`, which is also the agent's own `maxCostMicros`). Before a step runs, the runtime
+**One shared budget.** `RESEARCH_BUDGET_MICROS` is the budget of a whole research run. Every agent step (`agentStep` from
+`mayura/workflows/lifecycle`) declares a ceiling (`MAYURA_MAX_RUN_COST_MICROS`, which is also the agent's own `maxCostMicros`). Before a step runs, the runtime
 reserves its ceiling from what the run has left, in the same storage write that claims the step; when the step
 completes, the run is charged what it reported spending and the rest of the reservation is released. When the rest of the
 budget cannot cover a step, that step is `blocked` with code `BUDGET_EXCEEDED`, every later step is skipped, and the

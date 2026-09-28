@@ -127,9 +127,10 @@ from `.env`. The image builds from the npm registry, so it needs published Mayur
 
 ## Know the limits
 
-- If the triage agent stops part-way (a refused tool, a model error, a timeout, a crash), the tracker may already have
-  some of its labels or comments, so the intake run ends `outcome_unknown` and is never re-run automatically. Check the
-  ticket and reconcile it by hand. The console's run list shows active runs only; open a finished run by its id (the
+- If the triage agent fails part-way (a refused tool, a model error), every tracker call it made has a known result:
+  the intake run ends `failed`, and labels or comments it already added stay on the ticket. If a call's result is
+  unknown (the tracker did not answer, a timeout, a crash mid-call), the run ends `outcome_unknown`. Neither is re-run
+  automatically; check the ticket and reconcile it by hand. The console's run list shows active runs only; open a finished run by its id (the
   ingress returns it to the tracker in its 202 response) with `GET /v1/workflow-runs/<run id>` (or `client.workflow(runId)`).
 - A delivery whose dispatch failed part-way is answered `500 unconfirmed` and stays that way; the tracker's retries
   will not start it. A delivery that was being dispatched when a server process died is answered `503 in_progress`

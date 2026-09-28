@@ -146,13 +146,13 @@ describe('ticket automation', () => {
       assert.deepEqual(withoutAssign.tickets.operations().filter(entry => entry.operation === 'assign'), []);
     } finally { await withoutAssign.close(); }
 
-    // Without `tickets:write`, the agent's first label call is refused before any MCP request. The triage step is a
-    // write, so the run is conservatively left for an operator to reconcile; the tracker shows nothing happened.
+    // Without `tickets:write`, the agent's first label call is refused before any MCP request. The agent is blocked with
+    // a known outcome, so the triage step fails cleanly: there is nothing to reconcile, and the tracker shows nothing.
     const withoutWrite = await harness({ revoke: ['tickets:write'] });
     try {
       const runId = runIdOf(await withoutWrite.deliver('billing'));
       const stopped = await withoutWrite.settle(runId);
-      assert.equal(stopped.status, 'outcome_unknown');
+      assert.equal(stopped.status, 'failed');
       assert.deepEqual(withoutWrite.tickets.operations(), []);
     } finally { await withoutWrite.close(); }
   });
