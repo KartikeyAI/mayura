@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
-import { azureEndpoint, cloudflareEndpoint, DEEPSEEK_DIALECT, dollarsToMicros, endpointProblem, gatewayDialect, providerEnvironment } from '../src/providers.js';
+import { azureEndpoint, cloudflareEndpoint, cloudflareProviderEndpoint, DEEPSEEK_DIALECT, dollarsToMicros, endpointProblem, gatewayDialect, providerEnvironment } from '../src/providers.js';
 
 const plain = paint(false);
 const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -181,9 +181,10 @@ describe('interactive init', () => {
     const deepseekEnv = await readFile(join(root, 'deepseek', '.env'), 'utf8');
     for (const line of ['MAYURA_MODEL_ENDPOINT=https://api.deepseek.com/beta/chat/completions', 'MAYURA_MODEL=deepseek-flash', 'MAYURA_MODEL_OUTPUT=json_object',
       'MAYURA_MODEL_STRICT_TOOLS=true']) expect(deepseekEnv).toContain(line);
-    // Cloudflare AI Gateway is third from last: account, gateway, token, then a provider/model name and an empty key.
+    // Cloudflare AI Gateway is third from last: account, gateway, token, the unified API (the default), then a
+    // provider/model name and an empty key.
     const account = 'f'.repeat(32); const token = 'cf-gateway-token-DO-NOT-SHOW';
-    const cloudflare = await drive([enter, down, down, enter, up, up, up, enter, ...account, enter, ...'agents', enter, ...token, enter,
+    const cloudflare = await drive([enter, down, down, enter, up, up, up, enter, ...account, enter, ...'agents', enter, ...token, enter, enter,
       ...'deepseek/deepseek-flash', enter, enter, ...rest(join(root, 'cloudflare'))]);
     expect(cloudflare.result.status).toBe('succeeded');
     const cloudflareEnv = await readFile(join(root, 'cloudflare', '.env'), 'utf8');
@@ -196,6 +197,22 @@ describe('interactive init', () => {
     expect(providerEnvironment({ provider: 'compatible', apiKey: '', model: 'openai/gpt-6-luna', inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 1,
       maxCallCostMicros: 1, maxRunCostMicros: 1, compatible: { id: 'cloudflare', endpoint: cloudflareEndpoint(account, 'agents'), auth: 'bearer',
         dialect: gatewayDialect('openai/gpt-6-luna')!, gatewayToken: token } })).toContain('MAYURA_MODEL_TOKEN_LIMIT_FIELD=max_completion_tokens');
+  }, 60_000);
+
+  it('sets up Anthropic\'s own API through Cloudflare AI Gateway, with the key left in the gateway', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mayura-wizard-')); roots.push(root); const up = '\u001b[A';
+    const rest = (target: string) => ['1', enter, '2', enter, enter, enter, ...target, enter, enter];
+    const account = 'a'.repeat(32); const token = 'cf-gateway-token-DO-NOT-SHOW';
+    // Account, the default gateway name, token, then the Anthropic Messages API (third), the default Claude model and an empty key.
+    const run = await drive([enter, down, down, enter, up, up, up, enter, ...account, enter, enter, ...token, enter, down, down, enter,
+      enter, enter, ...rest(join(root, 'claude'))]);
+    expect(run.result.status).toBe('succeeded');
+    const env = await readFile(join(root, 'claude', '.env'), 'utf8');
+    for (const line of ['MAYURA_MODEL_PROVIDER=anthropic', `MAYURA_MODEL_ENDPOINT=${cloudflareProviderEndpoint(account, 'default', 'anthropic')}`,
+      `MAYURA_MODEL_GATEWAY_TOKEN=${token}`, 'MAYURA_MODEL=claude-sonnet-5']) expect(env).toContain(line);
+    expect(cloudflareProviderEndpoint(account, 'default', 'anthropic')).toBe(`https://gateway.ai.cloudflare.com/v1/${account}/default/anthropic/v1/messages`);
+    expect(cloudflareProviderEndpoint(account, 'default', 'openai')).toBe(`https://gateway.ai.cloudflare.com/v1/${account}/default/openai/responses`);
+    expect(env).not.toContain('ANTHROPIC_API_KEY'); expect(env).not.toContain('MAYURA_MODEL_PROVIDER_ID'); expect(run.screen).not.toContain(token);
   }, 60_000);
 
   it('keeps an existing .env and chooses no provider for templates', async () => {

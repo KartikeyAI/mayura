@@ -46,7 +46,9 @@ const schema = z.object({
 
 export type ModelSettings =
   | { readonly provider: 'offline' }
-  | { readonly provider: 'openai' | 'anthropic'; readonly apiKey: string; readonly name: string; readonly maxCallCostMicros: number;
+  // OpenAI or Anthropic directly, or through a gateway: its endpoint (MAYURA_MODEL_ENDPOINT) and token.
+  | { readonly provider: 'openai' | 'anthropic'; readonly apiKey: string | undefined; readonly name: string; readonly maxCallCostMicros: number;
+    readonly endpoint: string | undefined; readonly gatewayToken: string | undefined;
     readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number } }
   | { readonly provider: 'compatible'; readonly apiKey: string | undefined; readonly name: string; readonly maxCallCostMicros: number;
     readonly endpoint: string; readonly providerId: string; readonly auth: 'bearer' | 'api-key';
@@ -106,7 +108,9 @@ function modelSettings(value: z.infer<typeof schema>): ModelSettings {
   if (value.modelProvider === 'compatible' && (!value.compatibleEndpoint || !value.compatibleId)) {
     throw new Error('MAYURA_MODEL_PROVIDER=compatible requires MAYURA_MODEL_ENDPOINT (the https://.../chat/completions URL) and MAYURA_MODEL_PROVIDER_ID (such as groq).');
   }
-  const gatewayOnly = value.modelProvider === 'compatible' && value.gatewayToken !== undefined;
+  // A gateway with a token may hold the provider key itself: the compatible endpoint, or OpenAI's or Anthropic's through
+  // a gateway endpoint.
+  const gatewayOnly = value.gatewayToken !== undefined && (value.modelProvider === 'compatible' || value.compatibleEndpoint !== undefined);
   if ((!apiKey && !gatewayOnly) || !value.modelName || value.inputMicrosPerMillionTokens === undefined || value.outputMicrosPerMillionTokens === undefined || value.maxCallCostMicros === 0) {
     throw new Error(`MAYURA_MODEL_PROVIDER=${value.modelProvider} requires ${keyName}, MAYURA_MODEL, both MAYURA_MODEL_*_MICROS_PER_MILLION_TOKENS prices and MAYURA_MODEL_MAX_CALL_COST_MICROS.`);
   }
@@ -116,5 +120,6 @@ function modelSettings(value: z.infer<typeof schema>): ModelSettings {
     endpoint: value.compatibleEndpoint!, providerId: value.compatibleId!, auth: value.compatibleAuth, pricing,
     output: value.compatibleOutput, strictTools: value.compatibleStrictTools === 'true', gatewayToken: value.gatewayToken,
     tokenLimitField: value.compatibleTokenLimitField };
-  return { provider: value.modelProvider, apiKey: apiKey!, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros, pricing };
+  return { provider: value.modelProvider, apiKey, name: value.modelName, maxCallCostMicros: value.maxCallCostMicros, pricing,
+    endpoint: value.compatibleEndpoint, gatewayToken: value.gatewayToken };
 }

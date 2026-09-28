@@ -15,6 +15,7 @@ import { assistantInput, assistantOutput, workspaceAssistant } from '../src/assi
 import { main } from '../src/cli.js';
 import { bundledSkills, loadConfig } from '../src/config.js';
 import { resolveInWorkspace } from '../src/workspace.js';
+import { selectModel } from '../src/model.js';
 
 // Everything runs offline, on the rule-based stand-in model, in a temporary workspace folder.
 
@@ -192,5 +193,13 @@ describe('configuration', () => {
     const paid = await loadConfig({ MAYURA_MODEL_PROVIDER: 'openai', OPENAI_API_KEY: 'k', MAYURA_MODEL: 'm', MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS: '1',
       MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_MAX_CALL_COST_MICROS: '10', MAYURA_MAX_RUN_COST_MICROS: '100' }, workspace);
     assert.equal(paid.model.provider, 'openai'); assert.equal(paid.maxRunCostMicros, 100);
+    // Anthropic through Cloudflare AI Gateway, with the key held by the gateway: an endpoint and token, no key.
+    const gateway = await loadConfig({ MAYURA_MODEL_PROVIDER: 'anthropic', MAYURA_MODEL: 'claude-sonnet-5',
+      MAYURA_MODEL_ENDPOINT: 'https://gateway.ai.cloudflare.com/v1/account/default/anthropic/v1/messages', MAYURA_MODEL_GATEWAY_TOKEN: 'fixture-gateway-token',
+      MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_MAX_CALL_COST_MICROS: '10', MAYURA_MAX_RUN_COST_MICROS: '100' }, workspace);
+    assert.equal(gateway.model.provider, 'anthropic');
+    assert.equal(selectModel(gateway.model, scriptedModel([])).id, 'anthropic.messages');
+    await assert.rejects(loadConfig({ MAYURA_MODEL_PROVIDER: 'anthropic', MAYURA_MODEL: 'claude-sonnet-5', MAYURA_MODEL_GATEWAY_TOKEN: 'fixture-gateway-token',
+      MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_MAX_CALL_COST_MICROS: '10' }, workspace), /ANTHROPIC_API_KEY/u);
   });
 });

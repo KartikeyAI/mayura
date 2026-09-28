@@ -39,7 +39,7 @@ export const PROVIDERS: readonly ProviderOption[] = Object.freeze([
   compatible('openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1/chat/completions'),
   compatible('together', 'Together', 'https://api.together.xyz/v1/chat/completions'),
   compatible('fireworks', 'Fireworks', 'https://api.fireworks.ai/inference/v1/chat/completions'),
-  { id: 'cloudflare', label: 'Cloudflare AI Gateway', hint: 'any model through your gateway', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'cloudflare', auth: 'bearer' },
+  { id: 'cloudflare', label: 'Cloudflare AI Gateway', hint: 'OpenAI, Anthropic or any model through your gateway', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'cloudflare', auth: 'bearer' },
   { id: 'azure', label: 'Azure OpenAI', hint: 'your resource and deployment', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'azure', auth: 'api-key' },
   { id: 'other', label: 'Another OpenAI-compatible provider', hint: 'any HTTPS /chat/completions endpoint', provider: 'compatible', keyVariable: 'MAYURA_MODEL_API_KEY', ask: 'other', auth: 'bearer' },
 ]);
@@ -51,6 +51,11 @@ export interface ProviderChoice {
   readonly compatible?: { readonly id: string; readonly endpoint: string; readonly auth: ProviderAuth; readonly dialect?: ProviderDialect;
     /** Cloudflare AI Gateway's token, for an authenticated gateway (sent as `cf-aig-authorization`). */
     readonly gatewayToken?: string };
+  /**
+   * For `openai` and `anthropic` through a gateway (Cloudflare AI Gateway's provider endpoints): the full endpoint, and
+   * the gateway's token for an authenticated gateway. The key may then be empty when the gateway stores it.
+   */
+  readonly gateway?: { readonly endpoint: string; readonly token?: string };
   /** Micro-dollars per million tokens. */
   readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number;
   /** The most one model call, and one agent run, may cost, in micro-dollars. */
@@ -87,6 +92,11 @@ export function endpointProblem(value: string | undefined): string | undefined {
 export function cloudflareEndpoint(accountId: string, gatewayId: string): string {
   return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}/compat/chat/completions`;
 }
+/** Cloudflare AI Gateway's endpoint for a provider's own API: OpenAI's Responses API or Anthropic's Messages API. */
+export function cloudflareProviderEndpoint(accountId: string, gatewayId: string, api: 'openai' | 'anthropic'): string {
+  const base = `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}`;
+  return api === 'openai' ? `${base}/openai/responses` : `${base}/anthropic/v1/messages`;
+}
 /** The dialect of a model reached through a gateway, from its `provider/model` name. */
 export const gatewayDialect = (model: string): ProviderDialect | undefined =>
   /^deepseek\//iu.test(model) ? DEEPSEEK_DIALECT : /^openai\//iu.test(model) ? OPENAI_CHAT_DIALECT : undefined;
@@ -103,6 +113,7 @@ export function providerEnvironment(choice: ProviderChoice): string {
     '# Written by mayura init for local development. It holds your API key: keep it private and never commit it',
     '# (.gitignore excludes it). Production reads these settings from its own environment instead.',
     `MAYURA_MODEL_PROVIDER=${choice.provider}`,
+    ...(choice.gateway ? [`MAYURA_MODEL_ENDPOINT=${choice.gateway.endpoint}`, ...(choice.gateway.token ? [`MAYURA_MODEL_GATEWAY_TOKEN=${choice.gateway.token}`] : [])] : []),
     ...(choice.compatible ? [`MAYURA_MODEL_PROVIDER_ID=${choice.compatible.id}`, `MAYURA_MODEL_ENDPOINT=${choice.compatible.endpoint}`,
       `MAYURA_MODEL_AUTH=${choice.compatible.auth}`,
       ...(choice.compatible.dialect?.output ? [`MAYURA_MODEL_OUTPUT=${choice.compatible.dialect.output}`] : []),

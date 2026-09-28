@@ -20,7 +20,11 @@ export function selectModel(settings: ModelSettings, agent: { readonly outputJso
       ...(settings.tokenLimitField ? { tokenLimitField: settings.tokenLimitField } : {}),
       ...(settings.gatewayToken ? { headers: { 'cf-aig-authorization': `Bearer ${settings.gatewayToken}` } } : {}) });
   }
-  return settings.provider === 'openai' ? openAIResponses({ ...options, apiKey: settings.apiKey }) : anthropicMessages({ ...options, apiKey: settings.apiKey });
+  // Directly, or through a gateway (MAYURA_MODEL_ENDPOINT, with MAYURA_MODEL_GATEWAY_TOKEN; the key may stay in the gateway).
+  const headers = settings.gatewayToken ? { 'cf-aig-authorization': `Bearer ${settings.gatewayToken}` } : undefined;
+  const via = { ...(settings.endpoint ? { endpoint: settings.endpoint } : {}), ...(headers ? { headers } : {}) };
+  const credentials = settings.apiKey ? { apiKey: settings.apiKey, ...via } : { endpoint: settings.endpoint!, headers: headers! };
+  return settings.provider === 'openai' ? openAIResponses({ ...options, ...credentials }) : anthropicMessages({ ...options, ...credentials });
 }
 
 /** Runtimes must allow each model explicitly, as `model:<adapter id>`. */

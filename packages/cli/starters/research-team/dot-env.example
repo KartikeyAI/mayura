@@ -36,6 +36,9 @@ MAYURA_MODEL_PROVIDER=offline
 # MAYURA_MODEL_STRICT_TOOLS=true
 # OpenAI's newer models (directly or as openai/... through a gateway) take only max_completion_tokens:
 # MAYURA_MODEL_TOKEN_LIMIT_FIELD=max_completion_tokens
+# OpenAI or Anthropic through a gateway: MAYURA_MODEL_PROVIDER=openai or anthropic, MAYURA_MODEL_ENDPOINT set to its
+# endpoint (for Cloudflare, https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/openai/responses or
+# .../anthropic/v1/messages) and MAYURA_MODEL_GATEWAY_TOKEN; the provider key may then stay in the gateway.
 # Cloudflare AI Gateway: https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions, models named
 # provider/model, and the gateway token of an authenticated gateway (the API key may stay in the gateway):
 # MAYURA_MODEL_GATEWAY_TOKEN=

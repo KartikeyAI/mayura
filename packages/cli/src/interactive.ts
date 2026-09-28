@@ -4,7 +4,7 @@ import { relative, resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { applyProjectPlan, planProject, planStarter, starters, templates, type InitPlan, type StarterInitPlan, type StarterName, type TemplateName } from './index.js';
 import { nextSteps, wrap, type Paint } from './output.js';
-import { azureEndpoint, cloudflareEndpoint, dollarsToMicros, endpointProblem, gatewayDialect, modelPattern, PROVIDERS, providerIdPattern, validKey, writeProviderEnvironment, type ProviderChoice } from './providers.js';
+import { azureEndpoint, cloudflareEndpoint, cloudflareProviderEndpoint, dollarsToMicros, endpointProblem, gatewayDialect, modelPattern, PROVIDERS, providerIdPattern, validKey, writeProviderEnvironment, type ProviderChoice } from './providers.js';
 
 /** The part of a description before its first colon or full stop: short enough for a menu hint. */
 const summary = (description: string): string => description.split(/[:.]/u)[0]!.trim();
@@ -42,6 +42,8 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
       providerLabel = details.label;
       // OpenAI-compatible: a preset endpoint, or the pieces of one.
       let compatible: ProviderChoice['compatible'];
+      // Cloudflare AI Gateway in front of OpenAI's or Anthropic's own API, used with Mayura's adapter for that provider.
+      let native: { readonly provider: 'openai' | 'anthropic'; readonly endpoint: string; readonly token?: string } | undefined;
       if (details.provider === 'compatible') {
         let endpoint = details.endpoint; let id = details.id; let gatewayToken: string | undefined;
         if (details.ask === 'cloudflare') {
@@ -54,6 +56,13 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
           const token = await prompts.password({ ...io, message: 'Gateway token (leave empty if the gateway is not authenticated)', mask: '•',
             validate: value => !value || validKey(value) ? undefined : 'Paste the token: at least 8 visible characters, no spaces.' });
           if (prompts.isCancel(token)) return cancelled();
+          const route = await prompts.select({ ...io, message: 'Which API through the gateway?', initialValue: 'unified' as const, options: [
+            { value: 'unified' as const, label: 'Unified (OpenAI-compatible)', hint: 'any provider, models named provider/model' },
+            { value: 'openai' as const, label: 'OpenAI Responses API', hint: 'OpenAI models, with the OpenAI adapter' },
+            { value: 'anthropic' as const, label: 'Anthropic Messages API', hint: 'Claude models, with the Anthropic adapter' },
+          ] });
+          if (prompts.isCancel(route)) return cancelled();
+          if (route !== 'unified') native = { provider: route, endpoint: cloudflareProviderEndpoint(account, gateway || 'default', route), ...(token ? { token } : {}) };
           endpoint = cloudflareEndpoint(account, gateway || 'default'); gatewayToken = token || undefined;
         } else if (details.ask === 'azure') {
           const resource = await prompts.text({ ...io, message: 'Azure OpenAI resource name', placeholder: 'the <resource> in https://<resource>.openai.azure.com',
@@ -77,12 +86,15 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
           if (prompts.isCancel(named)) return cancelled();
           id = named || suggested;
         }
-        compatible = { id, endpoint: endpoint!, auth: details.auth ?? 'bearer', ...(details.dialect ? { dialect: details.dialect } : {}), ...(gatewayToken ? { gatewayToken } : {}) };
+        if (!native) compatible = { id, endpoint: endpoint!, auth: details.auth ?? 'bearer', ...(details.dialect ? { dialect: details.dialect } : {}), ...(gatewayToken ? { gatewayToken } : {}) };
       }
-      const model = await prompts.text({ ...io, message: `${details.label} model`,
-        placeholder: details.defaultModel ?? (details.ask === 'cloudflare' ? 'provider/model, such as deepseek/deepseek-flash' : 'the model id from your account'),
-        ...(details.defaultModel ? { defaultValue: details.defaultModel } : {}),
-        validate: value => (value || details.defaultModel) && modelPattern.test(value || details.defaultModel!) ? undefined : 'Enter a model id, such as the one in your provider dashboard.' });
+      // Behind the gateway, the provider's own defaults apply (a Claude model for Anthropic, for example).
+      const target = native ? PROVIDERS.find(item => item.id === native.provider)! : details;
+      const defaultModel = target.defaultModel;
+      const model = await prompts.text({ ...io, message: `${target.label} model`,
+        placeholder: defaultModel ?? (details.ask === 'cloudflare' && !native ? 'provider/model, such as deepseek/deepseek-flash' : 'the model id from your account'),
+        ...(defaultModel ? { defaultValue: defaultModel } : {}),
+        validate: value => (value || defaultModel) && modelPattern.test(value || defaultModel!) ? undefined : 'Enter a model id, such as the one in your provider dashboard.' });
       if (prompts.isCancel(model)) return cancelled();
       // Through a gateway, the model's provider sets the dialect (DeepSeek answers in JSON mode, for example).
       if (details.ask === 'cloudflare' && compatible) {
@@ -91,8 +103,8 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
       }
       // Masked, and written only to the project's .env: never printed, logged or put in the plan. A gateway with a
       // token may keep the provider's key itself, so the key may be left empty there.
-      const keyOptional = details.ask === 'cloudflare' && compatible?.gatewayToken !== undefined;
-      const apiKey = await prompts.password({ ...io, message: keyOptional ? 'Provider API key (leave empty if the gateway stores it)' : `${details.label} API key`, mask: '•',
+      const keyOptional = details.ask === 'cloudflare' && (compatible?.gatewayToken !== undefined || native?.token !== undefined);
+      const apiKey = await prompts.password({ ...io, message: keyOptional ? `${native ? target.label : 'Provider'} API key (leave empty if the gateway stores it)` : `${target.label} API key`, mask: '•',
         validate: value => (keyOptional && !value) || validKey(value) ? undefined : 'Paste the key: at least 8 visible characters, no spaces.' });
       if (prompts.isCancel(apiKey)) return cancelled();
       prompts.log.message(p.dim(wrap('Mayura accounts every call conservatively, so it needs your prices (from the provider\'s pricing page) and a spending cap.', 76, '')), io);
@@ -105,7 +117,8 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
       const output = await price('Output price, $ per million tokens'); if (typeof output === 'symbol') return cancelled();
       const call = await price('Most one model call may cost, $', '0.05'); if (typeof call === 'symbol') return cancelled();
       const run = await price('Most one agent run may cost, $', '0.50'); if (typeof run === 'symbol') return cancelled();
-      provider = { provider: details.provider, apiKey, model: model || details.defaultModel!, ...(compatible ? { compatible } : {}),
+      provider = { provider: native?.provider ?? details.provider, apiKey, model: model || defaultModel!, ...(compatible ? { compatible } : {}),
+        ...(native ? { gateway: { endpoint: native.endpoint, ...(native.token ? { token: native.token } : {}) } } : {}),
         inputMicrosPerMillionTokens: input, outputMicrosPerMillionTokens: output, maxCallCostMicros: call, maxRunCostMicros: Math.max(run, call) };
     }
   }
