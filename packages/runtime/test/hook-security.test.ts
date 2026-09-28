@@ -144,7 +144,7 @@ describe('hook integration security regressions', () => {
     try {
       await started.promise;
       const result = await run.result(); const before = JSON.stringify(result);
-      expect(result).toMatchObject({ status: 'outcome_unknown', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
+      expect(result).toMatchObject({ status: 'failed', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
       expect(result.evidence).toHaveLength(2);
       expect(result.evidence).toEqual(expect.arrayContaining([
         { runId: run.id, receipt: { callId: 'original.1', toolId: 'original', execution: 'succeeded', disclosure: 'withheld' } },

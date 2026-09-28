@@ -196,7 +196,7 @@ describe('primary-model admission hooks', () => {
     const engine = runtime({ maxCostMicros: 7 }); const run = engine.submit(agent(model('primary', generate, 4), { hooks: [hook] }), { input: 1 });
     try {
       await started.promise; const initial = await run.result(); const serialized = JSON.stringify(initial);
-      expect(initial).toMatchObject({ status: 'outcome_unknown', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
+      expect(initial).toMatchObject({ status: 'failed', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
       expect(initial.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ runId: run.id, receipt: expect.objectContaining({ toolId: 'read', execution: 'unknown' }) })]));
       expect(engine.inspect(run).budget).toEqual({ spentMicros: 0, reservedMicros: 3, calls: 1 });
       done.resolve('PRIVATE late content'); await nextTurn(); await nextTurn();

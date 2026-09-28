@@ -37,6 +37,17 @@ describe('tool refusals', () => {
     expect(() => withPreflight({ ...base }, () => {})).toThrow(/not created by this tools package/u);
   });
 
+  it('treat a read that throws as a plain failure: nothing to reconcile, and its declared cost is charged', async () => {
+    const lookup = defineTool({ id: 'tickets.lookup', version: '1', description: 'Look up a ticket.', input, output, effects: 'read', capabilities: [], costMicros: 5,
+      execute: () => { throw new Error('PRIVATE database detail'); } });
+    const receipts: [ExecutionReceipt, ExecutionSettlement][] = []; const budget = new Budget(100, 20);
+    const result = await invokeTool(lookup, { ticketId: 'T-3' }, { ...context(receipts), budget, permissions: { allow: ['tool:tickets.lookup', 'effect:read'] } });
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'TOOL_FAILED' }, receipt: { execution: 'failed' } });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+    expect(receipts).toEqual([[expect.objectContaining({ execution: 'failed' }), { knownCostMicros: 5, unknownCostMicros: 0 }]]);
+    expect(budget.snapshot()).toMatchObject({ spentMicros: 5, reservedMicros: 0 });
+  });
+
   it('are not believed after the tool reported spending, and any other exception stays possibly executed', async () => {
     const afterUsage = await invokeTool(write((_value, execution) => { execution.reportUsage({ knownCostMicros: 2, unknownCostMicros: 0 }); throw new ToolRefusal(); }),
       { ticketId: 'T-1' }, context([]));

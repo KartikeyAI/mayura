@@ -411,7 +411,7 @@ describe('hook deadlines and actual callback lifetimes', () => {
     const run = engine.submit(agent(model('primary', primary), { hooks: [hook], guards: { output: [{ id: 'output', check: outputGuard }] } }), { input: 1 });
     try {
       await started.promise; const initial = await run.result(); const serialized = JSON.stringify(initial);
-      expect(initial).toMatchObject({ status: 'outcome_unknown', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
+      expect(initial).toMatchObject({ status: 'failed', receipt: { toolId: 'read', execution: 'unknown', disclosure: 'withheld' } });
       expect(initial.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ runId: run.id, receipt: expect.objectContaining({ toolId: 'read', execution: 'unknown' }) })]));
       expect(engine.inspect(run).budget).toEqual({ spentMicros: 0, reservedMicros: 3, calls: 1 });
       done.resolve('PRIVATE late result'); await nextTurn(); await nextTurn();

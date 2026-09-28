@@ -340,7 +340,8 @@ describe('deadlines, cancellation, budgets, and secrecy', () => {
     const pending = invokeTool(definition, { value: 1 }, context({ signal: controller.signal, permissions: { allow: ['tool:number.double', 'effect:read'] } }));
     await start;
     controller.abort();
-    expect(await pending).toMatchObject({ status: 'outcome_unknown', receipt: { execution: 'unknown' } });
+    // A read changed nothing outside, so a cancelled one is simply cancelled; its completion stays unknown evidence.
+    expect(await pending).toMatchObject({ status: 'cancelled', receipt: { execution: 'unknown' } });
   });
 
   it('removes signal listeners after successful and rejected execution', async () => {
