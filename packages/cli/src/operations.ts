@@ -66,6 +66,55 @@ const workflowRunIdentifier = /^[a-f0-9]{64}$/u;
 const workflowNodeIdentifier = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const workflowVersion = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/u;
 function fail(): never { throw new MayuraError('INVALID_OUTPUT', 'The operational server returned an invalid response.'); }
+
+/**
+ * A request the server refused. `code` is a stable Mayura error class; `serverCode` is the server's own precise code
+ * (for example `CAPABILITY_REQUIRED` or `WORKFLOW_CONFLICT`) when it sent one, and the message repeats the server's
+ * fixed explanation, checked to be short printable text so it is safe to print in a terminal.
+ */
+export class OperationalRequestError extends MayuraError {
+  constructor(code: ConstructorParameters<typeof MayuraError>[0], message: string, readonly status: number, readonly serverCode: string | null,
+    readonly retryAfterMs: number | null, readonly capability: string | null, readonly currentRevision: number | null) { super(code, message); }
+  override toJSON(): ReturnType<MayuraError['toJSON']> & { readonly status: number; readonly serverCode: string | null } {
+    return { code: this.code, message: this.message, status: this.status, serverCode: this.serverCode,
+      ...(this.retryAfterMs === null ? {} : { retryAfterMs: this.retryAfterMs }), ...(this.capability === null ? {} : { capability: this.capability }),
+      ...(this.currentRevision === null ? {} : { currentRevision: this.currentRevision }) };
+  }
+}
+/** The stable class for an HTTP status; the server's own code travels next to it. */
+function statusCode(status: number, serverCode: string | null): ConstructorParameters<typeof MayuraError>[0] {
+  if (serverCode === 'SUBMISSION_OUTCOME_UNKNOWN') return 'OUTCOME_UNKNOWN';
+  return status === 401 || status === 403 ? 'PERMISSION_DENIED' : status === 404 || status === 410 ? 'NOT_FOUND' : status === 409 || status === 412 ? 'CONFLICT'
+    : status === 408 ? 'TIMEOUT' : status === 413 || status === 429 ? 'LIMIT_EXCEEDED' : status === 400 || status === 415 ? 'INVALID_INPUT' : 'TOOL_FAILED';
+}
+/** Read at most 16 KiB of an error answer and keep only a well-formed Mayura code, message and hints. */
+async function refusal(response: Response, signal: AbortSignal): Promise<OperationalRequestError> {
+  let code: string | null = null; let text: string | null = null; let retryAfterMs: number | null = null; let capability: string | null = null; let revision: number | null = null;
+  if (/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '') && response.body) {
+    const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0; let complete = false;
+    try {
+      while (true) {
+        const next = await bounded(reader.read(), signal); if (next.done) { complete = true; break; }
+        size += next.value.byteLength; if (size > 16_384) break; chunks.push(next.value);
+      }
+      if (complete) {
+        const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        const error = (JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { error?: Record<string, unknown> } | null)?.error;
+        if (error && typeof error === 'object' && typeof error['code'] === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/u.test(error['code'])) {
+          code = error['code'];
+          if (typeof error['message'] === 'string' && /^[\x20-\x7e]{1,1024}$/u.test(error['message'])) text = error['message'];
+          if (Number.isSafeInteger(error['retryAfterMs']) && (error['retryAfterMs'] as number) >= 0) retryAfterMs = error['retryAfterMs'] as number;
+          if (typeof error['capability'] === 'string' && capabilityIdentifier.test(error['capability'])) capability = error['capability'];
+          if (Number.isSafeInteger(error['currentRevision']) && (error['currentRevision'] as number) >= 1) revision = error['currentRevision'] as number;
+        }
+      }
+    } catch (error) { if (error instanceof MayuraError && error.code === 'TIMEOUT') throw error; /* Not a Mayura error body. */ }
+    finally { if (!complete) void reader.cancel().catch(() => {}); reader.releaseLock(); }
+  } else void response.body?.cancel().catch(() => {});
+  const message = code === null ? `The operational server refused the request (HTTP ${response.status}).`
+    : `The operational server refused the request (HTTP ${response.status} ${code})${text === null ? '.' : `: ${text}`}`;
+  return new OperationalRequestError(statusCode(response.status, code), message, response.status, code, retryAfterMs, capability, revision);
+}
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || ![null, Object.prototype].includes(Object.getPrototypeOf(value))) return fail();
   return value as Record<string, unknown>;
@@ -122,10 +171,7 @@ async function transport(options: OperationalClientOptions, path: string, accept
       throw new MayuraError('TOOL_FAILED', 'The operational server could not be reached.');
     }
     if (response.redirected || (response.url && new URL(response.url).origin !== base.origin)) { void response.body?.cancel().catch(() => {}); throw new MayuraError('PERMISSION_DENIED', 'Operational redirects are denied.'); }
-    if (!accepted.includes(response.status)) { void response.body?.cancel().catch(() => {});
-      const code = response.status === 401 || response.status === 403 ? 'PERMISSION_DENIED' : response.status === 404 ? 'NOT_FOUND'
-        : response.status === 409 || response.status === 412 ? 'CONFLICT' : 'TOOL_FAILED';
-      throw new MayuraError(code, 'Operational request was rejected.'); }
+    if (!accepted.includes(response.status)) throw await refusal(response, controller.signal);
     if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) { void response.body?.cancel().catch(() => {}); return fail(); }
     const reader = response.body?.getReader(); if (!reader) return fail();
     const chunks: Uint8Array[] = []; let size = 0; let complete = false;
