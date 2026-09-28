@@ -10,7 +10,7 @@ import {
 } from '@mayura/artifacts';
 
 declare const rootDirectory: string;
-const scope: ArtifactScope = { tenantId: 'tenant', projectId: 'project' };
+const scope: ArtifactScope = { principalId: 'tenant', projectId: 'project' };
 const store: LocalArtifactStore = createLocalArtifactStore({ rootDirectory, maxArtifactBytes: 1_024 });
 const staged: Promise<StagedArtifact> = store.stage({ scope, content: new Uint8Array(), mediaType: 'text/plain', classification: 'internal' });
 const reference: Promise<ArtifactReference> = staged.then((value) => store.commit(value));

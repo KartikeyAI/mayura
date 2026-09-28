@@ -86,7 +86,7 @@ try {
   } finally { await deniedRuntime.close(); }
 
   const artifactStore = createLocalArtifactStore({ rootDirectory: artifactDirectory, maxArtifactBytes: 1_024 });
-  const artifactScope = { tenantId: 'external', projectId: 'consumer' };
+  const artifactScope = { principalId: 'external', projectId: 'consumer' };
   const reference = await artifactStore.commit(await artifactStore.stage({ scope: artifactScope, content: new TextEncoder().encode('parallel report'), mediaType: 'text/plain', classification: 'internal' }));
   artifactInspected = (await artifactStore.audit([reference], artifactScope, { maxTotalBytes: 1_024 })).observations[0]?.status === 'ok';
 } finally { await matrixRuntime.close(); await rm(artifactDirectory, { recursive: true, force: true }); }
