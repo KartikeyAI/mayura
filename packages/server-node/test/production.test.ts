@@ -63,6 +63,39 @@ describe('production Node host', () => {
     expect([200, 201, 202]).toContain(submitted.status); expect(JSON.parse(submitted.body)).toMatchObject({ id: expect.any(String) });
   });
 
+  it('accepts a rewritten Host only from a trusted proxy that names the public host in X-Forwarded-Host', async () => {
+    const internal = { path: '/v1/agents', token: 'fixture-token', host: 'agents.internal:8080' };
+    const forwarded = (headers: Record<string, string>) => (port: number) => new Promise<number>((resolve, reject) => {
+      const request = httpRequest({ hostname: '127.0.0.1', port, path: '/v1/agents', headers: { host: 'agents.internal:8080', authorization: 'Bearer fixture-token', ...headers } },
+        response => { response.resume(); response.on('end', () => resolve(response.statusCode ?? 0)); });
+      request.on('error', reject); request.end();
+    });
+    // Without trust, a forwarding header changes nothing: the Host must be the public host.
+    const plain = await start();
+    expect((await call(plain.port, internal)).status).toBe(421);
+    expect(await forwarded({ 'x-forwarded-host': 'api.example.test' })(plain.port)).toBe(421);
+    const other = await start({ trustedProxies: ['10.0.0.9'] });
+    expect(await forwarded({ 'x-forwarded-host': 'api.example.test' })(other.port)).toBe(421);
+    // The test client connects from 127.0.0.1 (possibly as an IPv4-mapped IPv6 address).
+    const trusted = await start({ trustedProxies: ['127.0.0.1'] });
+    expect(await forwarded({ 'x-forwarded-host': 'api.example.test' })(trusted.port)).toBe(200);
+    expect(await forwarded({ 'x-forwarded-host': 'client-supplied.example, api.example.test' })(trusted.port)).toBe(200);
+    expect(await forwarded({ 'x-forwarded-host': 'attacker.example.test' })(trusted.port)).toBe(421);
+    expect((await call(trusted.port, { path: '/v1/agents', token: 'fixture-token' })).status).toBe(200);
+    const refused = await call(trusted.port, internal); expect(refused.status).toBe(421);
+    expect(JSON.parse(refused.body)).toEqual({ error: { code: 'MISDIRECTED_REQUEST', message: expect.stringContaining('trustedProxies') } });
+    for (const bad of [['proxy.internal'], ['10.0.0.0/8'], 'x' as never]) await expect(listenProductionServer(options({ trustedProxies: bad }))).rejects.toThrow();
+  });
+
+  it('passes durable run records through to the protocol', async () => {
+    const claim = vi.fn(async () => { throw new Error('PRIVATE store failure'); });
+    const unused = async () => { throw new Error('unused'); };
+    const host = await start({ runRecords: { claim, release: unused, start: unused, update: unused, read: unused, events: unused, requestCancel: unused, abandon: unused } });
+    const refused = await call(host.port, { path: '/v1/runs', method: 'POST', token: 'fixture-token', body: JSON.stringify({ agentId: 'prod.agent', input: 2 }), idempotencyKey: 'records' });
+    expect(refused.status).toBe(503); expect(JSON.parse(refused.body)).toMatchObject({ error: { code: 'RUN_RECORDS_UNAVAILABLE' } }); expect(claim).toHaveBeenCalledOnce();
+    expect(refused.body).not.toContain('PRIVATE');
+  });
+
   it('reports readiness from the application and fails it as soon as shutdown begins', async () => {
     let ready = true; const readiness = vi.fn(async () => { if (ready === null as never) throw new Error('PRIVATE'); return ready; });
     const host = await start({ readiness });

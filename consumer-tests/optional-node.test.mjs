@@ -146,7 +146,7 @@ try {
   assert.equal((await client.releaseWorkflowFleet()).held, false); assert.equal((await client.workflowFleet()).generation, 0);
   assert.equal(humanActor, 'consumer-user');
   const denied = createClient({ baseUrl: server.origin, token: () => 'incorrect' });
-  await assert.rejects(denied.agents(), { code: 'HTTP_ERROR', status: 401 });
+  await assert.rejects(denied.agents(), { code: 'AUTH_INVALID', status: 401 });
   const run = await client.submit('consumer.http', 2, { idempotencyKey: 'packed-consumer' });
   const events = await Array.fromAsync(run.events());
   assert.equal(events.at(-1).type, 'run.completed');

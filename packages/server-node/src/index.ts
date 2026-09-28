@@ -9,7 +9,8 @@ export { listenProductionServer, type ProductionAgentServer, type ProductionServ
 export type { ServerIdentity } from '@mayura/server';
 export { listenProbe, type ProbeServer, type ProbeServerOptions } from './probe.js';
 
-export interface LocalServerOptions extends Omit<AgentServerOptions, 'publicOrigin'> {
+/** The host builds each request's URL from its own origin, so `mounted` does not apply. */
+export interface LocalServerOptions extends Omit<AgentServerOptions, 'publicOrigin' | 'mounted'> {
   readonly hostname?: '127.0.0.1' | '::1';
   readonly port?: number;
   readonly shutdownGraceMs?: number;

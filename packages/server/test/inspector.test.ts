@@ -61,13 +61,18 @@ describe('operator console assets', () => {
     expect(asset).toContain("style-src 'self';"); expect(asset).not.toContain('nonce-');
   });
 
-  it('accepts same-origin console commands but still denies foreign origins', async () => {
+  it('accepts same-origin browser commands, with or without the console, but still denies foreign origins', async () => {
     const value = server({ inspector: true });
     const submit = (origin: string, key: string) => call(value, '/v1/runs', { method: 'POST', headers: { origin, authorization: 'Bearer TOKEN_OK',
       'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify({ agentId: 'echo', input: 1 }) });
     expect((await submit(publicOrigin, 'same-origin')).status).toBe(202);
     expect((await submit('https://evil.example', 'foreign')).status).toBe(403);
+    // A page served from the server's own public origin is same-origin even when the console is off.
     const plain = server();
-    expect((await call(plain, '/v1/agents', { headers: { origin: publicOrigin, authorization: 'Bearer TOKEN_OK' } })).status).toBe(403);
+    const sameOrigin = await call(plain, '/v1/agents', { headers: { origin: publicOrigin, authorization: 'Bearer TOKEN_OK' } });
+    expect(sameOrigin.status).toBe(200); expect(sameOrigin.headers.get('access-control-allow-origin')).toBeNull();
+    const foreign = await call(plain, '/v1/agents', { headers: { origin: 'https://evil.example', authorization: 'Bearer TOKEN_OK' } });
+    expect(foreign.status).toBe(403); expect(((await foreign.json()) as { error: { code: string } }).error.code).toBe('ORIGIN_DENIED');
+    expect((await call(plain, '/v1/agents', { headers: { origin: publicOrigin.replace('https:', 'http:'), authorization: 'Bearer TOKEN_OK' } })).status).toBe(403);
   });
 });

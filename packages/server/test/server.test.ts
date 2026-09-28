@@ -45,9 +45,19 @@ async function terminal(value: AgentServer, id: string): Promise<JsonObject> {
   await vi.waitFor(async () => { result = await snapshot(value, id); expect(result['outcome']).toBeDefined(); }, { interval: 1, timeout: 1_000 });
   return result;
 }
-async function error(response: Response, status: number, code: string): Promise<void> {
-  expect(response.status).toBe(status); expect(await json(response)).toEqual({ error: { code } });
+/** Every error is `{ error: { code, message, ...details } }` with a fixed, data-free message. */
+async function error(response: Response, status: number, code: string, details: Record<string, unknown> = {}): Promise<JsonObject> {
+  expect(response.status).toBe(status); const body = await json(response);
+  expect(Object.keys(body)).toEqual(['error']);
+  expect(body['error']).toEqual(expect.objectContaining({ code, message: expect.stringMatching(/^[ -~]{10,600}$/), ...details,
+    ...(retryAfter[code] === undefined ? {} : { retryAfterMs: retryAfter[code] }) }));
+  expect(Object.keys(body['error'] as JsonObject).every(key => ['code', 'message', 'retryAfterMs', 'capability', 'option', 'limitBytes', 'currentRevision'].includes(key))).toBe(true);
+  if (retryAfter[code] !== undefined) expect(response.headers.get('retry-after')).toBe(String(Math.ceil(retryAfter[code] / 1_000)));
+  return body;
 }
+const retryAfter: Record<string, number> = { AUTH_LIMIT: 1_000, REQUEST_LIMIT: 1_000, STREAM_LIMIT: 1_000, RUN_LIMIT: 1_000, RUNTIME_LIMIT: 1_000,
+  HUMAN_LIMIT: 1_000, WORKFLOW_LIMIT: 1_000, SUBMISSION_IN_PROGRESS: 1_000, AUTH_UNAVAILABLE: 2_000, SERVER_CLOSED: 1_000, SERVICE_UNAVAILABLE: 2_000,
+  SUBMISSION_JOURNAL_UNAVAILABLE: 2_000, RUN_RECORDS_UNAVAILABLE: 2_000, HUMAN_UNAVAILABLE: 2_000, WORKFLOW_UNAVAILABLE: 2_000 };
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });
@@ -70,19 +80,21 @@ afterEach(async () => { await Promise.all(servers.splice(0).map(value => value.c
 describe('authenticated Fetch server admission', () => {
   it.each([null, '', 'Basic PRIVATE', 'Bearer', 'Bearer invalid token'])('requires a valid Bearer header (%s)', async header => {
     const authenticate = vi.fn(async () => identity()); const value = server({ authenticate });
-    await error(await value.fetch(request('/v1/agents', { headers: header === null ? {} : { authorization: header } }, null)), 401, 'UNAUTHORIZED');
+    await error(await value.fetch(request('/v1/agents', { headers: header === null ? {} : { authorization: header } }, null)), 401, 'AUTH_REQUIRED');
     expect(authenticate).not.toHaveBeenCalled();
   });
 
   it.each([
-    null,
-    identity({ expiresAtMs: 1 }),
-    { ...identity(), scope: { principalId: 'alice', projectId: 'project', extra: 'SECRET' } },
-    { ...identity(), capabilities: ['runs:read', 'admin'] },
-    { ...identity(), arbitrary: 'SECRET' },
-  ])('uniformly rejects absent, expired or malformed verified identities %#', async supplied => {
+    [null, 401, 'AUTH_INVALID'],
+    [identity({ expiresAtMs: 1 }), 401, 'AUTH_EXPIRED'],
+    // An identity Mayura cannot use is the application's configuration mistake, reported without echoing it.
+    [{ ...identity(), scope: { principalId: 'alice', projectId: 'project', extra: 'SECRET' } }, 500, 'IDENTITY_INVALID'],
+    [{ ...identity(), capabilities: ['runs:read', 'admin'] }, 500, 'IDENTITY_INVALID'],
+    [{ ...identity(), arbitrary: 'SECRET' }, 500, 'IDENTITY_INVALID'],
+    [identity({ scope: { principalId: 'auth0|user:1', projectId: 'project' } }), 500, 'IDENTITY_INVALID'],
+  ] as const)('rejects absent, expired or unusable verified identities precisely %#', async (supplied, status, code) => {
     const value = server({ authenticate: async () => supplied as ServerIdentity | null });
-    await error(await value.fetch(request()), 401, 'UNAUTHORIZED');
+    const body = await error(await value.fetch(request()), status, code); expect(JSON.stringify(body)).not.toMatch(/SECRET|auth0/);
   });
 
   it('sanitizes raw and framework-shaped authenticator exceptions', async () => {
@@ -130,7 +142,7 @@ describe('authenticated Fetch server admission', () => {
     let supplied = identity(); const value = server({ authenticate: async () => supplied }); const id = await admitted(value);
     supplied = identity({ capabilities: supplied.capabilities.filter(capability => capability !== denied) });
     const route = denied === 'runs:read' ? request(`/v1/runs/${id}`) : denied === 'runs:submit' ? submission(2, 'two') : request(`/v1/runs/${id}/cancel`, { method: 'POST' });
-    await error(await value.fetch(route), 403, 'FORBIDDEN');
+    await error(await value.fetch(route), 403, 'CAPABILITY_REQUIRED');
   });
 
   it.each(['principal', 'project', 'agent'] as const)('hides reads, cancellations and streams after a foreign %s identity change', async changed => {
@@ -140,7 +152,7 @@ describe('authenticated Fetch server admission', () => {
     supplied = changed === 'principal' ? identity({ scope: { principalId: 'bob', projectId: 'project' } })
       : changed === 'project' ? identity({ scope: { principalId: 'alice', projectId: 'other' } }) : identity({ agentIds: [] });
     for (const [suffix, method] of [['', 'GET'], ['/cancel', 'POST'], ['/events', 'GET']] as const) {
-      await error(await value.fetch(request(`/v1/runs/${id}${suffix}`, { method })), 404, 'NOT_FOUND');
+      await error(await value.fetch(request(`/v1/runs/${id}${suffix}`, { method })), 404, 'RUN_NOT_FOUND');
     }
     expect(signal.aborted).toBe(false);
   });
@@ -150,8 +162,8 @@ describe('authenticated Fetch server admission', () => {
     const value = server({ authenticate: async () => supplied, agents: [{ agent: waiting.agent, permissions: { allow: ['model:fixture'] } }] });
     const id = await admitted(value); const signal = await waiting.started.promise;
     supplied = identity({ expiresAtMs: 1 });
-    await error(await value.fetch(request(`/v1/runs/${id}`)), 401, 'UNAUTHORIZED');
-    await error(await events(value, id), 401, 'UNAUTHORIZED'); expect(signal.aborted).toBe(false);
+    await error(await value.fetch(request(`/v1/runs/${id}`)), 401, 'AUTH_EXPIRED');
+    await error(await events(value, id), 401, 'AUTH_EXPIRED'); expect(signal.aborted).toBe(false);
   });
 
   it.each(['permissions', 'scope', 'instructions', 'tools', 'model', 'limits', 'profile', 'version'])('rejects injected %s before model execution', async field => {
@@ -209,7 +221,7 @@ describe('authenticated Fetch server admission', () => {
 describe('operational health and tool discovery', () => {
   it('keeps public liveness opt-in and content-free', async () => {
     const authenticate = vi.fn(async () => identity()); const disabled = server({ authenticate });
-    await error(await disabled.fetch(request('/healthz', {}, null)), 401, 'UNAUTHORIZED');
+    await error(await disabled.fetch(request('/healthz', {}, null)), 401, 'AUTH_REQUIRED');
     const enabled = server({ publicLiveness: true, authenticate });
     const response = await enabled.fetch(request('/healthz', {}, null));
     expect(response.status).toBe(200); expect(await json(response)).toEqual({ status: 'ok' });
@@ -237,7 +249,7 @@ describe('operational health and tool discovery', () => {
     const hanging = deferred<boolean>(); const check = vi.fn(() => hanging.promise);
     const value = server({ limits: { requestTimeoutMs: 25, maxHealthOperations: 1 }, healthChecks: [{ id: 'database', check }],
       authenticate: async () => identity({ capabilities: ['runs:read'] }) });
-    await error(await value.fetch(request('/v1/operations/health')), 403, 'FORBIDDEN'); expect(check).not.toHaveBeenCalled();
+    await error(await value.fetch(request('/v1/operations/health')), 403, 'CAPABILITY_REQUIRED'); expect(check).not.toHaveBeenCalled();
     const authorized = server({ limits: { requestTimeoutMs: 25, maxHealthOperations: 1 }, healthChecks: [{ id: 'database', check }] });
     await error(await authorized.fetch(request('/v1/operations/health')), 408, 'REQUEST_TIMEOUT');
     const unavailable = await authorized.fetch(request('/v1/operations/health')); expect(unavailable.status).toBe(503); expect(check).toHaveBeenCalledTimes(1);
@@ -290,7 +302,7 @@ describe('authenticated human request transport', () => {
     const transport = { list: async () => ({ items: [waiting], next: null }), inspect: async () => waiting, respond: async () => waiting };
     const reader = server({ humanRequests: transport, authenticate: async () => identity({ capabilities: ['humans:read'] }) });
     await error(await reader.fetch(request('/v1/human-requests/review/responses', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ commandId: 'answer', requestDigest: digest, value: true }) })), 403, 'FORBIDDEN');
+      body: JSON.stringify({ commandId: 'answer', requestDigest: digest, value: true }) })), 403, 'CAPABILITY_REQUIRED');
     const hostile = server({ humanRequests: { ...transport, inspect: async () => ({ ...waiting, agentId: 'other', prompt: 'PRIVATE' }) } });
     await error(await hostile.fetch(request('/v1/human-requests/review')), 503, 'HUMAN_TRANSPORT_INVALID');
   });
@@ -310,7 +322,7 @@ describe('authenticated human request transport', () => {
 describe('HTTP command shape, idempotency and finite capacity', () => {
   it.each([undefined, '', 'bad key', 'x'.repeat(129)])('requires a bounded stable idempotency key %#', async key => {
     const headers = new Headers({ 'content-type': 'application/json' }); if (key !== undefined) headers.set('idempotency-key', key);
-    await error(await server().fetch(request('/v1/runs', { method: 'POST', headers, body: JSON.stringify({ agentId: 'echo', input: 1 }) })), 400, 'IDEMPOTENCY_REQUIRED');
+    await error(await server().fetch(request('/v1/runs', { method: 'POST', headers, body: JSON.stringify({ agentId: 'echo', input: 1 }) })), 400, 'IDEMPOTENCY_KEY_REQUIRED');
   });
 
   it('atomically deduplicates simultaneous equivalent JSON payloads and conflicts on a changed payload', async () => {
@@ -371,7 +383,7 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
   it('releases a finished run once its outcome was read, and keeps its idempotency evidence as a tombstone', async () => {
     const value = server({ limits: { maxRuns: 1 } }); const id = await admitted(value); await terminal(value, id); // read with its outcome
     const next = await admitted(value, 2, 'new'); expect(next).not.toBe(id);
-    await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'NOT_FOUND');
+    await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'RUN_NOT_FOUND');
     await error(await value.fetch(submission()), 410, 'RUN_EXPIRED');
     await error(await value.fetch(submission('CHANGED')), 409, 'IDEMPOTENCY_CONFLICT');
   });
@@ -387,7 +399,7 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
 
   it('releases finished runs after the retention period even if nobody reads them', async () => {
     const value = server({ limits: { maxRuns: 1, runRetentionMs: 20 } }); const id = await admitted(value);
-    await vi.waitFor(async () => { await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'NOT_FOUND'); }, { interval: 5, timeout: 2_000 });
+    await vi.waitFor(async () => { await error(await value.fetch(request(`/v1/runs/${id}`)), 404, 'RUN_NOT_FOUND'); }, { interval: 5, timeout: 2_000 });
     expect((await admitted(value, 2, 'new'))).toEqual(expect.any(String));
   });
 
@@ -415,11 +427,11 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
 
   it('bounds both declared and streamed body bytes and cancels an oversized stream', async () => {
     const value = server({ limits: { maxBodyBytes: 64 } });
-    await error(await value.fetch(submission(1, 'declared', { headers: { 'content-length': '65' } })), 413, 'BODY_LIMIT');
+    await error(await value.fetch(submission(1, 'declared', { headers: { 'content-length': '65' } })), 413, 'BODY_TOO_LARGE');
     const cancel = vi.fn();
     const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(65)); }, cancel });
     const bodyRequest = submission(1, 'streamed', { body: stream, duplex: 'half' } as RequestInit);
-    await error(await value.fetch(bodyRequest), 413, 'BODY_LIMIT'); expect(cancel).toHaveBeenCalledOnce();
+    await error(await value.fetch(bodyRequest), 413, 'BODY_TOO_LARGE'); expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('honors an explicitly raised body limit when the registered runtime permits the same input', async () => {
@@ -447,16 +459,16 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
   });
 
   it.each(['null', '[]', '42', '{}', '{"agentId":"echo"}', '{"agentId":"echo","input":NaN}', '{'])('rejects malformed command JSON %#', async body => {
-    await error(await server().fetch(submission(1, 'key', { body })), 400, 'INVALID_REQUEST');
+    await error(await server().fetch(submission(1, 'key', { body })), 400, body === '{' || body.includes('NaN') ? 'INVALID_JSON' : 'INVALID_REQUEST');
   });
 
   it('rejects malformed UTF-8 instead of silently substituting input bytes', async () => {
-    await error(await server().fetch(submission(1, 'key', { body: new Uint8Array([0xc3, 0x28]) })), 400, 'INVALID_REQUEST');
+    await error(await server().fetch(submission(1, 'key', { body: new Uint8Array([0xc3, 0x28]) })), 400, 'INVALID_JSON');
   });
 
   it('bounds response bodies without reflecting candidate content in an error', async () => {
     const value = server({ limits: { maxResponseBytes: 128 } }); const id = await admitted(value, 'OUTPUT_SECRET'.repeat(64));
-    await vi.waitFor(async () => { await error(await value.fetch(request(`/v1/runs/${id}`)), 503, 'RESPONSE_LIMIT'); }, { interval: 1 });
+    await vi.waitFor(async () => { await error(await value.fetch(request(`/v1/runs/${id}`)), 500, 'RESPONSE_TOO_LARGE'); }, { interval: 1 });
   });
 
   it('rejects duplicate or oversized configured agent registries and invalid server limits', () => {
@@ -472,7 +484,7 @@ describe('HTTP command shape, idempotency and finite capacity', () => {
 
   it('rejects unregistered or unauthorized agents without disclosing their definitions', async () => {
     const value = server({ authenticate: async () => identity({ agentIds: [] }) });
-    await error(await value.fetch(submission()), 404, 'NOT_FOUND');
+    await error(await value.fetch(submission()), 404, 'AGENT_NOT_FOUND');
   });
 
   it('rejects cancellation bodies and keeps cancellation requests idempotent', async () => {
@@ -500,8 +512,8 @@ describe('authenticated durable workflow view transport', () => {
   it('checks workflow authority before transport access and hides absent records', async () => {
     const inspect = vi.fn(async () => null); let supplied = identity({ capabilities: ['runs:read'] });
     const value = server({ authenticate: async () => supplied, workflowViews: { inspect } });
-    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 403, 'FORBIDDEN'); expect(inspect).not.toHaveBeenCalled();
-    supplied = identity(); await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 404, 'NOT_FOUND'); expect(inspect).toHaveBeenCalledOnce();
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 403, 'CAPABILITY_REQUIRED'); expect(inspect).not.toHaveBeenCalled();
+    supplied = identity(); await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}`)), 404, 'WORKFLOW_RUN_NOT_FOUND'); expect(inspect).toHaveBeenCalledOnce();
   });
 
   it('rejects malformed, cross-run and cyclic adapter data without reflecting private fields', async () => {
@@ -560,7 +572,7 @@ describe('authenticated durable workflow index transport', () => {
   it('denies listing before adapter access and rejects malformed cursors locally', async () => {
     const list = vi.fn(async () => ({ items: [], next: null }));
     const denied = server({ authenticate: async () => identity({ capabilities: ['runs:read'] }), workflowIndex: { list } });
-    await error(await denied.fetch(request('/v1/workflow-runs?limit=5')), 403, 'FORBIDDEN'); expect(list).not.toHaveBeenCalled();
+    await error(await denied.fetch(request('/v1/workflow-runs?limit=5')), 403, 'CAPABILITY_REQUIRED'); expect(list).not.toHaveBeenCalled();
     const value = server({ workflowIndex: { list } });
     await error(await value.fetch(request('/v1/workflow-runs?after=../private&limit=101')), 400, 'INVALID_CURSOR'); expect(list).not.toHaveBeenCalled();
   });
@@ -609,7 +621,7 @@ describe('authenticated durable workflow controls', () => {
   it('denies control before body parsing or adapter access', async () => {
     const cancel = vi.fn(async () => ({ status: 'conflict' as const })); const approve = vi.fn(async () => ({ status: 'conflict' as const }));
     const value = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowControls: { cancel, approve } });
-    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', body: 'PRIVATE' })), 403, 'CAPABILITY_REQUIRED');
     expect(cancel).not.toHaveBeenCalled(); expect(approve).not.toHaveBeenCalled();
   });
 
@@ -619,7 +631,7 @@ describe('authenticated durable workflow controls', () => {
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ commandId: 'cancel-1', revision: 2 }) })), 409, 'WORKFLOW_CONFLICT'); expect(cancel).toHaveBeenCalledOnce();
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/approvals`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: null }) })), 404, 'NOT_FOUND');
+      body: JSON.stringify({ commandId: 'approve-1', revision: 2, nodeId: 'child', approvalDigest: 'd'.repeat(64), childRunId: null }) })), 404, 'WORKFLOW_RUN_NOT_FOUND');
     expect(approve).toHaveBeenCalledOnce();
   });
 
@@ -649,7 +661,7 @@ describe('authenticated durable workflow signals', () => {
   it('denies before parsing, rejects malformed or oversized values and performs no retry on conflicts', async () => {
     const deniedDeliver = vi.fn(async () => ({ status: 'conflict' as const }));
     const denied = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowSignals: { deliver: deniedDeliver } });
-    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', body: 'PRIVATE' })), 403, 'CAPABILITY_REQUIRED');
     expect(deniedDeliver).not.toHaveBeenCalled();
     const deliver = vi.fn(async () => ({ status: 'conflict' as const })); const value = server({ workflowSignals: { deliver } });
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/signals`, { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -665,11 +677,11 @@ describe('authenticated durable workflow signals', () => {
   it('fails closed on absent, unavailable, not-found and hostile adapters', async () => {
     const command = { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ commandId: 'signal-1', revision: 2, signalId: 'ready-1', signalName: 'ready', value: true }) } satisfies RequestInit;
-    await error(await server().fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'NOT_FOUND');
+    await error(await server().fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'NOT_ENABLED', { option: 'workflowSignals' });
     await error(await server({ workflowSignals: { deliver: async () => { throw new Error('PRIVATE'); } } })
       .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 503, 'WORKFLOW_UNAVAILABLE');
     await error(await server({ workflowSignals: { deliver: async () => ({ status: 'not_found' }) } })
-      .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'NOT_FOUND');
+      .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 404, 'WORKFLOW_RUN_NOT_FOUND');
     await error(await server({ workflowSignals: { deliver: async () => ({ status: 'applied', workflow: { ...workflow(), privateValue: 'PRIVATE' } } as never) } })
       .fetch(request(`/v1/workflow-runs/${workflowId}/signals`, command)), 503, 'WORKFLOW_TRANSPORT_INVALID');
   });
@@ -689,7 +701,7 @@ describe('authenticated durable workflow resume', () => {
   it('denies before body parsing and maps conflict without retry', async () => {
     const deniedResume = vi.fn(async () => ({ status: 'conflict' as const }));
     const denied = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowResumes: { resume: deniedResume } });
-    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/resume`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/resume`, { method: 'POST', body: 'PRIVATE' })), 403, 'CAPABILITY_REQUIRED');
     expect(deniedResume).not.toHaveBeenCalled();
     const resume = vi.fn(async () => ({ status: 'conflict' as const })); const value = server({ workflowResumes: { resume } });
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/resume`, { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -726,14 +738,14 @@ describe('authenticated durable workflow pause', () => {
     const resume = vi.fn(async () => ({ status: 'applied' as const, workflow: { ...workflow(), revision: 3 } }));
     const value = server({ workflowResumes: { resume } });
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) })), 404, 'NOT_FOUND'); expect(resume).not.toHaveBeenCalled();
+      body: JSON.stringify({ commandId: 'pause-1', revision: 2 }) })), 404, 'NOT_ENABLED', { option: 'workflowPauses' }); expect(resume).not.toHaveBeenCalled();
     expect(() => server({ workflowPauses: { pause: async () => ({ status: 'conflict' as const }), extra: () => undefined } as never })).toThrow();
   });
 
   it('denies before body parsing, maps conflict once and rejects stale acknowledgements', async () => {
     const deniedPause = vi.fn(async () => ({ status: 'conflict' as const }));
     const denied = server({ authenticate: async () => identity({ capabilities: ['workflows:read'] }), workflowPauses: { pause: deniedPause } });
-    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+    await error(await denied.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', body: 'PRIVATE' })), 403, 'CAPABILITY_REQUIRED');
     expect(deniedPause).not.toHaveBeenCalled();
     const pause = vi.fn(async () => ({ status: 'conflict' as const })); const value = server({ workflowPauses: { pause } });
     await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/pause`, { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -769,17 +781,17 @@ describe('authenticated workflow fleet control', () => {
     expect((await json(await value.fetch(post('/v1/workflow-fleet/release', {}))))['fleet']).toMatchObject({ held: false });
     const controlOnly = adapter(); const denied = server({ workflowFleet: controlOnly });
     for (const path of ['/v1/workflow-fleet/hold', '/v1/workflow-fleet/release', '/v1/workflow-fleet/sweeps/resume']) {
-      await error(await denied.fetch(request(path, { method: 'POST', body: 'PRIVATE' })), 403, 'FORBIDDEN');
+      await error(await denied.fetch(request(path, { method: 'POST', body: 'PRIVATE' })), 403, 'CAPABILITY_REQUIRED');
     }
     expect(controlOnly.hold).not.toHaveBeenCalled(); expect(controlOnly.release).not.toHaveBeenCalled(); expect(controlOnly.sweep).not.toHaveBeenCalled();
     expect((await denied.fetch(request('/v1/workflow-fleet'))).status).toBe(200);
-    await error(await server({ authenticate: async () => fleetIdentity() }).fetch(post('/v1/workflow-fleet/hold', {})), 404, 'NOT_FOUND');
+    await error(await server({ authenticate: async () => fleetIdentity() }).fetch(post('/v1/workflow-fleet/hold', {})), 404, 'NOT_ENABLED', { option: 'workflowFleet' });
   });
 
   it('maps a wrong-phase sweep to conflict and rejects malformed commands before the adapter', async () => {
     const fleet = adapter({ sweep: vi.fn(async () => ({ status: 'conflict' as const })) });
     const value = server({ authenticate: async () => fleetIdentity(), workflowFleet: fleet });
-    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/resume', { cursor: null, limit: 8 })), 409, 'WORKFLOW_CONFLICT'); expect(fleet.sweep).toHaveBeenCalledOnce();
+    await error(await value.fetch(post('/v1/workflow-fleet/sweeps/resume', { cursor: null, limit: 8 })), 409, 'FLEET_CONFLICT'); expect(fleet.sweep).toHaveBeenCalledOnce();
     await error(await value.fetch(post('/v1/workflow-fleet/hold', { force: true })), 400, 'INVALID_REQUEST');
     await error(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: null, limit: 129 })), 400, 'INVALID_REQUEST');
     await error(await value.fetch(post('/v1/workflow-fleet/sweeps/pause', { cursor: { value: 'x'.repeat(5_000) }, limit: 8 })), 400, 'INVALID_REQUEST');
@@ -826,7 +838,7 @@ describe('origin and credential transport boundaries', () => {
     const response = await value.fetch(request('/v1/agents', { headers: { origin: browserOrigin } }));
     expect(response.headers.get('access-control-allow-origin')).toBe(browserOrigin);
     expect(response.headers.get('vary')).toBe('Origin'); expect(response.headers.has('access-control-allow-credentials')).toBe(false);
-    await error(await value.fetch(request('/v1/agents', { headers: { cookie: 'Authorization=Bearer SECRET', origin: browserOrigin } }, null)), 401, 'UNAUTHORIZED');
+    await error(await value.fetch(request('/v1/agents', { headers: { cookie: 'Authorization=Bearer SECRET', origin: browserOrigin } }, null)), 401, 'AUTH_REQUIRED');
   });
 
   it('accepts a browser preflight for paginated reads that carry query parameters', async () => {
@@ -847,8 +859,8 @@ describe('origin and credential transport boundaries', () => {
     const headers = { origin: browserOrigin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'Authorization, Content-Type, Idempotency-Key' };
     const accepted = await value.fetch(request('/v1/runs', { method: 'OPTIONS', headers }, null));
     expect(accepted.status).toBe(204); expect(accepted.headers.get('access-control-allow-methods')).toBe('GET, POST');
-    await error(await value.fetch(request('/v1/runs', { method: 'OPTIONS', headers: { ...headers, 'access-control-request-method': 'DELETE' } }, null)), 403, 'ORIGIN_DENIED');
-    await error(await value.fetch(request('/v1/runs', { method: 'OPTIONS', headers: { ...headers, 'access-control-request-headers': 'X-Admin' } }, null)), 403, 'ORIGIN_DENIED');
+    await error(await value.fetch(request('/v1/runs', { method: 'OPTIONS', headers: { ...headers, 'access-control-request-method': 'DELETE' } }, null)), 403, 'PREFLIGHT_DENIED');
+    await error(await value.fetch(request('/v1/runs', { method: 'OPTIONS', headers: { ...headers, 'access-control-request-headers': 'X-Admin' } }, null)), 403, 'PREFLIGHT_DENIED');
     expect(authenticate).not.toHaveBeenCalled();
   });
 
@@ -884,7 +896,7 @@ describe('bounded metadata SSE observations and shutdown', () => {
   it('emits a safe terminal stream error for future cursors instead of inventing successful completion', async () => {
     const value = server(); const id = await admitted(value); await terminal(value, id);
     const response = await events(value, id, {}, '?after=999'); expect(response.status).toBe(200);
-    expect(await response.text()).toBe('event: stream.error\ndata: {"code":"OBSERVATION_FAILED"}\n\n');
+    const text = await response.text(); expect(text).toMatch(/^event: stream\.error\ndata: \{"code":"OBSERVATION_FAILED","message":"[^"]+"\}\n\n$/);
   });
 
   it.each(['?after=-1', '?after=1.5', '?after=9007199254740992', '?after=NaN', '?after=1&after=2', '?after=1&token=SECRET'])('rejects invalid event query %s', async suffix => {
@@ -989,7 +1001,7 @@ describe('authenticated workflow migrations', () => {
     const planned = await reader.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`));
     expect((await json(planned))['plan']).toEqual(plan());
     expect(migrations.plan).toHaveBeenCalledWith(expect.objectContaining({ runId: workflowId, migrationId: 'deployment-1-to-2' }));
-    await error(await reader.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 })), 403, 'FORBIDDEN');
+    await error(await reader.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 })), 403, 'CAPABILITY_REQUIRED');
     expect(migrations.apply).not.toHaveBeenCalled();
     const operator = server({ authenticate: async () => migrator, workflowMigrations: migrations });
     const applied = await operator.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 }));
@@ -1000,8 +1012,8 @@ describe('authenticated workflow migrations', () => {
   it('returns the refusing plan as a conflict and maps missing runs', async () => {
     const refused = server({ authenticate: async () => migrator, workflowMigrations: transport({ list: vi.fn(async () => null), plan: vi.fn(async () => null),
       apply: vi.fn(async () => ({ status: 'refused' as const, plan: plan(false) })) }) });
-    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations`)), 404, 'NOT_FOUND');
-    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`)), 404, 'NOT_FOUND');
+    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations`)), 404, 'WORKFLOW_RUN_NOT_FOUND');
+    await error(await refused.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`)), 404, 'MIGRATION_NOT_FOUND');
     const response = await refused.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2 }));
     expect(response.status).toBe(409); expect((await json(response))['plan']).toMatchObject({ allowed: false, blockers: [{ node: '*' }] });
   });
@@ -1009,7 +1021,7 @@ describe('authenticated workflow migrations', () => {
   it('rejects malformed requests and hostile or inconsistent transport replies', async () => {
     const migrations = transport(); const value = server({ authenticate: async () => migrator, workflowMigrations: migrations });
     await error(await value.fetch(post(`/v1/workflow-runs/${workflowId}/migrations/deployment-1-to-2`, { commandId: 'm-1', revision: 2, force: true })), 400, 'INVALID_REQUEST');
-    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/bad%2Fid`)), 404, 'NOT_FOUND');
+    await error(await value.fetch(request(`/v1/workflow-runs/${workflowId}/migrations/bad%2Fid`)), 404, 'ROUTE_NOT_FOUND');
     expect(migrations.apply).not.toHaveBeenCalled();
     const hostile = [
       transport({ list: vi.fn(async () => [{ ...record, secret: 'PRIVATE' }] as never) }),

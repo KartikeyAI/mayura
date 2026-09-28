@@ -75,9 +75,9 @@ describe('real loopback Node host protocol', () => {
 
   it('rejects missing and incorrect credentials without dispatching a model', async () => {
     const { host, model } = await fixture();
-    for (const headers of [{}, { Authorization: 'Bearer incorrect' }]) {
+    for (const [headers, code] of [[{}, 'AUTH_REQUIRED'], [{ Authorization: 'Bearer incorrect' }, 'AUTH_INVALID']] as const) {
       const response = await fetch(`${host.origin}/v1/agents`, { headers });
-      expect(response.status).toBe(401); expect(await response.json()).toEqual({ error: { code: 'UNAUTHORIZED' } });
+      expect(response.status).toBe(401); expect(await response.json()).toEqual({ error: { code, message: expect.any(String) } });
     }
     expect(model).not.toHaveBeenCalled();
   });

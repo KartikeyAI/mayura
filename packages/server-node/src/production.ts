@@ -1,13 +1,21 @@
-import { createServer as createHttpServer, type Server } from 'node:http';
+import { createServer as createHttpServer, type IncomingMessage, type Server } from 'node:http';
+import { isIP } from 'node:net';
 import { createServer as createHttpsServer } from 'node:https';
 import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '@mayura/server';
 import { hardenServer, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
 
-export interface ProductionServerOptions extends Omit<AgentServerOptions, 'publicOrigin'> {
+/** The host rebuilds each request's URL from `publicOrigin` itself, so `mounted` does not apply. */
+export interface ProductionServerOptions extends Omit<AgentServerOptions, 'publicOrigin' | 'mounted'> {
   /** The canonical external origin clients use. Must be HTTPS; requests for any other host are refused. */
   readonly publicOrigin: string;
+  /**
+   * IP addresses of reverse proxies that rewrite the `Host` header. A request whose socket peer is one of them is
+   * accepted when its `X-Forwarded-Host` (the last value, the one that proxy set) names the public host. Every other
+   * request must carry the public host in `Host`. Either way the destination is `publicOrigin`: no header changes it.
+   */
+  readonly trustedProxies?: readonly string[];
   /** Explicit bind address, for example `0.0.0.0`, `::` or one interface. There is no default. */
   readonly hostname: string;
   readonly port: number;
@@ -32,6 +40,9 @@ export interface ProductionAgentServer {
 const json = (status: number, body: string): Response => new Response(body, {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
+const misdirected = JSON.stringify({ error: { code: 'MISDIRECTED_REQUEST', message: 'This server answers only for its public origin. Send the public host in the Host header; behind a proxy that rewrites Host, list the proxy in trustedProxies and have it set X-Forwarded-Host.' } });
+/** IPv4 peers can appear as IPv4-mapped IPv6 addresses; compare them in one form. */
+const peerAddress = (value: string): string => value.toLowerCase().replace(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/, '$1');
 const bytes = (value: unknown): boolean => (typeof value === 'string' && value.length > 0) || (value instanceof Uint8Array && value.byteLength > 0);
 
 const material = (value: unknown): string | Buffer => typeof value === 'string' ? value
@@ -55,6 +66,12 @@ export async function listenProductionServer(options: ProductionServerOptions): 
   const inProcess = !!tls && Object.keys(tls).length === 2 && bytes(tls['key']) && bytes(tls['cert']);
   if (!proxied && !inProcess) throw new Error('Production servers require in-process TLS material or an explicit TLS-terminating proxy.');
   if (options.readiness !== undefined && typeof options.readiness !== 'function') throw new Error('Readiness must be a function.');
+  const trustedProxies = (() => {
+    const supplied = options.trustedProxies ?? [];
+    if (!Array.isArray(supplied) || supplied.length > 64 || supplied.some(address => typeof address !== 'string' || isIP(address) === 0))
+      throw new Error('Trusted proxies must be at most 64 exact IP addresses.');
+    return new Set(supplied.map(peerAddress));
+  })();
   const settings = snapshotSettings(options); const readiness = options.readiness;
   // Validate the complete protocol configuration before opening a socket.
   await createAgentServer({ ...settings, publicOrigin: publicOrigin.origin }).close();
@@ -83,7 +100,10 @@ export async function listenProductionServer(options: ProductionServerOptions): 
   app.all('*', async context => {
     if (closing || !protocol) return unavailable();
     const raw = context.req.raw;
-    if ((raw.headers.get('host') ?? '').toLowerCase() !== expectedHost) return secure(json(421, '{"error":{"code":"MISDIRECTED_REQUEST"}}'));
+    // A trusted proxy may carry the public host in X-Forwarded-Host after rewriting Host; it only decides acceptance.
+    const peer = peerAddress((context.env as { incoming?: IncomingMessage } | undefined)?.incoming?.socket.remoteAddress ?? '');
+    const forwarded = trustedProxies.has(peer) ? raw.headers.get('x-forwarded-host')?.split(',').at(-1)?.trim().toLowerCase() : undefined;
+    if ((forwarded ?? (raw.headers.get('host') ?? '').toLowerCase()) !== expectedHost) return secure(json(421, misdirected));
     // Rebuild the canonical public URL; the listener's own scheme and address are never trusted as the destination.
     const incoming = new URL(raw.url); const canonical = new URL(`${incoming.pathname}${incoming.search}`, publicOrigin.origin);
     const body = raw.method === 'GET' || raw.method === 'HEAD' ? null : raw.body;

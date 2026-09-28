@@ -2,12 +2,13 @@ import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type { AgentServerOptions } from '@mayura/server';
 
-export const unavailable = (): Response => new Response('{"error":{"code":"HOST_UNAVAILABLE"}}', {
-  status: 503, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+export const unavailable = (): Response => new Response(JSON.stringify({ error: { code: 'HOST_UNAVAILABLE', retryAfterMs: 1_000,
+  message: 'The server is starting, stopping or could not handle the request. Retry shortly, against another replica if possible.' } }), {
+  status: 503, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Retry-After': '1' },
 });
 
 /** Snapshot and freeze every trusted option before a socket opens; no mutable caller reference is retained. */
-export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin'>): Omit<AgentServerOptions, 'publicOrigin'> {
+export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin' | 'mounted'>): Omit<AgentServerOptions, 'publicOrigin' | 'mounted'> {
   return {
     agents: Object.freeze(options.agents.map(config => Object.freeze({ agent: config.agent,
       permissions: Object.freeze({ allow: Object.freeze([...config.permissions.allow]) }),
@@ -26,6 +27,7 @@ export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin
     ...(options.workflowFleet === undefined ? {} : { workflowFleet: options.workflowFleet }),
     ...(options.workflowMigrations === undefined ? {} : { workflowMigrations: options.workflowMigrations }),
     ...(options.submissionJournal === undefined ? {} : { submissionJournal: options.submissionJournal }),
+    ...(options.runRecords === undefined ? {} : { runRecords: options.runRecords }),
     ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: Object.freeze([...options.allowedOrigins]) }),
     ...(options.limits === undefined ? {} : { limits: Object.freeze({ ...options.limits }) }),
   };

@@ -20,10 +20,10 @@ export async function listenProbe(options: ProbeServerOptions): Promise<ProbeSer
   const server = createServer({ headersTimeout: 5_000, requestTimeout: 5_000 }, (request, response) => {
     const path = (request.url ?? '').split('?')[0];
     const check = (probe: () => boolean): boolean => { try { return probe() === true; } catch { return false; } };
-    if (request.method !== 'GET') reply(response, 405, '{"error":{"code":"METHOD_NOT_ALLOWED"}}');
+    if (request.method !== 'GET') reply(response, 405, '{"error":{"code":"METHOD_NOT_ALLOWED","message":"Probes answer GET only."}}');
     else if (path === '/livez') reply(response, check(options.isLive) ? 200 : 503, check(options.isLive) ? '{"status":"ok"}' : '{"status":"stopping"}');
     else if (path === '/readyz') { const ready = check(options.isReady); reply(response, ready ? 200 : 503, ready ? '{"status":"ready"}' : '{"status":"unavailable"}'); }
-    else reply(response, 404, '{"error":{"code":"NOT_FOUND"}}');
+    else reply(response, 404, '{"error":{"code":"ROUTE_NOT_FOUND","message":"This probe server answers only GET /livez and GET /readyz."}}');
   });
   server.maxConnections = 64;
   await new Promise<void>((resolve, reject) => {
