@@ -1,11 +1,19 @@
 import { assertSchema, freezeJson, jsonValue, MayuraError, validate,
   type InferInput, type JsonObject, type JsonValue, type Schema, type Scope } from '@mayura/core';
-import { StorageError, type AggregateStore, type StoredEvent, type StoredRecord } from '@mayura/storage-contracts';
+import { schemaDigest, StorageError, type AggregateStore, type StoredEvent, type StoredRecord } from '@mayura/storage-contracts';
+
+export { schemaDigest } from '@mayura/storage-contracts';
 
 export interface WebhookDispatchContext { readonly deliveryId: string; readonly commandId: string; readonly signal: AbortSignal }
 export interface WebhookTriggerOptions<I extends Schema> {
   readonly id: string; readonly version: string; readonly secretId: string;
-  readonly schemaId: string; readonly schemaDigest: string; readonly input: I;
+  readonly schemaId: string;
+  /**
+   * 64-hex SHA-256 of the body's schema, pinned into every stored delivery. Omit it to derive it from `input` when
+   * that validator can describe itself as JSON Schema (Zod 4.2 and later can); see `schemaDigest`.
+   */
+  readonly schemaDigest?: string;
+  readonly input: I;
   readonly dispatch: (input: InferInput<I>, context: WebhookDispatchContext) => JsonValue | Promise<JsonValue>;
 }
 declare const webhookBrand: unique symbol;
@@ -74,11 +82,16 @@ function assertDefinition(definition: AnyWebhookTrigger): WebhookTriggerOptions<
 /** Define a trusted webhook route. Secrets and dispatch callbacks are never persisted. */
 export function defineWebhookTrigger<I extends Schema>(options: WebhookTriggerOptions<I>): WebhookTriggerDefinition<I> {
   if (!options || !ids.test(options.id) || typeof options.version !== 'string' || !versions.test(options.version)
-    || !ids.test(options.secretId) || !ids.test(options.schemaId) || !hashes.test(options.schemaDigest)
+    || !ids.test(options.secretId) || !ids.test(options.schemaId) || (options.schemaDigest !== undefined && !hashes.test(options.schemaDigest))
     || typeof options.dispatch !== 'function') throw new MayuraError('INVALID_CONFIG', 'Webhook trigger identity is invalid.');
   assertSchema(options.input); const standard = options.input['~standard'];
+  let pinned = options.schemaDigest;
+  if (pinned === undefined) {
+    try { pinned = schemaDigest(options.input); }
+    catch { throw new MayuraError('INVALID_CONFIG', `Webhook trigger "${options.id}" has no schemaDigest, and its input validator cannot describe itself as JSON Schema. Give schemaDigest (64 hex characters).`); }
+  }
   const definition = Object.freeze({ id: options.id, version: options.version, secretId: options.secretId,
-    schemaId: options.schemaId, schemaDigest: options.schemaDigest,
+    schemaId: options.schemaId, schemaDigest: pinned,
     input: Object.freeze({ '~standard': Object.freeze({ version: 1 as const, vendor: standard.vendor, validate: standard.validate.bind(standard) }) }) }) as WebhookTriggerDefinition<I>;
   definitions.set(definition, { dispatch: options.dispatch as WebhookTriggerOptions<Schema>['dispatch'] }); return definition;
 }

@@ -2,7 +2,9 @@ import {
   assertSchema, freezeJson, jsonValue, MayuraError, validate,
   type InferInput, type InferOutput, type JsonObject, type JsonValue, type Schema, type Scope,
 } from '@mayura/core';
-import type { AggregateStore } from '@mayura/storage-contracts';
+import { schemaDigest, type AggregateStore } from '@mayura/storage-contracts';
+
+export { schemaDigest } from '@mayura/storage-contracts';
 import { createWorkStream, type SignalRecord, type WaitSnapshot, type WorkStream } from './index.js';
 
 export type HumanRequestKind = 'information' | 'correction' | 'plan_selection';
@@ -12,8 +14,11 @@ export interface HumanRequestDefinition<S extends Schema = Schema> {
   readonly kind: HumanRequestKind;
   /** Stable application-owned name for the response schema. */
   readonly schemaId: string;
-  /** SHA-256 of the pinned schema artifact or application schema contract. */
-  readonly schemaDigest: string;
+  /**
+   * SHA-256 of the pinned schema artifact or application schema contract. Omit it to derive it from `response` when
+   * that validator can describe itself as JSON Schema (Zod 4.2 and later can); see `schemaDigest`.
+   */
+  readonly schemaDigest?: string;
   readonly prompt: string;
   readonly response: S;
   readonly context?: JsonValue;
@@ -164,14 +169,19 @@ async function captured<S extends Schema>(definition: HumanRequestDefinition<S>)
   assertSchema(definition.response);
   identifier(definition.id, 'Request ID'); identifier(definition.schemaId, 'Schema ID');
   if (!['information', 'correction', 'plan_selection'].includes(definition.kind)) invalid('Human request kind is invalid.');
-  digest(definition.schemaDigest, 'Schema digest');
+  let pinned = definition.schemaDigest;
+  if (pinned === undefined) {
+    try { pinned = schemaDigest(definition.response); }
+    catch { invalid('Human request has no schemaDigest, and its response validator cannot describe itself as JSON Schema. Give schemaDigest (64 hex characters).'); }
+  }
+  digest(pinned, 'Schema digest');
   if (typeof definition.prompt !== 'string' || definition.prompt.length < 1 || new TextEncoder().encode(definition.prompt).length > 1_024) invalid('Human request prompt must contain 1–1024 UTF-8 bytes.');
   if (definition.subjectDigest !== undefined) digest(definition.subjectDigest, 'Subject digest');
   if (definition.kind === 'correction' && definition.subjectDigest === undefined) invalid('Correction requests must bind an exact subject digest.');
   if (definition.kind !== 'correction' && definition.subjectDigest !== undefined) invalid('Only correction requests may include a subject digest.');
   if (definition.deadlineAtMs !== undefined) timestamp(definition.deadlineAtMs);
   const material = jsonValue({ format: 1, id: definition.id, kind: definition.kind, schemaId: definition.schemaId,
-    schemaDigest: definition.schemaDigest, prompt: definition.prompt,
+    schemaDigest: pinned, prompt: definition.prompt,
     ...(definition.context === undefined ? {} : { context: definition.context }),
     ...(definition.subjectDigest === undefined ? {} : { subjectDigest: definition.subjectDigest }),
     ...(definition.deadlineAtMs === undefined ? {} : { deadlineAtMs: definition.deadlineAtMs }),
