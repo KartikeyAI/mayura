@@ -265,8 +265,10 @@ describe('QuickJS sandbox adapter', () => {
     const probed = JSON.parse(run.stdout) as Record<string, unknown>;
     expect(probed).toEqual({ readOutside: 'denied', readAllowed: 'read', writeTemp: 'denied', spawn: 'denied',
       worker: 'denied', evaluate: 'denied', functionConstructor: 'denied', environment: expect.any(Array) });
-    // Windows always passes the variables it requires to start a process (libuv adds them to an empty environment).
-    const required = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR'];
-    for (const name of probed['environment'] as string[]) expect(process.platform === 'win32' && required.includes(name.toUpperCase())).toBe(true);
+    // The operating system adds a few variables to an empty environment: Windows those it requires to start a process
+    // (libuv adds them), macOS the text encoding CoreFoundation sets in every process. Nothing is inherited.
+    const added = process.platform === 'win32' ? ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR']
+      : process.platform === 'darwin' ? ['__CF_USER_TEXT_ENCODING'] : [];
+    expect((probed['environment'] as string[]).filter(name => !added.includes(process.platform === 'win32' ? name.toUpperCase() : name))).toEqual([]);
   });
 });

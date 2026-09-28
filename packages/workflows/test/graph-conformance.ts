@@ -47,8 +47,10 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
     let stores: Store[];
     let runtimes: { close(): void | Promise<void> }[];
     let worker = 0;
+    // A lease far above any runner stall: with the 3 s default, a starved CI worker (Windows, found in CI) lost the lease
+    // of a started effect, which the runtime then rightly reports as outcome_unknown. No test here relies on expiry.
     const options = () => ({ store, scope, permissions: { allow: permissionList }, policyVersion: 'graph-policy-1',
-      maxCostMicros: 20, maxOutputBytes: 65_536, approvalTtlMs: 60_000,
+      maxCostMicros: 20, maxOutputBytes: 65_536, approvalTtlMs: 60_000, leaseMs: 30_000,
       verifyHuman: async (credential: unknown) => {
         if (credential !== 'verified-graph-human') throw new Error('SECRET verifier');
         return { id: 'graph-human', projectId: scope.projectId, canApprove: true };

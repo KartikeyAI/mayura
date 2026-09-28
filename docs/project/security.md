@@ -84,7 +84,7 @@ production use within the guarantees below. They have not had an independent sec
 permission model: it can read only installed packages (the `node_modules` directory that holds Mayura and QuickJS),
 and cannot write files, start processes or worker threads, load native addons, use WASI or open the inspector. It
 runs with an empty environment (on Windows, Node.js still passes the variables Windows requires, such as `PATH` and
-`USERPROFILE`) and with code generation from strings disabled. Its limit is that the worker is an ordinary process of
+`USERPROFILE`, and macOS adds its `__CF_USER_TEXT_ENCODING`) and with code generation from strings disabled. Its limit is that the worker is an ordinary process of
 your user on your host, sharing its network: code that escaped both QuickJS and V8's WebAssembly sandbox could make
 network connections and read installed packages. Use it for programs that models write for your own users.
 
