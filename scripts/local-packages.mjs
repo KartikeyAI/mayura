@@ -3,7 +3,8 @@
 // `pnpm local:init` (trying a starter before Mayura is published), so both install exactly the same way.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { closeSync, existsSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
 import { cp, mkdtemp, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -67,6 +68,24 @@ export function installedDirectory(name, parent) {
  * binaries) come along too, and ones for other platforms are skipped. Third-party packages must not have install
  * scripts, apart from `allowScripts`, which are packed as already installed here and never run again.
  */
+/**
+ * Installation scripts reviewed as harmless, by package and hook: each is allowed only while its text is exactly this,
+ * and while every file it runs (`files`, by path in the package) has exactly the reviewed SHA-256.
+ * - @google/genai (for @mayurajs/provider-google): a preinstall that only prints a line.
+ * - protobufjs (a dependency of @google/genai): a postinstall that reads package.json files and may print a warning.
+ */
+const reviewedScripts = {
+  '@google/genai': { preinstall: "echo 'preinstall: no-op'" },
+  protobufjs: { postinstall: 'node scripts/postinstall', files: { 'scripts/postinstall.js': '5af8463b97ee8e309b4a2111f9479bacdf0c180de0ca0155527679b1fc6d9e6c' } },
+};
+/** Whether a package's install script is the reviewed one, files included. */
+function reviewedScript(name, script, manifest, directory) {
+  const reviewed = reviewedScripts[name];
+  if (reviewed?.[script] === undefined || manifest.scripts?.[script] !== reviewed[script]) return false;
+  return Object.entries(reviewed.files ?? {}).every(([path, digest]) => existsSync(join(directory, path))
+    && createHash('sha256').update(readFileSync(join(directory, path))).digest('hex') === digest);
+}
+
 export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3'] }) {
   const npm = cli('npm'); const pnpm = cli('pnpm'); const packages = new Map(); // name -> { archive, manifest, directory }
   const packDirectory = async (name, directory) => {
@@ -74,8 +93,10 @@ export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3
     const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); assert.equal(manifest.name, name);
     const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${manifest.version}.tgz`);
     if (!name.startsWith('@mayura/')) for (const script of ['preinstall', 'install', 'postinstall']) {
-      // better-sqlite3 is built once in the workspace (pnpm onlyBuiltDependencies) and packed with its binary.
-      assert(!manifest.scripts?.[script] || allowScripts.includes(name), `${name} has an unreviewed installation script.`);
+      // better-sqlite3 is built once in the workspace (pnpm onlyBuiltDependencies) and packed with its binary. A reviewed
+      // script is allowed only while its text is exactly what was reviewed.
+      assert(!manifest.scripts?.[script] || allowScripts.includes(name) || reviewedScript(name, script, manifest, directory),
+        `${name} has an unreviewed installation script.`);
     }
     if (name === compilerPlatform && process.platform !== 'win32') {
       // pnpm pack writes every file as 0644, which strips the native compiler's execute bit on Linux and macOS; npm pack

@@ -6,6 +6,7 @@
     { "path": "packages/mayura" },
     { "path": "extensions/provider-openai" },
     { "path": "extensions/provider-anthropic" },
+    { "path": "extensions/provider-google" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },

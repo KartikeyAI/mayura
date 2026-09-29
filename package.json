@@ -71,6 +71,7 @@
     "@mayura/workstream": "workspace:*",
     "@edge-runtime/vm": "5.0.0",
     "@mayurajs/provider-anthropic": "workspace:*",
+    "@mayurajs/provider-google": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",

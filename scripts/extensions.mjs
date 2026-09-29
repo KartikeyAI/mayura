@@ -16,6 +16,7 @@ export const extensionsRoot = join(workspace, 'extensions');
  */
 export const reviewedDependencies = {
   'provider-anthropic': ['@anthropic-ai/sdk'],
+  'provider-google': ['@google/genai'],
   'provider-openai': ['openai'],
 };
 
