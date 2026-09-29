@@ -2366,6 +2366,10 @@
         "kind": "function",
         "declaration": "dbb255e6d0321bc5"
       },
+      "CatalogModel": {
+        "kind": "interface",
+        "declaration": "62d878866b848d0f"
+      },
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
@@ -2373,6 +2377,10 @@
       "createModelRouter": {
         "kind": "function",
         "declaration": "736e0daaaf101d85"
+      },
+      "createModels": {
+        "kind": "function",
+        "declaration": "f0a57e5a1486b81b"
       },
       "createRuntime": {
         "kind": "function",
@@ -2418,6 +2426,30 @@
         "kind": "type",
         "declaration": "47afc8bc643b3e84"
       },
+      "ModelCatalog": {
+        "kind": "interface",
+        "declaration": "ce9fd2fb62d4ef2b"
+      },
+      "ModelChainOptions": {
+        "kind": "interface",
+        "declaration": "1fd4eece050fa65f"
+      },
+      "ModelOptions": {
+        "kind": "interface",
+        "declaration": "032ddc939aab2c23"
+      },
+      "ModelPricing": {
+        "kind": "interface",
+        "declaration": "30062a148bc19ccc"
+      },
+      "ModelProvider": {
+        "kind": "interface",
+        "declaration": "7c50f37a552630cf"
+      },
+      "ModelRegistry": {
+        "kind": "interface",
+        "declaration": "bf29387d182fdeb9"
+      },
       "ModelRouter": {
         "kind": "interface",
         "declaration": "27e2f526bc8c33aa"
@@ -2433,6 +2465,18 @@
       "ModelRouterRouteStatus": {
         "kind": "interface",
         "declaration": "b6eb7acc46907878"
+      },
+      "ModelsOptions": {
+        "kind": "interface",
+        "declaration": "9253f669322c749d"
+      },
+      "ProviderModelSettings": {
+        "kind": "interface",
+        "declaration": "2a44056cfec686f7"
+      },
+      "RegisteredModel": {
+        "kind": "interface",
+        "declaration": "91f2068267462312"
       },
       "RunInspection": {
         "kind": "interface",
@@ -2584,6 +2628,10 @@
         "kind": "interface",
         "declaration": "5ecb850600e32086"
       },
+      "CatalogModel": {
+        "kind": "interface",
+        "declaration": "62d878866b848d0f"
+      },
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
@@ -2591,6 +2639,10 @@
       "createModelRouter": {
         "kind": "function",
         "declaration": "736e0daaaf101d85"
+      },
+      "createModels": {
+        "kind": "function",
+        "declaration": "f0a57e5a1486b81b"
       },
       "createRuntime": {
         "kind": "function",
@@ -2812,6 +2864,14 @@
         "kind": "interface",
         "declaration": "df4e97ee6268e166"
       },
+      "ModelCatalog": {
+        "kind": "interface",
+        "declaration": "ce9fd2fb62d4ef2b"
+      },
+      "ModelChainOptions": {
+        "kind": "interface",
+        "declaration": "1fd4eece050fa65f"
+      },
       "ModelDefinitionCheck": {
         "kind": "interface",
         "declaration": "f77f8b85b4e86e1d"
@@ -2836,9 +2896,25 @@
         "kind": "type",
         "declaration": "d9b92b2aa215fcef"
       },
+      "ModelOptions": {
+        "kind": "interface",
+        "declaration": "032ddc939aab2c23"
+      },
+      "ModelPricing": {
+        "kind": "interface",
+        "declaration": "30062a148bc19ccc"
+      },
+      "ModelProvider": {
+        "kind": "interface",
+        "declaration": "7c50f37a552630cf"
+      },
       "ModelProviderError": {
         "kind": "class",
         "declaration": "94afc59f4285a84a"
+      },
+      "ModelRegistry": {
+        "kind": "interface",
+        "declaration": "bf29387d182fdeb9"
       },
       "ModelRequest": {
         "kind": "interface",
@@ -2864,6 +2940,10 @@
         "kind": "interface",
         "declaration": "b6eb7acc46907878"
       },
+      "ModelsOptions": {
+        "kind": "interface",
+        "declaration": "9253f669322c749d"
+      },
       "ModelStreamEvent": {
         "kind": "type",
         "declaration": "8854b06d291fc03f"
@@ -2888,6 +2968,10 @@
         "kind": "interface",
         "declaration": "3cffe9d96ebe6c15"
       },
+      "ProviderModelSettings": {
+        "kind": "interface",
+        "declaration": "2a44056cfec686f7"
+      },
       "publicError": {
         "kind": "function",
         "declaration": "bd11430e5b18663c"
@@ -2895,6 +2979,10 @@
       "PublicError": {
         "kind": "interface",
         "declaration": "cb2e50226e3587d7"
+      },
+      "RegisteredModel": {
+        "kind": "interface",
+        "declaration": "91f2068267462312"
       },
       "Reservation": {
         "kind": "interface",
@@ -5426,6 +5514,38 @@
       }
     },
     "@mayura/testing": {
+      "ConformanceModelSettings": {
+        "kind": "interface",
+        "declaration": "c2eb00cb7a6e6474"
+      },
+      "conformanceTools": {
+        "kind": "const",
+        "declaration": "5b9b3ba6a9ae6b00"
+      },
+      "expectedCostMicros": {
+        "kind": "function",
+        "declaration": "833ebbcbb55f6d22"
+      },
+      "modelAdapterConformance": {
+        "kind": "const",
+        "declaration": "84a50ed01b73c28b"
+      },
+      "ModelAdapterHarness": {
+        "kind": "interface",
+        "declaration": "9f07a16b5db82bf4"
+      },
+      "ModelConformanceCase": {
+        "kind": "interface",
+        "declaration": "79e1042091e510df"
+      },
+      "ModelScenario": {
+        "kind": "type",
+        "declaration": "3f3682a07b1bdd66"
+      },
+      "ModelScenarioKind": {
+        "kind": "type",
+        "declaration": "d1c6abb0c18dead9"
+      },
       "scriptedModel": {
         "kind": "function",
         "declaration": "4359d4656cea6d0e"

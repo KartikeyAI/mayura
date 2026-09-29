@@ -92,6 +92,11 @@ const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 export function isIdentifier(value: unknown): value is string {
   return typeof value === 'string' && identifier.test(value);
 }
+const modelIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+/** A model adapter's id: an identifier that may also contain `:`, as provider model names do (`ollama/llama3.1:8b`). */
+export function isModelId(value: unknown): value is string {
+  return typeof value === 'string' && modelIdentifier.test(value);
+}
 
 function snapshotGuards(guards: readonly AgentGuard[]): readonly AgentGuard[] {
   try {
@@ -154,7 +159,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   assertSchema(options.input);
   assertSchema(options.output);
   const model = options.model;
-  if (!model || !isIdentifier(model.id) || typeof model.generate !== 'function'
+  if (!model || !isModelId(model.id) || typeof model.generate !== 'function'
     || typeof model.capabilities?.tools !== 'boolean' || typeof model.capabilities.structuredOutput !== 'boolean'
     || !Number.isSafeInteger(model.maxCostMicros) || model.maxCostMicros < 0) {
     throw new MayuraError('INVALID_CONFIG', 'A model adapter with explicit capabilities and bounded cost is required.');

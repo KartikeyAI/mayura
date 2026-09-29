@@ -1,6 +1,6 @@
 import { isModelFailureReason, MayuraError, ModelProviderError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelDefinitionCheck, type ModelFailureReason, type ModelRequest, type ModelResponse, type ModelStreamEvent, type MediaType } from '@mayura/core';
 import { streamModelCall } from '@mayura/core/host';
-import { isIdentifier } from './agent.js';
+import { isModelId } from './agent.js';
 import { modelCost, modelFailureCost } from './response.js';
 
 /** One observed attempt. Metadata only: no prompt, output, credential or provider error text. */
@@ -42,8 +42,8 @@ export interface ModelRouter extends ModelAdapter {
   status(): readonly ModelRouterRouteStatus[];
 }
 
-/** The HTTP status a genuine `ModelProviderError` carries, so the router's own failure keeps it. */
-function failureStatus(error: unknown): number | undefined {
+/** @internal The HTTP status a genuine `ModelProviderError` carries, so the router's own failure keeps it. */
+export function failureStatus(error: unknown): number | undefined {
   try {
     const descriptor = error instanceof ModelProviderError ? Object.getOwnPropertyDescriptor(error, 'httpStatus') : undefined;
     const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
@@ -51,8 +51,8 @@ function failureStatus(error: unknown): number | undefined {
   } catch { return undefined; }
 }
 
-/** The reason a genuine `ModelProviderError` names; exception accessors cannot supply one. */
-function failureReason(error: unknown): ModelFailureReason | undefined {
+/** @internal The reason a genuine `ModelProviderError` names; exception accessors cannot supply one. */
+export function failureReason(error: unknown): ModelFailureReason | undefined {
   try {
     const descriptor = error instanceof ModelProviderError ? Object.getOwnPropertyDescriptor(error, 'reason') : undefined;
     const value: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
@@ -78,11 +78,11 @@ const noFailover = new Set(['INVALID_CONFIG', 'PERMISSION_DENIED', 'INVALID_INPU
  */
 export function createModelRouter(options: ModelRouterOptions): ModelRouter {
   const { id, routes } = options;
-  if (!isIdentifier(id) || !Array.isArray(routes) || routes.length < 1 || routes.length > 8) {
+  if (!isModelId(id) || !Array.isArray(routes) || routes.length < 1 || routes.length > 8) {
     throw new MayuraError('INVALID_CONFIG', 'A model router needs an identifier and 1–8 routes.');
   }
   for (const route of routes) {
-    if (!route || typeof route.generate !== 'function' || !isIdentifier(route.id) || !Number.isSafeInteger(route.maxCostMicros) || route.maxCostMicros < 0) {
+    if (!route || typeof route.generate !== 'function' || !isModelId(route.id) || !Number.isSafeInteger(route.maxCostMicros) || route.maxCostMicros < 0) {
       throw new MayuraError('INVALID_CONFIG', 'Every route must be a model adapter with a bounded per-call cost.');
     }
   }
