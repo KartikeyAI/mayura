@@ -1,0 +1,59 @@
+name: Website
+# Builds the website in site/ (the docs from docs/ plus the landing page) and deploys it to GitHub Pages from main.
+# Pull requests build and check it without deploying.
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'docs/**', 'scripts/docs-index.mjs', 'package.json', '.github/workflows/site.yml']
+  pull_request:
+    paths: ['site/**', 'docs/**', 'scripts/docs-index.mjs', 'package.json', '.github/workflows/site.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      # The base path and origin come from the repository's Pages settings: "/" and https://mayurajs.com once the
+      # custom domain is set, "/mayura" and https://kartikeyai.github.io until then.
+      - id: pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+      - working-directory: site
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - working-directory: site
+        run: pnpm typecheck
+      - working-directory: site
+        env:
+          SITE_BASE: ${{ steps.pages.outputs.base_path }}/
+          SITE_ORIGIN: ${{ steps.pages.outputs.origin || 'https://mayurajs.com' }}
+        run: pnpm build && pnpm check
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: site/dist/client
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346

@@ -1,0 +1,5 @@
+# The website is its own pnpm root, with its own lockfile, so none of its dependencies reach the mayura package,
+# its SBOM or the qualification installs. Same supply-chain settings as the repository root.
+packages: []
+minimumReleaseAge: 1440
+strictDepBuilds: true
