@@ -8,7 +8,7 @@ import { createHighlighter, type Highlighter } from 'shiki';
 export interface Heading { id: string; depth: 2 | 3; html: string; text: string }
 export interface RenderedPage { html: string; headings: Heading[] }
 
-const languages = ['ts', 'tsx', 'js', 'bash', 'json', 'yaml', 'dockerfile', 'markdown'];
+const languages = ['ts', 'tsx', 'js', 'bash', 'json', 'yaml', 'toml', 'ini', 'dockerfile', 'markdown'];
 const plain = new Set(['', 'text', 'txt', 'plaintext']);
 let highlighter: Promise<Highlighter> | undefined;
 

@@ -1,6 +1,6 @@
 ---
 title: "Deployment"
-description: "Run a Mayura app in production: one application module, mayura migrate, serve and worker processes, containers, PostgreSQL, probes and graceful drain."
+description: "Run a Mayura app in production: one application module and three processes, on containers, Kubernetes, managed platforms, virtual machines or inside an app you already run."
 ---
 
 A production Mayura app is one compiled application module run in three roles from the same build:
@@ -21,6 +21,26 @@ setup ready to run, with a `Dockerfile` and `compose.yaml`.
                                           mayura worker (1..n) ──┘
                                           mayura migrate (once per release)
 ```
+
+## Choose a target
+
+Every target runs the same three commands from the same build, against the same PostgreSQL database. They differ
+only in how the processes are started and kept running. Mayura needs Node.js 22 or 24 (see
+[Supported platforms](../project/support.md)).
+
+| Target | Server | Worker | Migration |
+|---|---|---|---|
+| [Containers](#containers): Docker, Compose | a `serve` container | a `worker` container | a one-shot container |
+| [Kubernetes](#kubernetes) | a Deployment and a Service | a Deployment | a Job before each rollout |
+| [Managed containers](#managed-container-platforms): ECS on Fargate, Cloud Run, Azure Container Apps, Fly.io | a service | an always-on service | a one-off task or job |
+| [Process platforms](#platforms-with-process-types): Render, Railway, Heroku | a web process | a worker process | the release or pre-deploy command |
+| [Virtual machines](#virtual-machines) | a systemd service | a systemd service | a step in your deploy script |
+| [Inside an existing app](#inside-an-existing-nodejs-app) | your framework's `/v1/*` route | `mayura worker` | `mayura migrate` |
+
+Two rules hold everywhere. The worker must keep running: a platform that scales it to zero, or stops its CPU between
+requests, stops your workflows too. And the server keeps working after it responds, because agent runs continue in
+the process that accepted them, so it needs CPU between requests as well. Serverless functions and edge runtimes
+break both rules and are not supported yet; see [Serverless and edge](#serverless-and-edge).
 
 ## The application module
 
@@ -193,6 +213,204 @@ docker compose up --build
 The server speaks plain HTTP on port 8080. Put your TLS proxy or load balancer in front of it, forwarding the
 original `Host` header of the public origin. If the proxy rewrites `Host`, pass its addresses as `trustedProxies` and
 have it set `X-Forwarded-Host` (see [Server and client](server-and-client.md#hosting-on-node)).
+
+## Kubernetes
+
+Build the image as in [Containers](#containers) and run it three ways. The arguments go to the image's entry point,
+the `mayura` CLI. Keep configuration in a Secret (here `agents-env`) and terminate TLS at your ingress, which must pass
+the original `Host` header through.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata: { name: agents-migrate-v42 } # one Job per release, run to completion before the rollout
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.example.com/agents:v42
+          args: ["migrate", "--app", "dist/app.js"]
+          envFrom: [{ secretRef: { name: agents-env } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: agents-server }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: agents-server } }
+  template:
+    metadata: { labels: { app: agents-server } }
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: server
+          image: registry.example.com/agents:v42
+          args: ["serve", "--app", "dist/app.js"]
+          envFrom: [{ secretRef: { name: agents-env } }]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /livez, port: 8080 }, periodSeconds: 10 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: agents-server }
+spec:
+  selector: { app: agents-server }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: agents-worker }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: agents-worker } }
+  template:
+    metadata: { labels: { app: agents-worker } }
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: worker
+          image: registry.example.com/agents:v42
+          args: ["worker", "--app", "dist/app.js", "--probe-host", "0.0.0.0", "--probe-port", "9090"]
+          envFrom: [{ secretRef: { name: agents-env } }]
+          env: [{ name: MAYURA_WORKER_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }]
+          readinessProbe: { httpGet: { path: /readyz, port: 9090 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /livez, port: 9090 }, periodSeconds: 10 }
+```
+
+- `terminationGracePeriodSeconds` is longer than the server's `shutdownGraceMs` and the worker's `--drain-timeout-ms`
+  (30 seconds each by default), so a rollout drains instead of cutting work off.
+- Each worker replica needs its own `MAYURA_WORKER_ID` for its leadership lease; the pod name is a good one. One
+  replica leads and the rest stand by.
+- Run the migration Job to completion before updating the Deployments, for example from your CI with
+  `kubectl wait --for=condition=complete job/agents-migrate-v42`, or as a Helm pre-upgrade hook.
+
+## Managed container platforms
+
+The same image runs on any platform that runs containers. On each, create a service for the server, an always-on
+service for the worker, and a one-off job for the migration, all with the same environment.
+
+- **AWS ECS on Fargate.** Two services from one task definition, overriding the command: `serve --app dist/app.js`
+  behind an Application Load Balancer that checks `/readyz` on port 8080, and `worker --app dist/app.js` with no load
+  balancer. Run the migration as a one-off task (`aws ecs run-task` with the `migrate` command) before updating the
+  services, and set the container's `stopTimeout` above 30 seconds.
+- **Google Cloud Run.** Deploy the server as a service on port 8080 with `/readyz` as its startup and readiness
+  check, and the migration as a Cloud Run job. Cloud Run's defaults scale to zero and stop the CPU between requests,
+  which pauses agent runs and workflows, so give both the server and the worker CPU that is always allocated and at
+  least one minimum instance.
+- **Azure Container Apps.** A container app for the server with ingress on port 8080 and health probes on `/livez`
+  and `/readyz`, a second container app for the worker with no ingress and at least one replica, and a Container Apps
+  job for the migration.
+- **Fly.io.** One app with two process groups, the migration as the release command, and machines that are never
+  stopped automatically:
+
+  ```toml
+  [processes]
+    app = "serve --app dist/app.js"
+    worker = "worker --app dist/app.js"
+
+  [deploy]
+    release_command = "migrate --app dist/app.js"
+
+  [http_service]
+    internal_port = 8080
+    processes = ["app"]
+    auto_stop_machines = "off"
+    min_machines_running = 1
+  ```
+
+Wherever you run, put TLS in front of the server and keep its `publicOrigin` equal to the public URL (see
+[Production server settings](#production-server-settings)).
+
+## Platforms with process types
+
+Platforms that run processes from your repository need three commands and nothing else. On Heroku, a `Procfile`:
+
+```text
+release: npx mayura migrate --app dist/app.js
+web: npx mayura serve --app dist/app.js
+worker: npx mayura worker --app dist/app.js
+```
+
+On Render and Railway, create a web service and a background worker from the same repository with the `web` and
+`worker` commands above, and set the migration as the pre-deploy command. The server listens on the platform's
+`PORT` (the example module reads it), the platform terminates TLS, and the build step compiles your TypeScript. Keep
+at least one instance of each running.
+
+## Virtual machines
+
+On a server of your own, run the two long-lived roles as systemd services and the migration from your deploy script.
+Put a TLS proxy such as Caddy or nginx in front of port 8080.
+
+```ini
+# /etc/systemd/system/agents-server.service
+[Unit]
+Description=Agents server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=agents
+WorkingDirectory=/srv/agents
+EnvironmentFile=/etc/agents/env
+ExecStart=/usr/bin/node node_modules/mayura/lib/cli/dist/bin.js serve --app dist/app.js
+Restart=on-failure
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The worker's unit is the same with `worker --app dist/app.js` in `ExecStart`. systemd stops services with `SIGTERM`,
+which starts the graceful stop, and `TimeoutStopSec` gives it time to drain. To deploy, install and build the new
+release, run `mayura migrate --app dist/app.js`, then restart both services. Keep `/etc/agents/env` readable only by
+the service user.
+
+## Inside an existing Node.js app
+
+If you already run a Node.js server, mount Mayura's API in it instead of running `mayura serve`.
+`createAgentServer` from `mayura/server` returns a standard `fetch(request)` handler; send every request whose path
+starts with `/v1/` to it and serve your own routes as usual. Set `mounted: true`, so the handler trusts only the path
+and query your framework routed to it, never the `Host` header (see
+[Server and client](server-and-client.md#mounting-the-handler-yourself)).
+
+A Next.js route handler, for an app that runs on a Node.js server with `next start`:
+
+```ts
+// app/v1/[...path]/route.ts
+import { createAgentServer } from 'mayura/server';
+
+const api = createAgentServer({ publicOrigin: 'https://agents.example.com', mounted: true, agents, authenticate });
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const GET = (request: Request) => api.fetch(request);
+export const POST = (request: Request) => api.fetch(request);
+```
+
+In Hono it is `app.all('/v1/*', context => api.fetch(context.req.raw))`, and any framework that gives you a web
+`Request` works the same way. The API stays at `/v1/` on your public origin, where `mayura/client` expects it. The
+repository's `examples/embedded-handler.mjs` runs this end to end.
+
+Durable workflows still need `mayura worker`, and storage still needs `mayura migrate`: give your module `worker()`
+and `migrate()` and run those two commands next to your app.
+
+## Serverless and edge
+
+Serverless functions (AWS Lambda, Vercel Functions, Netlify Functions, Cloud Run functions) and edge runtimes
+(Cloudflare Workers, Deno, Bun) are not supported yet:
+
+- durable workflows need a worker that keeps running, and a function stops between invocations;
+- an agent run continues in the process that accepted it, so a function frozen or stopped after it responds ends
+  the run as `outcome_unknown`;
+- long runs and live event streams outlast function time limits;
+- Mayura is tested on Node.js only.
+
+The browser-safe `mayura/client` works anywhere `fetch` does, so a serverless or edge app can call a Mayura server
+that runs on one of the targets above.
 
 ## Environment and secrets
 

@@ -34,6 +34,7 @@ jobs:
       - run: node scripts/ci-step.mjs -- node examples/agent-orchestration.mjs
       - run: node scripts/ci-step.mjs -- node examples/workflow-composition.mjs
       - run: node scripts/ci-step.mjs -- node examples/local-server.mjs
+      - run: node scripts/ci-step.mjs -- node examples/embedded-handler.mjs
       - run: node scripts/ci-step.mjs -- node packages/workflows/examples/scheduled-workflow.mjs
       - run: node scripts/ci-step.mjs -- node examples/managed-guardrails.mjs
       - run: node scripts/ci-step.mjs -- node examples/lifecycle-hooks.mjs

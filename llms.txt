@@ -66,7 +66,7 @@ Rules that matter when writing Mayura code:
 - [React and UI bindings](docs/guides/react.md): Show live agent runs, workflow progress and human response forms in React, or in any UI framework through headless stores.
 - [Observability](docs/guides/observability.md): Watch agent runs through their metadata events, keep run summaries, and export logs, traces and metrics to OpenTelemetry.
 - [Operator console](docs/guides/operator-console.md): A built-in web console for operators: health, agents and tools, workflow runs, approvals, human requests, fleet control and migrations.
-- [Deployment](docs/guides/deployment.md): Run a Mayura app in production: one application module, mayura migrate, serve and worker processes, containers, PostgreSQL, probes and graceful drain.
+- [Deployment](docs/guides/deployment.md): Run a Mayura app in production: one application module and three processes, on containers, Kubernetes, managed platforms, virtual machines or inside an app you already run.
 
 ## CLI
 
