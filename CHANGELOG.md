@@ -4,6 +4,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+
+- Release workflow: a release that stopped part-way, or one committed and tagged by hand, can be run again with its version, and every step skips what is already done (the version commit, the tag, the npm publish, the GitHub Release). `version.mjs set` does nothing when the code is already at that version. The commit's author and committer can differ (`RELEASE_GIT_AUTHOR_*`, `RELEASE_GIT_COMMITTER_*`).
+
 ## [1.0.0-rc.1] - 2026-09-29
 
 ### Added

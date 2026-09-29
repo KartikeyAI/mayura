@@ -132,19 +132,28 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # empty when npm trusted publishing is configured instead
         run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --publish
       - name: Commit the version, tag it and push
+        # Author and committer may differ: RELEASE_GIT_AUTHOR_* and RELEASE_GIT_COMMITTER_* (the committer also tags),
+        # each falling back to RELEASE_GIT_NAME/RELEASE_GIT_EMAIL and then to github-actions[bot]. A step already done,
+        # for a release that stopped part-way or was committed and tagged by hand, is skipped.
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          GIT_NAME: ${{ vars.RELEASE_GIT_NAME || 'github-actions[bot]' }}
-          GIT_EMAIL: ${{ vars.RELEASE_GIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
+          GIT_AUTHOR_NAME: ${{ vars.RELEASE_GIT_AUTHOR_NAME || vars.RELEASE_GIT_NAME || 'github-actions[bot]' }}
+          GIT_AUTHOR_EMAIL: ${{ vars.RELEASE_GIT_AUTHOR_EMAIL || vars.RELEASE_GIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
+          GIT_COMMITTER_NAME: ${{ vars.RELEASE_GIT_COMMITTER_NAME || vars.RELEASE_GIT_NAME || 'github-actions[bot]' }}
+          GIT_COMMITTER_EMAIL: ${{ vars.RELEASE_GIT_COMMITTER_EMAIL || vars.RELEASE_GIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
         run: |
-          git config user.name "$GIT_NAME"
-          git config user.email "$GIT_EMAIL"
+          git config user.name "$GIT_COMMITTER_NAME"
+          git config user.email "$GIT_COMMITTER_EMAIL"
           git add -A -- package.json packages compatibility scripts CHANGELOG.md
-          git commit -m "chore(release): v$VERSION [skip ci]"
-          git tag -a "v$VERSION" -m "Mayura $VERSION"
-          git push origin "v$VERSION"
+          committed=false
+          if git diff --cached --quiet; then echo "The version $VERSION is already committed."
+          else git commit -m "chore(release): v$VERSION [skip ci]"; committed=true; fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then echo "v$VERSION is already tagged."
+          else git tag -a "v$VERSION" -m "Mayura $VERSION" && git push origin "v$VERSION"; fi
           # main may have moved on while this ran; replay the version commit on top of it.
-          git push origin HEAD:main || { git fetch origin main && git rebase origin/main && git push origin HEAD:main; }
+          if [ "$committed" = true ]; then
+            git push origin HEAD:main || { git fetch origin main && git rebase origin/main && git push origin HEAD:main; }
+          fi
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,6 +162,11 @@ jobs:
         run: |
           node scripts/version.mjs notes "$VERSION" > release-notes.md
           staged=$(ls -d .artifacts/release-* | head -n 1)
-          gh release create "v$VERSION" --verify-tag --title "Mayura $VERSION" --notes-file release-notes.md \
-            $([ "$TAG" = next ] && echo --prerelease) \
-            "$staged"/tarballs/*.tgz "$staged"/release-manifest.json $(ls .artifacts/sbom-*/sbom.cdx.json | head -n 1)
+          assets="$(ls "$staged"/tarballs/*.tgz) $staged/release-manifest.json $(ls .artifacts/sbom-*/sbom.cdx.json | head -n 1)"
+          # A release that already exists (a resumed run) keeps its notes and gets its files attached again.
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            gh release upload "v$VERSION" $assets --clobber
+          else
+            gh release create "v$VERSION" --verify-tag --title "Mayura $VERSION" --notes-file release-notes.md \
+              $([ "$TAG" = next ] && echo --prerelease) $assets
+          fi

@@ -28,11 +28,17 @@ strict consumer and runs the CLI.
    against the previous release, stages and verifies the package archive (`pnpm release:artifacts`) and the SBOM, and
    then:
    - publishes to npm with provenance (`latest` for a stable version, `next` for a prerelease), skipping a version
-     that is already published, so a release that stopped part-way can be run again;
+     that is already published;
    - commits `chore(release): vX.Y.Z [skip ci]`, where the changelog's Unreleased section becomes the release's, tags
      it `vX.Y.Z` and pushes both;
    - creates the GitHub Release with the changelog section as notes, and the package archive, its manifest and the SBOM
      attached.
+
+   Every step skips what is already done, so a release that stopped part-way can be run again with the same version:
+   **Run workflow** with that version resumes it. A version that is already tagged is accepted only when `main` is at
+   that version, for example one committed and tagged by hand and published from a terminal; the run then adds what is
+   missing, such as the GitHub Release. A GitHub Release that already exists keeps its notes and gets its files
+   attached again.
 
 The first release, or any exact version, is started by hand: **Actions → Mayura release → Run workflow** on `main`,
 with the version (for example `1.0.0-rc.1`). With no `v*` tag yet, automatic runs release nothing.
@@ -51,9 +57,13 @@ pushed, tagged or published.
 2. **Protected environment.** Create the `release` environment (Settings → Environments) with required reviewers and
    the `main` branch only. The release job waits there for approval before it publishes anything.
 3. **Pushing the version commit.** The job pushes `chore(release)` commits and tags with its own token. If `main` is
-   protected, allow GitHub Actions to bypass the rule for that push (or use a GitHub App token). The
-   `RELEASE_GIT_NAME` and `RELEASE_GIT_EMAIL` repository variables choose the commit's author; the default is
-   `github-actions[bot]`.
+   protected, allow GitHub Actions to bypass the rule for that push (or use a GitHub App token). Repository variables
+   choose who the commit and tag name:
+   - `RELEASE_GIT_AUTHOR_NAME` and `RELEASE_GIT_AUTHOR_EMAIL`: the commit's author;
+   - `RELEASE_GIT_COMMITTER_NAME` and `RELEASE_GIT_COMMITTER_EMAIL`: its committer, who also creates the tag;
+   - `RELEASE_GIT_NAME` and `RELEASE_GIT_EMAIL`: both, where the specific ones are not set.
+
+   Without them, both are `github-actions[bot]`.
 4. **Enable publishing:** set the repository variable `MAYURA_RELEASE=enabled`.
 
 GitHub Packages is not used: its npm registry accepts only scoped packages, and `mayura` is unscoped. The GitHub

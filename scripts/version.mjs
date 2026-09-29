@@ -1,12 +1,15 @@
 // Mayura's single version, kept in step across every package and every file that names it.
 //   node scripts/version.mjs next [--version <x.y.z>]   the next release version from commits since the last v* tag
 //   node scripts/version.mjs set <x.y.z>                 write it everywhere and move the changelog's Unreleased section
+//                                                        (nothing to do when the code is already at that version)
 //   node scripts/version.mjs check                       fail when any file disagrees with package.json (runs in CI)
 //   node scripts/version.mjs notes <x.y.z>               print that version's changelog section (release notes)
 //
 // `next` follows Conventional Commits: a breaking change (`type!:` or a BREAKING CHANGE footer) is a major release
 // (a minor one before 1.0), `feat` a minor one, `fix` and `perf` a patch; anything else releases nothing. From a
 // prerelease such as 1.0.0-rc.1 it continues the prerelease (1.0.0-rc.2); release the final version explicitly.
+// A requested version that is already tagged is a resume: allowed only when the code is at that version, so a release
+// that stopped part-way (or one committed and tagged by hand) can finish its remaining steps.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -66,15 +69,30 @@ export function nextVersion(last, bump) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+/**
+ * Whether an explicitly requested version may be released, given the existing `v*` tags and the code's version:
+ * `new` for a version newer than every tag, `resume` for one already tagged whose version the code is at. Throws
+ * otherwise, saying why.
+ */
+export function requestedRelease(requested, { tags, current: at }) {
+  parse(requested);
+  const released = tags.map(tag => tag.slice(1)).filter(version => semver.test(version));
+  if (released.includes(requested)) {
+    assert.equal(at, requested, `v${requested} already exists and the code is at ${at}: resume a release only from code at its version.`);
+    return 'resume';
+  }
+  const last = released.sort(compare).at(-1);
+  assert(!last || compare(requested, last) > 0, `${requested} is not newer than the last release, v${last}.`);
+  return 'new';
+}
+
 function next(requested) {
   const tags = git(['tag', '--list', 'v*']).split('\n').filter(tag => semver.test(tag.slice(1)));
   const last = tags.map(tag => tag.slice(1)).sort(compare).at(-1);
   let version; let reason;
   if (requested) {
-    parse(requested);
-    assert(!last || compare(requested, last) > 0, `${requested} is not newer than the last release, v${last}.`);
-    assert(!tags.includes(`v${requested}`), `v${requested} already exists.`);
-    version = requested; reason = 'requested';
+    reason = requestedRelease(requested, { tags, current: current() }) === 'resume' ? `resume: v${requested} is already tagged; finishing its remaining steps` : 'requested';
+    version = requested;
   } else if (!last) {
     reason = 'There is no v* release tag yet. Start the first release by hand with an explicit version, such as 1.0.0.';
   } else {
@@ -87,7 +105,9 @@ function next(requested) {
 }
 
 function set(version) {
-  parse(version); const old = current(); assert.notEqual(version, old, `The version is already ${version}.`);
+  parse(version); const old = current();
+  // Resuming a release whose version is already committed: nothing to write, and the changelog stays as it is.
+  if (version === old) { check(); console.log(JSON.stringify({ status: 'unchanged', version })); return; }
   for (const path of manifests()) {
     const text = read(path); const manifest = JSON.parse(text); if (manifest.version === undefined) continue;
     assert.equal(manifest.version, old, `${path} is at ${manifest.version}, not ${old}.`);
