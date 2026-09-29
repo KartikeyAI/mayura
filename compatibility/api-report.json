@@ -7209,6 +7209,24 @@
         "declaration": "781763c0b1d17fe3"
       }
     },
+    "@mayurajs/provider-bedrock": {
+      "bedrock": {
+        "kind": "function",
+        "declaration": "2ae5f15616d4bda6"
+      },
+      "BedrockAwsCredentials": {
+        "kind": "type",
+        "declaration": "d2e862d6157c3084"
+      },
+      "BedrockProviderOptions": {
+        "kind": "interface",
+        "declaration": "d2607a22f0eee7da"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "781763c0b1d17fe3"
+      }
+    },
     "@mayurajs/provider-google": {
       "catalog": {
         "kind": "const",

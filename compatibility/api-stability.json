@@ -62,6 +62,7 @@
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
     "@mayurajs/provider-anthropic",
+    "@mayurajs/provider-bedrock",
     "@mayurajs/provider-google",
     "@mayurajs/provider-openai"
   ],
