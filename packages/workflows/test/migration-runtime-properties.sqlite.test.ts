@@ -104,8 +104,10 @@ ${JSON.stringify({ fromSpecs, toSpecs, renames, acceptCompleted, acceptRemoved, 
 
   it(`scheduled: storage accepts every plan the runtime allows and refuses nothing silently (${runs} cases)`, async () => {
     const human = 'property-human';
+    // A lease far above runner stalls: with the 3 s default, a starved Windows CI worker lost a started step's lease and
+    // the run rightly ended outcome_unknown, which cannot be paused. This property is about migrations, not expiry.
     const runtime = createScheduledWorkflowRuntime({ store: fixture.store, scope, permissions: { allow: permissions }, policyVersion: '1', maxCostMicros: 0,
-      maxOutputBytes: 65_536, approvalTtlMs: 600_000, workerId: 'property-worker',
+      maxOutputBytes: 65_536, approvalTtlMs: 600_000, workerId: 'property-worker', leaseMs: 30_000,
       verifyHuman: async credential => { if (credential !== human) throw new Error('unverified'); return { id: 'property-human', projectId: scope.projectId, canApprove: true }; } });
     const approveAll = async (definition: ReturnType<typeof scheduled>, id: string, random?: Random) => {
       for (let round = 0; round < 12; round++) {
