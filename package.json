@@ -76,6 +76,7 @@
     "@mayurajs/provider-google": "workspace:*",
     "@mayurajs/provider-groq": "workspace:*",
     "@mayurajs/provider-mistral": "workspace:*",
+    "@mayurajs/provider-ollama": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
     "@opentelemetry/api": "1.9.1",
     "@types/better-sqlite3": "9.6.0",

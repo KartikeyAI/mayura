@@ -129,6 +129,7 @@ model in it**, which is why its name is explicit rather than derived.
 | `@mayurajs/provider-google` | Google Gemini, through the official `@google/genai` SDK and the Gemini API | `google/<model>` |
 | `@mayurajs/provider-groq` | Groq, through the official `groq-sdk` and Groq's Chat Completions API | `groq/<model>`, such as `groq/openai/gpt-oss-120b` |
 | `@mayurajs/provider-mistral` | Mistral, through the official `@mistralai/mistralai` SDK and the Chat Completions API | `mistral/<model>` |
+| `@mayurajs/provider-ollama` | Ollama, on your machine or in Ollama's cloud, through the official `ollama` SDK; no catalog, since local models cost nothing | `ollama/<model>`, such as `ollama/gpt-oss:20b` |
 | `@mayurajs/provider-openai` | OpenAI, through the official `openai` SDK and the Responses API | `openai/<model>` |
 
 Each package:

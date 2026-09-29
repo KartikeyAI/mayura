@@ -1,0 +1,16 @@
+{
+  "name": "@mayurajs/provider-ollama",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ollama models for Mayura, local or in Ollama's cloud, through the official Ollama SDK.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "dependencies": { "ollama": "0.6.3" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

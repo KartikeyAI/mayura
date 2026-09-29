@@ -7283,6 +7283,16 @@
         "declaration": "aba518cb7c83e716"
       }
     },
+    "@mayurajs/provider-ollama": {
+      "ollama": {
+        "kind": "function",
+        "declaration": "c2ec2d32dda75f51"
+      },
+      "OllamaProviderOptions": {
+        "kind": "interface",
+        "declaration": "89828eb7fe6f8504"
+      }
+    },
     "@mayurajs/provider-openai": {
       "catalog": {
         "kind": "const",

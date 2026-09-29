@@ -21,6 +21,7 @@ export const reviewedDependencies = {
   'provider-google': ['@google/genai'],
   'provider-groq': ['groq-sdk'],
   'provider-mistral': ['@mistralai/mistralai'],
+  'provider-ollama': ['ollama'],
   'provider-openai': ['openai'],
 };
 

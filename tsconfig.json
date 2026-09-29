@@ -11,6 +11,7 @@
     { "path": "extensions/provider-google" },
     { "path": "extensions/provider-groq" },
     { "path": "extensions/provider-mistral" },
+    { "path": "extensions/provider-ollama" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },

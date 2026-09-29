@@ -67,6 +67,7 @@
     "@mayurajs/provider-google",
     "@mayurajs/provider-groq",
     "@mayurajs/provider-mistral",
+    "@mayurajs/provider-ollama",
     "@mayurajs/provider-openai"
   ],
   "internalPackages": [
