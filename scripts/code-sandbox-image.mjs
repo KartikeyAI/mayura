@@ -51,9 +51,9 @@ assert(!Number.isNaN(Date.parse(created)), 'SOURCE_DATE_EPOCH must identify a va
 const spdx = {
   spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0', SPDXID: 'SPDXRef-DOCUMENT', name: 'mayura-code-sandbox',
   documentNamespace: `https://mayura.dev/spdx/code-sandbox/${inventoryDigest}`,
-  creationInfo: { created, creators: ['Tool: mayura-code-sandbox-image/1.0.0-rc.1'] },
+  creationInfo: { created, creators: ['Tool: mayura-code-sandbox-image/1.0.0-rc.2'] },
   documentDescribes: ['SPDXRef-Package-Mayura-Code-Sandbox'],
-  packages: [{ SPDXID: 'SPDXRef-Package-Mayura-Code-Sandbox', name: 'mayura-code-sandbox', versionInfo: '1.0.0-rc.1',
+  packages: [{ SPDXID: 'SPDXRef-Package-Mayura-Code-Sandbox', name: 'mayura-code-sandbox', versionInfo: '1.0.0-rc.2',
     downloadLocation: 'NOASSERTION', filesAnalyzed: true, licenseConcluded: 'NOASSERTION', licenseDeclared: 'NOASSERTION',
     copyrightText: 'NOASSERTION', packageVerificationCode: { packageVerificationCodeValue: packageVerificationCode } }],
   files: inventory.map((file, index) => ({ SPDXID: `SPDXRef-File-${index + 1}`, fileName: `./${file.name}`,

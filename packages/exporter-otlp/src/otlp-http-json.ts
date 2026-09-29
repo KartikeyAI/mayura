@@ -74,7 +74,7 @@ function record(event: RunEvent): JsonObject {
 function request(events: readonly RunEvent[], serviceName: string, serviceVersion?: string): JsonObject {
   const attributes = [attribute('service.name', serviceName)];
   if (serviceVersion) attributes.push(attribute('service.version', serviceVersion));
-  return { resourceLogs: [{ resource: { attributes }, scopeLogs: [{ scope: { name: '@mayura/observability', version: '1.0.0-rc.1' }, logRecords: events.map(record) }] }] };
+  return { resourceLogs: [{ resource: { attributes }, scopeLogs: [{ scope: { name: '@mayura/observability', version: '1.0.0-rc.2' }, logRecords: events.map(record) }] }] };
 }
 
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {

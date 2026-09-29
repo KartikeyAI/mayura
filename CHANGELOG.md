@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-09-29
+
 ### Added
 
 - **Serverless functions are supported** on Vercel, and experimental on AWS Lambda and Google Cloud Run (Node.js 22 and 24); Vercel Cron and the Next.js route files are experimental too. The core is request-bound runs, workflows advanced by a scheduled `runOnce`, one-connection PostgreSQL pools and migrations from the pipeline. The Deployment guide has a section for each platform, and Supported platforms says so; edge runtimes are planned for 1.1. A new test runs every invocation as a fresh process stopped as soon as it answers: a request-bound run is readable by the next invocation, a background run cut off that way ends `outcome_unknown`, workflows finish through scheduled one-shot invocations with each effect once, and a step killed mid-effect is recovered without running it again. The same was checked live on a Vercel preview with Neon PostgreSQL through its pooled connection.

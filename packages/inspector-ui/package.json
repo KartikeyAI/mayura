@@ -1,6 +1,6 @@
 {
   "name": "@mayura/inspector-ui",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "private": true,
   "type": "module",
   "description": "Internal source of the operator console. Built into a static bundle embedded in @mayura/server; never published.",
