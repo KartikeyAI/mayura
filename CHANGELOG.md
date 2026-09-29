@@ -22,6 +22,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Nested entry points such as `mayura/workflows/lifecycle` and `mayura/core/host` now load on Vercel Edge Functions. Vercel's Edge bundler resolves nested subpaths by file path rather than through the package's `exports`, and failed the deployment with "referencing unsupported modules". Every subpath of the package now also has a file at its own path (`workflows/lifecycle/index.js`, with its declarations) that re-exports the module, and `exports` points at it, so imports resolve to the same module either way. Checked live: a Vercel Edge preview on Neon's WebSocket Pool ran request-bound agent runs and a timer workflow advanced by one-shot invocations.
 - Workflows, storage, memory, remote memory and code mode no longer import `node:crypto` or use the global `Buffer`, so they bundle and run on Cloudflare Workers without `nodejs_compat` and on Vercel Edge Functions. Hashing uses Node's crypto module where the runtime has one, and otherwise an equivalent SHA-256 in JavaScript. Stored digests, cursors, vector encodings and memory scope keys are byte-for-byte the same as before, and tests check them against `node:crypto` and `Buffer`.
 
 ## [1.0.0-rc.2] - 2026-09-29

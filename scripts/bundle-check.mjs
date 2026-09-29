@@ -44,6 +44,12 @@ const probe = async (directory, keys) => {
 };
 const lightResults = await probe(light, subpaths.filter(key => !needsPeer.has(key)));
 for (const [key, value] of Object.entries(lightResults)) assert(typeof value === 'number' && value > 0, `mayura${key.slice(1)} did not load without peers: ${value}`);
+// Bundlers that resolve nested subpaths by path (Vercel's Edge Functions) must find the same module there.
+for (const key of subpaths.filter(key => key !== '.')) {
+  const stub = join(light, 'node_modules', 'mayura', key.slice(2), 'index.js');
+  assert(existsSync(stub), `mayura${key.slice(1)} has no file at its own path.`);
+  assert.equal(manifest.exports[key].import, `${key}/index.js`, `mayura${key.slice(1)} must export the file at its own path.`);
+}
 const missing = await probe(light, ['./storage-sqlite']);
 assert.match(String(missing['./storage-sqlite']), /ERR_MODULE_NOT_FOUND/u, 'storage-sqlite should need its optional peer.');
 const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);

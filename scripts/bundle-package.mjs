@@ -89,8 +89,20 @@ export async function bundle(output) {
     }
   };
   await walk(join(output, 'lib'));
+  // Every subpath is also a real file at its own path, `<subpath>/index.js`, re-exporting the module in lib, and the
+  // export map points there. Bundlers that resolve nested subpaths by path instead of through `exports`, such as
+  // Vercel's Edge Functions, then find the same module, and file tracing ships the stub with what it imports.
+  const stubs = new Set();
+  for (const [key, value] of Object.entries(exportsMap)) {
+    const folder = join(output, key.slice(2)); await mkdir(folder, { recursive: true });
+    const from = file => { const path = relative(folder, join(output, file)).split(sep).join(posix.sep); return path.startsWith('.') ? path : `./${path}`; };
+    await writeFile(join(folder, 'index.js'), `export * from '${from(value.import)}';\n`);
+    await writeFile(join(folder, 'index.d.ts'), `export * from '${from(value.types).replace(/\.d\.ts$/u, '.js')}';\n`);
+    exportsMap[key] = { types: value.types, import: `./${key.slice(2)}/index.js` };
+    stubs.add(key.slice(2).split('/')[0]);
+  }
   // `mayura` itself is the SDK, the usual starting point.
-  exportsMap['.'] = { ...exportsMap['./sdk'] }; exportsMap['./package.json'] = './package.json';
+  exportsMap['.'] = { types: exportsMap['./sdk'].types, import: './sdk/index.js' }; exportsMap['./package.json'] = './package.json';
   const cli = packages.find(item => item.name === 'cli');
   const manifest = {
     name: 'mayura', version: root.version,
@@ -100,7 +112,7 @@ export async function bundle(output) {
     type: 'module', sideEffects: false, engines: cli.manifest.engines,
     bin: { mayura: `./lib/cli/${cli.manifest.bin.mayura.replace(/^\.\//u, '')}` },
     exports: Object.fromEntries(Object.entries(exportsMap).sort(([a], [b]) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b))),
-    files: ['lib', 'docs', 'llms.txt', 'llms-full.txt', 'README.md', 'LICENSE', 'NOTICE'],
+    files: ['lib', ...[...stubs].sort(), 'docs', 'llms.txt', 'llms-full.txt', 'README.md', 'LICENSE', 'NOTICE'],
     dependencies: Object.fromEntries(Object.entries(dependencies).sort()),
     peerDependencies: Object.fromEntries(Object.entries(peers).sort()),
     peerDependenciesMeta: Object.fromEntries(Object.keys(peers).sort().map(name => [name, { optional: true }])),
