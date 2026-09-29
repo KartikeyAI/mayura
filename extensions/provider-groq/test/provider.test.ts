@@ -97,6 +97,43 @@ describe('@mayurajs/provider-groq', () => {
     }
   });
 
+  it('with tools, asks for the answer in the strict format in one more call once the model calls no more tools, charging both', async () => {
+    // Groq refuses a response format beside tools: the first call offers the tools alone; the second, the format alone.
+    const replies = [completion({ content: 'The order shipped.' }, 'stop', usage(10, 5)), completion({ content: '{"answer":"Shipped."}' }, 'stop', usage(20, 4))];
+    const seen: Seen = [];
+    const response = await groq({ apiKey: 'fixture-key', fetch: async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(replies.shift()); } })
+      .model('groq-test', settings).generate(request({ tools }));
+    expect(response).toEqual({ type: 'final', output: { answer: 'Shipped.' }, usage: { costMicros: (10 + 5 * 5) + (20 + 4 * 5) } });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]!.body['response_format']).toBeUndefined();
+    expect(seen[0]!.body).toMatchObject({ tool_choice: 'auto', tools: [{ function: { name: 'orders_lookup', strict: true } }] });
+    expect(seen[1]!.body['tools']).toBeUndefined(); expect(seen[1]!.body['tool_choice']).toBeUndefined();
+    expect(seen[1]!.body).toMatchObject({ response_format: { type: 'json_schema', json_schema: { name: 'output', strict: true } } });
+    expect(seen[1]!.body['messages']).toEqual(seen[0]!.body['messages']);
+  });
+
+  it('with tools, never streams the free reply, only the answer in the format', async () => {
+    const replies = [sse([chunk({ content: 'Prose that is ' }), chunk({ content: 'not the answer.' }), chunk({}, 'stop', usage(3, 4))]),
+      sse([chunk({ content: '{"answer":' }), chunk({ content: '"ok"}' }), chunk({}, 'stop', usage(3, 4))])];
+    const adapter = groq({ apiKey: 'fixture-key', fetch: async () => replies.shift()! }).model('groq-test', settings);
+    const events = [];
+    for await (const event of adapter.stream!(request({ tools }))) events.push(event);
+    expect(events.filter(event => event.type === 'output.delta').map(event => event.type === 'output.delta' ? event.text : '').join('')).toBe('{"answer":"ok"}');
+    expect(events.at(-1)).toMatchObject({ type: 'response', response: { type: 'final', output: { answer: 'ok' } } });
+  });
+
+  it('reports a tool call or answer the model wrote unparseably (Groq\'s 400) as an unusable response, not a rejected request', async () => {
+    for (const code of ['tool_use_failed', 'output_parse_failed']) {
+      const body = { error: { message: 'PRIVATE generation', type: 'invalid_request_error', code, failed_generation: 'PRIVATE' } };
+      const error = await groq({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body, status: 400 }) }).model('groq-test', settings).generate(request({ tools }))
+        .then(() => undefined, (caught: unknown) => caught);
+      expect(error).toMatchObject({ reason: 'invalid_response' });
+      expect(String((error as Error).message)).not.toContain('PRIVATE');
+    }
+    await expect(groq({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body: { error: { message: 'bad', code: 'invalid_value' } }, status: 400 }) }).model('groq-test', settings)
+      .generate(request())).rejects.toMatchObject({ reason: 'rejected' });
+  });
+
   it('keeps the model\'s reasoning for the next call of the run, and never releases it', async () => {
     const first = await groq({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body: completion({ reasoning: 'The customer wants order ord-1.',
       tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'orders_lookup', arguments: '{"orderId":"ord-1"}' } }] }, 'tool_calls', usage(10, 5)) }) })

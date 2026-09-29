@@ -25,7 +25,7 @@ const agent = defineAgent({
 
 - Credentials are options: nothing is read from the environment, including the SDK's `GROQ_CUSTOM_HEADERS`.
 - The SDK's own retries and logging are off; the registry's `retry` option retries and charges every attempt.
-- Tool inputs and structured output use strict JSON Schema, so choose a model with strict structured outputs; streaming reports output text as it arrives; the model's reasoning is kept for the next call and never released.
+- Tool inputs and structured output use strict JSON Schema, so choose a model with strict structured outputs. Groq takes no response format beside tools, so with tools the answer comes from one more call once the model calls no more tools (both calls are charged); streaming reports output text as it arrives; the model's reasoning is kept for the next call and never released.
 - Models see no media unless you say so: pass `media: { types: ['image/png', 'image/jpeg'], urls: true }` for a vision model.
 - `catalog` holds Groq's on-demand list prices on its date, used only with `prices: 'catalog'`.
 

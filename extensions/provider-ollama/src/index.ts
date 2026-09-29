@@ -213,24 +213,36 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
             return { type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`) } };
           });
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
-          const body: JsonObject = {
-            model: name, messages: messagesFor(request, aliases, assistants), format: outputSchema,
-            options: { num_predict: request.maxOutputTokens },
-            ...(options.think === undefined ? {} : { think: options.think }),
-            ...(tools.length > 0 ? { tools } : {}),
-          };
+          // A format constrains a reply to the answer, which leaves no way to call a tool. So with tools, the model first
+          // answers freely; once it calls no more tools, one more call without tools asks for the answer in the format.
+          const messages = messagesFor(request, aliases, assistants);
+          const common = { model: name, messages, options: { num_predict: request.maxOutputTokens }, ...(options.think === undefined ? {} : { think: options.think }) };
+          const body: JsonObject = tools.length > 0 ? { ...common, tools } : { ...common, format: outputSchema };
           jsonValue(body, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) });
 
           // A client per call, so the call's signal reaches every request it makes.
           const client = new Ollama({ host, headers, fetch: callFetch(options.fetch ?? globalThis.fetch, maxResponseBytes, signal) });
-          const payload = onDelta
-            ? await assemble(await client.chat({ ...body, stream: true } as never) as unknown as AsyncIterable<unknown>, maxResponseBytes, onDelta)
-            : object(jsonValue(JSON.parse(JSON.stringify(await client.chat({ ...body, stream: false } as never))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
+          const chat = async (request: JsonObject, stream: ((text: string) => void) | undefined): Promise<JsonObject> => {
+            const payload = stream
+              ? await assemble(await client.chat({ ...request, stream: true } as never) as unknown as AsyncIterable<unknown>, maxResponseBytes, stream)
+              : object(jsonValue(JSON.parse(JSON.stringify(await client.chat({ ...request, stream: false } as never))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
+            // Ollama leaves out the prompt count when the whole prompt was cached.
+            const cost = tokenCostMicros(settings.pricing, payload['prompt_eval_count'] === undefined ? 0 : integer(payload['prompt_eval_count']), integer(payload['eval_count'])) ?? failed();
+            knownCost = (knownCost ?? 0) + cost;
+            if (payload['done'] !== true) return failed();
+            return payload;
+          };
+          const finalFrom = (payload: JsonObject): ModelResponse => {
+            const message = object(payload['message']); const finish = payload['done_reason'];
+            // Output cut off by the token limit is not an answer.
+            if (finish === 'length') return failed('refused');
+            if (finish !== 'stop' || typeof message['content'] !== 'string' || (Array.isArray(message['tool_calls']) && message['tool_calls'].length > 0)) return failed();
+            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost! } };
+          };
+          if (tools.length === 0) return finalFrom(await chat(body, onDelta));
 
-          // Ollama leaves out the prompt count when the whole prompt was cached.
-          knownCost = tokenCostMicros(settings.pricing, payload['prompt_eval_count'] === undefined ? 0 : integer(payload['prompt_eval_count']), integer(payload['eval_count'])) ?? failed();
-          const accounting = { costMicros: knownCost };
-          if (payload['done'] !== true) return failed();
+          // The free reply is never streamed: it may be prose, which is not the answer.
+          const payload = await chat(body, onDelta ? () => undefined : undefined);
           const message = object(payload['message']); const finish = payload['done_reason'];
           const toolCalls = message['tool_calls'] ?? [];
           if (!Array.isArray(toolCalls) || toolCalls.length > 128) return failed();
@@ -244,12 +256,11 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
             });
             const thinking = typeof message['thinking'] === 'string' && message['thinking'] ? message['thinking'] : null;
             const continuation = jsonValue({ provider: 'ollama.chat.v1', model: name, assistants: [...assistants, { thinking, calls: calls.map(entry => entry.id) }] }, { maxBytes: maxRequestBytes });
-            return { type: 'tool_calls', calls, usage: accounting, continuation };
+            return { type: 'tool_calls', calls, usage: { costMicros: knownCost! }, continuation };
           }
-          // Output cut off by the token limit is not an answer.
           if (finish === 'length') return failed('refused');
-          if (finish !== 'stop' || typeof message['content'] !== 'string') return failed();
-          return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: accounting };
+          if (finish !== 'stop') return failed();
+          return finalFrom(await chat({ ...common, format: outputSchema }, onDelta));
         } catch (error) {
           if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
           if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');

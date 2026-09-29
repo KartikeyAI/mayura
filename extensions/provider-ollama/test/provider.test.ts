@@ -114,6 +114,32 @@ describe('@mayurajs/provider-ollama', () => {
     await expect(ollama({ fetch: transport(final) }).model('llama3.2', settings).generate(request({ continuation: first.continuation! }))).rejects.toMatchObject({ reason: 'invalid_response' });
   });
 
+  it('with tools, asks for the answer in the format in one more call once the model calls no more tools, charging both', async () => {
+    const replies = [reply({ content: 'The code is LC-1.' }, 'stop', 30, 8), reply({ content: '{"answer":"LC-1"}' }, 'stop', 40, 6)];
+    const seen: Seen = [];
+    const priced = { ...settings, pricing: { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 1_000_000 } };
+    const response = await ollama({ fetch: async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(replies.shift()); } })
+      .model('gpt-oss:20b', priced).generate(request({ tools }));
+    expect(response).toEqual({ type: 'final', output: { answer: 'LC-1' }, usage: { costMicros: 84 } });
+    expect(seen).toHaveLength(2);
+    // A format would leave no way to call a tool, so the first call offers the tools alone; the second, the format alone.
+    expect(seen[0]!.body['format']).toBeUndefined();
+    expect(seen[0]!.body['tools']).toHaveLength(1);
+    expect(seen[1]!.body['tools']).toBeUndefined();
+    expect(seen[1]!.body['format']).toMatchObject({ type: 'object', required: ['answer'] });
+    expect(seen[1]!.body['messages']).toEqual(seen[0]!.body['messages']);
+  });
+
+  it('with tools, never streams the free reply, only the answer in the format', async () => {
+    const replies = [ndjson([part({ content: 'Prose that is ' }), part({ content: 'not the answer.' }), reply({}, 'stop', 3, 4)]),
+      ndjson([part({ content: '{"answer":' }), part({ content: '"ok"}' }), reply({}, 'stop', 3, 4)])];
+    const adapter = ollama({ fetch: async () => replies.shift()! }).model('gpt-oss:20b', settings);
+    const events = [];
+    for await (const event of adapter.stream!(request({ tools }))) events.push(event);
+    expect(events.filter(event => event.type === 'output.delta').map(event => event.type === 'output.delta' ? event.text : '').join('')).toBe('{"answer":"ok"}');
+    expect(events.at(-1)).toMatchObject({ type: 'response', response: { type: 'final', output: { answer: 'ok' } } });
+  });
+
   it('streams text without the thinking, and fails when the server reports an error mid-stream', async () => {
     const adapter = ollama({ fetch: transport({ kind: 'lines', lines: [part({ thinking: 'Composing.' }), part({ content: '{"answer":' }), part({ content: '"ok"}' }), reply({}, 'stop', 3, 4)] }) })
       .model('gpt-oss:20b', settings);

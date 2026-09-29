@@ -26,7 +26,7 @@ const agent = defineAgent({
 - Local models cost nothing, so there is no catalog: give each model's price, zero or your own.
 - `host` is http only on a loopback address, https anywhere else. For Ollama's cloud, use `ollama({ host: 'https://ollama.com', apiKey })`.
 - Nothing is read from the environment (not `OLLAMA_HOST` or `OLLAMA_API_KEY`) or the file system.
-- Structured output and tool inputs use JSON Schema; streaming reports output text as it arrives; set `think` for a thinking model, whose thinking is kept for the next call and never released.
+- Structured output and tool inputs use JSON Schema. With tools, the answer comes from one more call, in the format, once the model calls no more tools (a format leaves no way to call a tool); streaming reports output text as it arrives; set `think` for a thinking model, whose thinking is kept for the next call and never released.
 - Models see no media unless you say so: pass `media: { types: ['image/png', 'image/jpeg'], urls: false }` for a vision model.
 - The default time limit is 120 seconds, since a local model may need loading first.
 

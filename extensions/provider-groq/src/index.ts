@@ -216,26 +216,36 @@ export function groq(options: GroqProviderOptions): ModelProvider {
             return { type: 'function', function: { name: aliases.get(tool.id)!, description: tool.description, parameters: strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`), strict: true } };
           });
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
-          const body: JsonObject = {
-            model: name, max_completion_tokens: request.maxOutputTokens,
-            messages: messagesFor(request, aliases, assistants),
-            response_format: { type: 'json_schema', json_schema: { name: 'output', schema: outputSchema, strict: true } },
-            ...(tools.length > 0 ? { tools, tool_choice: 'auto', parallel_tool_calls: true } : {}),
-          };
+          // Groq refuses a response format beside tools. So with tools, the model first answers freely; once it calls no
+          // more tools, one more call without tools asks for the answer in the strict format.
+          const messages = messagesFor(request, aliases, assistants);
+          const format = { response_format: { type: 'json_schema', json_schema: { name: 'output', schema: outputSchema, strict: true } } };
+          const body: JsonObject = { model: name, max_completion_tokens: request.maxOutputTokens, messages,
+            ...(tools.length > 0 ? { tools, tool_choice: 'auto', parallel_tool_calls: true } : format) };
           jsonValue(body, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) });
 
-          const payload = onDelta
-            ? await assemble(await client.chat.completions.create({ ...body, stream: true } as never, { signal }) as unknown as AsyncIterable<unknown>, maxResponseBytes, onDelta)
-            : object(jsonValue(JSON.parse(JSON.stringify(await client.chat.completions.create(body as never, { signal }))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
+          const chat = async (request: JsonObject, stream: ((text: string) => void) | undefined): Promise<{ message: JsonObject; finish: JsonValue | undefined }> => {
+            const payload = stream
+              ? await assemble(await client.chat.completions.create({ ...request, stream: true } as never, { signal }) as unknown as AsyncIterable<unknown>, maxResponseBytes, stream)
+              : object(jsonValue(JSON.parse(JSON.stringify(await client.chat.completions.create(request as never, { signal }))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
+            // Reasoning tokens are part of the completion tokens; cached prompt tokens are charged at the full rate.
+            const usage = object(payload['usage']);
+            knownCost = (knownCost ?? 0) + (tokenCostMicros(settings.pricing, integer(usage['prompt_tokens']), integer(usage['completion_tokens'])) ?? failed());
+            if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
+            const choice = object(payload['choices'][0]); const message = object(choice['message']);
+            if (typeof message['refusal'] === 'string' && message['refusal']) return failed('refused');
+            return { message, finish: choice['finish_reason'] };
+          };
+          const finalFrom = ({ message, finish }: { message: JsonObject; finish: JsonValue | undefined }): ModelResponse => {
+            // Output cut off by the token limit is not an answer.
+            if (finish === 'length') return failed('refused');
+            if (finish !== 'stop' || typeof message['content'] !== 'string' || (Array.isArray(message['tool_calls']) && message['tool_calls'].length > 0)) return failed();
+            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost! } };
+          };
+          if (tools.length === 0) return finalFrom(await chat(body, onDelta));
 
-          // Reasoning tokens are part of the completion tokens; cached prompt tokens are charged at the full rate.
-          const usage = object(payload['usage']);
-          knownCost = tokenCostMicros(settings.pricing, integer(usage['prompt_tokens']), integer(usage['completion_tokens'])) ?? failed();
-          const accounting = { costMicros: knownCost };
-          if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
-          const choice = object(payload['choices'][0]); const message = object(choice['message']);
-          const finish = choice['finish_reason'];
-          if (typeof message['refusal'] === 'string' && message['refusal']) return failed('refused');
+          // The free reply is never streamed: it may be prose, which is not the answer.
+          const { message, finish } = await chat(body, onDelta ? () => undefined : undefined);
           const toolCalls = message['tool_calls'] ?? [];
           if (!Array.isArray(toolCalls)) return failed();
           if (finish === 'tool_calls' || (finish === 'stop' && toolCalls.length > 0)) {
@@ -251,12 +261,12 @@ export function groq(options: GroqProviderOptions): ModelProvider {
             if (calls.length === 0 || calls.length > 128) return failed();
             const reasoning = typeof message['reasoning'] === 'string' && message['reasoning'] ? message['reasoning'] : null;
             const continuation = jsonValue({ provider: 'groq.chat.v1', model: name, assistants: [...assistants, { reasoning, calls: calls.map(entry => entry.id) }] }, { maxBytes: maxRequestBytes });
-            return { type: 'tool_calls', calls, usage: accounting, continuation };
+            return { type: 'tool_calls', calls, usage: { costMicros: knownCost! }, continuation };
           }
-          // Output cut off by the token limit is not an answer.
           if (finish === 'length') return failed('refused');
-          if (finish !== 'stop' || typeof message['content'] !== 'string') return failed();
-          return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: accounting };
+          if (finish !== 'stop') return failed();
+          const { tools: _tools, tool_choice: _choice, parallel_tool_calls: _parallel, ...plain } = body;
+          return finalFrom(await chat({ ...plain, ...format }, onDelta));
         } catch (error) {
           if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
           if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
@@ -268,6 +278,10 @@ export function groq(options: GroqProviderOptions): ModelProvider {
             if (error.status === 498) throw new ModelProviderError('unavailable', { httpStatus: 498 });
             // An error event inside a stream has no status: the provider failed mid-answer.
             if (typeof error.status !== 'number') return failed('unavailable');
+            // Groq answers 400 when the model itself wrote a tool call or answer it cannot parse: an unusable response.
+            const body = error.error && typeof error.error === 'object' ? error.error as { code?: unknown; error?: { code?: unknown } } : undefined;
+            const code = body?.error?.code ?? body?.code;
+            if (error.status === 400 && (code === 'tool_use_failed' || code === 'output_parse_failed')) return failed('invalid_response');
             throw providerHttpFailure(error.status);
           }
           if (error instanceof ResponseTooLarge) return failed();
