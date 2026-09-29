@@ -3,6 +3,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+import { content } from './plugins/content.ts';
 import { docs } from './plugins/docs.ts';
 
 // The path the site is served under: "/" on mayurajs.com, "/mayura/" on kartikeyai.github.io. The Pages workflow sets
@@ -19,6 +20,7 @@ export default defineConfig({
   },
   plugins: [
     docs({ base }),
+    content({ base }),
     tailwindcss(),
     // Every page is prerendered to static HTML, starting from "/" and following links; GitHub Pages serves the result.
     tanstackStart({

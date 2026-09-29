@@ -50,7 +50,7 @@ export function docs({ base }: { base: string }): Plugin {
     if (!rendered) {
       const file = `${slug}.md`;
       const { title, description, body } = readPage(join(docsRoot, file));
-      rendered = renderMarkdown(body, file, base).then(result => ({ slug, file: `docs/${file}`, title, description, ...result }));
+      rendered = renderMarkdown(body, join(docsRoot, file), base).then(result => ({ slug, file: `docs/${file}`, title, description, ...result }));
       cache.set(slug, rendered);
     }
     return rendered;

@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
 import { site } from '../lib/site';
 import { Logo } from './Logo';
 import { SearchButton } from './Search';
@@ -14,9 +13,11 @@ export function Header() {
           v{site.version}
         </span>
         <nav className="ml-2 hidden items-center gap-1 text-sm md:flex">
-          <HeaderLink to="/docs/$/" params={{ _splat: 'introduction' }}>Docs</HeaderLink>
-          <HeaderLink to="/docs/$/" params={{ _splat: 'quickstart' }}>Quickstart</HeaderLink>
-          <HeaderLink to="/docs/$/" params={{ _splat: 'reference/entry-points' }}>Reference</HeaderLink>
+          <Link {...navLink} to="/docs/$/" params={{ _splat: 'introduction' }}>Docs</Link>
+          <Link {...navLink} to="/guides/">Guides</Link>
+          <Link {...navLink} to="/integrations/">Integrations</Link>
+          <Link {...navLink} to="/compare/">Compare</Link>
+          <Link {...navLink} to="/research/">Research</Link>
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
           <SearchButton />
@@ -35,14 +36,7 @@ export function Header() {
   );
 }
 
-function HeaderLink({ to, params, children }: { to: '/docs/$/'; params: { _splat: string }; children: ReactNode }) {
-  return (
-    <Link to={to} params={params} className="rounded-md px-2.5 py-1.5 text-muted hover:text-fg"
-      activeProps={{ className: 'text-fg font-medium' }}>
-      {children}
-    </Link>
-  );
-}
+const navLink = { className: 'rounded-md px-2.5 py-1.5 text-muted hover:text-fg', activeProps: { className: 'text-fg font-medium' } };
 
 export function GitHubIcon({ className = 'size-[18px]' }: { className?: string }) {
   return (

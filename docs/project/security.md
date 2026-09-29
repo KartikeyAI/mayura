@@ -46,8 +46,10 @@ automatically**: a refund that may have been paid is not paid again. Durable wor
 a restart they reconcile from that record instead of replaying. To say a call did nothing, throw `ToolRefusal` from
 `execute` before any effect; the outcome is then an ordinary failure.
 
-Effects are at least once with deduplication, not exactly once across arbitrary external APIs. For a non-idempotent
-API, pass an idempotency key to the provider or reconcile from its records. See [Tools](../concepts/tools.md) and
+A durable step is dispatched at most once: Mayura never calls a tool again once it may have acted. That is not exactly
+once across arbitrary external APIs, because a call can be cut off after its effect happened, and the step then ends
+unknown. For a non-idempotent API, pass an idempotency key to the provider (`runId` plus `callId` makes a good one) or
+reconcile from its records. See [Tools](../concepts/tools.md) and
 [Outcomes](../concepts/outcomes.md).
 
 ## Code Mode sandboxing

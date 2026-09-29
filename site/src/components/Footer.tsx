@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { sectionOrder, sections } from '../lib/content';
 import { asset, site } from '../lib/site';
 import { Logo } from './Logo';
 
@@ -27,7 +28,7 @@ const columns = [
 export function Footer() {
   return (
     <footer className="border-t border-line bg-soft/60">
-      <div className="mx-auto grid max-w-[90rem] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+      <div className="mx-auto grid max-w-[90rem] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_repeat(4,1fr)]">
         <div className="space-y-3">
           <Logo />
           <p className="max-w-xs text-sm leading-relaxed text-muted">
@@ -38,6 +39,16 @@ export function Footer() {
             <a className="text-muted hover:text-fg" href={site.npm} target="_blank" rel="noopener noreferrer">npm</a>
             <a className="text-muted hover:text-fg" href={asset('llms.txt')}>llms.txt</a>
           </div>
+        </div>
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-fg">Resources</h2>
+          <ul className="space-y-2 text-sm">
+            {sectionOrder.map(section => (
+              <li key={section}>
+                <Link to={`/${section}/` as '/guides/'} className="text-muted hover:text-fg">{sections[section].title}</Link>
+              </li>
+            ))}
+          </ul>
         </div>
         {columns.map(column => (
           <div key={column.title}>

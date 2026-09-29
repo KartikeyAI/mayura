@@ -22,6 +22,10 @@ Mayura is a TypeScript framework for AI agents, typed tools and durable workflow
   the workspace, so its dependencies never reach the package. Run its commands inside `site/`: `pnpm install
   --frozen-lockfile --ignore-scripts`, `pnpm dev`, `pnpm typecheck`, `pnpm build && pnpm check` (every page, link
   and anchor resolves). Set `SITE_BASE=/mayura/` to build for a project page instead of the custom domain.
+- `site/content/<guides|integrations|compare|research>/<slug>.md`: the website's articles, published at
+  `/<section>/<slug>/`. Frontmatter `title`, `description` and `date` (YYYY-MM-DD), optionally `updated` and `tags`; no
+  `# H1`. They link to docs pages and each other by relative path, and `pnpm docs:check` checks those links and
+  type-checks their snippets like the docs. Claims about other projects need a dated source.
 - `internal-docs/` is ignored by git; never link to it from anything public.
 
 ## Commands

@@ -48,7 +48,7 @@ function PagerLink({ label, page, align }: { label: string; page: { slug: string
 }
 
 /** The page's sections, with the one being read highlighted. */
-function OnThisPage({ headings }: { headings: DocHeading[] }) {
+export function OnThisPage({ headings }: { headings: DocHeading[] }) {
   const [active, setActive] = useState<string>();
 
   useEffect(() => {

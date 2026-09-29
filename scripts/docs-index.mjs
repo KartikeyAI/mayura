@@ -18,7 +18,7 @@ export function readPage(path) {
   for (const line of (match?.[1] ?? '').split('\n')) {
     const field = /^([A-Za-z]+):\s*(.*)$/u.exec(line); if (field) fields[field[1]] = field[2].trim().replace(/^"(.*)"$/u, '$1');
   }
-  return { title: fields.title ?? '', description: fields.description ?? '', body: match ? text.slice(match[0].length) : text };
+  return { ...fields, title: fields.title ?? '', description: fields.description ?? '', body: match ? text.slice(match[0].length) : text };
 }
 
 /** The sections of docs/README.md, each with the pages it links, in order; a page appears once, where first linked. */

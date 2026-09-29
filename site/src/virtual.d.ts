@@ -25,3 +25,16 @@ interface ImportMetaEnv {
   readonly SITE_ORIGIN: string;
   readonly MAYURA_VERSION: string;
 }
+
+declare module 'virtual:mayura-content' {
+  export type Section = 'guides' | 'integrations' | 'compare' | 'research';
+  export interface ArticleSummary {
+    section: Section; slug: string; title: string; description: string; date: string; updated?: string; tags: string[]; minutes: number;
+  }
+  export interface ArticleHeading { id: string; depth: 2 | 3; html: string; text: string }
+  export interface Article extends ArticleSummary { file: string; html: string; headings: ArticleHeading[] }
+  /** Every section's articles, newest first. */
+  export const articles: Record<Section, ArticleSummary[]>;
+  /** One loader per article, keyed `<section>/<slug>`. */
+  export const loaders: Record<string, () => Promise<{ default: Article }>>;
+}

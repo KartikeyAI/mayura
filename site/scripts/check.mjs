@@ -32,7 +32,11 @@ const htmlFiles = (directory) => readdirSync(directory, { withFileTypes: true })
   entry.isDirectory() ? htmlFiles(join(directory, entry.name)) : entry.name.endsWith('.html') ? [join(directory, entry.name)] : []);
 const pages = htmlFiles(output);
 
-const required = ['', 'docs/', '404.html', 'llms.txt', 'llms-full.txt', 'sitemap.xml', 'robots.txt',
+// Every section of site/content and every article in it (site/content/guides/x.md is guides/x/).
+const contentRoot = join(site, 'content');
+const articles = ['guides', 'integrations', 'compare', 'research'].flatMap(section => [`${section}/`,
+  ...(existsSync(join(contentRoot, section)) ? readdirSync(join(contentRoot, section)).filter(name => name.endsWith('.md')).map(name => `${section}/${name.slice(0, -3)}/`) : [])]);
+const required = ['', 'docs/', '404.html', 'llms.txt', 'llms-full.txt', 'sitemap.xml', 'robots.txt', ...articles,
   ...navigation().flatMap(section => section.pages.map(page => `${page.relative.replace(/\.md$/u, '')}/`)),
   ...navigation().flatMap(section => section.pages.map(page => page.relative))];
 for (const path of required) if (!fileFor(base + path)) problems.push(`missing: ${base}${path}`);

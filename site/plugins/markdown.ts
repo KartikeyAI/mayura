@@ -1,7 +1,7 @@
 // Markdown to HTML for the docs pages, at build time. Code is highlighted here with Shiki, so no highlighter ships to
 // the browser. Links between docs pages become site routes, and headings get the same anchors GitHub gives them (the
 // anchors scripts/docs-check.mjs verifies), so a `page.md#section` link works in the repository and on the site.
-import { posix } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { Marked, type Tokens } from 'marked';
 import { createHighlighter, type Highlighter } from 'shiki';
 
@@ -48,11 +48,25 @@ export function pageRoute(slug: string): string {
   return slug === 'README' ? 'docs/' : `docs/${slug}/`;
 }
 
+export const docsRoot = resolve(import.meta.dirname, '..', '..', 'docs');
+export const contentRoot = resolve(import.meta.dirname, '..', 'content');
+
 /**
- * Renders one page. `file` is the page's path inside docs/ (`concepts/agent.md`); `base` is the site's public base
- * path, with a trailing slash.
+ * The route of a Markdown file the site publishes: a docs page, or an article under site/content
+ * (site/content/guides/support-agent.md is `guides/support-agent/`). Anything else has no route.
  */
-export async function renderMarkdown(markdown: string, file: string, base: string): Promise<RenderedPage> {
+export function routeOf(path: string): string | undefined {
+  const inside = (root: string) => path.startsWith(root + sep) && path.endsWith('.md') ? relative(root, path).split(sep).join('/').slice(0, -3) : undefined;
+  const doc = inside(docsRoot); if (doc !== undefined) return pageRoute(doc);
+  const article = inside(contentRoot); if (article !== undefined) return `${article}/`;
+  return undefined;
+}
+
+/**
+ * Renders one page. `source` is the Markdown file's absolute path, so its relative links to other docs pages and
+ * articles become site routes; `base` is the site's public base path, with a trailing slash.
+ */
+export async function renderMarkdown(markdown: string, source: string, base: string): Promise<RenderedPage> {
   const shiki = await getHighlighter();
   const headings: Heading[] = [];
   const anchor = slugger();
@@ -61,9 +75,8 @@ export async function renderMarkdown(markdown: string, file: string, base: strin
     if (/^[a-z][a-z\d+.-]*:/iu.test(href) || href.startsWith('#')) return href;
     const [path = '', hash] = href.split('#', 2);
     if (!path.endsWith('.md')) return href;
-    const target = posix.normalize(posix.join(posix.dirname(file), path));
-    if (target.startsWith('../')) return href;
-    return `${base}${pageRoute(target.slice(0, -3))}${hash ? `#${hash}` : ''}`;
+    const route = routeOf(resolve(dirname(source), decodeURIComponent(path)));
+    return route === undefined ? href : `${base}${route}${hash ? `#${hash}` : ''}`;
   };
 
   const marked = new Marked({ gfm: true });

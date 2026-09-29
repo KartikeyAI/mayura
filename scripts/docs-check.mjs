@@ -27,8 +27,12 @@ const walk = directory => readdirSync(directory, { withFileTypes: true }).flatMa
   entry.isDirectory() ? walk(join(directory, entry.name)) : entry.name.endsWith('.md') ? [join(directory, entry.name)] : []);
 const pages = walk(docs).sort();
 const extra = ['README.md', 'AGENTS.md', 'llms.txt'].map(name => join(workspace, name)).filter(existsSync);
+// The website's articles (guides, integrations, comparisons, research) are checked like docs pages: frontmatter,
+// links (to docs pages and other articles only) and snippets.
+const content = join(workspace, 'site', 'content');
+const articles = existsSync(content) ? walk(content).sort() : [];
 const selected = process.argv.slice(2).map(path => resolve(path));
-const checked = selected.length ? selected : [...pages, ...extra];
+const checked = selected.length ? selected : [...pages, ...extra, ...articles];
 
 /** Lines of a Markdown file with fenced code blocks separated out. */
 function parse(file) {
@@ -74,15 +78,18 @@ if (!selected.length) {
 for (const file of checked) {
   const { lines, prose } = parse(file);
   const isPage = file.startsWith(docs + sep);
-  if (isPage) {
+  const isArticle = file.startsWith(content + sep);
+  if (isPage || isArticle) {
     const end = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
     const front = end > 0 ? lines.slice(1, end) : [];
-    for (const key of ['title', 'description']) {
+    for (const key of isArticle ? ['title', 'description', 'date'] : ['title', 'description']) {
       const entry = front.find(line => line.startsWith(`${key}:`));
       const value = entry?.slice(key.length + 1).trim().replace(/^"(.*)"$/u, '$1');
       if (!value) problem(file, 1, `missing frontmatter ${key}`);
       else if (key === 'description' && value.length > 200) problem(file, 1, 'description is longer than 200 characters');
+      else if (key === 'date' && !/^\d{4}-\d{2}-\d{2}$/u.test(value)) problem(file, 1, 'date must be YYYY-MM-DD');
     }
+    if (isArticle && lines.slice(end + 1).some(line => /^#\s/u.test(line))) problem(file, 0, 'articles have no # heading; the title comes from the frontmatter');
   }
   for (const { text, line } of prose) {
     const code = text.replace(/`[^`]*`/gu, '');
@@ -93,6 +100,7 @@ for (const file of checked) {
       const destination = path ? resolve(dirname(file), decodeURIComponent(path)) : file;
       if (/internal-docs/u.test(destination)) { problem(file, line, `links to internal documentation: ${target}`); continue; }
       if (isPage && !destination.startsWith(docs + sep)) { problem(file, line, `docs pages link only within docs/ (use a full URL): ${target}`); continue; }
+      if (isArticle && !((destination.startsWith(docs + sep) || destination.startsWith(content + sep)) && destination.endsWith('.md'))) { problem(file, line, `articles link only to docs pages and other articles (use a full URL): ${target}`); continue; }
       if (!existsSync(destination)) { problem(file, line, `broken link: ${target}`); continue; }
       if (hash && statSync(destination).isFile() && destination.endsWith('.md') && !anchors(destination).has(hash)) problem(file, line, `no heading #${hash} in ${posixPath(destination)}`);
     }

@@ -12,8 +12,16 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as NotFoundRouteImport } from './routes/not-found'
+import { Route as CompareIndexRouteImport } from './routes/compare/index'
+import { Route as CompareSlugRouteImport } from './routes/compare/$slug'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
+import { Route as GuidesIndexRouteImport } from './routes/guides/index'
+import { Route as GuidesSlugRouteImport } from './routes/guides/$slug'
+import { Route as IntegrationsIndexRouteImport } from './routes/integrations/index'
+import { Route as IntegrationsSlugRouteImport } from './routes/integrations/$slug'
+import { Route as ResearchIndexRouteImport } from './routes/research/index'
+import { Route as ResearchSlugRouteImport } from './routes/research/$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -30,6 +38,16 @@ const NotFoundRoute = NotFoundRouteImport.update({
   path: '/not-found',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CompareIndexRoute = CompareIndexRouteImport.update({
+  id: '/compare/',
+  path: '/compare/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompareSlugRoute = CompareSlugRouteImport.update({
+  id: '/compare/$slug',
+  path: '/compare/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -40,40 +58,141 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => DocsRouteRoute,
 } as any)
+const GuidesIndexRoute = GuidesIndexRouteImport.update({
+  id: '/guides/',
+  path: '/guides/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesSlugRoute = GuidesSlugRouteImport.update({
+  id: '/guides/$slug',
+  path: '/guides/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsIndexRoute = IntegrationsIndexRouteImport.update({
+  id: '/integrations/',
+  path: '/integrations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsSlugRoute = IntegrationsSlugRouteImport.update({
+  id: '/integrations/$slug',
+  path: '/integrations/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResearchIndexRoute = ResearchIndexRouteImport.update({
+  id: '/research/',
+  path: '/research/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResearchSlugRoute = ResearchSlugRouteImport.update({
+  id: '/research/$slug',
+  path: '/research/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
+  '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/integrations/$slug': typeof IntegrationsSlugRoute
+  '/research/$slug': typeof ResearchSlugRoute
+  '/compare/': typeof CompareIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/guides/': typeof GuidesIndexRoute
+  '/integrations/': typeof IntegrationsIndexRoute
+  '/research/': typeof ResearchIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/not-found': typeof NotFoundRoute
+  '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/integrations/$slug': typeof IntegrationsSlugRoute
+  '/research/$slug': typeof ResearchSlugRoute
+  '/compare': typeof CompareIndexRoute
   '/docs': typeof DocsIndexRoute
+  '/guides': typeof GuidesIndexRoute
+  '/integrations': typeof IntegrationsIndexRoute
+  '/research': typeof ResearchIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
+  '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/integrations/$slug': typeof IntegrationsSlugRoute
+  '/research/$slug': typeof ResearchSlugRoute
+  '/compare/': typeof CompareIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/guides/': typeof GuidesIndexRoute
+  '/integrations/': typeof IntegrationsIndexRoute
+  '/research/': typeof ResearchIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/docs' | '/not-found' | '/docs/$' | '/docs/'
+  fullPaths:
+    | '/'
+    | '/docs'
+    | '/not-found'
+    | '/compare/$slug'
+    | '/docs/$'
+    | '/guides/$slug'
+    | '/integrations/$slug'
+    | '/research/$slug'
+    | '/compare/'
+    | '/docs/'
+    | '/guides/'
+    | '/integrations/'
+    | '/research/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/not-found' | '/docs/$' | '/docs'
-  id: '__root__' | '/' | '/docs' | '/not-found' | '/docs/$' | '/docs/'
+  to:
+    | '/'
+    | '/not-found'
+    | '/compare/$slug'
+    | '/docs/$'
+    | '/guides/$slug'
+    | '/integrations/$slug'
+    | '/research/$slug'
+    | '/compare'
+    | '/docs'
+    | '/guides'
+    | '/integrations'
+    | '/research'
+  id:
+    | '__root__'
+    | '/'
+    | '/docs'
+    | '/not-found'
+    | '/compare/$slug'
+    | '/docs/$'
+    | '/guides/$slug'
+    | '/integrations/$slug'
+    | '/research/$slug'
+    | '/compare/'
+    | '/docs/'
+    | '/guides/'
+    | '/integrations/'
+    | '/research/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
   NotFoundRoute: typeof NotFoundRoute
+  CompareSlugRoute: typeof CompareSlugRoute
+  GuidesSlugRoute: typeof GuidesSlugRoute
+  IntegrationsSlugRoute: typeof IntegrationsSlugRoute
+  ResearchSlugRoute: typeof ResearchSlugRoute
+  CompareIndexRoute: typeof CompareIndexRoute
+  GuidesIndexRoute: typeof GuidesIndexRoute
+  IntegrationsIndexRoute: typeof IntegrationsIndexRoute
+  ResearchIndexRoute: typeof ResearchIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +218,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotFoundRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/compare/': {
+      id: '/compare/'
+      path: '/compare'
+      fullPath: '/compare/'
+      preLoaderRoute: typeof CompareIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compare/$slug': {
+      id: '/compare/$slug'
+      path: '/compare/$slug'
+      fullPath: '/compare/$slug'
+      preLoaderRoute: typeof CompareSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/': {
       id: '/docs/'
       path: '/'
@@ -112,6 +245,48 @@ declare module '@tanstack/react-router' {
       fullPath: '/docs/$'
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof DocsRouteRoute
+    }
+    '/guides/': {
+      id: '/guides/'
+      path: '/guides'
+      fullPath: '/guides/'
+      preLoaderRoute: typeof GuidesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/$slug': {
+      id: '/guides/$slug'
+      path: '/guides/$slug'
+      fullPath: '/guides/$slug'
+      preLoaderRoute: typeof GuidesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations/': {
+      id: '/integrations/'
+      path: '/integrations'
+      fullPath: '/integrations/'
+      preLoaderRoute: typeof IntegrationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations/$slug': {
+      id: '/integrations/$slug'
+      path: '/integrations/$slug'
+      fullPath: '/integrations/$slug'
+      preLoaderRoute: typeof IntegrationsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/research/': {
+      id: '/research/'
+      path: '/research'
+      fullPath: '/research/'
+      preLoaderRoute: typeof ResearchIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/research/$slug': {
+      id: '/research/$slug'
+      path: '/research/$slug'
+      fullPath: '/research/$slug'
+      preLoaderRoute: typeof ResearchSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -134,6 +309,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
   NotFoundRoute: NotFoundRoute,
+  CompareSlugRoute: CompareSlugRoute,
+  GuidesSlugRoute: GuidesSlugRoute,
+  IntegrationsSlugRoute: IntegrationsSlugRoute,
+  ResearchSlugRoute: ResearchSlugRoute,
+  CompareIndexRoute: CompareIndexRoute,
+  GuidesIndexRoute: GuidesIndexRoute,
+  IntegrationsIndexRoute: IntegrationsIndexRoute,
+  ResearchIndexRoute: ResearchIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
