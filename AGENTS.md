@@ -40,6 +40,8 @@ pnpm test                        # unit tests (vitest)
 pnpm vitest run packages/<name>  # one package
 pnpm docs:check                  # doc snippets type-check, links resolve, llms.txt is current
 pnpm api:report                  # public API report; update it deliberately when the API changes
+pnpm edge:check                  # entry points outside the Node-only list bundle for edge runtimes
+pnpm test:runtimes               # the same checks on Node, Bun, Deno, workerd and the Vercel Edge VM
 pnpm test:bundle                 # the published package, installed offline, every entry point loaded
 pnpm test:templates              # every template generated, installed and run
 pnpm test:starters               # every starter generated, installed and tested
@@ -49,6 +51,9 @@ pnpm test:starters               # every starter generated, installed and tested
 
 - Public code, docs and examples import from `mayura` or `mayura/<subpath>`. Inside `packages/*/src`, packages import
   each other as `@mayura/<name>`.
+- Entry points run on Node, Bun, Deno, Cloudflare Workers and Vercel Edge unless `scripts/edge-check.mjs` lists them
+  as Node-only: no `node:` imports and no global `Buffer` or `process` there. Use the helpers in `@mayura/core/host`
+  (`sha256Hex`, `utf8ByteLength`, `toBase64Url`) instead.
 - Keep the core free of infrastructure: no database, server, provider or UI dependency in `mayura` itself. Heavy
   third-party packages are optional peers of the entry point that needs them.
 - Nothing is allowed by default. New capabilities need an explicit permission string, a cost or limit where they

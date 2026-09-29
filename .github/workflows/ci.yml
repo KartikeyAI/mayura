@@ -85,6 +85,30 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm typecheck
       - run: node scripts/ci-step.mjs -- pnpm test:integration
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
+  # Entry points outside the Node-only list bundle for edge runtimes, and the runtime probe (agents, the server handler,
+  # workflows, memory, storage) passes on Bun, Deno, Cloudflare's workerd without nodejs_compat and Vercel's Edge VM,
+  # with every result equal to Node's.
+  runtimes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.6
+      - run: npm install --global pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node scripts/ci-step.mjs -- pnpm build
+      - run: node scripts/ci-step.mjs -- pnpm edge:check
+      - run: node scripts/ci-step.mjs -- pnpm test:runtimes --require bun,deno,workerd,edge
   container:
     strategy:
       fail-fast: false

@@ -31,6 +31,8 @@
     "release:artifacts": "node scripts/release-artifact-check.mjs",
     "upgrade:compat": "node scripts/upgrade-compat.mjs",
     "api:report": "node scripts/api-report.mjs",
+    "edge:check": "node scripts/edge-check.mjs",
+    "test:runtimes": "node scripts/runtime-check.mjs",
     "console:check": "node scripts/inspector-bundle.mjs --check",
     "perf": "node scripts/perf-suite.mjs",
     "code-sandbox:image": "node scripts/code-sandbox-image.mjs",
@@ -67,6 +69,7 @@
     "@mayura/tools": "workspace:*",
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*",
+    "@edge-runtime/vm": "5.0.0",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",
     "@types/node": "24.13.6",
@@ -78,9 +81,11 @@
     "pg": "8.23.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "rolldown": "1.2.9",
     "typescript": "7.0.2",
     "vite": "8.3.0",
     "vitest": "5.0.1",
+    "workerd": "1.20260927.1",
     "zod": "4.6.5"
   }
 }

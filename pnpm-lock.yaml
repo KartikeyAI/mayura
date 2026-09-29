@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@edge-runtime/vm':
+        specifier: 5.0.0
+        version: 5.0.0
       '@mayura/adapter-code-docker':
         specifier: workspace:*
         version: link:packages/adapter-code-docker
@@ -116,6 +119,9 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      rolldown:
+        specifier: 1.2.9
+        version: 1.2.9
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -124,7 +130,10 @@ importers:
         version: 8.3.0(@types/node@24.13.6)(jiti@2.7.0)
       vitest:
         specifier: 5.0.1
-        version: 5.0.1(@types/node@24.13.6)(jsdom@29.0.1)(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
+        version: 5.0.1(@edge-runtime/vm@5.0.0)(@types/node@24.13.6)(jsdom@29.0.1)(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
+      workerd:
+        specifier: 1.20260927.1
+        version: 1.20260927.1
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -807,6 +816,36 @@ packages:
     resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
 
+  '@cloudflare/workerd-darwin-64@1.20260927.1':
+    resolution: {integrity: sha512-j7YexgfjvjA8a14Cuv/M4XI1SVv2WeRe/gOKQeUxxoZnZqJZ15cT2slHecuLhp6fyuvUBNVTwe68pxBTWOSDww==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@cloudflare/workerd-darwin-arm64@1.20260927.1':
+    resolution: {integrity: sha512-O90+F1z66/c2+oDqBPdbCetiG4X/16jL9ZyCwwZe0gb0egQTyswotqj1+YqaMvOaIMLlxkj0qp7/knmgG+Os3w==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@cloudflare/workerd-linux-64@1.20260927.1':
+    resolution: {integrity: sha512-vQyPcb7yjUGppMeVpF1R5sdu2y5DugnLmp8WtImYohvjALL8RFxlod8lXxQVaCC7jyLk3T80flFgmxuOuRH7lQ==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [linux]
+
+  '@cloudflare/workerd-linux-arm64@1.20260927.1':
+    resolution: {integrity: sha512-I5VUqX0WfWenF/lTSZXR+vEUdEebr9YwV4X+V1waw0BYYfFtKHPa/icYFWWRkBfz3OZHHEGGNn83MuDXwrmaag==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@cloudflare/workerd-windows-64@1.20260927.1':
+    resolution: {integrity: sha512-ZbwJbdnJu/x8Uvtmq9qGqtGm0Ge9TgdrbVYVATkfHhJTWvQBEeZMfre0uxoMMIUAissSF5+0NFPjW7PyffeOpA==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [win32]
+
   '@csstools/color-helpers@6.1.1':
     resolution: {integrity: sha512-gLNsunvwf3mCi5u5o46/Z/JcJMnhbHSaZ69rkgPzNM3J4s8hWwpPUQB6/tt0EDFyCiWzxANlx+2LJwpYj4zS1w==}
     engines: {node: '>=20.19.0'}
@@ -842,6 +881,14 @@ packages:
   '@csstools/css-tokenizer@4.0.1':
     resolution: {integrity: sha512-bPlN9S9O1A0euCpEWE4qnvB5YDuyYVsUTrxSgmAM1Is0j4tICHoVyOVAXfWMP/kS9ZrjvyIXWV2PmomiAXXqOw==}
     engines: {node: '>=20.19.0'}
+
+  '@edge-runtime/primitives@6.0.0':
+    resolution: {integrity: sha512-FqoxaBT+prPBHBwE1WXS1ocnu/VLTQyZ6NMUBAdbP7N2hsFTTxMC/jMu2D/8GAlMQfxeuppcPuCUk/HO3fpIvA==}
+    engines: {node: '>=18'}
+
+  '@edge-runtime/vm@5.0.0':
+    resolution: {integrity: sha512-NKBGBSIKUG584qrS1tyxVpX/AKJKQw5HgjYEnPLC0QsTw79JrGn+qUr8CXFb955Iy7GUdiiUv1rJ6JBGvaKb6w==}
+    engines: {node: '>=18'}
 
   '@exodus/bytes@1.16.0':
     resolution: {integrity: sha512-IcpW84uEn3N7ETtNZMlxKhfl6Pec8rUNGOTBtWbK1FKhJxIFAptZyVrvVRVBimAJxJCgc3PxepxkdWWG4DVzfA==}
@@ -2610,6 +2657,11 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  workerd@1.20260927.1:
+    resolution: {integrity: sha512-ouiMPmG6qGI/SdlzYRnmw3DZyAeTARBQPLpsPVqhpJODgLjuhWllAWBILlwE6oRbid5T3cdB8HPgz4wcEKWpNw==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -2662,6 +2714,21 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
+  '@cloudflare/workerd-darwin-64@1.20260927.1':
+    optional: true
+
+  '@cloudflare/workerd-darwin-arm64@1.20260927.1':
+    optional: true
+
+  '@cloudflare/workerd-linux-64@1.20260927.1':
+    optional: true
+
+  '@cloudflare/workerd-linux-arm64@1.20260927.1':
+    optional: true
+
+  '@cloudflare/workerd-windows-64@1.20260927.1':
+    optional: true
+
   '@csstools/color-helpers@6.1.1': {}
 
   '@csstools/css-calc@3.4.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.1))(@csstools/css-tokenizer@4.0.1)':
@@ -2685,6 +2752,12 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.1': {}
+
+  '@edge-runtime/primitives@6.0.0': {}
+
+  '@edge-runtime/vm@5.0.0':
+    dependencies:
+      '@edge-runtime/primitives': 6.0.0
 
   '@exodus/bytes@1.16.0': {}
 
@@ -4248,7 +4321,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@5.0.1(@types/node@24.13.6)(jsdom@29.0.1)(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0)):
+  vitest@5.0.1(@edge-runtime/vm@5.0.0)(@types/node@24.13.6)(jsdom@29.0.1)(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.1(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
@@ -4265,6 +4338,7 @@ snapshots:
       vite: 8.3.0(@types/node@24.13.6)(jiti@2.7.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
+      '@edge-runtime/vm': 5.0.0
       '@types/node': 24.13.6
       jsdom: 29.0.1
     transitivePeerDependencies:
@@ -4290,6 +4364,14 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  workerd@1.20260927.1:
+    optionalDependencies:
+      '@cloudflare/workerd-darwin-64': 1.20260927.1
+      '@cloudflare/workerd-darwin-arm64': 1.20260927.1
+      '@cloudflare/workerd-linux-64': 1.20260927.1
+      '@cloudflare/workerd-linux-arm64': 1.20260927.1
+      '@cloudflare/workerd-windows-64': 1.20260927.1
 
   xml-name-validator@5.0.0: {}
 
