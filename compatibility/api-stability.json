@@ -65,6 +65,7 @@
     "@mayurajs/provider-azure",
     "@mayurajs/provider-bedrock",
     "@mayurajs/provider-google",
+    "@mayurajs/provider-groq",
     "@mayurajs/provider-mistral",
     "@mayurajs/provider-openai"
   ],

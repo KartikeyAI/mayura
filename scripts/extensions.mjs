@@ -19,6 +19,7 @@ export const reviewedDependencies = {
   'provider-azure': ['@mayurajs/provider-openai'],
   'provider-bedrock': ['@aws-sdk/client-bedrock-runtime'],
   'provider-google': ['@google/genai'],
+  'provider-groq': ['groq-sdk'],
   'provider-mistral': ['@mistralai/mistralai'],
   'provider-openai': ['openai'],
 };

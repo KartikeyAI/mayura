@@ -74,6 +74,7 @@
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",
     "@mayurajs/provider-google": "workspace:*",
+    "@mayurajs/provider-groq": "workspace:*",
     "@mayurajs/provider-mistral": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
     "@opentelemetry/api": "1.9.1",
