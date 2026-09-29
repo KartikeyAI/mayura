@@ -68,7 +68,7 @@ function Hero() {
               className="group inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-on-primary shadow-sm hover:bg-primary-hover">
               Get started <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" />
             </Link>
-            <Command text="npm install mayura zod" />
+            <Command text="npm install mayura" />
           </div>
           <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
             {['One npm package', 'No infrastructure needed', 'Node.js 22 and 24'].map(item => (
@@ -103,7 +103,7 @@ function CodeTabs() {
             }}>
             {tabs.map((item, index) => (
               <button key={item.label} id={`${id}-tab-${index}`} type="button" role="tab" aria-selected={index === active}
-                aria-controls={`${id}-panel`} tabIndex={index === active ? 0 : -1} onClick={() => setActive(index)}
+                aria-controls={`${id}-panel-${index}`} tabIndex={index === active ? 0 : -1} onClick={() => setActive(index)}
                 className={`relative px-3 py-3 text-sm whitespace-nowrap transition ${index === active
                   ? 'font-medium text-fg after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary'
                   : 'text-muted hover:text-fg'}`}>
@@ -113,11 +113,19 @@ function CodeTabs() {
           </div>
           <span className="ml-auto hidden font-mono text-xs text-muted sm:inline">{tab.file}</span>
         </div>
-        <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${active}`}>
-          <Html html={tab.html} className="snippet min-h-[30.5rem]" />
+        {/* Every panel sits in the same grid cell, so the window is always as tall as the longest example and does
+            not change size when the tab does. */}
+        <div className="grid">
+          {tabs.map((item, index) => (
+            <div key={item.label} id={`${id}-panel-${index}`} role="tabpanel" aria-labelledby={`${id}-tab-${index}`}
+              aria-hidden={index !== active}
+              className={`[grid-area:1/1] ${index === active ? '' : 'invisible'}`}>
+              <Html html={item.html} className="snippet" />
+            </div>
+          ))}
         </div>
       </div>
-      <p className="mt-4 px-1 text-sm text-muted">{tab.caption}</p>
+      <p className="mt-4 min-h-[2.5rem] px-1 text-sm text-muted">{tab.caption}</p>
     </div>
   );
 }
