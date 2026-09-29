@@ -32,7 +32,10 @@ async function sourceDigest() {
   files.push(fileURLToPath(import.meta.url));
   const hash = createHash('sha256');
   for (const file of files.map(path => relative(workspace, path).replaceAll('\\', '/')).sort()) {
-    hash.update(`${file}\0`).update((await readFile(join(workspace, file), 'utf8')).replaceAll('\r\n', '\n')).update('\0');
+    let text = (await readFile(join(workspace, file), 'utf8')).replaceAll('\r\n', '\n');
+    // A release sets every package's version; nothing in the console reads it, so it does not make the bundle stale.
+    if (file.endsWith('package.json')) { const manifest = JSON.parse(text); delete manifest.version; text = JSON.stringify(manifest); }
+    hash.update(`${file}\0`).update(text).update('\0');
   }
   return hash.digest('hex');
 }
