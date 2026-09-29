@@ -1,6 +1,6 @@
 export const site = {
   name: 'Mayura',
-  tagline: 'TypeScript agents that only do what you allow',
+  tagline: 'Build AI agents you can put in production',
   description: 'Mayura is a TypeScript framework for AI agents, typed tools and durable workflows. Explicit permissions, '
     + 'cost limits on every run, schemas at every boundary, and workflows that survive restarts.',
   origin: import.meta.env.SITE_ORIGIN,

@@ -88,7 +88,7 @@ function Hero() {
           <Icon name="arrow" className="size-3.5" />
         </Link>
         <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
-          AI agents that only do what you allow
+          Build AI agents you can put in production
         </h1>
         <p className="mt-7 max-w-2xl text-lg leading-relaxed text-pretty text-muted sm:text-xl">
           Mayura is the TypeScript framework for <strong className="font-medium text-fg">agents, typed tools and durable
