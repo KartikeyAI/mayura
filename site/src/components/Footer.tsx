@@ -18,6 +18,7 @@ const columns = [
   { title: 'Project', links: [
     { label: 'Versioning', slug: 'project/versioning' },
     { label: 'Security model', slug: 'project/security' },
+    { label: 'Credits', slug: 'project/credits' },
     { label: 'Supported platforms', slug: 'project/support' },
     { label: 'AI coding agents', slug: 'ai-agents' },
   ] },

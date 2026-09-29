@@ -1,26 +1,19 @@
-const fulfil = defineWorkflowLifecycle({
-  id: 'orders.fulfil',
-  version: '1',
-  input: order,
-  output: z.object({ messageId: z.string() }),
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
+import { z } from 'zod';
+
+// Every step is recorded before it starts and after it ends, so a run survives restarts.
+const refund = defineWorkflowLifecycle({
+  id: 'orders.refund', version: '1',
+  input: z.object({ orderId: z.string(), amountCents: z.number() }),
+  output: z.object({ refundId: z.string() }),
   nodes: [
-    { kind: 'tool', id: 'reserve', tool: reserve, input: { kind: 'input', path: [] } },
-    { kind: 'tool', id: 'confirm', tool: confirm, dependsOn: ['reserve'], input: { kind: 'step', stepId: 'reserve', path: [] } },
+    { kind: 'tool', id: 'check', tool: checkPolicy, input: { kind: 'input', path: [] } },
+    // Waits, for days if need be, until a person approves this exact payment.
+    { kind: 'tool', id: 'pay', tool: issueRefund, approval: true, dependsOn: ['check'],
+      input: { kind: 'step', stepId: 'check', path: [] } },
   ],
-  result: { kind: 'step', stepId: 'confirm', path: [] },
+  result: { kind: 'step', stepId: 'pay', path: [] },
 });
 
-const store = createSqliteStore({ filename: 'workflows.sqlite' });
-await store.initialize();
-
-const runtime = createWorkflowLifecycleRuntime({
-  store,
-  scope: { principalId: 'orders-service', projectId: 'shop' },
-  permissions: { allow: ['tool:orders.reserve', 'inventory:reserve', 'tool:orders.confirm', 'email:send', 'effect:write'] },
-  policyVersion: '1',
-  maxCostMicros: 0,
-});
-
-// The same idempotency key returns the same run, so an order is never fulfilled twice.
-const run = await runtime.submit(fulfil, { input: { orderId: 'o-1001', email: 'ada@example.com' }, idempotencyKey: 'o-1001' });
-const settled = await runtime.runUntilSettled(fulfil, run.id);
+// The same idempotency key returns the same run, so a refund is never paid twice.
+const run = await runtime.submit(refund, { input: { orderId: 'o-1001', amountCents: 4_200 }, idempotencyKey: 'o-1001' });

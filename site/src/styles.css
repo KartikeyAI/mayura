@@ -273,3 +273,9 @@ body {
 .snippet .code-lang {
   display: none;
 }
+
+.code-block pre,
+.table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
