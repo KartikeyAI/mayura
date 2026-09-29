@@ -36,7 +36,7 @@ only in how the processes are started and kept running. Mayura needs Node.js 22 
 | [Process platforms](#platforms-with-process-types): Render, Railway, Heroku | a web process | a worker process | the release or pre-deploy command |
 | [Virtual machines](#virtual-machines) | a systemd service | a systemd service | a step in your deploy script |
 | [Inside an existing app](#inside-an-existing-nodejs-app) | your framework's `/v1/*` route | `mayura worker` | `mayura migrate` |
-| [Serverless functions](#serverless-functions): AWS Lambda, Vercel, Cloud Run | a request-bound function | a scheduled one-shot function or job | a step in your pipeline |
+| [Serverless functions](#serverless-functions): Vercel; AWS Lambda and Cloud Run (experimental) | a request-bound function | a scheduled one-shot function or job | a step in your pipeline |
 
 On every target except serverless functions, two rules hold. The worker keeps running: a platform that scales it to
 zero, or stops its CPU between requests, stops your workflows too. And the server keeps working after it responds,
@@ -402,8 +402,17 @@ and `migrate()` and run those two commands next to your app.
 
 ## Serverless functions
 
-AWS Lambda, Vercel Functions and Google Cloud Run can run Mayura as functions: short-lived instances that handle
-requests and may be frozen or stopped as soon as they respond. Four settings make that safe:
+Vercel Functions, AWS Lambda and Google Cloud Run can run Mayura as functions: short-lived instances that handle
+requests and may be frozen or stopped as soon as they respond.
+
+- **Vercel Functions are tested on Vercel**: request-bound runs, workflows advanced by one-shot invocations, and a
+  function stopped at its time limit in the middle of a step, then recovered, all on PostgreSQL through a pooled
+  connection.
+- **Experimental: AWS Lambda, Google Cloud Run, Vercel Cron and the Next.js route files below.** They follow the same
+  rules and pass the same local tests, which run every invocation as a process stopped as soon as it answers, but have
+  not yet run on those platforms. Their setup may change in any release.
+
+Four settings make functions safe:
 
 - **Runs finish inside their request.** Mount the API with `runExecution: 'request'` and `runRecords` (see
   [Request-bound runs](server-and-client.md#request-bound-runs)): each run finishes before its response, and any
@@ -453,7 +462,9 @@ export async function advanceWorkflows() {
 
 ### Vercel
 
-A route for the API and a cron route for workflows, in a Next.js app on the Node.js runtime:
+A route for the API and a cron route for workflows, in a Next.js app on the Node.js runtime. The tested setup used plain
+Vercel Functions (`api/*.js` files exporting `GET` and `POST`) that call the same two functions; the Next.js route
+files and Vercel Cron are experimental.
 
 ```ts
 // app/v1/[...path]/route.ts
@@ -486,7 +497,7 @@ export async function GET(request: Request): Promise<Response> {
 The last block is `vercel.json`. Set `CRON_SECRET` in the project's environment variables. How often cron jobs may run
 depends on your Vercel plan.
 
-### AWS Lambda
+### AWS Lambda (experimental)
 
 One function answers the API through a function URL; a second one, invoked every minute by EventBridge Scheduler,
 advances workflows. Give the second a timeout above its budget, such as 60 seconds.
@@ -515,7 +526,7 @@ export const handler = () => advanceWorkflows();
 A buffered Lambda response delivers event streams only when they end; runs are request-bound, so `run.result()` is
 ready as soon as the submission returns.
 
-### Google Cloud Run
+### Google Cloud Run (experimental)
 
 Deploy the server as a service with request-based billing, where the CPU runs only during requests, and set
 `runExecution: 'request'` as above; your module's `server()` can pass it to `listenProductionServer`. Advance workflows

@@ -31,9 +31,10 @@ The browser entry points (`mayura/client`, its `headless`, `forms` and `workflow
 | Windows, x64 | Supported. Tested in CI, and clean installs are verified on Windows 11 with Node.js 24. |
 | macOS | Tested in CI on Node.js 22 and 24. Not yet part of the verified install matrix. |
 
-Serverless functions on AWS Lambda, Vercel and Google Cloud Run are supported on those Node.js versions, with runs that
-finish inside their request and workflows advanced on a schedule; see
-[Deployment](../guides/deployment.md#serverless-functions). Edge runtimes (Cloudflare Workers, Deno and Bun) are planned
+Serverless functions on Vercel are supported on those Node.js versions, with runs that finish inside their request and
+workflows advanced on a schedule; see [Deployment](../guides/deployment.md#serverless-functions). AWS Lambda and Google
+Cloud Run functions, Vercel Cron and Next.js route handlers are experimental: they pass the same local tests but have
+not yet run on those platforms, and their setup may change in any release. Edge runtimes (Cloudflare Workers, Deno and Bun) are planned
 for 1.1.
 
 Other environments may work but are not supported: Arm Linux and Windows, edge runtimes, and Node.js versions outside
