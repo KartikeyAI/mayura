@@ -124,6 +124,7 @@ model in it**, which is why its name is explicit rather than derived.
 | Package | Provider | Model ids |
 |---|---|---|
 | `@mayurajs/provider-anthropic` | Anthropic Claude, through the official `@anthropic-ai/sdk` and the Messages API | `anthropic/<model>` |
+| `@mayurajs/provider-azure` | Azure OpenAI, through the official `openai` SDK and Azure's v1 API; built on `responsesProvider` | `azure/<deployment>` |
 | `@mayurajs/provider-bedrock` | Amazon Bedrock (Claude, Nova, Llama, Mistral and more), through the official AWS SDK and the Converse API | `bedrock/<model or inference profile id>` |
 | `@mayurajs/provider-google` | Google Gemini, through the official `@google/genai` SDK and the Gemini API | `google/<model>` |
 | `@mayurajs/provider-openai` | OpenAI, through the official `openai` SDK and the Responses API | `openai/<model>` |

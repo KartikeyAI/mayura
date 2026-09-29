@@ -16,18 +16,35 @@ export const extensionsRoot = join(workspace, 'extensions');
  */
 export const reviewedDependencies = {
   'provider-anthropic': ['@anthropic-ai/sdk'],
+  'provider-azure': ['@mayurajs/provider-openai'],
   'provider-bedrock': ['@aws-sdk/client-bedrock-runtime'],
   'provider-google': ['@google/genai'],
   'provider-openai': ['openai'],
 };
 
-/** Every extension: its folder name, directory and source manifest. */
+/**
+ * Every extension: its folder name, directory and source manifest, with each extension after the extensions it
+ * depends on (so publishing in this order never publishes a package before its dependencies), otherwise by name.
+ */
 export function extensions() {
   if (!existsSync(extensionsRoot)) return [];
-  return readdirSync(extensionsRoot, { withFileTypes: true })
+  const all = readdirSync(extensionsRoot, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && existsSync(join(extensionsRoot, entry.name, 'package.json')))
     .map(entry => ({ name: entry.name, directory: join(extensionsRoot, entry.name), manifest: JSON.parse(readFileSync(join(extensionsRoot, entry.name, 'package.json'), 'utf8')) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const ordered = []; const placed = new Set(); const visiting = new Set();
+  const place = extension => {
+    if (placed.has(extension.name)) return;
+    assert(!visiting.has(extension.name), `extensions/${extension.name} is part of a dependency cycle.`);
+    visiting.add(extension.name);
+    for (const dependency of Object.keys(extension.manifest.dependencies ?? {})) {
+      const inner = dependency.startsWith('@mayurajs/') ? all.find(entry => `@mayurajs/${entry.name}` === dependency) : undefined;
+      if (inner) place(inner);
+    }
+    visiting.delete(extension.name); placed.add(extension.name); ordered.push(extension);
+  };
+  for (const extension of all) place(extension);
+  return ordered;
 }
 
 /** Checks a source manifest: private, at the release version, named after its folder, with `mayura` only as a peer. */
@@ -40,8 +57,12 @@ export function checkSource({ name, manifest }, version) {
   const dependencies = Object.keys(manifest.dependencies ?? {}).sort();
   assert.deepEqual(dependencies, [...(reviewedDependencies[name] ?? [])].sort(), `extensions/${name} has unreviewed dependencies; list them in scripts/extensions.mjs.`);
   for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
-    assert(/^\d+\.\d+\.\d+$/u.test(range), `extensions/${name} must pin ${dependency} to one exact version.`);
     assert(!dependency.startsWith('@mayura/') && dependency !== 'mayura', `extensions/${name} must not depend on ${dependency}.`);
+    if (dependency.startsWith('@mayurajs/')) {
+      // Another extension, released in lockstep: linked in the workspace, pinned to the release version when staged.
+      assert.equal(range, 'workspace:*', `extensions/${name} must depend on ${dependency} as workspace:*.`);
+      assert(existsSync(join(extensionsRoot, dependency.slice('@mayurajs/'.length), 'package.json')), `extensions/${name} depends on ${dependency}, which is not an extension.`);
+    } else assert(/^\d+\.\d+\.\d+$/u.test(range), `extensions/${name} must pin ${dependency} to one exact version.`);
   }
 }
 
@@ -75,7 +96,8 @@ export async function stageExtension(extension, output, version) {
     repository: { ...root.repository, directory: `extensions/${name}` }, homepage: root.homepage, bugs: root.bugs,
     type: 'module', sideEffects: manifest.sideEffects ?? false, engines: manifest.engines, exports: manifest.exports,
     files: ['dist', 'src/**/*.ts', 'README.md', 'LICENSE', 'NOTICE'],
-    dependencies: manifest.dependencies ?? {},
+    // Other extensions are released with this one: pin them to this release.
+    dependencies: Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([dependency, range]) => [dependency, dependency.startsWith('@mayurajs/') ? version : range])),
     // Lockstep: an extension works with the mayura it was released with and later minors of the same major.
     peerDependencies: { mayura: `^${version}` },
     publishConfig: { access: 'public', provenance: true },

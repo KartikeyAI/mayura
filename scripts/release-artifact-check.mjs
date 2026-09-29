@@ -130,6 +130,9 @@ for (const extension of extensions()) {
   assert(!published.scripts && !published.devDependencies, `${name} gained lifecycle scripts or development dependencies.`);
   assert.deepEqual(published.peerDependencies, { mayura: `^${version}` }, `${name} must have exactly mayura as its peer, at this release.`);
   assert.deepEqual(Object.keys(published.dependencies).sort(), [...(reviewedDependencies[extension.name] ?? [])].sort(), `${name} gained an unreviewed dependency.`);
+  for (const [dependency, range] of Object.entries(published.dependencies)) {
+    if (dependency.startsWith('@mayurajs/')) assert.equal(range, version, `${name} must depend on ${dependency} at exactly this release.`);
+  }
   for (const [path, content] of extensionFiles) {
     assert(!/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${name}: ${path}`);
     assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${name}: ${path}`);

@@ -86,6 +86,9 @@ importers:
       '@mayurajs/provider-anthropic':
         specifier: workspace:*
         version: link:extensions/provider-anthropic
+      '@mayurajs/provider-azure':
+        specifier: workspace:*
+        version: link:extensions/provider-azure
       '@mayurajs/provider-bedrock':
         specifier: workspace:*
         version: link:extensions/provider-bedrock
@@ -155,6 +158,16 @@ importers:
       '@anthropic-ai/sdk':
         specifier: 0.128.0
         version: 0.128.0(zod@4.6.5)
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/provider-azure:
+    dependencies:
+      '@mayurajs/provider-openai':
+        specifier: workspace:*
+        version: link:../provider-openai
     devDependencies:
       mayura:
         specifier: workspace:*

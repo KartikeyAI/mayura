@@ -7209,6 +7209,20 @@
         "declaration": "781763c0b1d17fe3"
       }
     },
+    "@mayurajs/provider-azure": {
+      "azure": {
+        "kind": "function",
+        "declaration": "dc7ee57f9304f592"
+      },
+      "AzureProviderOptions": {
+        "kind": "interface",
+        "declaration": "d2a1c287b7822db9"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "781763c0b1d17fe3"
+      }
+    },
     "@mayurajs/provider-bedrock": {
       "bedrock": {
         "kind": "function",
@@ -7253,6 +7267,14 @@
       "OpenAIProviderOptions": {
         "kind": "interface",
         "declaration": "8555a11a645e4519"
+      },
+      "responsesProvider": {
+        "kind": "function",
+        "declaration": "f9e41049f7dea7f3"
+      },
+      "ResponsesProviderOptions": {
+        "kind": "interface",
+        "declaration": "0c2baf80f6bc0ca2"
       }
     }
   }

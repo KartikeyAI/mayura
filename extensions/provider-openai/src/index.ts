@@ -1,6 +1,6 @@
 import { APIConnectionError, APIError, OpenAI } from 'openai';
 import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest,
+  type ModelCatalog, type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest,
   type ModelResponse, type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -54,6 +54,11 @@ function mediaOption(value: ModelMediaCapability | false | undefined): ModelMedi
 
 /** A response larger than the configured limit; reported as an unusable response. */
 class ResponseTooLarge extends Error {}
+/** A token source that failed or returned something unusable, for the reason Mayura reports. */
+class TokenFailure extends Error { constructor(readonly reason: ModelFailureReason) { super('The token source failed.'); } }
+/** The TokenFailure an SDK error carries, directly or as its cause. */
+const tokenFailure = (error: unknown): TokenFailure | undefined => error instanceof TokenFailure ? error
+  : error instanceof Error && error.cause instanceof TokenFailure ? error.cause : undefined;
 /**
  * The SDK's transport, bounded: no redirects, and a response body larger than `limit` (four times that for an event
  * stream) fails instead of being read into memory.
@@ -131,28 +136,65 @@ function hydrate(input: readonly JsonValue[], messages: readonly ModelMessage[])
  * environment.
  */
 export function openai(options: OpenAIProviderOptions): ModelProvider {
-  if (!options || typeof options.apiKey !== 'string' || !options.apiKey.trim() || /[\r\n]/u.test(options.apiKey) || options.apiKey.length > 4096) {
-    throw new MayuraError('INVALID_CONFIG', 'openai() needs an apiKey.');
+  if (!options || typeof options.apiKey !== 'string') throw new MayuraError('INVALID_CONFIG', 'openai() needs an apiKey.');
+  return responsesProvider({ ...options, id: 'openai', baseURL: options.baseURL ?? 'https://api.openai.com/v1', apiKey: options.apiKey, catalog });
+}
+
+/** A provider for an API that speaks OpenAI's Responses API: OpenAI itself, or a compatible service. */
+export interface ResponsesProviderOptions extends Omit<OpenAIProviderOptions, 'apiKey' | 'baseURL'> {
+  /** The provider id, the first part of every model id: lowercase letters, digits and `-`. */
+  readonly id: string;
+  /** The API's base URL, the part before `/responses`. It must be https. */
+  readonly baseURL: string;
+  /** The credential, sent as a bearer token: a key, or a function that returns a fresh token for each request. */
+  readonly apiKey: string | (() => Promise<string>);
+  /** The provider's dated list prices, used only when a registry opts in with `prices: 'catalog'`. */
+  readonly catalog?: ModelCatalog;
+}
+
+/**
+ * A model provider for any API that speaks OpenAI's Responses API, through the official OpenAI SDK: the building block
+ * of `openai()` and of `@mayurajs/provider-azure`. Everything `openai()` promises holds: strict schemas, streaming,
+ * bounded responses, no SDK retries and nothing read from the environment.
+ */
+export function responsesProvider(options: ResponsesProviderOptions): ModelProvider {
+  const where = `${typeof options?.id === 'string' ? options.id : 'responsesProvider'}()`;
+  if (!options || typeof options.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/u.test(options.id)) {
+    throw new MayuraError('INVALID_CONFIG', 'A Responses provider needs an id of lowercase letters, digits and -.');
   }
-  const baseURL = options.baseURL === undefined ? 'https://api.openai.com/v1' : providerEndpoint(options.baseURL, '', 'openai()');
-  const headers = providerHeaders(options.headers, ['Authorization', 'OpenAI-Organization', 'OpenAI-Project'], 'openai()');
+  const key = options.apiKey;
+  if (typeof key !== 'function' && (typeof key !== 'string' || !key.trim() || /[\r\n]/u.test(key) || key.length > 4096)) {
+    throw new MayuraError('INVALID_CONFIG', `${where} needs an apiKey.`);
+  }
+  const baseURL = providerEndpoint(options.baseURL, '', where);
+  const headers = providerHeaders(options.headers, ['Authorization', 'OpenAI-Organization', 'OpenAI-Project', 'api-key'], where);
   const maxRequestBytes = options.maxRequestBytes ?? 1_048_576; const maxResponseBytes = options.maxResponseBytes ?? 1_048_576;
   const defaultTimeout = options.timeoutMs ?? 60_000;
   for (const [value, name] of [[maxRequestBytes, 'maxRequestBytes'], [maxResponseBytes, 'maxResponseBytes'], [defaultTimeout, 'timeoutMs']] as const) assertPositiveInteger(value, name);
   const media = mediaOption(options.media);
   const client = new OpenAI({
-    apiKey: options.apiKey, baseURL, organization: options.organization ?? null, project: options.project ?? null, defaultHeaders: headers,
+    // A token function is called for every request, so short-lived tokens (such as Microsoft Entra ID's) stay fresh.
+    apiKey: typeof key === 'function' ? async () => {
+      let token: unknown;
+      // A token source that fails is an authentication failure; its own error text stays private.
+      try { token = await key(); } catch { throw new TokenFailure('authentication'); }
+      if (typeof token !== 'string' || !token || /[\r\n]/u.test(token)) throw new TokenFailure('configuration');
+      return token;
+    } : key,
+    baseURL, organization: options.organization ?? null, project: options.project ?? null, defaultHeaders: headers,
     // Mayura owns retries and time limits: one SDK attempt per call, and its own timer never fires before Mayura's.
     maxRetries: 0, timeout: 2_147_483_647,
     fetch: boundedFetch(() => options.fetch ?? globalThis.fetch, maxResponseBytes),
   });
 
   return Object.freeze({
-    id: 'openai',
-    catalog,
+    id: options.id,
+    ...(options.catalog ? { catalog: options.catalog } : {}),
     model(name: string, settings: ProviderModelSettings): ModelAdapter {
-      if (typeof name !== 'string' || !name.trim() || name.length > 128) throw new MayuraError('INVALID_CONFIG', 'An OpenAI model name is required.');
+      if (typeof name !== 'string' || !name.trim() || name.length > 128) throw new MayuraError('INVALID_CONFIG', `${where} needs a model name.`);
       const timeoutMs = settings.timeoutMs ?? defaultTimeout;
+      // Continuations name the provider, so a run's protocol state never moves between providers.
+      const protocol = `${options.id}.responses.v1`;
 
       const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
         const controller = new AbortController();
@@ -168,7 +210,7 @@ export function openai(options: OpenAIProviderOptions): ModelProvider {
           let history: JsonValue[] = []; let consumed = 0;
           if (request.continuation !== undefined) {
             const previous = object(jsonValue(request.continuation, { maxBytes: maxRequestBytes }));
-            if (previous['provider'] !== 'openai.responses.v1' || previous['model'] !== name || !Array.isArray(previous['history'])) return failed();
+            if (previous['provider'] !== protocol || previous['model'] !== name || !Array.isArray(previous['history'])) return failed();
             consumed = integer(previous['consumed']);
             if (consumed > request.messages.length) return failed();
             history = previous['history'];
@@ -228,7 +270,7 @@ export function openai(options: OpenAIProviderOptions): ModelProvider {
           }
           const accounting = { costMicros: knownCost };
           if (calls.length > 0) {
-            const continuation = jsonValue({ provider: 'openai.responses.v1', model: name, consumed: request.messages.length, history: [...input, ...payload['output']] }, { maxBytes: maxRequestBytes });
+            const continuation = jsonValue({ provider: protocol, model: name, consumed: request.messages.length, history: [...input, ...payload['output']] }, { maxBytes: maxRequestBytes });
             return { type: 'tool_calls', calls, usage: accounting, continuation };
           }
           if (text.length === 0) return failed();
@@ -239,6 +281,7 @@ export function openai(options: OpenAIProviderOptions): ModelProvider {
           if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
           if (error instanceof ModelProviderError) throw error;
           if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') return failed('configuration');
+          const token = tokenFailure(error); if (token) return failed(token.reason);
           if (error instanceof APIConnectionError) return failed(error.cause instanceof ResponseTooLarge ? 'invalid_response' : 'unavailable');
           if (error instanceof APIError && typeof error.status === 'number') throw providerHttpFailure(error.status);
           return failed();
