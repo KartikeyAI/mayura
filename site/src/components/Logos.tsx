@@ -26,6 +26,7 @@ const platforms: Logo[] = [
   { name: 'Kubernetes', light: 'kubernetes' },
   { name: 'AWS', light: 'aws_light', dark: 'aws_dark' },
   { name: 'Google Cloud', light: 'google-cloud' },
+  { name: 'Vercel', light: 'vercel', dark: 'vercel_dark' },
   { name: 'Render', light: 'render_black', dark: 'render_white' },
   { name: 'Railway', light: 'railway', dark: 'railway_dark' },
   { name: 'Heroku', light: 'heroku' },
