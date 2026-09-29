@@ -9,6 +9,7 @@ import { GitHubIcon } from '../components/Header';
 import { Html } from '../components/Html';
 import { Icon, type IconName } from '../components/Icon';
 import { LogoMark } from '../components/Logo';
+import { WorksWith } from '../components/Logos';
 import {
   CostArt, MemoryArt, ModelsArt, PolicyPreview, RunPreview, ServePreview, StreamingArt, TestPreview, TraceArt, VisionArt,
   WorkflowPreview,
@@ -25,6 +26,7 @@ function Home() {
     <main>
       <Hero />
       <Guarantees />
+      <WorksWith />
       <Tour />
       <Features />
       <GetStarted />

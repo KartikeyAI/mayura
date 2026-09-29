@@ -61,6 +61,7 @@ These are used to build and test Mayura. None of them ship in the package.
 | [Marked](https://marked.js.org) | Turns these Markdown pages into HTML. | MIT |
 | [Tailwind CSS](https://tailwindcss.com) | Styling. | MIT |
 | [Geist](https://vercel.com/font) and Geist Mono, through [Fontsource](https://fontsource.org) | The typefaces, served from this site. | OFL-1.1 |
+| [svgl](https://github.com/pheralb/svgl) | The logos of the products Mayura works with, on the home page. Each logo is a trademark of its owner. | MIT |
 
 ## Open standards
 
