@@ -1,37 +1,39 @@
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 @import 'tailwindcss';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Peacock colors: feather teal, gold and blue on a warm paper white, or a deep teal night. */
+/* Neutral surfaces like the best developer sites, with peacock teal and gold as the only accents. */
 :root {
-  --bg: #fbfaf6;
-  --bg-soft: #f2f1ea;
+  --bg: #ffffff;
+  --bg-soft: #f7f7f5;
   --bg-raised: #ffffff;
-  --fg: #0d1b1e;
-  --muted: #55666a;
-  --line: #e1e2da;
+  --fg: #0a0c0d;
+  --muted: #62696c;
+  --line: #e8e8e4;
   --primary: #0a756f;
   --primary-hover: #075e59;
   --on-primary: #ffffff;
   --gold: #b7860f;
   --blue: #1f47b3;
-  --code: #f5f5f0;
+  --code: #fafaf8;
   color-scheme: light;
 }
 
 .dark {
-  --bg: #081113;
-  --bg-soft: #0d191c;
-  --bg-raised: #0f1d20;
-  --fg: #e3ebe9;
-  --muted: #8a9c9f;
-  --line: #1b2a2e;
-  --primary: #43c3ba;
-  --primary-hover: #6bd6ce;
-  --on-primary: #03201e;
-  --gold: #e2b33f;
-  --blue: #86a6ff;
-  --code: #0b171a;
+  --bg: #08090a;
+  --bg-soft: #0e1011;
+  --bg-raised: #121415;
+  --fg: #ededed;
+  --muted: #8f9699;
+  --line: #1f2325;
+  --primary: #45c9bf;
+  --primary-hover: #6fd9d1;
+  --on-primary: #04201e;
+  --gold: #e5b547;
+  --blue: #8aa8ff;
+  --code: #0b0d0e;
   color-scheme: dark;
 }
 
@@ -48,8 +50,8 @@
   --color-gold: var(--gold);
   --color-blue: var(--blue);
   --color-code: var(--code);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 html {
@@ -278,4 +280,42 @@ body {
 .table-wrap {
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
+}
+
+/* ---- Landing page motion (off for people who prefer reduced motion) ------------------------------------------- */
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.caret {
+  animation: caret-blink 1.1s steps(1) infinite;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.rise-in {
+  animation: rise-in 0.45s ease both;
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret,
+  .rise-in,
+  .pulse-ring {
+    animation: none;
+  }
 }

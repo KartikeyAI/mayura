@@ -60,6 +60,7 @@ These are used to build and test Mayura. None of them ship in the package.
 | [Shiki](https://shiki.style) | Syntax highlighting of code examples. | MIT |
 | [Marked](https://marked.js.org) | Turns these Markdown pages into HTML. | MIT |
 | [Tailwind CSS](https://tailwindcss.com) | Styling. | MIT |
+| [Geist](https://vercel.com/font) and Geist Mono, through [Fontsource](https://fontsource.org) | The typefaces, served from this site. | OFL-1.1 |
 
 ## Open standards
 
