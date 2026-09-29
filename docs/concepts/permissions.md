@@ -74,8 +74,7 @@ to every tool (`context.scope`), guard and hook, so your code can limit what it 
 project:
 
 ```ts
-import { defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineTool, z } from 'mayura';
 
 export const myOrder = defineTool({
   id: 'orders.mine',

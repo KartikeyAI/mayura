@@ -18,8 +18,14 @@ for (const name of packages) {
   await assert.rejects(import(`${name}/src/index.js`), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
   await assert.rejects(import(`${name}/dist/index.js`), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 }
-for (const name of ['@mayura/provider-openai', '@mayura/storage', '@mayura/server', '@mayura/server-node', '@mayura/testing', 'better-sqlite3', 'pg', 'zod']) {
+for (const name of ['@mayura/provider-openai', '@mayura/storage', '@mayura/server', '@mayura/server-node', '@mayura/testing', 'better-sqlite3', 'pg']) {
   await assert.rejects(import(name), { code: 'ERR_MODULE_NOT_FOUND' });
+}
+// Schemas need nothing beyond the SDK: its `z` is the Zod it depends on.
+{
+  const { z } = await import('@mayura/sdk');
+  assert.equal(z.object({ id: z.string() })['~standard'].vendor, 'zod');
+  assert.deepEqual(z.object({ id: z.string() }).parse({ id: 'a' }), { id: 'a' });
 }
 
 const input = { '~standard': { version: 1, vendor: 'consumer', validate: value => typeof value === 'string' ? { value: value.length } : { issues: [] } } };

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'mayura';
 
 // The ticket tracker's own model. In a real deployment this lives in your tracker (Jira, Linear, Zendesk, GitHub
 // Issues...) and Mayura reaches it only through that tracker's MCP server. The in-memory tracker below backs the

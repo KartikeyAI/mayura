@@ -23,6 +23,9 @@ The promise covers more than function names:
 - stored data formats, under the separate rules below;
 - documented behaviour, such as failing closed and at-least-once execution of tool effects.
 
+**`z` is Zod 4.** The `z` that `mayura` exports is part of this promise: it stays on Zod 4 (with its minor and patch
+updates) for all of Mayura 1.x, and a move to a new Zod major version is a Mayura major release.
+
 **Deep imports are not covered.** Import only the paths in the package's `exports` map, such as `mayura/workflows`.
 A path into the package's internal files (for example `mayura/lib/...`) can change in any release.
 

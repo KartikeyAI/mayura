@@ -2,7 +2,7 @@ import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatedEnvironment } from 'mayura/helpers';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 // Every setting comes from the environment and is validated once at startup. Nothing is discovered implicitly: no
 // default credentials, and no provider is contacted unless MAYURA_MODEL_PROVIDER says so. `npm run chat` and

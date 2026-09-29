@@ -14,8 +14,8 @@ with a CLI that scaffolds, runs and operates your project.
 
 ## Features
 
-- **Typed agents and tools.** Zod (or any Standard Schema validator) for inputs and outputs, validated at runtime and
-  inferred in TypeScript.
+- **Typed agents and tools.** Schemas for inputs and outputs with the built-in `z` (Zod), or any Standard Schema
+  validator, validated at runtime and inferred in TypeScript.
 - **Any model.** OpenAI, Anthropic, and OpenAI-compatible providers such as Groq, Gemini, Mistral, DeepSeek, xAI,
   OpenRouter, Together, Fireworks, Azure OpenAI and local servers. Route between providers with automatic failover.
 - **Explicit permissions.** A run can use only the models, tools and effects you grant; nothing is implied by
@@ -47,15 +47,14 @@ with a CLI that scaffolds, runs and operates your project.
 Mayura runs on Node.js 22 (22.12 or later) or 24 (24.14.1 or later).
 
 ```bash
-npm install mayura zod
+npm install mayura
 ```
 
 An agent that answers weather questions with a tool, on OpenAI:
 
 ```ts
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const getWeather = defineTool({
   id: 'weather.get', version: '1', description: 'Current weather for a city.',

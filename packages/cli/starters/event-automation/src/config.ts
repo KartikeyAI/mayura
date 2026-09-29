@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { validatedEnvironment } from 'mayura/helpers';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 // Every setting comes from the environment and is validated once at startup. Nothing is discovered implicitly:
 // no config files, no default credentials, and no provider is contacted unless MAYURA_MODEL_PROVIDER says so.

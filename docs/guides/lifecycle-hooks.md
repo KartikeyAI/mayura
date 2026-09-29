@@ -10,8 +10,7 @@ model call, before each tool call, before a result is released, and when the run
 cross-cutting policy and telemetry; use [guards](guardrails.md) to check or redact content itself.
 
 ```ts
-import { defineAgent, defineHook } from 'mayura';
-import { z } from 'zod';
+import { defineAgent, defineHook, z } from 'mayura';
 
 const releasePolicy = defineHook({
   id: 'policy.release',
@@ -84,8 +83,7 @@ A control hook can ask the runtime to run tools before it continues. List the to
 return them as `actions`:
 
 ```ts
-import { defineHook, defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineHook, defineTool, z } from 'mayura';
 
 const assertProjectReadable = defineTool({
   id: 'policy.assert-readable', version: '1', description: 'Fails unless the path is inside the project.',

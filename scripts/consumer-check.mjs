@@ -432,6 +432,9 @@ async function main() {
   await writeFile(npmConfig, '');
   const dependencies = {};
   const reports = [];
+  // Third-party dependencies a base package may have, each reviewed: the SDK's `z` is Zod (MIT, no dependencies, no
+  // installation scripts), at exactly the installed version.
+  const reviewedBaseDependencies = { '@mayura/sdk': { zod: JSON.parse(await readFile(join(workspace, 'node_modules', 'zod', 'package.json'), 'utf8')).version } };
   for (const shortName of packageNames) {
     const directory = join(workspace, 'packages', shortName);
     const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
@@ -449,7 +452,8 @@ async function main() {
     const sourceMaps = inspectSourceMaps(files);
     const packedManifest = JSON.parse(files.find((file) => file.path === 'package.json').content.toString('utf8'));
     for (const [name, version] of Object.entries(packedManifest.dependencies ?? {})) {
-      assert(packageNames.map((value) => `@mayura/${value}`).includes(name), `Unexpected mandatory base dependency: ${name}`);
+      const reviewed = reviewedBaseDependencies[manifest.name]?.[name];
+      assert(reviewed === version || packageNames.map((value) => `@mayura/${value}`).includes(name), `Unexpected mandatory base dependency: ${name}`);
       assert(!String(version).startsWith('workspace:'), 'Workspace protocol leaked into packed package.');
     }
     assert(!packedManifest.optionalDependencies && !packedManifest.peerDependencies, 'Base packages need explicit optional-dependency review.');
@@ -459,7 +463,7 @@ async function main() {
     reports.push({ name: manifest.name, version: manifest.version, tarballBytes: bytes.length, unpackedBytes: files.reduce((sum, file) => sum + file.bytes, 0), files: files.length, sourceMaps });
   }
 
-  // Zod is a chosen consumer dependency, packed from the already-installed local validator.
+  // Zod, packed from the local installation: the SDK's dependency, which the consumer also imports directly.
   const zodDirectory = await realpath(join(workspace, 'node_modules', 'zod'));
   const zodArchive = join(tarballs, 'zod.tgz');
   await runNode([pnpm, 'pack', '--out', zodArchive], zodDirectory);

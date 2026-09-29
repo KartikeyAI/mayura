@@ -1,9 +1,8 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { lstat, mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { defineTool, type AnyTool } from 'mayura';
+import { defineTool, type AnyTool, z } from 'mayura';
 import { confirmBeforeRunning } from 'mayura/terminal';
-import { z } from 'zod';
 
 // The assistant's file tools, confined to one folder (the workspace). This is the whole safety story of the tools, so
 // it is written to be read:

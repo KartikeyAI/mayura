@@ -10,7 +10,7 @@ their own. You pass every source, signal and sink explicitly, which keeps them e
 
 ```ts
 import { retry, validatedEnvironment } from 'mayura/helpers';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const config = await validatedEnvironment({
   schema: z.object({ apiUrl: z.url(), timeoutMs: z.coerce.number().int().positive() }),

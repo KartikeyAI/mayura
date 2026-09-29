@@ -1,8 +1,7 @@
-import { defineAgent, type AgentDefinition } from 'mayura';
+import { defineAgent, type AgentDefinition, z } from 'mayura';
 import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse } from 'mayura/core';
 import { withSkills, type SkillSet } from 'mayura/skills';
 import { askPersonTool } from 'mayura/terminal';
-import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 import { modelPermission, selectModel } from './model.js';
 import { workspaceTools } from './workspace.js';

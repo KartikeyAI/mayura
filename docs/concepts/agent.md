@@ -14,9 +14,8 @@ This example runs offline. `scriptedModel` from `mayura/testing` is a test model
 it, so you can see the whole loop without an API key. It does not read the instructions or reason.
 
 ```ts
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const add = defineTool({
   id: 'math.add',
@@ -121,9 +120,8 @@ enforces on the answer.
 `model:<adapter id>`: `model:openai.responses`, `model:anthropic.messages`, `model:scripted`.
 
 ```ts
-import { defineAgent } from 'mayura';
+import { defineAgent, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const answerer = defineAgent({
   id: 'answerer',

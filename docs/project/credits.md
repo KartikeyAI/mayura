@@ -15,6 +15,7 @@ Apache-2.0. The exact versions are pinned in the repository's lockfile.
 |---|---|---|
 | [Hono](https://hono.dev) and [@hono/node-server](https://github.com/honojs/node-server) | The HTTP server behind `mayura/server-node` and `mayura serve`. | MIT |
 | [Clack](https://github.com/bombshell-dev/clack) | The prompts of the `mayura init` wizard and of terminal chat. | MIT |
+| [Zod](https://zod.dev) | Schemas for agent and tool inputs and outputs: the `z` that `mayura` exports. | MIT |
 
 ## Installed when you need them
 
@@ -27,12 +28,6 @@ Optional peer dependencies: a project installs one only when it imports the entr
 | [node-postgres](https://node-postgres.com) (`pg`) | PostgreSQL storage in `mayura/storage-postgres`. | MIT |
 | [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten) | The QuickJS sandbox that runs model-written code in [Code Mode](../guides/code-mode.md). | MIT |
 | [React](https://react.dev) | The hooks and components of `mayura/client-react`. | MIT |
-
-## Recommended alongside Mayura
-
-| Project | What it is | License |
-|---|---|---|
-| [Zod](https://zod.dev) | The schema library these docs and the starters use for agent and tool inputs and outputs. Any Standard Schema validator works. | MIT |
 
 ## The operator console
 

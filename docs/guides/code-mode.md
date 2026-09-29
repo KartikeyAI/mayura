@@ -12,8 +12,7 @@ tool broker, with its permissions, budget and guards.
 ```ts
 import { createQuickJsSandboxAdapter } from 'mayura/adapter-code-quickjs';
 import { createCodeMode, defineCodeProgram } from 'mayura/code-mode';
-import { Budget, defineTool, invokeTool, type JsonValue, type Outcome } from 'mayura';
-import { z } from 'zod';
+import { Budget, defineTool, invokeTool, type JsonValue, type Outcome, z } from 'mayura';
 
 const price = defineTool({
   id: 'catalog.price', version: '1', description: 'Price of one product in cents.',

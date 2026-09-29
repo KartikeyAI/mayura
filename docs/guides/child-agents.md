@@ -14,9 +14,8 @@ There are three ways to start one:
 - **`runtime.speculate`**: your code runs a few alternative children and keeps at most one verified answer.
 
 ```ts
-import { agentAsTool, createRuntime, defineAgent } from 'mayura';
+import { agentAsTool, createRuntime, defineAgent, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const openai = openAIResponses({
   apiKey: process.env.OPENAI_API_KEY!, model: process.env.OPENAI_MODEL!,

@@ -9,8 +9,7 @@ allow the content, block it, or rewrite it (for example to redact an email addre
 enforced on every run, whatever the model decides to do.
 
 ```ts
-import { defineAgent, type Guard } from 'mayura';
-import { z } from 'zod';
+import { defineAgent, type Guard, z } from 'mayura';
 
 const noInternalCodes: Guard = {
   id: 'no-internal-codes',
@@ -66,8 +65,7 @@ never the original. Each boundary accepts up to 32 guards with unique ids.
 Tools accept guards too. They run in the tool broker around that one tool, and they only allow or block:
 
 ```ts
-import { defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineTool, z } from 'mayura';
 
 const refund = defineTool({
   id: 'orders.refund', version: '1', description: 'Refund an order.',

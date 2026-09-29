@@ -17,10 +17,9 @@ need information only a person has: a corrected address, a choice between two pl
 This workflow checks a refund and waits for approval before paying it. The approver is verified by `verifyHuman`.
 
 ```ts
-import { defineTool } from 'mayura';
+import { defineTool, z } from 'mayura';
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
 
 const refund = z.object({ refundId: z.string(), amountCents: z.number().int().positive() });
 
@@ -110,7 +109,7 @@ the step's output, which later steps can bind to.
 
 ```ts
 import type { WorkflowLifecycleNode } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const pickPlan: WorkflowLifecycleNode = {
   kind: 'human', id: 'pick-plan', dependsOn: ['propose'],
@@ -233,7 +232,7 @@ agent tool needs a person's input that your own code will act on later.
 
 ```ts
 import { createHumanWorkStream } from 'mayura/workstream/humans';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const humans = createHumanWorkStream({
   store, scope, streamId: 'address-checks',

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { z } from 'zod';
+import { z } from 'mayura';
 import { sendDelivery } from './signing.js';
 import { sampleNames, ticketCreatedEvent, type SampleName } from './tracker/samples.js';
 

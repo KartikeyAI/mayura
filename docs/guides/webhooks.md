@@ -18,7 +18,7 @@ It is transport-neutral: you receive the HTTP request with your own server and h
 import { createServer } from 'node:http';
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { createWebhookRuntime, defineWebhookTrigger } from 'mayura/workstream/webhooks';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const store = createSqliteStore({ filename: 'webhooks.sqlite' });
 await store.initialize();

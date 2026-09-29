@@ -16,10 +16,9 @@ the steps must survive a restart or wait for a person, use a [durable workflow](
 This graph trims a piece of text and then counts its characters. It needs no model and no credentials.
 
 ```ts
-import { createRuntime, defineTool } from 'mayura';
+import { createRuntime, defineTool, z } from 'mayura';
 import { defineWorkflow } from 'mayura/workflows';
 import { workflowAsAgent } from 'mayura/workflows/ephemeral';
-import { z } from 'zod';
 
 const text = z.string();
 const summary = z.object({ text: z.string(), characters: z.number().int() });

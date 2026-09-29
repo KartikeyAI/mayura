@@ -35,11 +35,10 @@ npm run dev
 
 ## Option 2: add Mayura to your project
 
-Install Mayura and Zod, the schema library used in these docs (any
-[Standard Schema](https://standardschema.dev) validator works):
+Install Mayura. It includes `z` ([Zod](https://zod.dev)) for schemas, so there is nothing else to add:
 
 ```bash
-npm install mayura zod
+npm install mayura
 ```
 
 Mayura is an ES module package, so your project needs `"type": "module"` in `package.json` (or `.mts` files).
@@ -50,9 +49,8 @@ This agent uses a tool to add two numbers. It runs on a **scripted model** that 
 no API key and no network. It's the same way you test agents.
 
 ```ts
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const add = defineTool({
   id: 'math.add', version: '1', description: 'Add two numbers.',
@@ -105,9 +103,8 @@ Swap the scripted model for a provider. A real model needs your model's prices a
 spend nothing until you set `limits.maxCostMicros`. Costs are in **micros**, millionths of a dollar.
 
 ```ts
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { anthropicMessages } from 'mayura/provider-anthropic';
-import { z } from 'zod';
 
 const add = defineTool({
   id: 'math.add', version: '1', description: 'Add two numbers.',

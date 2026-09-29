@@ -9,9 +9,8 @@ before a run starts: its type is read from the file's own bytes, not only from i
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { createRuntime, defineAgent, media } from 'mayura';
+import { createRuntime, defineAgent, media, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const agent = defineAgent({
   id: 'receipts', version: '1', instructions: 'Read the receipt and report its total.',
@@ -82,8 +81,7 @@ A tool can return media for the model to look at, such as a screenshot. It decla
 and returns `withMedia(output, items)`:
 
 ```ts
-import { defineTool, media, withMedia } from 'mayura';
-import { z } from 'zod';
+import { defineTool, media, withMedia, z } from 'mayura';
 
 const screenshot = defineTool({
   id: 'browser.screenshot', version: '1', description: 'Take a screenshot of the current page.',
@@ -134,10 +132,9 @@ Workflow state holds JSON only. To give a workflow step's agent an image, keep a
 read the media when the step runs, with `agentStep`'s `media` option:
 
 ```ts
-import { defineAgent } from 'mayura';
+import { defineAgent, z } from 'mayura';
 import { mediaFromArtifact } from 'mayura/artifacts';
 import { agentStep } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
 
 const receiptAgent = defineAgent({
   id: 'receipts', version: '1', instructions: 'Read the receipt and report its total.', model, tools: [],

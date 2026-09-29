@@ -16,7 +16,7 @@ const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url))
 const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote'];
 const expectedDependencies = {
   core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core', '@mayura/tools'],
-  sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools'], server: ['@mayura/core', '@mayura/runtime'],
+  sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools', 'zod'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'client-react': ['@mayura/client'],
   'exporter-otlp': ['@mayura/core', '@mayura/observability'],
@@ -157,6 +157,21 @@ async function main() {
     packages.set(name, { archive: pathToFileURL(destination).href, manifest });
     reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
+  // Zod: the root import's `z`, the SDK's one third-party dependency. Reviewed as MIT, with no dependencies and no
+  // installation scripts, and pinned to the installed version.
+  {
+    const directory = await realpath(join(workspace, 'packages', 'sdk', 'node_modules', 'zod'));
+    const original = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(packages.get('@mayura/sdk').manifest.dependencies.zod, original.version, 'The SDK must pin the packed zod version.');
+    assert.equal(original.license, 'MIT');
+    for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(original.scripts?.[script], undefined, 'zod has an unreviewed installation script.');
+    const destination = join(tarballs, 'zod.tgz'); await run([pnpm, 'pack', '--out', destination], directory);
+    const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
+    assert.equal(manifest.name, 'zod'); assert.equal(manifest.version, original.version);
+    assert.deepEqual(manifest.dependencies ?? {}, {}); assert.deepEqual(manifest.optionalDependencies ?? {}, {}); assert.deepEqual(manifest.peerDependencies ?? {}, {});
+    packages.set('zod', { archive: pathToFileURL(destination).href, manifest });
+    reports.push({ name: 'zod', version: manifest.version, tarballBytes: bytes.length, files: files.size });
+  }
   const quickjsVariant = await realpath(join(workspace, 'packages', 'adapter-code-quickjs', 'node_modules', '@jitl', 'quickjs-wasmfile-release-sync'));
   const quickjsDirectories = new Map([
     ['@jitl/quickjs-ffi-types', await realpath(join(dirname(quickjsVariant), 'quickjs-ffi-types'))],
@@ -240,9 +255,9 @@ async function main() {
     };
     roots.forEach(visit); return result;
   };
-  assert.deepEqual([...closure(['@mayura/sdk'])].sort(), ['@mayura/core', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
+  assert.deepEqual([...closure(['@mayura/sdk'])].sort(), ['@mayura/core', '@mayura/runtime', '@mayura/sdk', '@mayura/tools', 'zod']);
   assert.deepEqual([...closure(['@mayura/sdk', '@mayura/guardrails', '@mayura/observability'])].sort(),
-    ['@mayura/core', '@mayura/guardrails', '@mayura/observability', '@mayura/runtime', '@mayura/sdk', '@mayura/tools']);
+    ['@mayura/core', '@mayura/guardrails', '@mayura/observability', '@mayura/runtime', '@mayura/sdk', '@mayura/tools', 'zod']);
   assert.deepEqual([...closure(['@mayura/client-react'])].sort(), ['@mayura/client', '@mayura/client-react', 'react']);
   assert.deepEqual([...closure(['@mayura/client-react', '@types/react'])].sort(), ['@mayura/client', '@mayura/client-react', '@types/react', 'csstype', 'react']);
   const profiles = [];

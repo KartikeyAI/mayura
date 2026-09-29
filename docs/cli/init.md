@@ -137,14 +137,14 @@ Browse the source at
 
 | Template | What it shows | Extra packages |
 |---|---|---|
-| `typed-tool-runner` | An agent calling a typed tool | `zod` |
-| `basic-agent` | The smallest agent with a structured answer | `zod` |
-| `durable-approval` | A durable workflow step that waits for human approval, on SQLite | `better-sqlite3`, `zod` |
-| `parallel-research` | Two child agents run in parallel and joined | `zod` |
+| `typed-tool-runner` | An agent calling a typed tool | none |
+| `basic-agent` | The smallest agent with a structured answer | none |
+| `durable-approval` | A durable workflow step that waits for human approval, on SQLite | `better-sqlite3` |
+| `parallel-research` | Two child agents run in parallel and joined | none |
 | `native-memory` | Scoped memory with provenance, correction and deletion | `better-sqlite3` |
 | `guarded-streaming-app` | An authenticated local server, guarded output and the browser client | none |
 | `code-mode-workflow` | An approval-gated durable Code Mode workflow in the QuickJS sandbox | `better-sqlite3`, `quickjs-emscripten-core`, `@jitl/quickjs-wasmfile-release-sync` |
-| `capability-policy` | A tool that needs an explicit permission, granted and denied | `zod` |
+| `capability-policy` | A tool that needs an explicit permission, granted and denied | none |
 
 Browse the source at
 [packages/cli/templates](https://github.com/KartikeyAI/mayura/blob/main/packages/cli/templates).

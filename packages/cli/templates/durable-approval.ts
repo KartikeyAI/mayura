@@ -1,7 +1,7 @@
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { defineTool } from 'mayura/tools';
 import { createScheduledWorkflowRuntime, defineWorkflow } from 'mayura/workflows';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 let executions = 0; const schema = z.number().int().min(0).max(1_000);
 const tool = defineTool({ id: 'records.approved-write', version: '1.0.0', description: 'Approval-gated local write fixture.',

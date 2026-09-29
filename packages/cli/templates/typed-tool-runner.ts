@@ -1,6 +1,5 @@
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const add = defineTool({ id: 'math.add', version: '1.0.0', description: 'Add two finite numbers.',
   input: z.object({ left: z.number().finite(), right: z.number().finite() }), output: z.object({ sum: z.number().finite() }),

@@ -1,6 +1,5 @@
 import type { ModelAdapter, ModelRequest, ModelResponse } from 'mayura/core';
-import { defineAgent, defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineAgent, defineTool, z } from 'mayura';
 import type { ModelSettings } from './config.js';
 import { jsonSchema, selectModel } from './model.js';
 import { refundRequest, type RefundRequest } from './workflow.js';

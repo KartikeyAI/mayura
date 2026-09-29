@@ -149,9 +149,8 @@ starter:
 
 ```ts
 import { createHash } from 'node:crypto';
-import { defineTool } from 'mayura';
+import { defineTool, z } from 'mayura';
 import { createNativeMemory } from 'mayura/memory';
-import { z } from 'zod';
 
 const recall = defineTool({
   id: 'memory.recall', version: '1', effects: 'read', capabilities: ['memory:read'],

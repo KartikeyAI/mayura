@@ -12,9 +12,8 @@ Adapters never look for credentials in the environment, never pick a model or a 
 follow redirects and make no request until an agent calls them. You pass everything explicitly.
 
 ```ts
-import { createRuntime, defineAgent } from 'mayura';
+import { createRuntime, defineAgent, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const Answer = z.object({ answer: z.string() });
 

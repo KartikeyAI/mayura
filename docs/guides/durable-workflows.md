@@ -16,10 +16,9 @@ yet, start there for the vocabulary.
 This workflow reserves stock and then sends a confirmation. It runs on SQLite (install `better-sqlite3`).
 
 ```ts
-import { defineTool } from 'mayura';
+import { defineTool, z } from 'mayura';
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { createWorkflowLifecycleRuntime, defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
 
 const order = z.object({ orderId: z.string(), email: z.string() });
 const reservation = z.object({ orderId: z.string(), email: z.string(), reservationId: z.string() });
@@ -247,7 +246,7 @@ Two step types stop a run until a person acts:
 
 ```ts
 import type { WorkflowLifecycleNode } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const review: WorkflowLifecycleNode = {
   kind: 'human', id: 'review', dependsOn: ['draft'],
@@ -273,7 +272,7 @@ steps bind to like any other output:
 
 ```ts
 import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const checkout = defineWorkflowLifecycle({
   id: 'orders.checkout', version: '1', input: order, output: z.object({ messageId: z.string() }),

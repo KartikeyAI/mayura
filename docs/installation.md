@@ -4,11 +4,12 @@ description: "Requirements, the optional packages each part of Mayura needs, and
 ---
 
 ```bash
-npm install mayura zod
+npm install mayura
 ```
 
-pnpm, Yarn and Bun work too. Zod is the schema library these docs use; any validator that implements
-[Standard Schema](https://standardschema.dev) works, and Mayura itself does not depend on Zod.
+pnpm, Yarn and Bun work too. Schemas need nothing else: `mayura` exports `z`, which is [Zod](https://zod.dev) 4, so
+`import { defineTool, z } from 'mayura'` is all these docs use. Any other validator that implements
+[Standard Schema](https://standardschema.dev) works as well, including a copy of Zod your project already has.
 
 ## Requirements
 

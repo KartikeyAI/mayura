@@ -30,6 +30,7 @@ export function agentGuide(options: { readonly kind: 'starter' | 'template'; rea
     '## Rules',
     '',
     '- Import from `mayura` or `mayura/<entry point>` (such as `mayura/provider-openai`), never from `@mayura/...`.',
+    "- Schemas use `z` from `mayura` (it is Zod 4): `import { defineTool, z } from 'mayura'`. Do not add `zod`.",
     '- Nothing is allowed by default. Grant what a run needs in `createRuntime({ permissions: { allow: [...] } })`:',
     '  `model:<adapter id>`, `tool:<tool id>`, `effect:<read|write|host>` for tools with effects, and every',
     '  capability a tool declares.',

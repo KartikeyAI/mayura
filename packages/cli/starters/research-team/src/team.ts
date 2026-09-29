@@ -1,6 +1,5 @@
 import type { AnyTool, JsonValue, ModelAdapter, ModelRequest, ModelResponse } from 'mayura';
-import { defineAgent } from 'mayura';
-import { z } from 'zod';
+import { defineAgent, z } from 'mayura';
 import type { ModelSettings } from './config.js';
 import { MAX_RESEARCHERS } from './config.js';
 import { readOutput, sentences, sourceId, terms } from './library/index.js';

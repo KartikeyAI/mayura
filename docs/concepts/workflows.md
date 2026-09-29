@@ -23,9 +23,8 @@ as a tool.
 ## A workflow at a glance
 
 ```ts
-import { defineTool } from 'mayura';
+import { defineTool, z } from 'mayura';
 import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
 
 const invoice = z.object({ invoiceId: z.string(), amountCents: z.number().int() });
 

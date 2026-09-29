@@ -1,6 +1,5 @@
-import { agentAsTool, createRuntime, defineAgent } from 'mayura';
+import { agentAsTool, createRuntime, defineAgent, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const input = z.object({ topic: z.string() }); const finding = z.object({ finding: z.string() });
 const child = (id: string, value: string) => defineAgent({ id, version: '1.0.0', instructions: 'Return one deterministic review finding.',

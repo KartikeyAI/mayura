@@ -11,8 +11,7 @@ allowed to use it, its input is validated before your code runs, and its output 
 ## A read-only tool
 
 ```ts
-import { defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineTool, z } from 'mayura';
 
 export const lookupOrder = defineTool({
   id: 'orders.lookup',
@@ -129,8 +128,7 @@ tool with the same id; `extraTimeoutMs` lengthens its timeout for checks that wa
 description.
 
 ```ts
-import { ToolRefusal, defineTool, withPreflight } from 'mayura';
-import { z } from 'zod';
+import { ToolRefusal, defineTool, withPreflight, z } from 'mayura';
 
 const refundOrder = defineTool({
   id: 'orders.refund',

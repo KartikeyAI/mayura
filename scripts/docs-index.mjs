@@ -43,6 +43,7 @@ const summary = 'Mayura is a TypeScript framework for building AI agents, typed 
   + '`mayura/provider-openai` or `mayura/workflows/lifecycle`. The `mayura` CLI creates, runs and operates projects.';
 const rules = [
   'Import from `mayura` or `mayura/<entry point>`, never from `@mayura/...`.',
+  'Schemas use `z` from `mayura` (it is Zod 4); do not install or import `zod` separately.',
   'Nothing is allowed by default: grant `model:<adapter id>`, `tool:<tool id>`, `effect:<read|write|host>` and each tool capability in `createRuntime({ permissions: { allow } })`.',
   'Costs are in micros (1,000,000 = 1 US dollar). A run may spend nothing until `limits.maxCostMicros` is set; model adapters need prices and a per-call `maxCostMicros`.',
   'Mayura generates the JSON Schemas providers need from Zod schemas; providers accept only strict ones, so use `.nullable()`, not `.optional()`, for fields a model may leave empty.',

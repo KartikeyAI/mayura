@@ -41,12 +41,14 @@ describe('@mayura/cli initialization', () => {
     await applyProjectPlan(plan); const project = await readProject(join(target, 'mayura.project.json'));
     expect(project).toMatchObject({ format: 'mayura.project.v1', template: 'basic-agent' });
     expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8')).dependencies).toEqual({
-      mayura: cliVersion, zod: '4.6.5',
+      mayura: cliVersion,
     });
     // Coding assistants are pointed at the documentation inside the installed package, and at this project's scripts.
     const guide = await readFile(join(target, 'AGENTS.md'), 'utf8');
     expect(guide).toContain('node_modules/mayura/docs/README.md'); expect(guide).toContain('node_modules/mayura/llms-full.txt');
     expect(guide).toContain('`npm run build`'); expect(await readFile(join(target, 'CLAUDE.md'), 'utf8')).toBe('@AGENTS.md\n');
+    expect(guide).toContain("Schemas use `z` from `mayura`"); // so assistants do not add a separate zod
+    expect(await readFile(join(target, 'src', 'index.ts'), 'utf8')).not.toContain("from 'zod'");
   });
 
   it('shows a bounded diff and requires exact confirmation before replacement', async () => {

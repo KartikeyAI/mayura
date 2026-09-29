@@ -1,5 +1,5 @@
 import { defineMcpTool, type McpClient } from 'mayura/adapter-mcp';
-import { z } from 'zod';
+import { z } from 'mayura';
 import { jsonSchema } from './model.js';
 import { assignee, label, ticketId } from './tracker/tickets.js';
 

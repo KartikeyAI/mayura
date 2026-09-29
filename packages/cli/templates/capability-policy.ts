@@ -1,6 +1,5 @@
-import { createRuntime, defineAgent, defineTool } from 'mayura';
+import { createRuntime, defineAgent, defineTool, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 let executions = 0;
 const protectedWrite = defineTool({ id: 'records.write', version: '1.0.0', description: 'Illustrate an explicitly gated write.',

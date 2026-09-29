@@ -34,18 +34,18 @@ const descriptions: Readonly<Record<TemplateName, string>> = Object.freeze({
 
 /** What a template's project installs: `mayura`, and the optional peers the parts it uses need. */
 const dependencies: Readonly<Record<TemplateName, readonly string[]>> = Object.freeze({
-  'typed-tool-runner': ['mayura', 'zod'],
-  'basic-agent': ['mayura', 'zod'],
-  'durable-approval': ['better-sqlite3', 'mayura', 'zod'],
-  'parallel-research': ['mayura', 'zod'],
+  'typed-tool-runner': ['mayura'],
+  'basic-agent': ['mayura'],
+  'durable-approval': ['better-sqlite3', 'mayura'],
+  'parallel-research': ['mayura'],
   'native-memory': ['better-sqlite3', 'mayura'],
   'guarded-streaming-app': ['mayura'],
   'code-mode-workflow': ['@jitl/quickjs-wasmfile-release-sync', 'better-sqlite3', 'mayura', 'quickjs-emscripten-core'],
-  'capability-policy': ['mayura', 'zod'],
+  'capability-policy': ['mayura'],
 });
 /** Versions of the third-party packages generated projects install; kept equal to the workspace's (tested). */
 export const PEER_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
-  zod: '4.6.5', 'better-sqlite3': '13.0.3', pg: '8.23.0', '@jitl/quickjs-wasmfile-release-sync': '0.32.0', 'quickjs-emscripten-core': '0.32.0',
+  'better-sqlite3': '13.0.3', pg: '8.23.0', '@jitl/quickjs-wasmfile-release-sync': '0.32.0', 'quickjs-emscripten-core': '0.32.0',
 });
 
 /** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */

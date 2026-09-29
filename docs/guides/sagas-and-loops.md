@@ -19,11 +19,10 @@ with its own approvals, human requests and timers.
 This saga reserves stock and then charges the customer. If the charge fails, the reservation is released.
 
 ```ts
-import { defineTool, type AnyTool } from 'mayura';
+import { defineTool, type AnyTool, z } from 'mayura';
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
 import { createWorkflowSagaRuntime, defineWorkflowSaga } from 'mayura/workflows/sagas';
-import { z } from 'zod';
 
 const order = z.object({ orderId: z.string(), amountCents: z.number().int() });
 const reservation = z.object({ orderId: z.string(), amountCents: z.number().int(), reservationId: z.string() });
@@ -115,7 +114,7 @@ iteration's input and a boolean that says whether to continue.
 
 ```ts
 import { createWorkflowLoopRuntime, defineWorkflowLoop } from 'mayura/workflows/loops';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 // `checkJob` is a lifecycle workflow whose output looks like { jobId, pending, result }.
 const waitForJob = defineWorkflowLoop({

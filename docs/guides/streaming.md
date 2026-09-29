@@ -11,9 +11,8 @@ Streamed text is released in batches, and each batch passes your streaming guard
 output is still validated and guarded as a whole, and it stays the authoritative result of the run.
 
 ```ts
-import { createRuntime, defineAgent, type Guard } from 'mayura';
+import { createRuntime, defineAgent, type Guard, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const noCardNumbers: Guard = {
   id: 'no-card-numbers',

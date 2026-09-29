@@ -90,7 +90,7 @@ assert.deepEqual(packedManifest.bin, { mayura: './lib/cli/dist/bin.js' }, 'CLI e
 for (const [name, range] of Object.entries({ ...packedManifest.dependencies, ...packedManifest.peerDependencies })) {
   assert(!name.startsWith('@mayura/') && !String(range).startsWith('workspace:'), `mayura depends on ${name}@${range}.`);
 }
-assert.deepEqual(Object.keys(packedManifest.dependencies).sort(), ['@clack/prompts', '@hono/node-server', 'hono'], 'mayura gained an unreviewed required dependency.');
+assert.deepEqual(Object.keys(packedManifest.dependencies).sort(), ['@clack/prompts', '@hono/node-server', 'hono', 'zod'], 'mayura gained an unreviewed required dependency.');
 assert.deepEqual(Object.keys(packedManifest.peerDependencies).sort(), ['@jitl/quickjs-wasmfile-release-sync', 'better-sqlite3', 'pg', 'quickjs-emscripten-core', 'react'],
   'mayura gained an unreviewed peer dependency.');
 assert(Object.values(packedManifest.peerDependenciesMeta).every(meta => meta.optional === true), 'Every peer of mayura must be optional.');

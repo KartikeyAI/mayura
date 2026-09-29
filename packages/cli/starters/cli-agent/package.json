@@ -19,8 +19,7 @@
     "ask": "node dist/src/cli.js"
   },
   "dependencies": {
-    "mayura": "workspace:*",
-    "zod": "4.6.5"
+    "mayura": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

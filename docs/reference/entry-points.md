@@ -32,7 +32,8 @@ points listed:
 npm install mayura better-sqlite3
 ```
 
-Most applications also install a schema validator. Zod is the reference choice; any Standard Schema validator works.
+Schemas need no extra package: the root import exports `z` ([Zod](https://zod.dev) 4). Any other Standard Schema
+validator works too.
 
 ## Core SDK
 

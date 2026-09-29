@@ -1,6 +1,5 @@
-import { defineAgent, createRuntime } from 'mayura';
+import { defineAgent, createRuntime, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const required = name => {
   const value = process.env[name];

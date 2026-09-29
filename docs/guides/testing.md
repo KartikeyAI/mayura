@@ -14,9 +14,8 @@ with no inference and no network; and `testTool`, which runs one tool on its own
 ```ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createRuntime, defineAgent, defineTool, type ModelAdapter } from 'mayura';
+import { createRuntime, defineAgent, defineTool, type ModelAdapter, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const lookupOrder = defineTool({
   id: 'orders.lookup', version: '1', description: 'Look up an order by id.',
@@ -146,9 +145,8 @@ runs a parent that calls a child through `agentAsTool`, with no key and no netwo
 pieces of its JSON text, then the complete response, as a provider's would:
 
 ```ts
-import { defineAgent } from 'mayura';
+import { defineAgent, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const writer = defineAgent({
   id: 'writer', version: '1', instructions: 'Write.', input: z.string(), output: z.object({ reply: z.string() }), tools: [],

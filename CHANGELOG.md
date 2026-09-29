@@ -6,6 +6,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Added
 
+- **`z` from `mayura`.** The root import exports `z` (Zod 4), so a project needs no separate schema library: `npm install mayura` and `import { defineTool, z } from 'mayura'`. Zod 4.6.5 (MIT, no dependencies, no install scripts) is now a dependency of the package, reviewed like Hono and Clack. Any other Standard Schema validator still works, including a project's own copy of Zod; Mayura never checks where a schema comes from. `z` stays on Zod 4 for all of 1.x (see Versioning). The documentation, README, templates, starters and examples import `z` from `mayura`, templates and starters no longer install `zod`, and the assistant rules in `llms.txt` and generated `AGENTS.md` files say not to add it.
 - Documentation: a Credits page (`docs/project/credits.md`) naming the open-source projects and open standards Mayura is built on, what each one does in Mayura, and its license.
 
 ### Fixed

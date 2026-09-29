@@ -31,7 +31,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from 'mayura/client';
 import { createHeadlessRunStore, type HeadlessRunStore } from 'mayura/client/headless';
 import { useMayuraRun, useMayuraRunActivity } from 'mayura/client-react';
-import { z } from 'zod';
+import { z } from 'mayura';
 
 const Reply = z.object({ reply: z.string() });
 const client = createClient({ baseUrl: `${window.location.origin}/`, token: () => sessionToken() });

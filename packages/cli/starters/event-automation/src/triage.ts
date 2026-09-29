@@ -1,7 +1,6 @@
 import type { ModelAdapter, ModelRequest, ModelResponse } from 'mayura/core';
-import { defineAgent, defineTool } from 'mayura';
+import { defineAgent, defineTool, z } from 'mayura';
 import { agentStep } from 'mayura/workflows/lifecycle';
-import { z } from 'zod';
 import type { ModelSettings } from './config.js';
 import { jsonSchema, modelPermission, selectModel } from './model.js';
 import type { TrackerTools } from './tracker-tools.js';

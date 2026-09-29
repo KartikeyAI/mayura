@@ -255,6 +255,8 @@ describe('generated project versions', () => {
     expect(PEER_VERSIONS['@jitl/quickjs-wasmfile-release-sync']).toBe(quickjs['@jitl/quickjs-wasmfile-release-sync']);
     for (const starter of starters()) {
       const manifest = await read(`../starters/${starter.name}/package.json`);
+      // Schemas come from `mayura` itself (`z`), so a starter never needs its own validator.
+      expect(manifest.dependencies ?? {}, starter.name).not.toHaveProperty('zod');
       for (const [name, version] of Object.entries(manifest.dependencies ?? {})) if (name in PEER_VERSIONS) expect(version, `${starter.name} ${name}`).toBe(PEER_VERSIONS[name]);
     }
   });

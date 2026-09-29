@@ -21,11 +21,10 @@ offline: the scripted model stands in for a real one.
 
 ```ts
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { defineAgent } from 'mayura';
+import { defineAgent, z } from 'mayura';
 import { createClient } from 'mayura/client';
 import { listenAgentServer } from 'mayura/server-node';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const Answer = z.object({ answer: z.number() });
 
@@ -112,8 +111,7 @@ scope; anyone else gets 404, as if the run did not exist. Each scope and agent p
 that scope, so tools see the caller in `context.scope` and can use it to load only that caller's data:
 
 ```ts
-import { defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineTool, z } from 'mayura';
 
 export const listOrders = defineTool({
   id: 'orders.list',

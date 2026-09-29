@@ -19,7 +19,7 @@ const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8'))
 const policy = JSON.parse(await readFile(join(workspace, 'compatibility', 'api-stability.json'), 'utf8'));
 const internal = new Set(policy.internalPackages);
 /** Always installed with `mayura`: small, pure JavaScript. */
-const required = new Set(['@clack/prompts', 'hono', '@hono/node-server']);
+const required = new Set(['@clack/prompts', 'hono', '@hono/node-server', 'zod']);
 
 /** The public workspace packages: short name, manifest and directory. */
 export async function workspacePackages() {

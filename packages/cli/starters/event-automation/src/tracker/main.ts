@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'mayura';
 import { startTrackerMcpServer } from './mcp-server.js';
 import { sampleTickets } from './samples.js';
 import { memoryTracker } from './tickets.js';

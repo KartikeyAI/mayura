@@ -13,9 +13,8 @@ The run budget comes from the runtime's `limits.maxCostMicros`, and its default 
 ## A budgeted agent
 
 ```ts
-import { createRuntime, defineAgent } from 'mayura';
+import { createRuntime, defineAgent, z } from 'mayura';
 import { openAIResponses } from 'mayura/provider-openai';
-import { z } from 'zod';
 
 const agent = defineAgent({
   id: 'summarizer',
@@ -95,8 +94,7 @@ SMS, a search query. It is reserved before the tool runs. If the tool does not s
 charged the full amount. To charge less, report the real cost once from inside `execute`:
 
 ```ts
-import { defineTool } from 'mayura';
-import { z } from 'zod';
+import { defineTool, z } from 'mayura';
 
 export const sendSms = defineTool({
   id: 'sms.send',

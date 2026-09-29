@@ -1,6 +1,5 @@
-import { createRuntime, defineAgent } from 'mayura';
+import { createRuntime, defineAgent, z } from 'mayura';
 import { scriptedModel } from 'mayura/testing';
-import { z } from 'zod';
 
 const agent = defineAgent({ id: 'starter.basic-agent', version: '1.0.0', instructions: 'Return a structured greeting.',
   input: z.object({ name: z.string().min(1).max(80) }), output: z.object({ greeting: z.string() }), tools: [],

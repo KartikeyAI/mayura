@@ -11,9 +11,8 @@ Mayura does not connect to MCP servers itself, discover their tools or read thei
 You connect with an MCP client of your choice, pick each remote tool you want, and declare what it is allowed to do.
 
 ```ts
-import { createRuntime, defineAgent } from 'mayura';
+import { createRuntime, defineAgent, z } from 'mayura';
 import { defineMcpTool } from 'mayura/adapter-mcp';
-import { z } from 'zod';
 
 const IssueInput = z.object({ title: z.string().max(200), body: z.string().max(10_000) });
 const IssueOutput = z.object({ number: z.number().int(), url: z.string() });

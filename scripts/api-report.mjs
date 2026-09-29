@@ -68,12 +68,25 @@ function target(from, specifier) {
   const exported = entry.manifest.exports[rest.length ? `./${rest.join('/')}` : '.'];
   return join(entry.directory, exported.types);
 }
+/** A third-party package re-exported as public API (`z` from `zod`), as `name@major`: only a new major changes it. */
+async function externalPackage(file, specifier) {
+  for (let directory = dirname(file); ; directory = dirname(directory)) {
+    const manifest = join(directory, 'node_modules', specifier, 'package.json');
+    if (existsSync(manifest)) return `${specifier}@${JSON.parse(await readFile(manifest, 'utf8')).version.split('.')[0]}`;
+    assert(dirname(directory) !== directory, `Cannot find ${specifier}, re-exported by ${file}.`);
+  }
+}
 async function exportsOf(file, seen = new Set()) {
   if (seen.has(file)) return new Map(); seen.add(file);
   assert(existsSync(file), `Missing declaration file ${file}; run pnpm build.`);
   const module = await parse(file); const result = new Map();
   for (const [name, value] of module.declarations) if (value.exported) result.set(name, value);
   for (const { names, from } of module.named) {
+    if (from && !from.startsWith('.') && !from.startsWith('@mayura/')) {
+      const external = await externalPackage(file, from);
+      for (const [local, exported] of names) result.set(exported, { kind: 'external', text: `${external}#${local}` });
+      continue;
+    }
     const source = from ? await exportsOf(target(file, from), new Set(seen)) : undefined;
     for (const [local, exported] of names) {
       const through = !source && !module.declarations.has(local) ? module.imports.get(local) : undefined;
