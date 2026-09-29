@@ -1,6 +1,6 @@
 ---
 title: "Deployment"
-description: "Run a Mayura app in production: one application module and three processes, on containers, Kubernetes, managed platforms, virtual machines or inside an app you already run."
+description: "Run a Mayura app in production: on containers, Kubernetes, managed platforms, virtual machines, serverless functions or inside an app you already run."
 ---
 
 A production Mayura app is one compiled application module run in three roles from the same build:
@@ -36,11 +36,13 @@ only in how the processes are started and kept running. Mayura needs Node.js 22 
 | [Process platforms](#platforms-with-process-types): Render, Railway, Heroku | a web process | a worker process | the release or pre-deploy command |
 | [Virtual machines](#virtual-machines) | a systemd service | a systemd service | a step in your deploy script |
 | [Inside an existing app](#inside-an-existing-nodejs-app) | your framework's `/v1/*` route | `mayura worker` | `mayura migrate` |
+| [Serverless functions](#serverless-functions): AWS Lambda, Vercel, Cloud Run | a request-bound function | a scheduled one-shot function or job | a step in your pipeline |
 
-Two rules hold everywhere. The worker must keep running: a platform that scales it to zero, or stops its CPU between
-requests, stops your workflows too. And the server keeps working after it responds, because agent runs continue in
-the process that accepted them, so it needs CPU between requests as well. Serverless functions and edge runtimes
-break both rules and are not supported yet; see [Serverless and edge](#serverless-and-edge).
+On every target except serverless functions, two rules hold. The worker keeps running: a platform that scales it to
+zero, or stops its CPU between requests, stops your workflows too. And the server keeps working after it responds,
+because agent runs continue in the process that accepted them, so it needs CPU between requests as well. Serverless
+functions work the other way: runs finish inside their request and workflows advance on a schedule; see
+[Serverless functions](#serverless-functions). Edge runtimes are planned for 1.1.
 
 ## The application module
 
@@ -398,19 +400,134 @@ repository's `examples/embedded-handler.mjs` runs this end to end.
 Durable workflows still need `mayura worker`, and storage still needs `mayura migrate`: give your module `worker()`
 and `migrate()` and run those two commands next to your app.
 
-## Serverless and edge
+## Serverless functions
 
-Serverless functions (AWS Lambda, Vercel Functions, Netlify Functions, Cloud Run functions) and edge runtimes
-(Cloudflare Workers, Deno, Bun) are not supported yet:
+AWS Lambda, Vercel Functions and Google Cloud Run can run Mayura as functions: short-lived instances that handle
+requests and may be frozen or stopped as soon as they respond. Four settings make that safe:
 
-- durable workflows need a worker that keeps running, and a function stops between invocations;
-- an agent run continues in the process that accepted it, so a function frozen or stopped after it responds ends
-  the run as `outcome_unknown`;
-- long runs and live event streams outlast function time limits;
-- Mayura is tested on Node.js only.
+- **Runs finish inside their request.** Mount the API with `runExecution: 'request'` and `runRecords` (see
+  [Request-bound runs](server-and-client.md#request-bound-runs)): each run finishes before its response, and any
+  instance can read it afterwards. Keep each agent's `limits.maxDurationMs`, plus the server's `requestTimeoutMs`,
+  under the function's time limit. Work that takes longer belongs in a durable workflow.
+- **Workflows advance on a schedule.** A scheduled invocation calls `worker.runOnce({ budgetMs })` every minute; it
+  advances everything that is due and returns (see [Run once](../cli/run.md#run-once)). Keep the budget under the
+  function's time limit by at least your longest tool's `timeoutMs`. A step cut off by a timeout or a crash is settled
+  as unknown by a later invocation, and never run twice.
+- **Small connection pools.** Every instance opens its own pool, so use `pool: { max: 1 }` and your provider's pooled
+  connection string (see [Storage](storage.md#postgresql)).
+- **Migrations from your pipeline.** Run `mayura migrate` from CI before you release new functions.
 
-The browser-safe `mayura/client` works anywhere `fetch` does, so a serverless or edge app can call a Mayura server
-that runs on one of the targets above.
+One module holds all of it; each platform's entry points below only call into it:
+
+```ts
+// src/mayura.ts
+import { createAgentServer } from 'mayura/server';
+import { createAggregateRunRecords } from 'mayura/storage-contracts';
+import { createPostgresStore } from 'mayura/storage-postgres';
+import { createWorkflowLeadership, createWorkflowWorker } from 'mayura/workflows';
+import { createWorkflowLifecycleHost } from 'mayura/workflows/lifecycle';
+
+const store = createPostgresStore({ connectionString: process.env['DATABASE_URL']!, pool: { max: 1 } });
+const ready = store.initialize();
+
+const api = createAgentServer({
+  publicOrigin: 'https://agents.example.com', mounted: true, agents, authenticate,
+  runRecords: createAggregateRunRecords(store),
+  runExecution: 'request',
+});
+
+/** Answer one request to Mayura's API. */
+export async function handle(request: Request): Promise<Response> {
+  await ready;
+  return api.fetch(request);
+}
+
+/** Advance every workflow that is due, then return: for the scheduled invocation. */
+export async function advanceWorkflows() {
+  await ready;
+  const host = createWorkflowLifecycleHost({ store, scope, definitions, permissions, policyVersion: '1', maxCostMicros });
+  const leadership = createWorkflowLeadership({ store, scope, role: 'workflows', holderId: crypto.randomUUID() });
+  return createWorkflowWorker({ units: [host], leadership }).runOnce({ budgetMs: 50_000 });
+}
+```
+
+### Vercel
+
+A route for the API and a cron route for workflows, in a Next.js app on the Node.js runtime:
+
+```ts
+// app/v1/[...path]/route.ts
+import { handle } from '@/src/mayura';
+
+export const runtime = 'nodejs';
+export const maxDuration = 300; // seconds: above maxDurationMs plus requestTimeoutMs
+export const GET = handle;
+export const POST = handle;
+```
+
+```ts
+// app/api/advance-workflows/route.ts
+import { advanceWorkflows } from '@/src/mayura';
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+export async function GET(request: Request): Promise<Response> {
+  // Vercel sends your project's CRON_SECRET with every cron invocation; refuse anything else.
+  if (request.headers.get('authorization') !== `Bearer ${process.env['CRON_SECRET']}`) return new Response('Unauthorized', { status: 401 });
+  return Response.json(await advanceWorkflows());
+}
+```
+
+```json
+{ "crons": [{ "path": "/api/advance-workflows", "schedule": "* * * * *" }] }
+```
+
+The last block is `vercel.json`. Set `CRON_SECRET` in the project's environment variables. How often cron jobs may run
+depends on your Vercel plan.
+
+### AWS Lambda
+
+One function answers the API through a function URL; a second one, invoked every minute by EventBridge Scheduler,
+advances workflows. Give the second a timeout above its budget, such as 60 seconds.
+
+```ts
+// api.ts: the handler of a Lambda function with a function URL
+import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { handle } from './mayura.js';
+
+export async function handler(event: APIGatewayProxyEventV2) {
+  const query = event.rawQueryString ? `?${event.rawQueryString}` : '';
+  const body = event.body === undefined ? undefined : event.isBase64Encoded ? Buffer.from(event.body, 'base64') : event.body;
+  const response = await handle(new Request(`https://${event.requestContext.domainName}${event.rawPath}${query}`,
+    { method: event.requestContext.http.method, headers: event.headers as Record<string, string>, body }));
+  return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: await response.text() };
+}
+```
+
+```ts
+// workflows.ts: the handler EventBridge Scheduler invokes every minute
+import { advanceWorkflows } from './mayura.js';
+
+export const handler = () => advanceWorkflows();
+```
+
+A buffered Lambda response delivers event streams only when they end; runs are request-bound, so `run.result()` is
+ready as soon as the submission returns.
+
+### Google Cloud Run
+
+Deploy the server as a service with request-based billing, where the CPU runs only during requests, and set
+`runExecution: 'request'` as above; your module's `server()` can pass it to `listenProductionServer`. Advance workflows
+with a Cloud Run job that runs `mayura worker --app dist/app.js --once --budget-ms 50000`, executed every minute by
+Cloud Scheduler, and run `mayura migrate` as another job before each release. With instance-based billing, where the
+CPU is always allocated, the [managed container](#managed-container-platforms) setup works as it is.
+
+## Edge runtimes
+
+Cloudflare Workers, Deno and Bun are not supported yet; support is planned for Mayura 1.1. The browser-safe
+`mayura/client` already works anywhere `fetch` does, so an app on an edge runtime can call a Mayura server that runs on
+one of the targets above.
 
 ## Environment and secrets
 
