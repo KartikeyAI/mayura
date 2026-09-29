@@ -7,6 +7,12 @@ export interface WorkflowWorkerUnit {
   start(): void;
   stop(): Promise<void>;
   drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
+  /**
+   * One bounded pass over due work, then return; what `WorkflowWorker.runOnce` calls. `completedSweep` is true once the
+   * pass reached the end of the unit's work, and `held` while a fleet hold stops it from driving anything. Hosts and
+   * `coordinatorUnit` have it.
+   */
+  runOnce?(): Promise<{ readonly completedSweep: boolean; readonly held?: boolean }>;
 }
 export interface WorkflowWorkerStatus {
   readonly running: boolean; readonly leader: boolean; readonly fence: number; readonly unitsActive: boolean;
@@ -20,6 +26,28 @@ export interface WorkflowWorker {
   isReady(): boolean;
   /** Stop renewing, drain every unit within one deadline, then release the lease so a standby takes over at once. */
   drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport>;
+  /**
+   * Advance everything that is due once, then return: for a scheduled job or function instead of a process that keeps
+   * running. Takes the lease once (a standby returns at once, having done nothing), runs each unit's passes until every
+   * unit has completed a sweep or the budget runs out, renewing the lease between passes, then releases it. A pass that
+   * has started finishes, so leave room in the budget for your longest tool. Not while the worker is started.
+   */
+  runOnce(options?: WorkflowWorkerOnceOptions): Promise<WorkflowWorkerOnceReport>;
+}
+export interface WorkflowWorkerOnceOptions {
+  /** Stop starting passes after this long. Default 60,000 ms; 1,000 to 3,600,000. */
+  readonly budgetMs?: number;
+}
+export interface WorkflowWorkerOnceReport {
+  /** False when another replica holds the lease: this call advanced nothing. */
+  readonly leader: boolean;
+  /** Every unit completed a sweep within the budget. When false, run it more often or give it a larger budget. */
+  readonly completedSweep: boolean;
+  /** A fleet hold stopped a unit from driving runs. */
+  readonly held: boolean;
+  readonly passes: number;
+  /** The error code of each pass that failed. */
+  readonly failures: readonly ErrorCode[];
 }
 export interface WorkflowWorkerOptions {
   readonly units: readonly WorkflowWorkerUnit[];
@@ -59,9 +87,46 @@ export function createWorkflowWorker(options: WorkflowWorkerOptions): WorkflowWo
       leader = false; lastError = error instanceof MayuraError ? error.code : 'STORAGE_UNAVAILABLE'; await deactivate();
     }
   };
+  let once = false;
+  const runOnce = async (onceOptions: WorkflowWorkerOnceOptions = {}): Promise<WorkflowWorkerOnceReport> => {
+    const budgetMs = onceOptions.budgetMs ?? 60_000;
+    if (!Number.isSafeInteger(budgetMs) || budgetMs < 1_000 || budgetMs > 3_600_000) throw new MayuraError('INVALID_CONFIG', 'budgetMs must be 1000–3600000.');
+    if (units.some(unit => typeof unit.runOnce !== 'function')) throw new MayuraError('INVALID_CONFIG', 'A one-shot worker needs units with runOnce: hosts, or coordinators through coordinatorUnit.');
+    if (running || draining || once) throw new MayuraError('CONFLICT', 'The worker is already running.');
+    once = true; const deadline = now() + budgetMs; const failures: ErrorCode[] = []; let passes = 0; let held = false; let completed = false;
+    const report = (isLeader: boolean): WorkflowWorkerOnceReport =>
+      freezeJson(jsonValue({ leader: isLeader, completedSweep: completed, held, passes, failures })) as unknown as WorkflowWorkerOnceReport;
+    try {
+      if (leadership) {
+        const state = await leadership.acquire(); leader = state.leader; fence = state.fence; lastConfirmedAtMs = now();
+        if (!state.leader) return report(false);
+      }
+      const pending = new Set(units); let renewedAtMs = now();
+      while (pending.size > 0 && now() < deadline) {
+        for (const unit of [...pending]) {
+          if (now() >= deadline) break;
+          try {
+            const cycle = await unit.runOnce!(); passes += 1;
+            if (cycle.held) { held = true; pending.delete(unit); } else if (cycle.completedSweep) pending.delete(unit);
+          } catch (error) { passes += 1; failures.push(error instanceof MayuraError ? error.code : 'STORAGE_UNAVAILABLE'); pending.delete(unit); }
+        }
+        // Keep the lease between passes; stop at once if it was lost, rather than risk two leaders.
+        if (leadership && pending.size > 0 && now() - renewedAtMs >= interval) {
+          const state = await leadership.acquire(); renewedAtMs = now(); lastConfirmedAtMs = renewedAtMs; fence = state.fence;
+          if (!state.leader) { leader = false; break; }
+        }
+      }
+      completed = pending.size === 0 && !held && failures.length === 0;
+      return report(true);
+    } finally {
+      if (leadership && leader) { try { await leadership.release(); } catch { /* The lease expires on its own. */ } }
+      leader = false; once = false;
+    }
+  };
   return Object.freeze<WorkflowWorker>({
+    runOnce,
     start() {
-      if (draining) throw new MayuraError('CANCELLED', 'The worker is draining.'); if (running) return;
+      if (draining) throw new MayuraError('CANCELLED', 'The worker is draining.'); if (once) throw new MayuraError('CONFLICT', 'The worker is running once.'); if (running) return;
       running = true; controller = new AbortController(); const signal = controller.signal;
       loop = (async () => { while (!signal.aborted) { await tick(); await sleep(interval, signal); } })();
     },
@@ -111,5 +176,18 @@ export function coordinatorUnit(coordinator: {
     },
     stop,
     async drain(options) { await stop(); return coordinator.drain(options); },
+    async runOnce() {
+      if (loop) throw new MayuraError('CONFLICT', 'The coordinator unit is running.');
+      // Page through one sweep, up to 256 pages; a failed page ends the pass and the next pass starts over.
+      let pages = 0;
+      do {
+        try {
+          const report = await coordinator.runPage({ cursor: cursor as never, limit });
+          cursor = report.status === 'completed' ? report.nextCursor ?? null : report.retryCursor ?? null;
+        } catch (error) { cursor = null; throw error; }
+        pages += 1;
+      } while (cursor !== null && pages < 256);
+      return { completedSweep: cursor === null };
+    },
   });
 }

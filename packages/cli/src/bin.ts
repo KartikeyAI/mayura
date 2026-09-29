@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { lstat, readFile } from 'node:fs/promises';
 import { jsonValue, MayuraError, publicError, type JsonValue } from '@mayura/core';
-import { loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from './application.js';
+import { loadApplication, migrateApplication, runWorkerApplication, runWorkerOnce, serveApplication, type MayuraLifecycleEvent } from './application.js';
 import { applyProjectPlan, approveWorkflow, cancelRun, cancelWorkflow, inspectHumanRequest, inspectHumanRequests, inspectRun, inspectServerHealth,
   inspectServerTools, inspectWorkflow, inspectWorkflows, holdWorkflowFleet, inspectWorkflowFleet, pauseWorkflow, planProject, planStarter, readProject, releaseWorkflowFleet, respondHumanRequest, resumeWorkflow, sweepWorkflowFleet, signalWorkflow, starters, templates, waitForRun, STARTER_NAMES, TEMPLATE_NAMES, type StarterName, type TemplateName } from './index.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from './output.js';
@@ -175,8 +175,17 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     return migrateApplication(await loadApplication(path));
   }
   if (command === 'serve' || command === 'worker') {
-    assertArguments(arguments_, command === 'serve' ? ['--app'] : ['--app', '--probe-host', '--probe-port', '--drain-timeout-ms']);
+    assertArguments(arguments_, command === 'serve' ? ['--app'] : ['--app', '--probe-host', '--probe-port', '--drain-timeout-ms', '--budget-ms'],
+      command === 'serve' ? [] : ['--once']);
     const path = option(arguments_, '--app'); if (!path) throw usage(`${command} requires --app <module.mjs>.`);
+    if (command === 'worker' && arguments_.includes('--once')) {
+      if (['--probe-host', '--probe-port', '--drain-timeout-ms'].some(flag => arguments_.includes(flag))) throw usage('worker --once takes only --app and --budget-ms.');
+      const budget = option(arguments_, '--budget-ms');
+      const result = await runWorkerOnce({ application: await loadApplication(path), ...(budget === undefined ? {} : { budgetMs: Number(budget) }) });
+      if (result.status === 'failed') process.exitCode = 1;
+      return result;
+    }
+    if (option(arguments_, '--budget-ms') !== undefined) throw usage('--budget-ms is only for worker --once.');
     const probePort = option(arguments_, '--probe-port'); const drain = option(arguments_, '--drain-timeout-ms');
     const application = await loadApplication(path);
     // Probes are an explicit opt-in served by the application's own @mayura/server-node; the CLI stays network-free.

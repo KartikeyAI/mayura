@@ -2,6 +2,7 @@ import { freezeJson, jsonValue, MayuraError, type ErrorCode } from '@mayura/core
 import type { WorkflowFleetHoldReader } from './fleet-control.js';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { assertWorkflowLifecycle, type AnyWorkflowLifecycle } from './lifecycle-definition.js';
+import { createSweepPosition } from './sweep-position.js';
 import { createWorkflowLifecycleFleetRuntime, type WorkflowLifecycleFleetCursor,
   type WorkflowLifecycleFleetOutcome, type WorkflowLifecycleFleetRuntime,
   type WorkflowLifecycleFleetRuntimeOptions } from './lifecycle-fleet.js';
@@ -65,6 +66,9 @@ export function createWorkflowLifecycleHost(options: WorkflowLifecycleHostOption
   if (maxBackoffMs < intervalMs) throw new MayuraError('INVALID_CONFIG', 'maxBackoffMs must be at least intervalMs.');
   const hold = options.hold; if (hold !== undefined && typeof hold?.isHeld !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fleet hold reader requires isHeld().');
   const runtime = createWorkflowLifecycleFleetRuntime(options); let cursor: WorkflowLifecycleFleetCursor | null = null;
+  // The sweep continues where the last process left it, rather than starting over (see sweep-position.ts).
+  const position = createSweepPosition<WorkflowLifecycleFleetCursor>(options.store, { kind: 'lifecycle', scope: options.scope,
+    catalog: definitions.map(definition => definition.digest) });
   let cycles = 0; let consecutiveFailures = 0; let lastError: ErrorCode | null = null;
   let lastCycle: WorkflowLifecycleHostCycle | null = null; let controller: AbortController | undefined;
   let loop: Promise<void> | undefined; let inFlight: Promise<WorkflowLifecycleHostCycle> | undefined; let closed = false;
@@ -75,11 +79,23 @@ export function createWorkflowLifecycleHost(options: WorkflowLifecycleHostOption
       let pages = 0; let examined = 0; let shardReads = 0; const outcomes: WorkflowLifecycleFleetOutcome[] = [];
       // Fail closed: a hold that cannot be confirmed fails the cycle instead of driving runs.
       const held = hold ? await hold.isHeld() === true : false;
-      if (!held) do {
-        const report = await runtime.runPage(definitions, { cursor, limit: pageLimit, maxShardReads });
-        pages += 1; examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes);
-        cursor = report.page.nextCursor;
-      } while (cursor && pages < maxPages);
+      if (!held) {
+        const stored = await position.load(); let restored = false;
+        if (stored !== null && cursor === null) { cursor = stored; restored = true; }
+        do {
+          const page = (from: WorkflowLifecycleFleetCursor | null) => runtime.runPage(definitions, { cursor: from, limit: pageLimit, maxShardReads });
+          let report: Awaited<ReturnType<typeof page>>;
+          try { report = await page(cursor); } catch (error) {
+            // A stored position this host cannot use restarts the sweep instead of failing every cycle.
+            if (!restored || !(error instanceof MayuraError) || error.code !== 'INVALID_INPUT') throw error;
+            cursor = null; report = await page(cursor);
+          }
+          restored = false;
+          pages += 1; examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes);
+          cursor = report.page.nextCursor;
+        } while (cursor && pages < maxPages);
+        await position.save(cursor);
+      }
       const completedSweep = !held && cursor === null; if (completedSweep) cursor = null;
       const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep, held })) as unknown as WorkflowLifecycleHostCycle;
       cycles += 1; consecutiveFailures = 0; lastError = null; lastCycle = result; return result;

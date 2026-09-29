@@ -9,6 +9,12 @@ export interface MayuraServerHandle { isAccepting(): boolean; close(): Promise<v
 export interface MayuraWorkerHandle {
   start(): void; isReady(): boolean;
   drain(options?: { readonly timeoutMs?: number }): Promise<{ readonly drained: boolean; readonly interrupted: number }>;
+  /** Advance everything due once and return, for `mayura worker --once`; `createWorkflowWorker` has it. */
+  runOnce?(options?: { readonly budgetMs?: number }): Promise<MayuraWorkerOnceReport>;
+}
+/** What one `runOnce` did: see `WorkflowWorker.runOnce` in `mayura/workflows`. */
+export interface MayuraWorkerOnceReport {
+  readonly leader: boolean; readonly completedSweep: boolean; readonly held: boolean; readonly passes: number; readonly failures: readonly string[];
 }
 /**
  * The explicit contract a `mayura serve` or `mayura worker` module exports. The module wires its own storage,
@@ -99,6 +105,24 @@ export async function runWorkerApplication(options: { readonly application: Mayu
   }
   log({ event: 'stopped', drained: report.drained, interrupted: report.interrupted });
   return { status: 'stopped', drained: report.drained, interrupted: report.interrupted };
+}
+
+/**
+ * Advance the application's workflows once and return, then run its shutdown: `mayura worker --once`, for a scheduled
+ * job or function. The status is `succeeded` after a complete sweep, `incomplete` when the budget ran out first,
+ * `held` while a fleet hold is set, `standby` when another replica holds the lease, and `failed` when a pass failed.
+ */
+export async function runWorkerOnce(options: { readonly application: MayuraApplication; readonly budgetMs?: number }): Promise<{
+  readonly status: 'succeeded' | 'incomplete' | 'held' | 'standby' | 'failed'; readonly report: MayuraWorkerOnceReport }> {
+  const { application } = options;
+  if (!application.worker) throw new MayuraError('INVALID_CONFIG', 'The application does not define a worker.');
+  try {
+    const worker = await application.worker();
+    if (!worker || typeof worker.runOnce !== 'function') throw new MayuraError('INVALID_CONFIG', 'The application worker cannot run once: return a worker from createWorkflowWorker.');
+    const report = await worker.runOnce(options.budgetMs === undefined ? {} : { budgetMs: options.budgetMs });
+    const status = report.failures.length > 0 ? 'failed' : !report.leader ? 'standby' : report.held ? 'held' : report.completedSweep ? 'succeeded' : 'incomplete';
+    return { status, report };
+  } finally { await settle(application.shutdown); }
 }
 
 /** Run the application's explicit migration once, then its shutdown. Nothing else is started. */

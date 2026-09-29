@@ -280,7 +280,11 @@
       },
       "MayuraWorkerHandle": {
         "kind": "interface",
-        "declaration": "25660be486f02c5e"
+        "declaration": "91207382ed7f53e2"
+      },
+      "MayuraWorkerOnceReport": {
+        "kind": "interface",
+        "declaration": "9b93faaf5e51ef14"
       },
       "migrateApplication": {
         "kind": "function",
@@ -417,6 +421,10 @@
       "runWorkerApplication": {
         "kind": "function",
         "declaration": "9be89242ef84553a"
+      },
+      "runWorkerOnce": {
+        "kind": "function",
+        "declaration": "e3d4089e6ee7df60"
       },
       "serveApplication": {
         "kind": "function",
@@ -6028,7 +6036,15 @@
       },
       "WorkflowWorker": {
         "kind": "interface",
-        "declaration": "d4ca5ec812f20c6f"
+        "declaration": "cdcdac87fd13b49c"
+      },
+      "WorkflowWorkerOnceOptions": {
+        "kind": "interface",
+        "declaration": "5122a67916d8100b"
+      },
+      "WorkflowWorkerOnceReport": {
+        "kind": "interface",
+        "declaration": "3c0eb0e10190ac7b"
       },
       "WorkflowWorkerOptions": {
         "kind": "interface",
@@ -6040,7 +6056,7 @@
       },
       "WorkflowWorkerUnit": {
         "kind": "interface",
-        "declaration": "c5f1196dcf850962"
+        "declaration": "a0e4f610998022c7"
       }
     },
     "@mayura/workflows/ephemeral": {

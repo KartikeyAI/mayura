@@ -101,6 +101,38 @@ installed alongside the module. In a container, use `--probe-host 0.0.0.0` so th
 
 When the worker stops, it reports whether the drain finished in time, and how much work was interrupted if it did not.
 
+### Run once
+
+With `--once`, the worker advances everything that is due and exits, instead of running until it is stopped. Use it
+from a scheduled job (a Cloud Run job, a Kubernetes CronJob) or a scheduler that starts a process every minute:
+
+```bash
+mayura worker --app dist/src/app.js --once --budget-ms 50000
+```
+
+It takes the leadership lease once, runs passes until every host has completed a sweep of its runs or the budget runs
+out, then releases the lease and calls `shutdown()`. A pass that has started finishes, so keep the budget below your
+platform's time limit by at least your longest tool's `timeoutMs`. Each host keeps its place in storage, so if a sweep
+does not finish, the next run continues from there rather than starting over.
+
+| Option | Meaning |
+|---|---|
+| `--once` | Advance what is due, then exit. Not with `--probe-port`, `--probe-host` or `--drain-timeout-ms`. |
+| `--budget-ms <ms>` | Stop starting passes after this long, from 1000 to 3600000. Default 60000. |
+
+It prints a report and its status:
+
+| Status | Meaning | Exit code |
+|---|---|---|
+| `succeeded` | Every host completed a sweep. | 0 |
+| `incomplete` | The budget ran out first; the next run continues. Run it more often or give it more time. | 0 |
+| `standby` | Another replica holds the lease, so this run did nothing. | 0 |
+| `held` | An operator holds the fleet, so nothing was driven. | 0 |
+| `failed` | A pass failed, for example because storage was unavailable. | 1 |
+
+The worker must come from `createWorkflowWorker`, whose `runOnce` this calls; in your own code, such as a scheduled
+function, call `worker.runOnce({ budgetMs })` directly.
+
 ## mayura migrate
 
 `mayura migrate --app <module>` calls `migrate()` once, then `shutdown()`, and exits. Nothing else starts. Run it

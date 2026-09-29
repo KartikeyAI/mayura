@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listenProbe } from '../../server-node/src/index.js';
-import { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraLifecycleEvent } from '../src/index.js';
+import { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, runWorkerOnce, serveApplication, type MayuraLifecycleEvent,
+  type MayuraWorkerOnceReport } from '../src/index.js';
 
 const fixture = fileURLToPath(new URL('./fixtures/application.mjs', import.meta.url));
 const directories: string[] = [];
@@ -64,6 +65,43 @@ describe('mayura application lifecycle', () => {
     expect(await serving).toEqual({ status: 'stopped' }); expect(order).toEqual(['close', 'shutdown']); expect(events).toEqual(['serving', 'stopping', 'stopped']);
     await expect(serveApplication({ application: defineMayuraApplication({ shutdown: async () => {} }), signal: controller.signal }))
       .rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+  });
+
+  it('runs a worker once, maps its report to a status and always shuts down', async () => {
+    const run = async (report: MayuraWorkerOnceReport | 'throws' | 'no-run-once') => {
+      let shutdowns = 0;
+      const application = defineMayuraApplication({
+        worker: async () => ({ start() {}, isReady: () => true, drain: async () => ({ drained: true, interrupted: 0 }),
+          ...(report === 'no-run-once' ? {} : { runOnce: async () => { if (report === 'throws') throw new Error('boom'); return report; } }) }),
+        shutdown: async () => { shutdowns++; } });
+      const outcome = await runWorkerOnce({ application }).then(value => value.status, (error: { code?: string }) => `error:${error.code ?? 'unknown'}`);
+      return { outcome, shutdowns };
+    };
+    const base = { leader: true, completedSweep: true, held: false, passes: 1, failures: [] };
+    expect(await run(base)).toEqual({ outcome: 'succeeded', shutdowns: 1 });
+    expect(await run({ ...base, completedSweep: false })).toEqual({ outcome: 'incomplete', shutdowns: 1 });
+    expect(await run({ ...base, leader: false, completedSweep: false, passes: 0 })).toEqual({ outcome: 'standby', shutdowns: 1 });
+    expect(await run({ ...base, completedSweep: false, held: true })).toEqual({ outcome: 'held', shutdowns: 1 });
+    expect(await run({ ...base, completedSweep: false, failures: ['STORAGE_UNAVAILABLE'] })).toEqual({ outcome: 'failed', shutdowns: 1 });
+    expect(await run('no-run-once')).toEqual({ outcome: 'error:INVALID_CONFIG', shutdowns: 1 });
+    expect(await run('throws')).toEqual({ outcome: 'error:unknown', shutdowns: 1 });
+  });
+
+  it('runs the executable worker once: advances what is due, then exits', async () => {
+    const root = await directory();
+    const bin = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
+    const execute = (args: readonly string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, [bin, ...args], { env: { ...process.env, MAYURA_FIXTURE_DIRECTORY: root }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; }); child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      child.once('error', reject); child.once('exit', code => resolve({ code, stdout, stderr }));
+    });
+    const once = await execute(['worker', '--app', fixture, '--once', '--budget-ms', '20000', '--json']);
+    expect(once.code).toBe(0);
+    expect(JSON.parse(once.stdout)).toMatchObject({ status: 'succeeded', report: { leader: true, completedSweep: true, failures: [] } });
+    for (const misuse of [['--once', '--probe-port', '0'], ['--budget-ms', '5000']]) {
+      const result = await execute(['worker', '--app', fixture, ...misuse, '--json']);
+      expect(result.code).toBe(1); expect(result.stderr).toContain('INVALID_INPUT');
+    }
   });
 
   it('starts the executable worker with a live readiness probe', async () => {

@@ -390,5 +390,5 @@ export function templates(): readonly Readonly<{ name: TemplateName; description
 export function starters(): readonly Readonly<{ name: StarterName; description: string }>[] {
   return Object.freeze(STARTER_NAMES.map(name => Object.freeze({ name, description: starterDescriptions[name] })));
 }
-export { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
-  type MayuraServerHandle, type MayuraWorkerHandle } from './application.js';
+export { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, runWorkerOnce, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
+  type MayuraServerHandle, type MayuraWorkerHandle, type MayuraWorkerOnceReport } from './application.js';

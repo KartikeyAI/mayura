@@ -5,6 +5,7 @@ import { createWorkflowCompositeFleetRuntime, type WorkflowCompositeCursor, type
   type WorkflowCompositeFleetRuntime, type WorkflowCompositeOutcome } from './composite-fleet.js';
 import { assertWorkflowLoop, type AnyWorkflowLoop } from './loop-definition.js';
 import { assertWorkflowSaga, type AnyWorkflowSaga } from './saga-definition.js';
+import { createSweepPosition } from './sweep-position.js';
 
 export interface WorkflowCompositeHostOptions extends WorkflowCompositeFleetOptions {
   readonly sagaDefinitions?: readonly AnyWorkflowSaga[]; readonly loopDefinitions?: readonly AnyWorkflowLoop[];
@@ -41,14 +42,31 @@ export function createWorkflowCompositeHost(options: WorkflowCompositeHostOption
   if (backoffMaximum < interval) throw new MayuraError('INVALID_CONFIG', 'maxBackoffMs must be at least intervalMs.');
   const hold = options.hold; if (hold !== undefined && typeof hold?.isHeld !== 'function') throw new MayuraError('INVALID_CONFIG', 'A fleet hold reader requires isHeld().');
   const runtime = createWorkflowCompositeFleetRuntime(options); let cursor: WorkflowCompositeCursor | null = null; let closed = false;
+  // The sweep continues where the last process left it, rather than starting over (see sweep-position.ts).
+  const position = createSweepPosition<WorkflowCompositeCursor>(options.store, { kind: 'composite', scope: options.scope,
+    catalog: [...sagas, ...loops].map(definition => definition.digest) });
   let cycles = 0; let failures = 0; let lastError: ErrorCode | null = null; let lastCycle: WorkflowCompositeHostCycle | null = null;
   let controller: AbortController | undefined; let loop: Promise<void> | undefined; let active: Promise<WorkflowCompositeHostCycle> | undefined;
   const runOnce = (): Promise<WorkflowCompositeHostCycle> => { if (closed) return Promise.reject(new MayuraError('CANCELLED', 'Composite host is closed.')); if (active) return active;
     const operation = (async () => { let pages = 0; let examined = 0; let shardReads = 0; const outcomes: WorkflowCompositeOutcome[] = [];
       const held = hold ? await hold.isHeld() === true : false;
-      if (!held) do { const report = await runtime.runPage({ sagas, loops }, { cursor, limit, maxShardReads: reads }); pages += 1;
-        examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes); cursor = report.page.nextCursor; }
-      while (cursor && pages < pageMaximum); const completedSweep = !held && cursor === null;
+      if (!held) {
+        const stored = await position.load(); let restored = false;
+        if (stored !== null && cursor === null) { cursor = stored; restored = true; }
+        do {
+          const page = (from: WorkflowCompositeCursor | null) => runtime.runPage({ sagas, loops }, { cursor: from, limit, maxShardReads: reads });
+          let report: Awaited<ReturnType<typeof page>>;
+          try { report = await page(cursor); } catch (error) {
+            // A stored position this host cannot use restarts the sweep instead of failing every cycle.
+            if (!restored || !(error instanceof MayuraError) || error.code !== 'INVALID_INPUT') throw error;
+            cursor = null; report = await page(cursor);
+          }
+          restored = false; pages += 1;
+          examined += report.page.examined; shardReads += report.page.shardReads; outcomes.push(...report.outcomes); cursor = report.page.nextCursor;
+        } while (cursor && pages < pageMaximum);
+        await position.save(cursor);
+      }
+      const completedSweep = !held && cursor === null;
       const result = freezeJson(jsonValue({ pages, examined, shardReads, outcomes, completedSweep, held })) as unknown as WorkflowCompositeHostCycle;
       cycles += 1; failures = 0; lastError = null; lastCycle = result; return result; })();
     active = operation; void operation.finally(() => { if (active === operation) active = undefined; }).catch(() => {}); return operation; };
