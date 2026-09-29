@@ -76,7 +76,8 @@ See the [CLI overview](cli/overview.md).
 
 ## Pre-releases
 
-Release candidates are published under the `next` tag:
+`npm install mayura` installs the latest stable release. Release candidates of upcoming versions are published under
+the `next` tag:
 
 ```bash
 npm install mayura@next

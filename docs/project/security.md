@@ -152,7 +152,8 @@ The quality of authentication is yours: a weak `authenticate` callback weakens e
 - Anyone with your database credentials bypasses every application check. A separate schema per installation is
   isolation, not authorization.
 - If a proxy terminates TLS, keep the plain-HTTP listener reachable only through that proxy.
-- Mayura's releases are pre-releases until 1.0.0 and are not yet approved for production use or hostile code.
+- Mayura has not had an independent security audit. For programs from untrusted or many tenants, add the isolation
+  described in [Code Mode sandboxing](#code-mode-sandboxing).
 
 ## Reporting a vulnerability
 
@@ -165,7 +166,8 @@ sensitive logs anywhere public.
 
 The project owner triages each report, shares it only with the people needed to fix it, and coordinates a fix, an
 advisory and credit with you. Public disclosure happens once a fix is available, or on a date agreed with you.
-Pre-releases carry no response-time commitment. A security fix never silently widens permissions or changes where data
+There is no response-time commitment. Security fixes are released for the versions in the
+[support window](versioning.md#support-window). A security fix never silently widens permissions or changes where data
 is sent. The full policy is in
 [SECURITY.md](https://github.com/KartikeyAI/mayura/blob/main/SECURITY.md).
 

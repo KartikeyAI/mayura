@@ -4,6 +4,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation and the website describe Mayura 1.0 as the stable release it is: the landing page and its production FAQ, Installation, Versioning (release candidates now precede new versions; the support window is the policy, no longer a proposal), Support, the Security model and `SECURITY.md`.
+
 ## [1.0.0] - 2026-09-29
 
 ### Released

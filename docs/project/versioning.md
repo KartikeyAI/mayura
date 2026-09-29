@@ -84,8 +84,8 @@ release. Deprecations never change runtime behaviour and never log warnings at r
 - Each supported **Node.js line** is supported while it is in active or maintenance LTS: Node.js 22 until
   2027-04-30 and Node.js 24 until 2028-04-30. Dropping a Node.js line is a major change.
 
-These lengths are proposed defaults that the maintainers confirm before 1.0.0 is published. A security release never
-widens permissions, changes where data is sent or turns on telemetry. See [Security](security.md).
+A security release never widens permissions, changes where data is sent or turns on telemetry. See
+[Security](security.md).
 
 ## Stored data and durable runs
 
@@ -100,19 +100,21 @@ Storage schemas and durable workflow formats are versioned separately from the p
 
 ## Pre-releases and npm tags
 
-Before a stable version, Mayura publishes release candidates such as `1.0.0-rc.1`, `1.0.0-rc.2`. Release candidates
-(and any `0.x` release) are pre-releases: they get best-effort support only, and a later candidate may still change
-the API, with each change recorded in the changelog.
+Mayura 1.0.0 is the first stable release; 1.0.0-rc.1 and 1.0.0-rc.2 came before it. A new version may be preceded by
+release candidates such as `1.1.0-rc.1`. Release candidates are pre-releases: they get best-effort support only, and
+a later candidate may still change what the candidate added, with each change recorded in the changelog. They never
+change the stable API they build on.
 
 Releases are published to npm under two tags:
 
 | Tag | Contains | Install with |
 |---|---|---|
 | `latest` | The newest stable version. A pre-release is never published here. | `npm install mayura` |
-| `next` | The newest pre-release. | `npm install mayura@next` |
+| `next` | The newest pre-release, or the latest stable version when no newer pre-release exists. | `npm install mayura@next` |
 
 To test a release candidate without surprises, pin the exact version in `package.json` (for example
-`"mayura": "1.0.0-rc.2"`) rather than a range. Projects created by `mayura init` are pinned this way already.
+`"mayura": "1.1.0-rc.1"`) rather than a range. Projects created by `mayura init` pin the exact version they were
+created with, stable or not.
 
 ## Related
 

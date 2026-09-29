@@ -86,7 +86,7 @@ function Hero() {
         <Link {...docs('project/versioning')}
           className="inline-flex items-center gap-2 rounded-full border border-line bg-bg/70 py-1 pr-3 pl-1 text-xs text-muted backdrop-blur transition hover:text-fg">
           <span className="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">New</span>
-          {site.version}: the 1.0 release candidate
+          Mayura 1.0 is here, with stable APIs
           <Icon name="arrow" className="size-3.5" />
         </Link>
         <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
@@ -335,7 +335,7 @@ const questions: { q: string; a: ReactNode }[] = [
   { q: 'How does Mayura keep agents in bounds?', a: <>A run can use a model, tool or effect only when you grant it, every run has cost, step, tool-call and time limits, and every input and output is validated. When a side effect may or may not have happened, the run ends <code>outcome_unknown</code> instead of retrying blindly.</> },
   { q: 'Can I test without an API key?', a: <>Yes. Scripted models from <code>mayura/testing</code> replay fixed responses, so agents, tools and workflows run offline in your tests.</> },
   { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel, with AWS Lambda and Cloud Run functions experimental. Edge runtimes are planned for 1.1. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
-  { q: 'Is Mayura ready for production?', a: <>Mayura is at the 1.0 release candidate. From 1.0.0, every entry point is stable under semantic versioning; until then, pin the exact version and try it in a pilot first. See <Link {...docs('project/versioning')} className="text-primary hover:underline">Versioning and stability</Link>.</> },
+  { q: 'Is Mayura ready for production?', a: <>Yes. Mayura 1.0 is a stable release: every entry point follows semantic versioning, so upgrades within 1.x do not break documented APIs, storage changes only through explicit migrations, and every release is checked to resume the runs the previous one started. See <Link {...docs('project/versioning')} className="text-primary hover:underline">Versioning and stability</Link>.</> },
   { q: 'Is Mayura open source?', a: <>Yes, under the Apache-2.0 license, on <a href={site.repository} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">GitHub</a>.</> },
 ];
 

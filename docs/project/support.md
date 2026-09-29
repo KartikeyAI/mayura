@@ -66,8 +66,8 @@ Install those versions. npm reports a peer dependency conflict if you install a 
 - **Ask or report on GitHub.** Open an issue at
   [github.com/KartikeyAI/mayura/issues](https://github.com/KartikeyAI/mayura/issues).
 
-Support is community support on a best-effort basis. Release candidates and `0.x` releases carry no response-time
-commitment, and only the latest pre-release is supported: upgrade to it before reporting a problem.
+Support is community support on a best-effort basis, with no response-time commitment. Fixes land in the latest 1.x
+release, so upgrade to it before reporting a problem; see [Support window](versioning.md#support-window).
 
 ## Reporting a bug
 
