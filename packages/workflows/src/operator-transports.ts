@@ -13,6 +13,7 @@ import type { WorkflowTreeRuntime } from './children-runtime.js';
 import type { WorkflowTreeDiscovery } from './children-discovery.js';
 import type { MigrationCommand, MigrationPlan, WorkflowMigration, WorkflowMigrationCatalog } from './migration.js';
 import { createWorkflowMigrationService, pinnedDefinitionHash, type WorkflowMigrationOfferRecord } from './migration-service.js';
+import { utf8ByteLength } from '@mayura/core/host';
 
 /*
  * Production operator adapters. They implement the agent server's workflow transports (structurally: this package does
@@ -233,7 +234,7 @@ export function lifecycleOperatorTarget(options: { readonly runtime: WorkflowLif
         if (step.kind !== 'tool' || step.status !== 'waiting' || !step.approval) continue;
         const request = await owned(() => runtime.approvalRequest(definition, runId, nodeId));
         // A large input is left out rather than truncated; the digest still identifies exactly what is approved.
-        if (request && request.digest === step.approval.digest && Buffer.byteLength(JSON.stringify(request.input), 'utf8') <= 8_192) {
+        if (request && request.digest === step.approval.digest && utf8ByteLength(JSON.stringify(request.input)) <= 8_192) {
           subjects.set(nodeId, { toolId: request.toolId, toolVersion: request.toolVersion, input: request.input });
         }
       }

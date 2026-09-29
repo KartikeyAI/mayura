@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { freezeJson, jsonValue, MayuraError, type Effect, type ExecutionEvidence, type JsonObject, type Schema, type Scope } from '@mayura/core';
 import { assertCodeMode, assertCodeProgram, type CodeMode, type CodeProgramDefinition } from '@mayura/code-mode';
 import { workflowHashMaterial, type AggregateStore, type StoredRecord } from '@mayura/storage-contracts';
 import { defineTool } from '@mayura/tools';
 import { defineWorkflow, type Binding, type WorkflowDefinition } from '@mayura/workflows';
+import { sha256Hex } from '@mayura/core/host';
 
 export interface DurableCodeAuditEntry {
   readonly format: 2;
@@ -51,7 +51,7 @@ export interface DurableCodeWorkflowOptions<I extends Schema, O extends Schema> 
 
 const effectRank: Readonly<Record<Effect, number>> = Object.freeze({ none: 0, read: 1, write: 2, host: 3 });
 const audits = new WeakMap<object, { readonly store: AggregateStore; readonly scope: string }>();
-const digest = (domain: string, value: unknown): string => createHash('sha256').update(workflowHashMaterial(domain, value), 'utf8').digest('hex');
+const digest = (domain: string, value: unknown): string => sha256Hex(workflowHashMaterial(domain, value));
 const auditDefinitionHash = digest('mayura:code-phase-audit-definition:v2', { format: 2 });
 
 function identifier(value: unknown, name: string): asserts value is string {

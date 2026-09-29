@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import {
   StorageError, assertWorkflowTreeLeafState, assertWorkflowTreeRootState, initialWorkflowTreeLeafState, initialWorkflowTreeRootState, mergeWorkflowReceipt, workflowHashMaterial,
@@ -17,13 +16,14 @@ import { WorkflowTreeBudgetDatabase } from './durable-budget-database.js';
 import { createCommand, identifier, nextCounter } from './validation.js';
 import { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
 import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
+import { sha256Hex } from '@mayura/core/host';
 
 interface OwnerRow { scope:string;aggregate_id:string;profile:number|string;aggregate_version:number|string;definition_hash:string;policy_hash:string;resource_hash:string;data:string }
 interface MemberRow { scope:string;root_id:string;aggregate_id:string;parent_id:string|null;node_id:string|null;account_id:string;definition_hash:string;policy_hash:string;resource_hash:string }
 interface TreeJobRow { scope:string;root_id:string;aggregate_id:string;node_id:string;job_id:string;account_id:string;reservation_id:string;cost_micros:number|string }
 interface RootOwner { format:4;rootId:string;manifest:WorkflowTreeManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan }
 interface ChildOwner { format:4;rootId:string;parentId:string;nodeId:string;accountId:string;manifest:WorkflowManifest;policy:WorkflowTreePolicyManifest;resources:WorkflowResourcePlan;inputHash:string }
-function digest(domain:string,value:unknown):string{return createHash('sha256').update(workflowHashMaterial(domain,value)).digest('hex');}
+function digest(domain:string,value:unknown):string{return sha256Hex(workflowHashMaterial(domain,value));}
 function same(left:unknown,right:unknown):boolean{return workflowHashMaterial('compare',left)===workflowHashMaterial('compare',right);}
 function failed():never{throw new StorageError('STORAGE_UNAVAILABLE','Stored workflow tree failed integrity validation.');}
 function conflict():never{throw new StorageError('CONFLICT','Workflow-tree identity or immutable content changed.');}

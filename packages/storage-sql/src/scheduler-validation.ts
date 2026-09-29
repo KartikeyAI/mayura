@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { freezeJson, jsonValue, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError } from './contracts.js';
 import { identifier } from './validation.js';
 import type { Claim, JobReservation, SchedulerEvidenceSource, SchedulerStore } from './scheduler-contracts.js';
+import { sha256Hex } from '@mayura/core/host';
 
 export type SchedulerMethod = keyof SchedulerStore;
 export const MAX_DELAY = 30 * 86_400_000;
@@ -31,7 +31,7 @@ export function canonical(value: JsonValue): string {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key]!)}`).join(',')}}`;
 }
 export function schedulerDigest(kind: string, value: unknown): string {
-  return createHash('sha256').update(`mayura:scheduler-${kind}:v1\n`).update(canonical(jsonValue(value))).digest('hex');
+  return sha256Hex(`mayura:scheduler-${kind}:v1\n` + canonical(jsonValue(value)));
 }
 export function immutable<T>(value: T): T {
   try { return freezeJson(jsonValue(value, { maxBytes: 8_388_608, maxNodes: 300_000 })) as T; }

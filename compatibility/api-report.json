@@ -1480,6 +1480,10 @@
         "kind": "function",
         "declaration": "7463a5ae5289bba7"
       },
+      "fromBase64Url": {
+        "kind": "function",
+        "declaration": "403c5c66aa140598"
+      },
       "frozenView": {
         "kind": "function",
         "declaration": "7e6c1626a5f2a741"
@@ -1548,6 +1552,14 @@
         "kind": "interface",
         "declaration": "78f8e9f9526521ed"
       },
+      "sha256": {
+        "kind": "function",
+        "declaration": "52681d5925dfc7a2"
+      },
+      "sha256Hex": {
+        "kind": "function",
+        "declaration": "413187d8e946da1f"
+      },
       "snapshotHookOptions": {
         "kind": "function",
         "declaration": "13375062012a77c8"
@@ -1563,6 +1575,14 @@
       "strictJsonSchema": {
         "kind": "function",
         "declaration": "45e30eebb603388a"
+      },
+      "toBase64Url": {
+        "kind": "function",
+        "declaration": "3610d695ada58393"
+      },
+      "utf8ByteLength": {
+        "kind": "function",
+        "declaration": "611a0b0d9bc15d79"
       }
     },
     "@mayura/exporter-otlp": {
@@ -5123,6 +5143,28 @@
       "PostgresStoreOptions": {
         "kind": "interface",
         "declaration": "3464493dec28b531"
+      }
+    },
+    "@mayura/storage-postgres/driver": {
+      "createPostgresStore": {
+        "kind": "function",
+        "declaration": "099f600a9492b1a7"
+      },
+      "PostgresDriverClient": {
+        "kind": "interface",
+        "declaration": "8c219ee676abd721"
+      },
+      "PostgresDriverPool": {
+        "kind": "interface",
+        "declaration": "132403979a448798"
+      },
+      "PostgresDriverStoreOptions": {
+        "kind": "interface",
+        "declaration": "bbd775666f110ad2"
+      },
+      "PostgresStore": {
+        "kind": "type",
+        "declaration": "2450e12dbee7bb75"
       }
     },
     "@mayura/storage-sql/host": {

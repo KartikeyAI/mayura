@@ -141,6 +141,10 @@
       "types": "./dist/storage-postgres.d.ts",
       "import": "./dist/storage-postgres.js"
     },
+    "./storage-postgres/driver": {
+      "types": "./dist/storage-postgres__driver.d.ts",
+      "import": "./dist/storage-postgres__driver.js"
+    },
     "./storage-sql/host": {
       "types": "./dist/storage-sql__host.d.ts",
       "import": "./dist/storage-sql__host.js"

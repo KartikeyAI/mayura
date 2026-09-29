@@ -14,6 +14,16 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 - **Mayura 1.0.0**, the first stable release. It is 1.0.0-rc.2 with no code changes. From this version, every entry point is stable under the promises in Versioning and stability: incompatible changes only in a new major version, storage changes only through explicit migrations, and every release checked to resume the runs the previous one started.
 
+### Added
+
+- **PostgreSQL on a pool you own.** `mayura/storage-postgres/driver` exports `createPostgresStore({ driver, schema })`, the same store on a pg-compatible pool you create: a `pg` Pool your application shares, or, on runtimes without TCP sockets such as Vercel Edge Functions, the WebSocket Pool of `@neondatabase/serverless`. The entry point does not import `pg`. Mayura never ends a pool it did not create. It also exports the `PostgresDriverPool`, `PostgresDriverClient`, `PostgresDriverStoreOptions` and `PostgresStore` types. `mayura/storage-postgres` is unchanged.
+- `mayura/core/host` exports `sha256`, `sha256Hex`, `utf8ByteLength`, `toBase64Url` and `fromBase64Url`, which work on every runtime.
+- Checks for edge runtimes. `pnpm edge:check` bundles every entry point the way edge bundlers do and fails when one outside a short list of Node-only entry points uses a Node built-in module or the global `Buffer` or `process`. `pnpm test:runtimes` runs agents, the server handler, a durable workflow, memory and the driver store on Node, Bun, Deno, Cloudflare's workerd without `nodejs_compat` and Vercel's Edge Functions VM, and fails when any result differs from Node's. CI runs both. `rolldown`, `workerd` and `@edge-runtime/vm` are new development dependencies; the package's own dependencies are unchanged.
+
+### Fixed
+
+- Workflows, storage, memory, remote memory and code mode no longer import `node:crypto` or use the global `Buffer`, so they bundle and run on Cloudflare Workers without `nodejs_compat` and on Vercel Edge Functions. Hashing uses Node's crypto module where the runtime has one, and otherwise an equivalent SHA-256 in JavaScript. Stored digests, cursors, vector encodings and memory scope keys are byte-for-byte the same as before, and tests check them against `node:crypto` and `Buffer`.
+
 ## [1.0.0-rc.2] - 2026-09-29
 
 ### Added

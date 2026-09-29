@@ -7,3 +7,4 @@ export { readServerSentEvents, streamModelCall, type ServerSentEvent, type Serve
 export { admitMedia, base64ToBytes, bytesToBase64, encodedMediaBytes, mediaDataUrl, mediaPolicy, readMediaResult, type ResolvedMediaPolicy } from './media.js';
 export { checkStrictDefinition, modelToolNames, providerHttpFailure, strictJsonSchema } from './model-schema.js';
 export { providerEndpoint, providerHeaders } from './destination.js';
+export { fromBase64Url, sha256, sha256Hex, toBase64Url, utf8ByteLength } from './bytes.js';

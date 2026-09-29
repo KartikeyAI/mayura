@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   MayuraError,
   assertPositiveInteger,
@@ -18,6 +17,7 @@ import {
   type Scope,
 } from '@mayura/core';
 import { assertTool, type AnyTool } from '@mayura/tools';
+import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
 
 export type CodeLanguage = 'javascript' | 'typescript';
 export type SandboxQualification = 'test' | 'production';
@@ -329,7 +329,7 @@ function canonical(value: JsonValue): string {
 }
 
 function sha256(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
+  return sha256Hex(value);
 }
 
 function freezeTool(tool: AnyTool): CodeToolManifest {
@@ -356,7 +356,7 @@ export function defineCodeProgram<I extends Schema, O extends Schema>(options: C
   text(data['outputSchemaId'], 'outputSchemaId', 256);
   if (data['language'] !== 'javascript' && data['language'] !== 'typescript') throw new MayuraError('INVALID_CONFIG', 'Program language must be "javascript" or "typescript".');
   if (typeof data['source'] !== 'string' || data['source'].trim().length === 0) throw new MayuraError('INVALID_CONFIG', 'Program source must be a nonempty string.');
-  const sourceBytes = Buffer.byteLength(data['source'], 'utf8');
+  const sourceBytes = utf8ByteLength(data['source']);
   if (sourceBytes > MAX_SOURCE_BYTES) throw new MayuraError('LIMIT_EXCEEDED', 'Program source is larger than 1 MiB.');
   const input = snapshotSchema(data['input'] as I);
   const output = snapshotSchema(data['output'] as O);

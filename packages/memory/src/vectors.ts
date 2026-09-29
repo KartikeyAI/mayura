@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import { MayuraError } from '@mayura/core';
+import { base64ToBytes, bytesToBase64, sha256 } from '@mayura/core/host';
 
 /** A local or authorized hosted embedding adapter. Mayura never sends restricted records to it. */
 export interface MemoryEmbedder {
@@ -25,8 +25,8 @@ export function hashingEmbedder(options: { readonly dimensions?: number } = {}):
   const dimensions = options.dimensions ?? 256;
   if (!Number.isSafeInteger(dimensions) || dimensions < 8 || dimensions > 4_096) throw new MayuraError('INVALID_CONFIG', 'Hashing embedder dimensions must be 8–4096.');
   const bucket = (feature: string): [number, number] => {
-    const digest = createHash('sha256').update(feature).digest();
-    return [digest.readUInt32LE(0) % dimensions, (digest[4]! & 1) === 0 ? 1 : -1];
+    const digest = sha256(feature);
+    return [new DataView(digest.buffer, digest.byteOffset, 4).getUint32(0, true) % dimensions, (digest[4]! & 1) === 0 ? 1 : -1];
   };
   return Object.freeze({
     id: `mayura.hashing-v1.${dimensions}`, dimensions, maxBatch: 256, location: 'local' as const,
@@ -49,15 +49,17 @@ export function dot(left: ArrayLike<number>, right: ArrayLike<number>): number {
 
 /** Little-endian Float32 base64: portable across SQLite text, PostgreSQL text and worker IPC. */
 export function encodeVector(vector: readonly number[]): string {
-  const bytes = Buffer.alloc(vector.length * 4);
-  vector.forEach((value, index) => bytes.writeFloatLE(value, index * 4));
-  return bytes.toString('base64');
+  const bytes = new Uint8Array(vector.length * 4); const view = new DataView(bytes.buffer);
+  vector.forEach((value, index) => view.setFloat32(index * 4, value, true));
+  return bytesToBase64(bytes);
 }
 export function decodeVector(value: string, dimensions: number): Float32Array {
-  const bytes = Buffer.from(value, 'base64');
+  let bytes: Uint8Array;
+  try { bytes = base64ToBytes(value); } catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'A stored memory vector is not base64.'); }
   if (bytes.length !== dimensions * 4) throw new MayuraError('STORAGE_UNAVAILABLE', 'A stored memory vector has the wrong dimensions.');
   const vector = new Float32Array(dimensions);
-  for (let index = 0; index < dimensions; index++) vector[index] = bytes.readFloatLE(index * 4);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let index = 0; index < dimensions; index++) vector[index] = view.getFloat32(index * 4, true);
   return vector;
 }
 

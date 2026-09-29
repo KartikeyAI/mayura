@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
 import { MayuraError, freezeJson, jsonValue, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
 import type { MemoryCategory, MemoryEntry, MemoryProvenance, MemoryRecord, MemorySensitivity, MemoryValidity } from './contracts.js';
+import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
 
 export const MAX_RECORDS = 128;
 export const MAX_AGGREGATE_BYTES = 786_432;
@@ -8,7 +8,7 @@ export const SENSITIVITIES = ['public', 'internal', 'confidential', 'restricted'
 const categories = ['fact', 'preference', 'decision', 'procedure', 'episode'] as const;
 
 export function text(value: unknown, label: string, maxBytes: number): string {
-  if (typeof value !== 'string' || value.trim().length === 0 || value.includes('\0') || Buffer.byteLength(value) > maxBytes) throw new MayuraError('INVALID_INPUT', `${label} must be a bounded nonempty string without null characters.`);
+  if (typeof value !== 'string' || value.trim().length === 0 || value.includes('\0') || utf8ByteLength(value) > maxBytes) throw new MayuraError('INVALID_INPUT', `${label} must be a bounded nonempty string without null characters.`);
   return value;
 }
 export function memoryId(value: unknown): string {
@@ -38,7 +38,7 @@ export function exactKeys(value: JsonObject, keys: readonly string[]): void {
 export function allowedKeys(value: JsonObject, keys: readonly string[]): void {
   if (Object.keys(value).some(key => !keys.includes(key))) throw new MayuraError('INVALID_INPUT', 'Memory input contains an unsupported field.');
 }
-export function sha256(content: string): string { return createHash('sha256').update(content, 'utf8').digest('hex'); }
+export function sha256(content: string): string { return sha256Hex(content); }
 export function sensitivity(value: unknown): MemorySensitivity {
   if (!SENSITIVITIES.includes(value as MemorySensitivity)) throw new MayuraError('INVALID_INPUT', 'Unknown memory sensitivity.');
   return value as MemorySensitivity;

@@ -1,5 +1,5 @@
 import { MayuraError, jsonValue, type JsonObject, type Scope } from '@mayura/core';
-import { evaluateLifecycleControl, evaluateLifecycleObserver, snapshotHookOptions } from '@mayura/core/host';
+import { evaluateLifecycleControl, evaluateLifecycleObserver, fromBase64Url, snapshotHookOptions, toBase64Url } from '@mayura/core/host';
 import { StorageError, type StoredRecord } from '@mayura/storage-contracts';
 import type { AfterMemoryWriteEvent, BeforeMemoryWriteEvent, MemoryEntry, MemoryHooks, MemoryListOptions, MemoryRecord, MemoryStore, MemoryStoreOptions, MemoryTombstone, MemoryWriteOperation } from './contracts.js';
 import { MAX_AGGREGATE_BYTES, MAX_RECORDS, SENSITIVITIES, activeRecord, allowedKeys, exactKeys, immutable, integer, memoryId, object, parseEntry, sensitivity, sha256, text } from './validation.js';
@@ -202,7 +202,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
       if (requestCursor !== undefined) {
         try {
           if (typeof requestCursor !== 'string' || requestCursor.length > 1_024 || !/^[A-Za-z0-9_-]+$/.test(requestCursor)) throw new Error();
-          const value = object(JSON.parse(Buffer.from(requestCursor, 'base64url').toString('utf8')), 1_024, 2);
+          const value = object(JSON.parse(new TextDecoder().decode(fromBase64Url(requestCursor) ?? new Uint8Array())), 1_024, 2);
           exactKeys(value, ['format', 'scope', 'profile', 'revision', 'after', 'includeDeleted']);
           if (value['format'] !== 1 || value['scope'] !== scopeKey || value['profile'] !== profileHash || value['revision'] !== revision || value['includeDeleted'] !== includeDeleted) throw new Error();
           after = memoryId(value['after']);
@@ -212,7 +212,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
       const records = candidates.slice(0, limit);
       const last = records.at(-1);
       const nextCursor = last && candidates.length > records.length
-        ? Buffer.from(JSON.stringify({ format: 1, scope: scopeKey, profile: profileHash, revision, after: last.id, includeDeleted })).toString('base64url') : undefined;
+        ? toBase64Url(JSON.stringify({ format: 1, scope: scopeKey, profile: profileHash, revision, after: last.id, includeDeleted })) : undefined;
       return immutable({ records, revision, ...(nextCursor ? { nextCursor } : {}) });
     },
     search: async (query, searchOptions = {}) => {

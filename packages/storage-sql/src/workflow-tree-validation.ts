@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import {
   StorageError, workflowHashMaterial, workflowTreeBudgetSnapshot, workflowTreeManifest, workflowTreePolicy, workflowTreeRootResources, workflowTreeState,
@@ -6,6 +5,7 @@ import {
 } from '@mayura/storage-contracts';
 import { claim, fields, hash, immutable, integer, invalid, object, receipt } from './scheduler-validation.js';
 import { identifier } from './validation.js';
+import { sha256Hex } from '@mayura/core/host';
 
 function value(raw:JsonObject,key:string):void{try{raw[key]=jsonValue(raw[key],{maxBytes:65_536});}catch{invalid();}}
 function root(raw:JsonObject):void{hash(raw['scope']);hash(raw['rootId']);hash(raw['rootPolicyHash']);}
@@ -54,7 +54,7 @@ export function workflowTreeCommand(method:WorkflowTreeMethod,input:unknown):Jso
 function unavailable():never{throw new StorageError('STORAGE_UNAVAILABLE','Invalid workflow-tree storage response.');}
 function boolean(value:unknown):boolean{if(typeof value!=='boolean')unavailable();return value;}
 function exactObject(value:unknown,names:readonly string[]):JsonObject{let raw:JsonObject;try{raw=object(value);}catch{return unavailable();}try{fields(raw,names);}catch{return unavailable();}return raw;}
-function digest(domain:string,value:unknown):string{return createHash('sha256').update(workflowHashMaterial(domain,value)).digest('hex');}
+function digest(domain:string,value:unknown):string{return sha256Hex(workflowHashMaterial(domain,value));}
 function record(value:unknown,scope:string,id?:string,policyHash?:string):StoredRecord{
   const raw=exactObject(value,['scope','id','idempotencyKey','definitionHash','version','state']);
   try{hash(raw['scope']);hash(raw['id']);identifier(raw['idempotencyKey'],'Idempotency key');hash(raw['definitionHash']);integer(raw['version'],1);}

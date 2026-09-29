@@ -1,5 +1,5 @@
 import { MayuraError, type JsonObject, type Scope } from '@mayura/core';
-import { evaluateLifecycleControl, evaluateLifecycleObserver, snapshotHookOptions } from '@mayura/core/host';
+import { evaluateLifecycleControl, evaluateLifecycleObserver, fromBase64Url, snapshotHookOptions, toBase64Url } from '@mayura/core/host';
 import { StorageError, type MemoryChange, type MemoryEdgeRow, type MemoryIndexStore, type MemoryRow, type MemoryRowSensitivity } from '@mayura/storage-contracts';
 import type {
   AfterMemoryWriteEvent, BeforeMemoryWriteEvent, CorrectMemoryInput, ForgetMemoryInput, MemoryCategory, MemoryEntry, MemoryExport, MemoryHooks,
@@ -143,7 +143,7 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
     if (!Number.isSafeInteger(value) || value < 0) throw new MayuraError('INVALID_CONFIG', 'The memory clock returned an invalid time.');
     return new Date(value).toISOString();
   };
-  const key = `mayura.native-memory.v1:${Buffer.from(JSON.stringify([scope.principalId, scope.projectId])).toString('base64url')}`.slice(0, 255);
+  const key = `mayura.native-memory.v1:${toBase64Url(JSON.stringify([scope.principalId, scope.projectId]))}`.slice(0, 255);
   const permission = (grant: string): void => { if (!grants.has(grant)) throw new MayuraError('PERMISSION_DENIED', 'The memory operation requires a capability that was not granted.'); };
   const admitted = (value: string): boolean => profile.includes(value as MemorySensitivity);
   const filter = () => ({ sensitivities: profile as MemoryRowSensitivity[], asOf: clock() });
@@ -507,14 +507,14 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       let phase: 'records' | 'edges' = 'records'; let afterId: string | undefined;
       if (settings['cursor'] !== undefined) {
         try {
-          const parsed = object(JSON.parse(Buffer.from(String(settings['cursor']), 'base64url').toString('utf8')), 512, 2); exactKeys(parsed, ['phase', 'after']);
+          const parsed = object(JSON.parse(new TextDecoder().decode(fromBase64Url(String(settings['cursor'])) ?? new Uint8Array())), 512, 2); exactKeys(parsed, ['phase', 'after']);
           if (parsed['phase'] !== 'records' && parsed['phase'] !== 'edges') throw new Error();
           phase = parsed['phase']; afterId = parsed['after'] === null ? undefined : memoryId(parsed['after']);
         } catch { throw new MayuraError('INVALID_INPUT', 'The export cursor is invalid.'); }
       }
       const stats = await storage(() => database.stats({ scope: key }));
       let records: NativeMemoryEntry[] = []; let edges: (MemoryEdge | MemoryEdgeTombstone)[] = []; let nextCursor: string | undefined;
-      const encode = (value: { phase: string; after: string | null }): string => Buffer.from(JSON.stringify(value)).toString('base64url');
+      const encode = (value: { phase: string; after: string | null }): string => toBase64Url(JSON.stringify(value));
       if (phase === 'records') {
         const rows = await storage(() => database.listRecords({ scope: key, limit: limit + 1, statuses: ['active', 'superseded', 'deleted'], sensitivities: profile as MemoryRowSensitivity[], ...(afterId ? { after: afterId } : {}) }));
         records = rows.slice(0, limit).map(fromRow);

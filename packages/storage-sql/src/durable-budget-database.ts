@@ -8,6 +8,7 @@ import {
   reduceDurableBudgetState, reduceWorkflowTreeBudgetState,
 } from './durable-budget-state.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
+import { utf8ByteLength } from '@mayura/core/host';
 
 interface RootRow {
   scope: string; id: string; policy_hash: string; format: number | string; mode: string; owner: string;
@@ -72,7 +73,7 @@ export class DurableBudgetDatabase {
   private event(row: EventRow, key: DurableBudgetKey): StoredEvent {
     try {
       const sequence = storedInteger(row.sequence);
-      if (typeof row.data !== 'string' || Buffer.byteLength(row.data) > 1_024) failed();
+      if (typeof row.data !== 'string' || utf8ByteLength(row.data) > 1_024) failed();
       const value = {sequence,type:row.type,data:JSON.parse(row.data) as unknown,createdAt:row.created_at};
       const checked = durableBudgetResult('events',[value],{scope:key.scope,id:key.id,policyHash:key.policyHash,after:sequence - 1}) as readonly StoredEvent[];
       if (checked.length !== 1 || canonical(checked[0]!.data) !== row.data) failed();
@@ -89,7 +90,7 @@ export class DurableBudgetDatabase {
     if (rows.length !== 1) failed();
     let snapshot: BudgetSnapshot;
     try {
-      if (typeof row.state !== 'string' || Buffer.byteLength(row.state) > 1_048_576) failed();
+      if (typeof row.state !== 'string' || utf8ByteLength(row.state) > 1_048_576) failed();
       const parsed = JSON.parse(row.state) as Record<string, unknown>;
       snapshot = this.budgetProfile().owner === 'host-v1' ? durableBudgetSnapshot(parsed) : workflowTreeBudgetSnapshot(parsed);
       if (row.scope !== key.scope || row.id !== key.id || snapshot.scope !== row.scope || snapshot.id !== row.id

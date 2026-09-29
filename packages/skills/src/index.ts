@@ -5,11 +5,11 @@
 // An agent sees only each skill's name and description (the catalog). Two read-only tools load a skill's full
 // instructions and read its files on demand, so dozens of skills cost little until one is used. Skills never grant
 // permissions: a tool or script a skill mentions still needs its own grant, and this package never runs scripts.
-import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { MayuraError, freezeJson, jsonValue, type JsonObject, type Schema } from '@mayura/core';
 import { defineTool, type AnyTool } from '@mayura/tools';
+import { sha256Hex } from '@mayura/core/host';
 
 /** A file a skill bundles besides SKILL.md, by path relative to the skill folder (`references/api.md`). */
 export interface SkillFile { readonly path: string; readonly bytes: number; readonly text: boolean }
@@ -56,7 +56,7 @@ export interface SkillLimits {
 const namePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const pathPattern = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/u;
 const fail = (message: string): never => { throw new MayuraError('INVALID_CONFIG', message); };
-const sha256 = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
+const sha256 = (value: string | Uint8Array): string => sha256Hex(value);
 const canonical = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;

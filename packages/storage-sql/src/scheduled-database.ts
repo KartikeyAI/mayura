@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { jsonValue, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue } from '@mayura/core';
 import {
   assertWorkflowStateMatchesManifest, initialWorkflowState, mergeWorkflowReceipt, workflowHashMaterial,
@@ -21,6 +20,7 @@ import { scheduledCommand, type ScheduledMethod } from './scheduled-validation.j
 import { createCommand, identifier, nextCounter } from './validation.js';
 import { checkCompletion, initializeCompletions, readCompletion } from './execution-completions.js';
 import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
+import { sha256Hex } from '@mayura/core/host';
 
 interface Journal { id: string; digest: string; version: number; operation: string }
 interface Owner {
@@ -58,7 +58,7 @@ const REVIEW_EXPIRED = Symbol('scheduled-review-expired');
 function failed(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored scheduled workflow failed integrity validation.'); }
 function conflict(): never { throw new StorageError('CONFLICT', 'Scheduled workflow state or command content changed.'); }
 function limited(): never { throw new StorageError('LIMIT_EXCEEDED', 'Scheduled workflow history or output limit was reached.'); }
-function digest(domain: string, value: unknown): string { return createHash('sha256').update(workflowHashMaterial(domain, value)).digest('hex'); }
+function digest(domain: string, value: unknown): string { return sha256Hex(workflowHashMaterial(domain, value)); }
 function same(a: unknown, b: unknown): boolean { return workflowHashMaterial('compare', a) === workflowHashMaterial('compare', b); }
 function graphManifest(manifest: Manifest): manifest is WorkflowGraphManifest { return 'format' in manifest && manifest.format === 3; }
 interface AccountingProjection { readonly receipt: ExecutionReceipt; readonly settlement: ExecutionSettlement }

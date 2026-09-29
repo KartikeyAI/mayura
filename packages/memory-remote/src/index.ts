@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto';
 import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
-import { evaluateLifecycleControl, evaluateLifecycleObserver, snapshotHookOptions } from '@mayura/core/host';
+import { evaluateLifecycleControl, evaluateLifecycleObserver, sha256Hex, snapshotHookOptions, utf8ByteLength } from '@mayura/core/host';
 import type { MemoryEntry, MemoryHooks, MemoryRecord, MemoryStore, MemoryTombstone } from '@mayura/memory';
 
 const metadataFormat = 'mayura.remote-memory.v1';
@@ -67,10 +66,10 @@ class RemoteFailure extends MayuraError {
   constructor(message = 'The remote memory service returned an unavailable or invalid response.') { super('TOOL_FAILED', message); }
 }
 const fail = (message?: string): never => { throw new RemoteFailure(message); };
-const hash = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+const hash = (value: string): string => sha256Hex(value);
 const immutable = <T>(value: T): T => freezeJson(jsonValue(value)) as unknown as T;
 function bounded(value: unknown, label: string, maxBytes: number): string {
-  if (typeof value !== 'string' || !value.trim() || value.includes('\0') || Buffer.byteLength(value) > maxBytes) throw new MayuraError('INVALID_CONFIG', `${label} must be a bounded nonempty string.`);
+  if (typeof value !== 'string' || !value.trim() || value.includes('\0') || utf8ByteLength(value) > maxBytes) throw new MayuraError('INVALID_CONFIG', `${label} must be a bounded nonempty string.`);
   return value;
 }
 function identifier(value: unknown): string {
@@ -78,7 +77,7 @@ function identifier(value: unknown): string {
   return value;
 }
 function remoteId(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.includes('\0') || /[\r\n]/u.test(value) || Buffer.byteLength(value) > 1_024) return fail();
+  if (typeof value !== 'string' || !value.trim() || value.includes('\0') || /[\r\n]/u.test(value) || utf8ByteLength(value) > 1_024) return fail();
   return value;
 }
 function object(value: JsonValue | undefined): JsonObject {

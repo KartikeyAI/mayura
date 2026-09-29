@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
 import { jsonValue } from '@mayura/core';
 import { executionCompletion, workflowHashMaterial, type ExecutionCompletion, type ExecutionRef } from '@mayura/storage-contracts';
 import { StorageError } from './contracts.js';
 import { storedInteger, type AggregateRow } from './aggregate-session.js';
 import { canonical } from './scheduler-validation.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
+import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
 
 interface CompletionRow {
   scope: string; run_id: string; definition_hash: string; policy_hash: string; outcome: string;
@@ -14,7 +14,7 @@ const terminal = new Set(['succeeded', 'failed', 'blocked', 'cancelled', 'outcom
 export function completionFailure(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored execution completion failed integrity validation.'); }
 export function completionJson(value: unknown): string { return canonical(jsonValue(value, { maxBytes: 65_536 })); }
 function digest(scope: string, completion: ExecutionCompletion): string {
-  return createHash('sha256').update(workflowHashMaterial('mayura:execution-completion:v1', { scope, ...completion })).digest('hex');
+  return sha256Hex(workflowHashMaterial('mayura:execution-completion:v1', { scope, ...completion }));
 }
 /** Created by the scheduled writer, so terminal publication never depends on a waiter existing. */
 export async function initializeCompletions(tx: SchedulerSession, backend: SchedulerBackend): Promise<void> {
@@ -29,7 +29,7 @@ export async function readCompletion(tx: SchedulerSession, backend: SchedulerBac
   const row = (await tx.query<CompletionRow>(`SELECT * FROM ${backend.prefix}mayura_execution_completions WHERE scope = ? AND run_id = ?`, [scope, reference.runId]))[0];
   if (!row) return undefined;
   try {
-    if (typeof row.data !== 'string' || Buffer.byteLength(row.data) > 65_536) completionFailure();
+    if (typeof row.data !== 'string' || utf8ByteLength(row.data) > 65_536) completionFailure();
     const value = executionCompletion(JSON.parse(row.data));
     if (row.scope !== scope || row.run_id !== reference.runId || row.definition_hash !== reference.definitionHash
       || row.policy_hash !== reference.policyHash || completionJson(value.reference) !== completionJson(reference)

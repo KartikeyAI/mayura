@@ -101,6 +101,7 @@ validator works too.
 |---|---|---|---|
 | `mayura/storage-sqlite` | SQLite storage, with online backup and verified restore. | `createSqliteStore`, `backupSqliteStore`, `restoreSqliteBackup` | `better-sqlite3` |
 | `mayura/storage-postgres` | PostgreSQL storage. | `createPostgresStore` | `pg` |
+| `mayura/storage-postgres/driver` | PostgreSQL storage on a pg-compatible pool you own, without `pg`: for edge runtimes. | `createPostgresStore` | |
 | `mayura/storage` | Both adapters and the storage contracts from one import. Prefer the specific adapter. | `createSqliteStore`, `createPostgresStore`, `StorageError` | `better-sqlite3` and `pg` |
 | `mayura/storage-contracts` | The interfaces a storage adapter implements, for writing your own. | `AggregateStore` (type), `StorageError`, `isStorageError`, `storageError`, `schemaDigest` | |
 

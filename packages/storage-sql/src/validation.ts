@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
 import { jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type CreateRecord, type MigrateRecord, type StoredEventInput, type UpdateRecord } from './contracts.js';
+import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
 
 export const EVENT_PAGE_SIZE = 1_000;
 const MAX_STATE_BYTES = 1_048_576;
@@ -9,7 +9,7 @@ const MAX_EVENT_BYTES = 65_536;
 export function identifier(value: unknown, label: string): string {
   // In Unicode mode valid pairs are one code point; only unpaired units match.
   // Reject before UTF-8 encoding can replace malformed identities with U+FFFD.
-  if (typeof value !== 'string' || value.length === 0 || /[\uD800-\uDFFF]/u.test(value) || Buffer.byteLength(value) > 256 || value.includes('\0')) {
+  if (typeof value !== 'string' || value.length === 0 || /[\uD800-\uDFFF]/u.test(value) || utf8ByteLength(value) > 256 || value.includes('\0')) {
     throw new StorageError('INVALID_INPUT', `${label} must be a nonempty well-formed Unicode string of at most 256 UTF-8 bytes without null characters.`);
   }
   return value;
@@ -33,7 +33,7 @@ function eventInputs(events: readonly StoredEventInput[]): StoredEventInput[] {
     if (event === null || typeof event !== 'object') throw new StorageError('INVALID_INPUT', 'Invalid event envelope.');
     return { type: identifier(event.type, 'Event type'), data: object(event.data, MAX_EVENT_BYTES) };
   });
-  if (Buffer.byteLength(JSON.stringify(result)) > MAX_STATE_BYTES) {
+  if (utf8ByteLength(JSON.stringify(result)) > MAX_STATE_BYTES) {
     throw new StorageError('INVALID_INPUT', 'Combined event payload exceeds one MiB.');
   }
   return result;
@@ -89,7 +89,7 @@ export function submissionDigest(command: CreateRecord): string {
     definitionHash: command.definitionHash, state: command.state,
     events: command.events.map((event) => ({ type: event.type, data: event.data })),
   };
-  return createHash('sha256').update('mayura:aggregate-submission:v1\n').update(canonical(value)).digest('hex');
+  return sha256Hex('mayura:aggregate-submission:v1\n' + canonical(value));
 }
 
 export function nextCounter(current: number, increment: number): number {

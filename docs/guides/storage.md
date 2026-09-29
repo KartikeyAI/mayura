@@ -72,6 +72,31 @@ transaction-scoped locks only, which is what transaction-mode poolers need.
 The adapter sets a 10 second statement timeout and a 5 second lock timeout on every transaction. `initialize()` takes an advisory lock, so several instances can start at the same time safely. A
 schema keeps one application's data apart from another's; it is not an authorization boundary.
 
+### A pool you own
+
+`mayura/storage-postgres/driver` runs the same store on a pg-compatible pool that you create: a `pg` Pool that the
+rest of your application shares, or, on runtimes without TCP sockets, a driver that connects another way, such as the
+WebSocket `Pool` of `@neondatabase/serverless`. This entry point does not import `pg`, so it bundles for any runtime.
+
+```ts
+import { Pool } from 'pg';
+import { createPostgresStore } from 'mayura/storage-postgres/driver';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
+const store = createPostgresStore({ driver: pool, schema: 'mayura' });
+await store.initialize();
+```
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `driver` | required | A pool with `connect()`, returning a client with `query()` and `release()`, and `query()`. |
+| `schema` | `mayura` | As above. |
+
+The pool is yours: `store.close()` stops the store but never ends the pool, so end it when your application, or your
+request, is done with it. The pool must hand out real sessions, because each operation runs as one transaction on a
+client from `connect()`; single-query HTTP drivers do not work. The data, the schema and the migrations are the same as
+with a connection string, so both entry points can share a database.
+
 ## What uses the store
 
 | Feature | How it uses the store | Extra setup |

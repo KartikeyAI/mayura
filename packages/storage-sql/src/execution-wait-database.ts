@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   executionWaitCommand, executionWaitHashMaterial, executionWaitSnapshot,
   type ExecutionCompletion, type ExecutionRef, type ExecutionWaitMethod, type ExecutionWaitSnapshot,
@@ -10,6 +9,7 @@ import { completionJson, readCompletion } from './execution-completions.js';
 import { identifier } from './validation.js';
 import type { ScheduledWorkflowDatabase } from './scheduled-database.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
+import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
 
 interface StreamRow { scope: string; stream_id: string; policy_hash: string; format: number; wait_count: number | string; event_sequence: number | string }
 interface WaitRow { scope: string; stream_id: string; wait_id: string; version: number | string; status: string; registration_sequence: number | string; definition_hash: string; data: string }
@@ -19,7 +19,7 @@ interface Stream { key: ExecutionWaitStreamKey; row: StreamRow; events: StoredEv
 function failed(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored execution wait failed integrity validation.'); }
 function conflict(): never { throw new StorageError('CONFLICT', 'Execution wait identity or policy does not match.'); }
 function digest(key: ExecutionWaitStreamKey, id: string, targets: readonly ExecutionRef[]): string {
-  return createHash('sha256').update(executionWaitHashMaterial(key, id, targets)).digest('hex');
+  return sha256Hex(executionWaitHashMaterial(key, id, targets));
 }
 
 /** Finite metadata reducer. No workflow locks are acquired while a stream row is held. */
@@ -68,7 +68,7 @@ export class ExecutionWaitDatabase {
       if (rows.length !== head) failed();
       const events: StoredEvent[] = []; const registered = new Set<string>(); const terminal = new Set<string>();
       for (const [index, event] of rows.entries()) {
-        if (storedInteger(event.sequence) !== index + 1 || typeof event.data !== 'string' || Buffer.byteLength(event.data) > 1024
+        if (storedInteger(event.sequence) !== index + 1 || typeof event.data !== 'string' || utf8ByteLength(event.data) > 1024
           || typeof event.created_at !== 'string' || new Date(event.created_at).toISOString() !== event.created_at
           || (index > 0 && event.created_at < rows[index - 1]!.created_at)) failed();
         const data: unknown = JSON.parse(event.data);
@@ -118,7 +118,7 @@ export class ExecutionWaitDatabase {
   /** Validate bounded canonical snapshots independently of their target index and terminal journal. */
   private decodeWait(row: WaitRow, key: ExecutionWaitStreamKey): ExecutionWaitSnapshot {
     try {
-      if (typeof row.data !== 'string' || Buffer.byteLength(row.data) > 65_536) failed();
+      if (typeof row.data !== 'string' || utf8ByteLength(row.data) > 65_536) failed();
       const value = executionWaitSnapshot(JSON.parse(row.data));
       if (row.scope !== key.scope || row.stream_id !== key.streamId || row.wait_id !== value.id
         || value.version !== storedInteger(row.version) || value.status !== row.status || value.definitionHash !== row.definition_hash
