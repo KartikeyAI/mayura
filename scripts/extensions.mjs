@@ -15,6 +15,7 @@ export const extensionsRoot = join(workspace, 'extensions');
  * review, so a new one fails the release checks until it is listed here.
  */
 export const reviewedDependencies = {
+  'provider-anthropic': ['@anthropic-ai/sdk'],
   'provider-openai': ['openai'],
 };
 

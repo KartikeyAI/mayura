@@ -7195,6 +7195,20 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/provider-anthropic": {
+      "anthropic": {
+        "kind": "function",
+        "declaration": "6c77c242202ccdb2"
+      },
+      "AnthropicProviderOptions": {
+        "kind": "interface",
+        "declaration": "aa73c89763f254db"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "781763c0b1d17fe3"
+      }
+    },
     "@mayurajs/provider-openai": {
       "catalog": {
         "kind": "const",

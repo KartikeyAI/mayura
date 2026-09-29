@@ -5,6 +5,7 @@
     { "path": "packages/cli" },
     { "path": "packages/mayura" },
     { "path": "extensions/provider-openai" },
+    { "path": "extensions/provider-anthropic" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },

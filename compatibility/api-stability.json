@@ -61,6 +61,7 @@
   ],
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
+    "@mayurajs/provider-anthropic",
     "@mayurajs/provider-openai"
   ],
   "internalPackages": [

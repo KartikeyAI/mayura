@@ -123,6 +123,7 @@ model in it**, which is why its name is explicit rather than derived.
 
 | Package | Provider | Model ids |
 |---|---|---|
+| `@mayurajs/provider-anthropic` | Anthropic Claude, through the official `@anthropic-ai/sdk` and the Messages API | `anthropic/<model>` |
 | `@mayurajs/provider-openai` | OpenAI, through the official `openai` SDK and the Responses API | `openai/<model>` |
 
 Each package:
