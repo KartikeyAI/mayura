@@ -9,6 +9,7 @@
     { "path": "extensions/provider-azure" },
     { "path": "extensions/provider-bedrock" },
     { "path": "extensions/provider-google" },
+    { "path": "extensions/provider-mistral" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },

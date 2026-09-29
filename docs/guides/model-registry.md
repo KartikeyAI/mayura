@@ -127,6 +127,7 @@ model in it**, which is why its name is explicit rather than derived.
 | `@mayurajs/provider-azure` | Azure OpenAI, through the official `openai` SDK and Azure's v1 API; built on `responsesProvider` | `azure/<deployment>` |
 | `@mayurajs/provider-bedrock` | Amazon Bedrock (Claude, Nova, Llama, Mistral and more), through the official AWS SDK and the Converse API | `bedrock/<model or inference profile id>` |
 | `@mayurajs/provider-google` | Google Gemini, through the official `@google/genai` SDK and the Gemini API | `google/<model>` |
+| `@mayurajs/provider-mistral` | Mistral, through the official `@mistralai/mistralai` SDK and the Chat Completions API | `mistral/<model>` |
 | `@mayurajs/provider-openai` | OpenAI, through the official `openai` SDK and the Responses API | `openai/<model>` |
 
 Each package:

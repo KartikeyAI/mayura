@@ -7255,6 +7255,20 @@
         "declaration": "3d7015a1d162c881"
       }
     },
+    "@mayurajs/provider-mistral": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "781763c0b1d17fe3"
+      },
+      "mistral": {
+        "kind": "function",
+        "declaration": "5c46cab9e829646e"
+      },
+      "MistralProviderOptions": {
+        "kind": "interface",
+        "declaration": "aba518cb7c83e716"
+      }
+    },
     "@mayurajs/provider-openai": {
       "catalog": {
         "kind": "const",

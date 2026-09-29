@@ -1,0 +1,7 @@
+// The tests, checked without Node's types: @mistralai/mistralai declares its event stream against older Node types,
+// which conflict with @types/node 24. The package's own declarations never mention the SDK, so users are unaffected.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "composite": false, "noEmit": true, "declaration": false, "declarationMap": false, "types": [] },
+  "include": ["test/**/*.ts"]
+}

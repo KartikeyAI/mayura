@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "node node_modules/typescript/bin/tsc --build",
-    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json && node node_modules/typescript/bin/tsc --project packages/inspector-ui/tsconfig.json",
+    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json && node node_modules/typescript/bin/tsc --project extensions/provider-mistral/tsconfig.test.json && node node_modules/typescript/bin/tsc --project packages/inspector-ui/tsconfig.json",
     "test": "node node_modules/vitest/vitest.mjs run",
     "check": "pnpm typecheck && pnpm test",
     "test:consumer": "node scripts/consumer-check.mjs",
@@ -74,7 +74,9 @@
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",
     "@mayurajs/provider-google": "workspace:*",
+    "@mayurajs/provider-mistral": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
+    "@opentelemetry/api": "1.9.1",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",
     "@types/node": "24.13.6",

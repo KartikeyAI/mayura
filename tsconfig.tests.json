@@ -7,5 +7,6 @@
     "declarationMap": false,
     "types": ["node"]
   },
-  "include": ["packages/*/test/**/*.ts", "extensions/*/test/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/*/test/**/*.ts", "extensions/*/test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["extensions/provider-mistral/test/**/*.ts"]
 }
