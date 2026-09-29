@@ -79,3 +79,4 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Versioning and stability](project/versioning.md): what each release promises.
 - [Supported platforms](project/support.md): Node.js versions, operating systems and getting help.
 - [Security model](project/security.md): what Mayura protects against, and reporting vulnerabilities.
+- [Credits](project/credits.md): the open-source projects and standards Mayura is built on.

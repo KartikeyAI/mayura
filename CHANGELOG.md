@@ -4,6 +4,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- Documentation: a Credits page (`docs/project/credits.md`) naming the open-source projects and open standards Mayura is built on, what each one does in Mayura, and its license.
+
 ### Fixed
 
 - Release workflow: a release that stopped part-way, or one committed and tagged by hand, can be run again with its version, and every step skips what is already done (the version commit, the tag, the npm publish, the GitHub Release). `version.mjs set` does nothing when the code is already at that version. The commit's author and committer can differ (`RELEASE_GIT_AUTHOR_*`, `RELEASE_GIT_COMMITTER_*`).

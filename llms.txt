@@ -84,3 +84,4 @@ Rules that matter when writing Mayura code:
 - [Versioning](docs/project/versioning.md): What Mayura keeps stable, how versions follow SemVer, how APIs are deprecated, and how release candidates and npm tags work.
 - [Support](docs/project/support.md): Supported Node.js versions, platforms and package managers, how to get help with Mayura, and how to report a bug.
 - [Security](docs/project/security.md): Mayura's security model: what it protects, what your code is trusted with, and how to report a vulnerability.
+- [Credits](docs/project/credits.md): The open-source projects and open standards Mayura is built on, what each one does in Mayura, and its license.
