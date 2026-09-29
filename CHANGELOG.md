@@ -12,6 +12,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Durable workflows settle a tool step abandoned by a stopped process on their own. A step that was `dispatching` when its process died (killed, evicted, or frozen past its limit) used to wait for someone to call `recoverAbandoned`. Now, once the tool's `timeoutMs` and a further minute have passed since the step's dispatch was recorded, the next process that advances the run settles it exactly as `recoverAbandoned` would: `unknown`, or `blocked` when its receipt shows the tool finished. It is never run again, and a step that a live process is still running is never touched. This covers lifecycle and format-2 workflows (and `agentStep`), records a `lifecycle.step.abandoned` or `step.abandoned` event, and needs no change to stored data. `recoverAbandoned` still does it at once.
 - Release workflow: a release that stopped part-way, or one committed and tagged by hand, can be run again with its version, and every step skips what is already done (the version commit, the tag, the npm publish, the GitHub Release). `version.mjs set` does nothing when the code is already at that version. The commit's author and committer can differ (`RELEASE_GIT_AUTHOR_*`, `RELEASE_GIT_COMMITTER_*`).
 
 ## [1.0.0-rc.1] - 2026-09-29

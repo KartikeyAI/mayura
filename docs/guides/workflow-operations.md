@@ -234,9 +234,10 @@ Operators can do the same over HTTP: `client.workflowMigrations(runId)`, `client
 ## Runs with unknown outcomes
 
 A run that ends `outcome_unknown` stays in the settled view until it drops out. A run whose step was in flight when a
-process died stays active and cannot be paused; after checking the outside system, call
-`runtime.recoverAbandoned(runId)` from code to record the step as unknown. There is no HTTP or CLI command for this
-yet. See [Durable workflows](durable-workflows.md).
+process died stays active and cannot be paused until the tool's `timeoutMs` and a further minute have passed; the next
+worker pass then records the step as unknown, without running it again. To record it sooner, after checking the
+outside system, call `runtime.recoverAbandoned(runId)` from code. There is no HTTP or CLI command for this yet. See
+[Durable workflows](durable-workflows.md#restarts-and-unknown-outcomes).
 
 ## Other workflow kinds and hosts
 

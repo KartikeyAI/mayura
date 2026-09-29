@@ -1,5 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { abandoned, dispatchedAt } from './abandoned.js';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workflowOutputs, mergeWorkflowReceipt,
   type WorkflowFormat2State as State, type WorkflowFormat2Step as Step, type WorkflowFormat2StepStatus as StepStatus,
@@ -107,7 +108,21 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
 
   async function executeNode(id: string, node: WorkflowNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
-    if (!step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status) || !['pending', 'approved'].includes(step.status)) return;
+    if (!step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status)) return;
+    // A dispatching step that no call in this process owns, past the tool's timeout and a margin, belongs to a process
+    // that stopped: settle it as recoverAbandoned would, and never run the effect again.
+    if (node.kind === 'tool' && step.status === 'dispatching') {
+      if (active.has(`${id}/${node.id}`)) return;
+      const dispatchedAtMs = await storageCall(() => dispatchedAt(store, scopeKey, id, 'step.dispatching', node.id));
+      if (!abandoned(dispatchedAtMs, node.tool.timeoutMs, Date.now())) return;
+      await mutate(id, current => {
+        const target = current.steps[node.id];
+        if (!target || target.status !== 'dispatching' || ['paused', 'cancelled'].includes(current.status) || active.has(`${id}/${node.id}`)) return false;
+        target.status = target.receipt?.execution === 'succeeded' ? 'blocked' : 'unknown'; current.status = 'running'; return true;
+      }, 'step.abandoned', { nodeId: node.id });
+      return;
+    }
+    if (!['pending', 'approved'].includes(step.status)) return;
     const dependencies = (node.dependsOn ?? []).map(key => state.steps[key]!);
     if (dependencies.some(item => terminalSteps.has(item.status) && item.status !== 'succeeded')) {
       await mutate(id, current => { const next = current.steps[node.id]!; if (!['pending','approved'].includes(next.status)) return false; next.status = 'skipped'; return true; }, 'step.skipped', { nodeId: node.id }); return;

@@ -1,6 +1,7 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate,
   type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { abandoned, dispatchedAt } from './abandoned.js';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLifecycleStateMatchesManifest, initialWorkflowLifecycleState,
   mergeWorkflowReceipt, workflowLifecycleOutputs, workflowLifecycleState,
@@ -372,6 +373,21 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     // A pause or cancellation may commit after this read; every scheduling transition rechecks the latest state.
     const advance = (transition: (current: State) => boolean, type: string, data: JsonObject): Promise<StoredRecord> =>
       mutate(id, current => schedulable(current) && transition(current), type, data);
+    // A dispatching step that no call in this process owns may belong to a process that stopped (killed, or frozen
+    // past its limit). Once the tool's timeout and a margin have passed since the dispatch, no live process can still
+    // settle it, so it is settled as recoverAbandoned would: unknown, or blocked when a receipt shows it succeeded. The
+    // effect is never run again.
+    if (node.kind === 'tool' && step.kind === 'tool' && step.status === 'dispatching') {
+      if (active.has(`${id}/${node.id}`)) return;
+      const dispatchedAtMs = await storageCall(() => dispatchedAt(store, scopeKey, id, 'lifecycle.step.dispatching', node.id));
+      if (!abandoned(dispatchedAtMs, node.tool.timeoutMs, now())) return;
+      await advance(current => {
+        const target = current.steps[node.id];
+        if (!target || target.kind !== 'tool' || target.status !== 'dispatching' || active.has(`${id}/${node.id}`)) return false;
+        target.status = target.receipt?.execution === 'succeeded' ? 'blocked' : 'unknown'; current.status = 'running'; return true;
+      }, 'lifecycle.step.abandoned', { nodeId: node.id });
+      return;
+    }
     const dependencies = (node.dependsOn ?? []).map(key => state.steps[key]!);
     if (dependencies.some(item => terminalStepStatuses.has(item.status) && !satisfiedStepStatuses.has(item.status))) {
       await advance(current => skip(current.steps[node.id]!), 'lifecycle.step.skipped', { nodeId: node.id }); return;

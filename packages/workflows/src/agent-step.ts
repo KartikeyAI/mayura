@@ -81,8 +81,9 @@ const identifier = /^[A-Za-z][A-Za-z0-9._/-]{0,127}$/;
  * A failure before the agent starts (building it, `prepare`) is a refusal: the step fails and is charged nothing.
  *
  * The workflow's policy must grant `tool:<id>`, each of `capabilities`, and `effect:<kind>` for the strongest effect
- * among the agent's tools. The model loop inside the step is not checkpointed: a crash mid-step leaves the step for
- * `recoverAbandoned`, never re-runs the agent by itself.
+ * among the agent's tools. The model loop inside the step is not checkpointed: a crash mid-step leaves the step
+ * dispatching until its timeout and a margin pass, when the next pass settles it as unknown (or `recoverAbandoned` does it
+ * sooner). The agent is never run again by itself.
  */
 export function agentStep<AI extends Schema, AO extends Schema, SI extends Schema = AI, SO extends Schema = AO>(
   agent: AgentDefinition<AI, AO>, options: AgentStepOptions<SI, SO, InferInput<AI>, InferOutput<AO>>): ToolDefinition<SI, SO>;

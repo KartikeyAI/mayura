@@ -361,9 +361,11 @@ Every state change is written to the store before the next one begins, so after 
 run from its last recorded state: waiting steps keep waiting, due timers fire, finished steps are not run again.
 
 The one gap is a step that was running when the process died. Mayura records a step as started before it calls the
-tool, so it knows the tool may have acted, but not whether it did. Such a step is never run again automatically; the
-run stays unfinished and cannot be paused. After you check the outside system, record the result with
-`recoverAbandoned`:
+tool, so it knows the tool may have acted, but not whether it did. Such a step is never run again. Once the tool's
+`timeoutMs` and a further minute have passed since it started, no live process can still finish it, so the next
+process that advances the run (a worker, or your own `runUntilSettled`) records the step as `unknown`, or `blocked`
+when its receipt shows the tool finished, and the run ends that way too. Until then the run stays unfinished and cannot
+be paused. To record it sooner, after you check the outside system, call `recoverAbandoned`:
 
 ```ts
 const snapshot = await runtime.recoverAbandoned(runId);

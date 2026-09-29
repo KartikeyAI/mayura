@@ -459,8 +459,9 @@ On `SIGTERM` or `SIGINT`, the first signal starts a graceful stop and a second o
   The CLI reports whether everything settled in time and how much work it had to interrupt.
 
 Give containers a stop grace period longer than these timeouts (Docker's `stop_grace_period`, Kubernetes'
-`terminationGracePeriodSeconds`). An effect that was in flight when a process died is never repeated automatically;
-it is recorded as unknown and waits for an operator to reconcile it (see [Workflow operations](workflow-operations.md)).
+`terminationGracePeriodSeconds`). An effect that was in flight when a process died is never repeated. Once the tool's
+timeout and a further minute have passed, the next worker pass records it as unknown for an operator to reconcile (see
+[Workflow operations](workflow-operations.md)).
 
 ## PostgreSQL and scaling
 
