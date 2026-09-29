@@ -1,1 +1,1 @@
-export { createPostgresStore, type PostgresStoreOptions } from './postgres.js';
+export { createPostgresStore, type PostgresPoolOptions, type PostgresStoreOptions } from './postgres.js';

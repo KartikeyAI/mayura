@@ -176,3 +176,50 @@ describe('agent runs shared by server replicas through durable run records', () 
   });
 });
 
+
+describe('request-bound runs, for platforms that stop the process after it responds', () => {
+  it('answers only once the run has finished and its outcome is recorded', async () => {
+    const { open } = await sqlite(); const store = await open(); const other = await open(); const model = waiting();
+    const fn = replica({ runRecords: createAggregateRunRecords(store), runExecution: 'request' }, model.generate);
+    const nextInvocation = replica({ runRecords: createAggregateRunRecords(other) }, vi.fn());
+    let answered = false; const response = submit(fn).then(value => { answered = true; return value; });
+    await model.started.promise; await new Promise(resolve => setTimeout(resolve, 100));
+    expect(answered).toBe(false);
+    model.release.resolve({ type: 'final', output: { answer: 42 }, usage: { costMicros: 0 } });
+    const accepted = await response; expect(accepted.status).toBe(202);
+    const { id } = await json(accepted);
+    // Another instance, such as the next function invocation, finds the finished run at once, with no waiting.
+    expect(await json(await call(nextInvocation, `/v1/runs/${id}`))).toMatchObject({ id, status: 'succeeded', outcome: { status: 'succeeded', output: { answer: 42 } } });
+  });
+
+  it('keeps the submission open past requestTimeoutMs for as long as the run may last', async () => {
+    const { open } = await sqlite(); const store = await open();
+    const generate = vi.fn<ModelAdapter['generate']>(async () => { await new Promise(resolve => setTimeout(resolve, 600)); return { type: 'final', output: 'DONE', usage: { costMicros: 0 } }; });
+    const server = createAgentServer({ publicOrigin, runExecution: 'request', runRecords: createAggregateRunRecords(store), authenticate: async () => identity(),
+      agents: [{ agent: agent(generate), permissions: { allow: ['model:fixture'] }, limits: { maxDurationMs: 5_000 } }],
+      limits: { requestTimeoutMs: 200, runRecordPollMs: 20 } });
+    cleanups.push(() => server.close());
+    const accepted = await submit(server); expect(accepted.status).toBe(202);
+    const { id } = await json(accepted);
+    expect(await json(await call(server, `/v1/runs/${id}`))).toMatchObject({ status: 'succeeded' });
+    expect(generate).toHaveBeenCalledTimes(1); // the run finished once, in the request that started it
+  });
+
+  it('ends a run that outlasts its own limit, then answers', async () => {
+    const { open } = await sqlite(); const store = await open(); const model = waiting();
+    const server = createAgentServer({ publicOrigin, runExecution: 'request', runRecords: createAggregateRunRecords(store), authenticate: async () => identity(),
+      agents: [{ agent: agent(model.generate), permissions: { allow: ['model:fixture'] }, limits: { maxDurationMs: 300 } }],
+      limits: { requestTimeoutMs: 1_000, runRecordPollMs: 20 } });
+    cleanups.push(() => server.close());
+    const accepted = await submit(server); expect(accepted.status).toBe(202);
+    const { id } = await json(accepted);
+    expect(await json(await call(server, `/v1/runs/${id}`))).toMatchObject({ status: 'failed', outcome: { status: 'failed', error: { code: 'TIMEOUT' } } });
+  });
+
+  it('refuses request-bound runs without run records', () => {
+    expect(() => createAgentServer({ publicOrigin, runExecution: 'request', authenticate: async () => identity(),
+      agents: [{ agent: agent(vi.fn()), permissions: { allow: ['model:fixture'] } }] })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    expect(() => createAgentServer({ publicOrigin, runExecution: 'later' as never, authenticate: async () => identity(),
+      agents: [{ agent: agent(vi.fn()), permissions: { allow: ['model:fixture'] } }] })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
+});

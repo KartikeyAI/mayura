@@ -214,6 +214,15 @@ export interface AgentServerOptions {
    * `outcome_unknown` after its lease instead of disappearing. They also make submission idempotency durable.
    */
   readonly runRecords?: RunRecordStore;
+  /**
+   * Where an agent run executes. `'background'` (the default): the run keeps going in this process after
+   * `POST /v1/runs` answers 202. `'request'`: the run finishes, and its outcome is recorded, before that 202 is sent, so
+   * nothing runs once the response is out; use it where the platform may stop or freeze the process after it responds,
+   * such as serverless functions. It requires `runRecords`, so any instance can serve the run's result and events
+   * afterwards. The submission waits up to the agent's `limits.maxDurationMs` (60 s unless set) plus
+   * `requestTimeoutMs`: keep that under the platform's time limit, and give clients a `requestTimeoutMs` above it.
+   */
+  readonly runExecution?: 'background' | 'request';
   /** Verify the token using trusted application authentication; never trust token claims without verification. */
   readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
   readonly limits?: {
@@ -253,6 +262,8 @@ interface Entry {
   readonly runtimeKey: string; readonly submissionKey: string;
   outcome?: Outcome<unknown>;
   finished?: boolean;
+  /** With run records: settles once the owner has recorded the outcome (or lost the run, or the server closed). */
+  persisted?: Promise<void>;
   /** The owner has received the outcome; the run may be released early under capacity pressure. */
   collected?: boolean;
   /** Another replica settled this durable run after its lease lapsed; its record, not this entry, is authoritative. */
@@ -701,6 +712,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       throw new Error('Run records require claim, release, start, update, read, events, requestCancel and abandon functions.');
     return Object.freeze(Object.fromEntries(names.map(name => [name, (supplied[name] as (...values: unknown[]) => unknown).bind(supplied)])) as unknown as RunRecordStore);
   })();
+  const runExecution = options.runExecution ?? 'background';
+  if (runExecution !== 'background' && runExecution !== 'request') throw new MayuraError('INVALID_CONFIG', "runExecution must be 'background' or 'request'.");
+  if (runExecution === 'request' && !runRecords) throw new MayuraError('INVALID_CONFIG', "runExecution 'request' requires runRecords, so any instance can serve a run's result and events.");
+  // In request mode a submission lasts as long as the longest run it may start, plus time to record the outcome.
+  const submissionTimeoutMs = runExecution === 'request'
+    ? Math.max(...[...registry.values()].map(agent => agent.limits?.maxDurationMs ?? 60_000)) + limits.requestTimeoutMs : limits.requestTimeoutMs;
   // Identifies this server instance as the owner of the runs it executes; never derived from request data.
   const replicaId = crypto.randomUUID(); const leaseSkewMs = Math.min(maxLeaseSkewMs, limits.runLeaseMs);
   const submissions = new Map<string, Entry>();
@@ -939,7 +956,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    * and act on cancel requests from other replicas. A write that fails is retried with backoff; if the lease lapses
    * meanwhile, another replica settles the run as outcome_unknown and this owner, told it lost the run, cancels it.
    */
-  const persist = (entry: Entry): void => {
+  const persist = (entry: Entry): Promise<void> => {
     const records = runRecords!; const runId = entry.handle.id; const owner = entry.owner;
     const buffer: RunEvent[] = []; let observed = false; let wake: (() => void) | undefined;
     const notify = (): void => { const resume = wake; wake = undefined; resume?.(); };
@@ -989,6 +1006,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       }
     })();
     persisters.add(task); void task.finally(() => { persisters.delete(task); });
+    return task;
   };
   /** A 409 for a workflow command; with read access the caller also learns the run's current revision. */
   const workflowConflict = async (identity: ServerIdentity, runId: string, signal: AbortSignal): Promise<HttpFailure> => {
@@ -1378,7 +1396,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
               await recorded(() => runRecords.start({ owner, key, runId: handle.id, agentId, replicaId, leaseExpiresAtMs: Date.now() + limits.runLeaseMs,
                 snapshot: inspection(entry), signal }), signal);
             } catch (error) { handle.cancel(); release(entry); throw error; }
-            persist(entry);
+            entry.persisted = persist(entry);
           }
           return entry;
         } catch (error) {
@@ -1392,6 +1410,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       try { started = await pending; } finally { pendingSubmissions.delete(submissionKey); }
       if (started === 'duplicate') throw new HttpFailure(409, 'SUBMISSION_OUTCOME_UNKNOWN');
       if ('replay' in started) return response({ id: started.replay, profile: 'ephemeral' }, 200);
+      // Request mode: answer only once the run has ended and its outcome is recorded, so nothing runs after the response.
+      if (runExecution === 'request') await started.persisted;
       return response({ id: started.handle.id, profile: 'ephemeral' }, 202);
     }
     const match = /^\/v1\/runs\/([a-f0-9-]{36})(?:\/(cancel|events))?$/.exec(url.pathname);
@@ -1460,7 +1480,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const abort = (): void => { controller.abort(); };
       request.signal.addEventListener('abort', abort, { once: true });
       if (request.signal.aborted) abort();
-      const timer = setTimeout(abort, limits.requestTimeoutMs);
+      const submission = runExecution === 'request' && request.method === 'POST' && new URL(request.url).pathname === '/v1/runs';
+      const timer = setTimeout(abort, submission ? submissionTimeoutMs : limits.requestTimeoutMs);
       let result: Response;
       try { result = await bounded(route(request, controller.signal).catch(error => {
         throw error instanceof HttpFailure ? error : new HttpFailure(500, 'INTERNAL_ERROR');

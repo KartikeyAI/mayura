@@ -61,9 +61,15 @@ await store.initialize();
 | --- | --- | --- |
 | `connectionString` | required | A standard PostgreSQL connection URL. Keep it in your secret configuration. |
 | `schema` | `mayura` | Lowercase identifier, at most 63 characters. All of Mayura's tables live in this schema. |
+| `pool` | see below | `{ max, connectionTimeoutMs, idleTimeoutMs }` for the connection pool. |
 
-The adapter keeps a pool of up to 8 connections and sets a 10 second statement timeout and a 5 second lock timeout on
-every transaction. `initialize()` takes an advisory lock, so several instances can start at the same time safely. A
+The pool keeps up to `max` connections (default 8, at most 100), waits up to `connectionTimeoutMs` for one (default
+5,000) and closes one that has been idle for `idleTimeoutMs` (default 10,000). On serverless functions, where each
+instance has its own pool, use `pool: { max: 1 }` or `2` and connect through your provider's pooler. Mayura keeps no
+session state between transactions: each operation is one transaction, with `SET LOCAL` settings and
+transaction-scoped locks only, which is what transaction-mode poolers need.
+
+The adapter sets a 10 second statement timeout and a 5 second lock timeout on every transaction. `initialize()` takes an advisory lock, so several instances can start at the same time safely. A
 schema keeps one application's data apart from another's; it is not an authorization boundary.
 
 ## What uses the store

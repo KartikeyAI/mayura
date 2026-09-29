@@ -333,6 +333,34 @@ Records hold the run's snapshot, up to 2,048 content-free metadata events (`maxE
 `output.delta` text counts as events) and the outcome, including the run's output. They are kept until you remove
 them from the store.
 
+## Request-bound runs
+
+By default a run keeps going in the server process after `POST /v1/runs` answers 202. Platforms such as serverless
+functions may freeze or stop the process as soon as it responds, which would stop the run with it. Set
+`runExecution: 'request'` and each run finishes, and its outcome is recorded, before the 202 is sent:
+
+```ts
+import { createAggregateRunRecords } from 'mayura/storage-contracts';
+import { createAgentServer } from 'mayura/server';
+
+const api = createAgentServer({
+  publicOrigin: 'https://agents.example.com', mounted: true, agents, authenticate,
+  runRecords: createAggregateRunRecords(store),
+  runExecution: 'request',
+});
+```
+
+- It requires `runRecords`: the next request for the run's result or events may reach another instance, which reads
+  them from the record. The run is already finished, so the result comes back at once.
+- The response is the usual `202` with the run's id, so clients need no change beyond a longer wait: set the client's
+  `requestTimeoutMs` above the agent's run time.
+- The submission waits up to the agent's `limits.maxDurationMs` (60 seconds unless you set it) plus the server's
+  `requestTimeoutMs`; every other route keeps `requestTimeoutMs`. A run that reaches its limit fails with `TIMEOUT`,
+  and the response follows. Keep that total under your platform's time limit.
+- Live event streams still work, but a client connecting after the 202 sees the run's recorded events all at once.
+
+Work that must outlast one request belongs in a [durable workflow](durable-workflows.md), advanced by a worker.
+
 ## HTTP API
 
 | Route | Capability |

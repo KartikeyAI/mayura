@@ -2996,7 +2996,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "2504755b55983e4b"
+        "declaration": "bdc5e40f36421ca5"
       },
       "createAgentServer": {
         "kind": "function",
@@ -3544,9 +3544,13 @@
         "kind": "function",
         "declaration": "b8d73910537b01f1"
       },
+      "PostgresPoolOptions": {
+        "kind": "interface",
+        "declaration": "ecd06a76628fc49d"
+      },
       "PostgresStoreOptions": {
         "kind": "interface",
-        "declaration": "ca97457d0556be5a"
+        "declaration": "3464493dec28b531"
       },
       "ReceiptCommand": {
         "kind": "interface",
@@ -5112,9 +5116,13 @@
         "kind": "function",
         "declaration": "1eb440e6774d53bc"
       },
+      "PostgresPoolOptions": {
+        "kind": "interface",
+        "declaration": "ecd06a76628fc49d"
+      },
       "PostgresStoreOptions": {
         "kind": "interface",
-        "declaration": "ca97457d0556be5a"
+        "declaration": "3464493dec28b531"
       }
     },
     "@mayura/storage-sql/host": {
