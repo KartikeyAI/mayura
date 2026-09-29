@@ -83,7 +83,8 @@ const extensionResults = {};
 for (const extension of extensions()) {
   const name = `@mayurajs/${extension.name}`;
   const directory = join(output, `extension-${extension.name}`); await mkdir(directory);
-  const closure = await packClosure([[name, workspace]]);
+  // Optional dependencies installed here come along: a driver's native binary for this platform (libSQL's) is one.
+  const closure = await packClosure([[name, workspace]], { optional: true });
   const typescript = await packClosure([['typescript', workspace], [compilerPlatform, join(workspace, 'node_modules', '.pnpm')], ['@types/node', workspace]]);
   const overrides = Object.fromEntries([...closure, ...typescript].filter(entry => entry !== 'mayura' && entry !== name).map(entry => [entry, packages.get(entry).archive]));
   await writeFile(join(directory, 'package.json'), JSON.stringify({ name: `extension-${extension.name}`, private: true, type: 'module',

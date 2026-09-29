@@ -17,6 +17,7 @@ try {
   if (options.phase.endsWith('after')) {
     // After-commit cases exercise the actual public worker/pool adapter, then lose its process.
     const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
+      : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     await store.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize();
     if (publication) await store.workflows.cancel(options.cancel);
@@ -47,6 +48,8 @@ try {
         try { const result = await body(session); database.exec('COMMIT'); return result; }
         catch (error) { database.exec('ROLLBACK'); throw error; }
       } };
+    } else if (options.adapter === 'libsql') {
+      backend = (await import('./libsql.mjs')).libsqlBackend(options, { intercept });
     } else {
       if (!/^mayura_execution_waits_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
       const pool = new Pool({ connectionString: options.connectionString, max: 1, connectionTimeoutMillis: 5_000 });

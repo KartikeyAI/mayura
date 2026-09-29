@@ -5,6 +5,7 @@ import { createSqliteStore } from '@mayura/storage-sqlite';
 try {
   const options = JSON.parse(process.env.MAYURA_SCHEDULER_FIXTURE);
   const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
+    : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
     : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
   await store.initialize(); await store.scheduler.initialize();
   const [{ claim }] = await store.scheduler.claim({ scope: 'scheduler-a', workerId: 'crash-worker', limit: 1, leaseMs: 1_000 });

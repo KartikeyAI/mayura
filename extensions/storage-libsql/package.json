@@ -1,0 +1,16 @@
+{
+  "name": "@mayurajs/storage-libsql",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mayura storage on libSQL (Turso, sqld or a local file), through the official libSQL client.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "dependencies": { "@libsql/client": "0.18.0" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

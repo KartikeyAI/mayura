@@ -7314,6 +7314,20 @@
         "kind": "interface",
         "declaration": "0c2baf80f6bc0ca2"
       }
+    },
+    "@mayurajs/storage-libsql": {
+      "createLibsqlStore": {
+        "kind": "function",
+        "declaration": "e33d3f868fc91077"
+      },
+      "LibsqlStore": {
+        "kind": "type",
+        "declaration": "03444d4470b8f4c7"
+      },
+      "LibsqlStoreOptions": {
+        "kind": "interface",
+        "declaration": "b77794b125629265"
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 ---
 title: "Storage"
-description: "Persist durable workflows, memory, budgets and jobs in SQLite or PostgreSQL, run migrations, and back the store up."
+description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL or libSQL (Turso), run migrations, and back the store up."
 ---
 
 Agents and ephemeral runs need no database. You add storage when something has to survive a restart: durable
@@ -30,6 +30,7 @@ process shuts down. Runtimes and memory that receive the store never close it fo
 | --- | --- | --- |
 | SQLite: local development, tests, a single host | `mayura/storage-sqlite` | `better-sqlite3` |
 | PostgreSQL: several servers and workers sharing state | `mayura/storage-postgres` | `pg` |
+| libSQL: Turso, a `sqld` server, or a local file | `@mayurajs/storage-libsql` | the package itself |
 | Both factories from one import (existing apps) | `mayura/storage` | `better-sqlite3` and `pg` |
 | Your own adapter, types and `StorageError` only | `mayura/storage-contracts` | nothing |
 
@@ -97,7 +98,37 @@ request, is done with it. The pool must hand out real sessions, because each ope
 client from `connect()`; single-query HTTP drivers do not work. The data, the schema and the migrations are the same as
 with a connection string, so both entry points can share a database.
 
-## What uses the store
+## libSQL and Turso
+
+`@mayurajs/storage-libsql` runs the same store on libSQL, the SQLite fork behind Turso: a remote database such as Turso
+or your own `sqld` server, or a local file. It uses SQLite's SQL and schema, so a local libSQL file and a
+`mayura/storage-sqlite` file are interchangeable.
+
+```bash
+npm install mayura @mayurajs/storage-libsql
+```
+
+```ts
+import { createLibsqlStore } from '@mayurajs/storage-libsql';
+
+const store = createLibsqlStore({ url: 'libsql://my-app.turso.io', authToken: process.env.TURSO_AUTH_TOKEN ?? '' });
+await store.initialize();
+```
+
+| Option | Notes |
+| --- | --- |
+| `url` | `libsql://`, `https://` or `wss://` for a remote database; `http://` or `ws://` only on a loopback address, such as a local `sqld`; `file:` for a local file. Give this or `client`. |
+| `authToken` | The remote database's token. It is never read from the environment, and a token in the URL is refused. |
+| `client` | A client from `@libsql/client` you create and own, for example one from `@libsql/client/web`. `store.close()` never closes it. |
+
+Every operation is one write transaction, so a record, its events and the scheduler state it touches change together
+or not at all. A store runs its write transactions one at a time. When another process holds a local file's write
+lock, the store retries for up to 5 seconds, waiting without blocking the event loop. A remote server makes the
+writer wait on its side instead: `sqld` waits up to 5 seconds, then rolls back the transaction holding the lock.
+
+A local file keeps SQLite's durability settings: write-ahead logging, a full sync on every commit, and foreign keys.
+A remote server's durability is the server's to configure.
+
 
 | Feature | How it uses the store | Extra setup |
 | --- | --- | --- |

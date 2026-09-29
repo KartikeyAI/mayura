@@ -30,10 +30,17 @@ const license = path => {
   try { const manifest = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
     return typeof manifest.license === 'string' ? manifest.license : manifest.license?.type ?? null; } catch { return null; }
 };
+// Optional packages with a prebuilt binary for another platform are not installed here, so their manifests cannot be
+// read. Each licence below was checked on the registry for that exact version; a new version needs a new review.
+const reviewedLicences = new Map([
+  ...['darwin-arm64', 'darwin-x64', 'linux-arm-gnueabihf', 'linux-arm-musleabihf', 'linux-arm64-gnu', 'linux-arm64-musl', 'linux-x64-gnu', 'linux-x64-musl', 'win32-x64-msvc']
+    .map(platform => [`@libsql/${platform}@0.5.29`, 'MIT']),
+]);
 const visit = (name, node, parentRef) => {
   const ref = purl(name, node.version); if (parentRef) edges.get(parentRef).add(ref);
   if (!components.has(ref)) {
-    const declared = license(node.path);
+    const installed = typeof node.path === 'string' && existsSync(join(node.path, 'package.json'));
+    const declared = installed ? license(node.path) : reviewedLicences.get(`${name}@${node.version}`) ?? null;
     if (!declared) findings.push({ component: ref, problem: 'no declared licence' });
     else if (denied.test(declared)) findings.push({ component: ref, problem: `licence not permitted in production dependencies: ${declared}` });
     components.set(ref, { type: 'library', 'bom-ref': ref, name, version: node.version, purl: ref, ...(declared ? { licenses: [{ expression: declared }] } : {}) });

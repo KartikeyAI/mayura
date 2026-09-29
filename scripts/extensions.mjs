@@ -23,6 +23,7 @@ export const reviewedDependencies = {
   'provider-mistral': ['@mistralai/mistralai'],
   'provider-ollama': ['ollama'],
   'provider-openai': ['openai'],
+  'storage-libsql': ['@libsql/client'],
 };
 
 /**

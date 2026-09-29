@@ -71,8 +71,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U mayura"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      # A libSQL server (sqld v0.24.33, as Turso runs it) for @mayurajs/storage-libsql's integration tests.
+      libsql:
+        image: ghcr.io/tursodatabase/libsql-server@sha256:f8ca0134cdded747793888e48591aece07647d9d598d3ac229aabfa93159ca88
+        ports: [18080:8080]
     env:
       MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
+      MAYURA_TEST_LIBSQL_URL: ws://127.0.0.1:18080
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -13,9 +13,10 @@ try {
   if (!process.send || !options || !['reserve-before', 'reserve-after', 'start-before', 'start-after', 'settle-before', 'settle-after'].includes(options.phase)) throw new Error();
   if (options.adapter === 'sqlite' && !options.filename.includes('mayura-durable-budgets-')) throw new Error();
   if (options.adapter === 'postgres' && !/^mayura_durable_budget_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
-  if (!['sqlite', 'postgres'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
+  if (!['sqlite', 'postgres', 'libsql'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
   if (options.phase.endsWith('after')) {
     const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
+      : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     stage = 'initialize'; await store.initialize(); await store.durableBudgets.initialize();
     stage = 'public-command'; await store.durableBudgets[options.method](options.command); await checkpoint();
@@ -33,6 +34,12 @@ try {
         try { const result = await body(session); if (armed && changed) await checkpoint(); database.exec('COMMIT'); return result; }
         catch (error) { database.exec('ROLLBACK'); throw error; }
       } };
+    } else if (options.adapter === 'libsql') {
+      let changed = false;
+      const base = (await import('./libsql.mjs')).libsqlBackend(options, {
+        intercept: async (sql, _parameters, run) => { const rows = await run(); changed ||= /(?:UPDATE|INSERT INTO).*mayura_durable_budgets\b/.test(sql); return rows; },
+        beforeCommit: async () => { if (armed && changed) await checkpoint(); } });
+      backend = { ...base, transaction: body => { changed = false; return base.transaction(body); } };
     } else {
       const pool = new Pool({ connectionString: options.connectionString, max: 1, connectionTimeoutMillis: 5_000 });
       backend = { dialect: 'postgres', prefix: `"${options.schema}".`, transaction: async body => {

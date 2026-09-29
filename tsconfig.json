@@ -5,6 +5,7 @@
     { "path": "packages/cli" },
     { "path": "packages/mayura" },
     { "path": "extensions/provider-openai" },
+    { "path": "extensions/storage-libsql" },
     { "path": "extensions/provider-anthropic" },
     { "path": "extensions/provider-azure" },
     { "path": "extensions/provider-bedrock" },
