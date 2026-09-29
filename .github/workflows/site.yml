@@ -25,8 +25,9 @@ jobs:
         with:
           node-version: 24.14.1
       - run: npm install --global pnpm@10.17.1 --ignore-scripts
-      # The base path and origin come from the repository's Pages settings: "/" and https://mayurajs.com once the
-      # custom domain is set, "/mayura" and https://kartikeyai.github.io until then.
+      # The base path and host come from the repository's Pages settings: "/" and mayurajs.com once the custom domain
+      # is set, "/mayura" and kartikeyai.github.io until then. Links always use https: Pages serves every site over it,
+      # while the origin output says http until "Enforce HTTPS" is on.
       - id: pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
@@ -37,7 +38,7 @@ jobs:
       - working-directory: site
         env:
           SITE_BASE: ${{ steps.pages.outputs.base_path }}/
-          SITE_ORIGIN: ${{ steps.pages.outputs.origin || 'https://mayurajs.com' }}
+          SITE_ORIGIN: ${{ steps.pages.outputs.host && format('https://{0}', steps.pages.outputs.host) || 'https://mayurajs.com' }}
         run: pnpm build && pnpm check
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
