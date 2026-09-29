@@ -1,6 +1,6 @@
 {
   "name": "mayura-workspace",
-  "version": "0.1.0-dev.0",
+  "version": "1.0.0-rc.1",
   "author": { "name": "Aryabh", "email": "dev@rokad.co" },
   "repository": { "type": "git", "url": "git+https://github.com/KartikeyAI/mayura.git" },
   "homepage": "https://github.com/KartikeyAI/mayura#readme",

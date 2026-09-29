@@ -73,7 +73,7 @@ async function main() {
   for (const name of packed.keys()) assert(inside(await realpath(app), await realpath(join(app, 'node_modules', name))), 'Staged application contains a workspace symlink.');
   const dockerfile = [
     `FROM ${baseImage}`,
-    `LABEL org.opencontainers.image.title="Mayura server and worker" org.opencontainers.image.version="0.1.0-dev.0" org.opencontainers.image.licenses="Apache-2.0" \\`,
+    `LABEL org.opencontainers.image.title="Mayura server and worker" org.opencontainers.image.version="1.0.0-rc.1" org.opencontainers.image.licenses="Apache-2.0" \\`,
     `      org.opencontainers.image.base.name="${baseImage}"`,
     'WORKDIR /app', 'COPY --chown=65532:65532 app/ /app/', 'USER 65532:65532', 'ENV NODE_ENV=production', 'EXPOSE 8080 9090',
     'ENTRYPOINT ["node", "/app/node_modules/mayura/lib/cli/dist/bin.js"]', 'CMD ["serve", "--app", "/app/app.mjs"]', ''].join('\n');

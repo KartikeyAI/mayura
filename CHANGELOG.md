@@ -2,7 +2,9 @@
 
 All notable changes to Mayura are recorded here. The format follows Keep a Changelog, and public versions follow Semantic Versioning.
 
-## [Unreleased] — toward 1.0.0
+## [Unreleased]
+
+## [1.0.0-rc.1] - 2026-09-29
 
 ### Added
 
