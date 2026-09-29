@@ -191,9 +191,6 @@ importers:
       pg:
         specifier: 8.23.0
         version: 8.23.0
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: 24.13.6
@@ -207,9 +204,6 @@ importers:
       mayura:
         specifier: workspace:*
         version: link:../../../mayura
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: 24.13.6
@@ -229,9 +223,6 @@ importers:
       pg:
         specifier: 8.23.0
         version: 8.23.0
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: 24.13.6
@@ -251,9 +242,6 @@ importers:
       pg:
         specifier: 8.23.0
         version: 8.23.0
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: 24.13.6
@@ -273,9 +261,6 @@ importers:
       pg:
         specifier: 8.23.0
         version: 8.23.0
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
     devDependencies:
       '@tailwindcss/vite':
         specifier: 4.3.3
