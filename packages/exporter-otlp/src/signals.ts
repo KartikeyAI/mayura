@@ -106,7 +106,7 @@ function point(value: unknown): { readonly name: string; readonly kind: 'gauge';
 }
 function resource(serviceName: string, serviceVersion?: string): JsonObject { return { attributes: attributes({ 'service.name': serviceName, 'service.version': serviceVersion }) }; }
 function traceRequest(records: readonly unknown[], serviceName: string, serviceVersion?: string): JsonObject {
-  return { resourceSpans: [{ resource: resource(serviceName, serviceVersion), scopeSpans: [{ scope: { name: '@mayura/observability', version: '1.0.0-rc.2' }, spans: records.map(span) }] }] };
+  return { resourceSpans: [{ resource: resource(serviceName, serviceVersion), scopeSpans: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, spans: records.map(span) }] }] };
 }
 function metricRequest(records: readonly unknown[], serviceName: string, serviceVersion?: string): JsonObject {
   const grouped = new Map<string, ReturnType<typeof point>[]>();
@@ -118,7 +118,7 @@ function metricRequest(records: readonly unknown[], serviceName: string, service
   const encoded = [...grouped.values()].map(items => { const first = items[0]!; return { name: first.name,
     ...(first.kind === 'gauge' ? { gauge: { dataPoints: items.map(item => item.data) } }
       : { sum: { dataPoints: items.map(item => item.data), aggregationTemporality: 2, isMonotonic: first.monotonic } }) }; });
-  return { resourceMetrics: [{ resource: resource(serviceName, serviceVersion), scopeMetrics: [{ scope: { name: '@mayura/observability', version: '1.0.0-rc.2' }, metrics: encoded }] }] };
+  return { resourceMetrics: [{ resource: resource(serviceName, serviceVersion), scopeMetrics: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, metrics: encoded }] }] };
 }
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void operation.catch(() => undefined); throw signal.reason; } let listener: (() => void) | undefined;

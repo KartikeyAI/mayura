@@ -2,7 +2,7 @@ FROM node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e443129
 
 ARG MAYURA_PROVENANCE
 LABEL org.opencontainers.image.title="Mayura Code Sandbox" \
-      org.opencontainers.image.version="1.0.0-rc.2" \
+      org.opencontainers.image.version="1.0.0" \
       org.opencontainers.image.base.name="node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e4431297a24d246b8add4d5" \
       dev.mayura.code-sandbox.provenance="${MAYURA_PROVENANCE}"
 

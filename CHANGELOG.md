@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-29
+
 ### Released
 
 - **Mayura 1.0.0**, the first stable release. It is 1.0.0-rc.2 with no code changes. From this version, every entry point is stable under the promises in Versioning and stability: incompatible changes only in a new major version, storage changes only through explicit migrations, and every release checked to resume the runs the previous one started.

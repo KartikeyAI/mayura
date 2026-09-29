@@ -1,5 +1,5 @@
 {
-  "name": "@mayura/exporter-otlp", "version": "1.0.0-rc.2", "private": true,
+  "name": "@mayura/exporter-otlp", "version": "1.0.0", "private": true,
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },

@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "release": "1.0.0-rc.2",
+  "release": "1.0.0",
   "targetRelease": "1.0.0",
   "stableEntryPoints": [
     "@mayura/adapter-code-docker",
