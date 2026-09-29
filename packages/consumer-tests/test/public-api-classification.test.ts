@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +8,7 @@ describe('public API classification', () => {
     const root = resolve(import.meta.dirname, '..', '..', '..');
     const policy = JSON.parse(await readFile(resolve(root, 'compatibility', 'api-stability.json'), 'utf8')) as {
       format: number; release: string; targetRelease: string; stableEntryPoints: string[]; trustedHostEntryPoints: string[];
-      experimentalEntryPoints: string[]; internalPackages: string[]; apiReport: string;
+      experimentalEntryPoints: string[]; extensionEntryPoints: string[]; internalPackages: string[]; apiReport: string;
     };
     expect(policy).toMatchObject({ format: 2, targetRelease: '1.0.0', experimentalEntryPoints: [], internalPackages: ['@mayura/consumer-tests', '@mayura/inspector-ui', 'mayura'],
       trustedHostEntryPoints: ['@mayura/core/host', '@mayura/storage-sql/host', '@mayura/tools/host'], apiReport: 'compatibility/api-report.json' });
@@ -28,8 +29,20 @@ describe('public API classification', () => {
     const tiers = [...policy.stableEntryPoints, ...policy.trustedHostEntryPoints, ...policy.experimentalEntryPoints];
     expect(new Set(tiers).size).toBe(tiers.length);
     expect([...classified].sort()).toEqual([...tiers].sort());
+    // The @mayurajs extensions are separate npm packages (not subpaths of mayura), released in lockstep and private in
+    // the workspace; each entry point is listed once as an extension entry point.
+    const extensions: string[] = [];
+    const extensionsRoot = resolve(root, 'extensions');
+    for (const directory of existsSync(extensionsRoot) ? await readdir(extensionsRoot) : []) {
+      const manifest = JSON.parse(await readFile(resolve(extensionsRoot, directory, 'package.json'), 'utf8')) as { name: string; version: string; private: boolean; exports?: Record<string, unknown> };
+      expect(manifest.name).toBe(`@mayurajs/${directory}`);
+      expect(manifest.version).toBe(policy.release);
+      expect(manifest.private).toBe(true);
+      for (const path of Object.keys(manifest.exports ?? {})) extensions.push(path === '.' ? manifest.name : `${manifest.name}${path.slice(1)}`);
+    }
+    expect([...extensions].sort()).toEqual([...policy.extensionEntryPoints].sort());
     const report = JSON.parse(await readFile(resolve(root, policy.apiReport), 'utf8')) as { entryPoints: Record<string, Record<string, unknown>> };
-    expect(Object.keys(report.entryPoints).sort()).toEqual([...classified].sort());
+    expect(Object.keys(report.entryPoints).sort()).toEqual([...classified, ...extensions].sort());
     // Every classified entry point is one subpath of `mayura` (and `mayura` itself is the SDK), and nothing else is.
     const published = classified.map(entry => `./${entry.slice('@mayura/'.length)}`);
     expect(Object.keys(facade ?? {}).sort()).toEqual(['.', ...published].sort());

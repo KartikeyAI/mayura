@@ -13,9 +13,14 @@ import { fileURLToPath } from 'node:url';
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const policy = JSON.parse(await readFile(join(workspace, 'compatibility', 'api-stability.json'), 'utf8'));
 const packageDirectories = new Map();
-for (const directory of await readdir(join(workspace, 'packages'))) {
-  const manifest = JSON.parse(await readFile(join(workspace, 'packages', directory, 'package.json'), 'utf8'));
-  packageDirectories.set(manifest.name, { directory: join(workspace, 'packages', directory), manifest });
+// The packages bundled into mayura, and the @mayurajs extensions published beside it.
+for (const folder of ['packages', 'extensions']) {
+  if (!existsSync(join(workspace, folder))) continue;
+  for (const directory of await readdir(join(workspace, folder))) {
+    if (!existsSync(join(workspace, folder, directory, 'package.json'))) continue;
+    const manifest = JSON.parse(await readFile(join(workspace, folder, directory, 'package.json'), 'utf8'));
+    packageDirectories.set(manifest.name, { directory: join(workspace, folder, directory), manifest });
+  }
 }
 
 const parsed = new Map();

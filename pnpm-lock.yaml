@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/provider-openai':
+        specifier: workspace:*
+        version: link:extensions/provider-openai
       '@types/better-sqlite3':
         specifier: 9.6.0
         version: 9.6.0
@@ -137,6 +140,16 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/provider-openai:
+    dependencies:
+      openai:
+        specifier: 7.23.0
+        version: 7.23.0(undici@7.29.1)(zod@4.6.5)
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   packages/adapter-code-docker:
     dependencies:
@@ -2312,6 +2325,30 @@ packages:
     resolution: {integrity: sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==}
     engines: {node: '>=12.20.0'}
 
+  openai@7.23.0:
+    resolution: {integrity: sha512-0ecOXnFSMNWZq6cUBcTV6Lf93y+fm8BH/+QzFvpoP1UGNOE5pnytRa6HAPGCw+3IS9SIAW7rc1M8yyzN1PiBAQ==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      undici: '>=5 <9'
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   parse5@8.0.1:
     resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
 
@@ -4026,6 +4063,11 @@ snapshots:
   node-addon-api@8.9.2: {}
 
   obug@2.2.1: {}
+
+  openai@7.23.0(undici@7.29.1)(zod@4.6.5):
+    optionalDependencies:
+      undici: 7.29.1
+      zod: 4.6.5
 
   parse5@8.0.1:
     dependencies:

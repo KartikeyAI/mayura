@@ -8,6 +8,12 @@ Native SQLite, PostgreSQL, QuickJS and React are optional peers, installed only 
 `pnpm test:bundle` installs the package offline with and without those peers, loads every entry point, type-checks a
 strict consumer and runs the CLI.
 
+Beside it, the **`@mayurajs/*` extensions** in `extensions/` (provider packages built on vendor SDKs, and later storage,
+RAG and voice) are published as separate npm packages from the same release, in lockstep: the same version as
+`mayura`, with `mayura@^<version>` as their peer. `scripts/extensions.mjs` stages each one, and its third-party
+dependencies must be listed there, reviewed, before a release accepts them. `pnpm test:bundle` also installs each
+extension offline next to the bundle and type-checks it, and `mayura` is published first.
+
 ## How a release happens
 
 1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and
@@ -65,6 +71,10 @@ pushed, tagged or published.
 
    Without them, both are `github-actions[bot]`.
 4. **Enable publishing:** set the repository variable `MAYURA_RELEASE=enabled`.
+5. **The `@mayurajs` scope.** Create the npm organization `mayurajs`, owned by the same account. npm configures trusted
+   publishing per package and only once the package exists, so the first release of each new `@mayurajs/*` package
+   publishes with the `NPM_TOKEN` (a token that may publish to the scope); then configure trusted publishing for that
+   package like `mayura`.
 
 GitHub Packages is not used: its npm registry accepts only scoped packages, and `mayura` is unscoped. The GitHub
 Release carries the same archive.

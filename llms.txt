@@ -32,6 +32,7 @@ Rules that matter when writing Mayura code:
 ## Agents and models
 
 - [Model providers](docs/guides/model-providers.md): Connect an agent to OpenAI, Anthropic or any OpenAI-compatible endpoint, with explicit keys, prices and a per-call cost limit.
+- [Model registry](docs/guides/model-registry.md): Name models as provider/model from @mayurajs provider packages, with explicit or catalog prices, a per-call cost bound, safe retries and fallback chains.
 - [Model routing](docs/guides/model-routing.md): Fail over between model providers with createModelRouter: priority order, a circuit breaker and conservative cost accounting.
 - [Streaming](docs/guides/streaming.md): Stream one text field of an agent's answer as the model writes it, with guards on every batch and the final output still checked.
 - [Vision: images and PDFs](docs/guides/vision.md): Agents that see: send images and PDFs with an agent's input, return screenshots from tools, and keep media checked, limited and out of logs.

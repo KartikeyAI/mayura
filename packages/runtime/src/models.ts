@@ -7,6 +7,15 @@ import { createModelRouter, failureReason, failureStatus, type ModelRouter, type
 export interface ModelPricing {
   readonly inputMicrosPerMillionTokens: number;
   readonly outputMicrosPerMillionTokens: number;
+  /**
+   * Higher rates for the whole call once its input exceeds `aboveInputTokens`, as some providers bill long prompts.
+   * They must be at least the standard rates. Provider packages charge them (`tokenCostMicros` in `mayura/core/host`).
+   */
+  readonly longContext?: {
+    readonly aboveInputTokens: number;
+    readonly inputMicrosPerMillionTokens: number;
+    readonly outputMicrosPerMillionTokens: number;
+  };
 }
 
 /** What a provider package is given to build one model's adapter. */
@@ -109,7 +118,18 @@ function pricingOf(value: unknown, where: string): ModelPricing {
     const price = pricing?.[key];
     if (typeof price !== 'number' || !Number.isSafeInteger(price) || price < 0) throw new MayuraError('INVALID_CONFIG', `${where} needs ${key} as a non-negative integer.`);
   }
-  return Object.freeze({ inputMicrosPerMillionTokens: pricing!.inputMicrosPerMillionTokens!, outputMicrosPerMillionTokens: pricing!.outputMicrosPerMillionTokens! });
+  const standard = { inputMicrosPerMillionTokens: pricing!.inputMicrosPerMillionTokens!, outputMicrosPerMillionTokens: pricing!.outputMicrosPerMillionTokens! };
+  if (pricing!.longContext === undefined) return Object.freeze(standard);
+  const long = pricing!.longContext as Partial<NonNullable<ModelPricing['longContext']>> | null;
+  if (!long || typeof long !== 'object' || typeof long.aboveInputTokens !== 'number' || !Number.isSafeInteger(long.aboveInputTokens) || long.aboveInputTokens < 1) {
+    throw new MayuraError('INVALID_CONFIG', `${where} needs longContext.aboveInputTokens as a positive integer.`);
+  }
+  for (const key of ['inputMicrosPerMillionTokens', 'outputMicrosPerMillionTokens'] as const) {
+    const price = long[key];
+    // Long prompts never cost less: a lower rate would let the long-context tier undercount a call.
+    if (typeof price !== 'number' || !Number.isSafeInteger(price) || price < standard[key]) throw new MayuraError('INVALID_CONFIG', `${where} needs longContext.${key} as an integer at least the standard rate.`);
+  }
+  return Object.freeze({ ...standard, longContext: Object.freeze({ aboveInputTokens: long.aboveInputTokens, inputMicrosPerMillionTokens: long.inputMicrosPerMillionTokens!, outputMicrosPerMillionTokens: long.outputMicrosPerMillionTokens! }) });
 }
 
 function bound(value: unknown, where: string): number {

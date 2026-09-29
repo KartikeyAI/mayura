@@ -42,12 +42,14 @@ const visit = (name, node, parentRef) => {
   }
 };
 for (const project of projects) {
-  if (!project.name?.startsWith('@mayura/') || project.name === '@mayura/consumer-tests') continue;
+  // Mayura's own packages: the ones bundled into mayura, and the @mayurajs extensions published beside it.
+  const own = project.name?.startsWith('@mayura/') || project.name?.startsWith('@mayurajs/');
+  if (!own || project.name === '@mayura/consumer-tests') continue;
   const ref = purl(project.name, project.version);
   components.set(ref, { type: 'library', 'bom-ref': ref, name: project.name, version: project.version, purl: ref, licenses: [{ expression: 'Apache-2.0' }] });
   edges.set(ref, new Set());
   for (const [child, value] of Object.entries(project.dependencies ?? {})) {
-    if (child.startsWith('@mayura/')) edges.get(ref).add(purl(child, value.version)); else visit(child, value, ref);
+    if (child.startsWith('@mayura/') || child.startsWith('@mayurajs/') || child === 'mayura') edges.get(ref).add(purl(child, value.version)); else visit(child, value, ref);
   }
 }
 const root = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8'));
@@ -61,6 +63,6 @@ if (argument < 0) await mkdir(join(workspace, '.artifacts'), { recursive: true }
 const output = argument >= 0 ? resolve(process.argv[argument + 1]) : join(await mkdtemp(join(workspace, '.artifacts', 'sbom-')), 'sbom.cdx.json');
 await mkdir(dirname(output), { recursive: true }); await writeFile(output, `${JSON.stringify(sbom, null, 2)}\n`);
 const licences = {}; for (const component of components.values()) { const key = component.licenses?.[0]?.expression ?? 'UNDECLARED'; licences[key] = (licences[key] ?? 0) + 1; }
-console.log(JSON.stringify({ status: findings.length ? 'failed' : 'passed', components: components.size, thirdParty: [...components.keys()].filter(ref => !ref.startsWith('pkg:npm/%40mayura/')).length,
+console.log(JSON.stringify({ status: findings.length ? 'failed' : 'passed', components: components.size, thirdParty: [...components.keys()].filter(ref => !ref.startsWith('pkg:npm/%40mayura/') && !ref.startsWith('pkg:npm/%40mayurajs/')).length,
   licences, findings, sbom: relative(workspace, output) }));
 if (findings.length) process.exitCode = 1;

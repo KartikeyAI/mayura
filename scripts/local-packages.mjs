@@ -120,10 +120,30 @@ export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3
     const destination = join(tarballs, `mayura-${manifest.version}.tgz`); await rename(join(packing, archive), destination);
     bundled = { archive: pathToFileURL(destination).href, manifest, directory: staging }; packages.set('mayura', bundled); return bundled;
   };
+  // An @mayurajs extension is always its staged, publishable package (scripts/extensions.mjs), never the private source.
+  const extension = async name => {
+    if (packages.has(name)) return packages.get(name);
+    const { extensions, stageExtension } = await import('./extensions.mjs');
+    const found = extensions().find(entry => `@mayurajs/${entry.name}` === name); assert(found, `No extension named ${name}.`);
+    const version = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8')).version;
+    const staging = await mkdtemp(join(output, 'extension-')); const manifest = await stageExtension(found, staging, version);
+    const packing = await mkdtemp(join(output, 'npm-pack-'));
+    await run([npm, 'pack', staging, '--ignore-scripts', '--offline', '--pack-destination', packing], workspace);
+    const [archive] = await readdir(packing); assert(archive?.endsWith('.tgz'));
+    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${version}.tgz`); await rename(join(packing, archive), destination);
+    const entry = { archive: pathToFileURL(destination).href, manifest, directory: found.directory }; packages.set(name, entry); return entry;
+  };
   const packClosure = async (roots, { optional = false } = {}) => {
     const closure = new Set(); const queue = roots.map(([name, parent]) => ({ name, parent, required: true }));
     while (queue.length) {
       const { name, parent, required } = queue.shift(); if (closure.has(name)) continue;
+      if (name.startsWith('@mayurajs/')) {
+        // Its peer is the mayura bundle; its dependencies (vendor SDKs) come from the extension's own installation.
+        closure.add(name); const { manifest, directory } = await extension(name);
+        queue.push({ name: 'mayura', parent: workspace, required: true });
+        for (const dependency of Object.keys(manifest.dependencies ?? {})) queue.push({ name: dependency, parent: directory, required: true });
+        continue;
+      }
       if (name === 'mayura') {
         // Its optional peers are the project's to declare; its dependencies come from the workspace installation.
         closure.add(name); const { manifest } = await mayura();

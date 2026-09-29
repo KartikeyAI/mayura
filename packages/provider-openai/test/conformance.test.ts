@@ -39,6 +39,8 @@ export function responsesTransport(scenario: ModelScenario): typeof globalThis.f
 }
 
 const harness: ModelAdapterHarness = {
+  // The 1.0 adapter takes flat prices only; use a registry provider package for long-context rates.
+  skip: { long_context: 'The 1.0 adapter charges flat prices.' },
   adapter: (scenario, settings) => {
     const adapter = openAIResponses({ apiKey: 'fixture-not-a-real-key', model: 'fixture-model', pricing: settings.pricing, maxCostMicros: settings.maxCostMicros,
       ...(settings.timeoutMs === undefined ? {} : { timeoutMs: settings.timeoutMs }), fetch: responsesTransport(scenario) });
@@ -49,5 +51,5 @@ const harness: ModelAdapterHarness = {
 };
 
 describe('openAIResponses keeps the model adapter contract', () => {
-  for (const test of modelAdapterConformance) it(test.name, async () => { expect(await test.run(harness)).toBe('passed'); });
+  for (const test of modelAdapterConformance) it(test.name, async () => { expect(await test.run(harness)).toMatch(/^(?:passed|skipped)$/u); });
 });

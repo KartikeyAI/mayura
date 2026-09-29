@@ -4,6 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/cli" },
     { "path": "packages/mayura" },
+    { "path": "extensions/provider-openai" },
     { "path": "packages/helpers" },
     { "path": "packages/tools" },
     { "path": "packages/skills" },

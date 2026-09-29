@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { bundle } from './bundle-package.mjs';
+import { extensions, reviewedDependencies, stageExtension } from './extensions.mjs';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -109,6 +110,33 @@ for (const [path, content] of files) {
 }
 const reports = [{ name: 'mayura', version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size,
   bundled: bundled.packages, entryPoints: bundled.entryPoints }];
+// Every @mayurajs extension: staged, packed and checked like mayura, and published after it (publish order follows
+// the manifest).
+for (const extension of extensions()) {
+  const staged = join(stagingRoot, extension.name); await stageExtension(extension, staged, version);
+  const { stdout: extensionPack } = await exec(process.execPath, [npmCli(), 'pack', staged, '--pack-destination', tarballs, '--ignore-scripts', '--json'], {
+    cwd: workspace, timeout: 120_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+    env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', HOME: process.env.HOME ?? '', USERPROFILE: process.env.USERPROFILE ?? '',
+      npm_config_cache: npmCache, npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' },
+  });
+  const [entry] = JSON.parse(extensionPack); assert(typeof entry?.filename === 'string');
+  const extensionBytes = await readFile(join(tarballs, entry.filename)); const extensionFiles = archiveFiles(extensionBytes);
+  const name = `@mayurajs/${extension.name}`; const published = JSON.parse(extensionFiles.get('package.json').toString('utf8'));
+  assert(extensionFiles.get('LICENSE')?.equals(license) && extensionFiles.get('NOTICE')?.equals(notice), `${name} omitted exact legal notices.`);
+  assert(published.name === name && published.version === version && published.license === 'Apache-2.0' && published.private === undefined, `${name} identity is not release-safe.`);
+  assert(published.publishConfig?.access === 'public' && published.publishConfig?.provenance === true, `${name} must publish publicly with provenance.`);
+  assert(published.repository?.url === root.repository.url && published.repository?.directory === `extensions/${extension.name}`, `${name} must name its repository directory for provenance.`);
+  assert.deepEqual(published.author, root.author, `${name} must name its author.`);
+  assert(!published.scripts && !published.devDependencies, `${name} gained lifecycle scripts or development dependencies.`);
+  assert.deepEqual(published.peerDependencies, { mayura: `^${version}` }, `${name} must have exactly mayura as its peer, at this release.`);
+  assert.deepEqual(Object.keys(published.dependencies).sort(), [...(reviewedDependencies[extension.name] ?? [])].sort(), `${name} gained an unreviewed dependency.`);
+  for (const [path, content] of extensionFiles) {
+    assert(!/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${name}: ${path}`);
+    assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${name}: ${path}`);
+    if (/^dist\/.*\.(?:js|d\.ts)$/u.test(path)) assert(!/(?:from|import)\s*\(?\s*['"]@mayura\//u.test(content.toString('utf8')), `${path} in ${name} imports an internal @mayura package.`);
+  }
+  reports.push({ name, version, filename: entry.filename, sha256: createHash('sha256').update(extensionBytes).digest('hex'), bytes: extensionBytes.length, files: extensionFiles.size });
+}
 const { stdout: commit } = await exec('git', ['-c', `safe.directory=${workspace.replaceAll('\\', '/')}`, 'rev-parse', 'HEAD'], { cwd: workspace, windowsHide: true });
 const report = { format: 1, status: 'passed', version, sourceCommit: commit.trim(), license: 'Apache-2.0', noticeSha256: createHash('sha256').update(notice).digest('hex'), packages: reports };
 await writeFile(join(output, 'release-manifest.json'), `${JSON.stringify(report, null, 2)}\n`);

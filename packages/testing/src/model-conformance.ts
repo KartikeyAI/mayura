@@ -1,3 +1,4 @@
+import { tokenCostMicros, type TokenPricing } from '@mayura/core/host';
 import { MayuraError, ModelProviderError, type JsonObject, type JsonValue, type ModelAdapter, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelTool } from '@mayura/core';
 
 /**
@@ -22,11 +23,13 @@ export type ModelScenario =
   | { readonly kind: 'hang' };
 
 export type ModelScenarioKind = ModelScenario['kind'];
+/** What a harness can skip: a scenario, or `long_context` (charging long-context rates) for an adapter with flat prices. */
+export type ModelConformanceKind = ModelScenarioKind | 'long_context';
 
 /** What a model registry passes a provider: the adapter must use this id and cost bound. */
 export interface ConformanceModelSettings {
   readonly id: string;
-  readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number };
+  readonly pricing: TokenPricing;
   readonly maxCostMicros: number;
   readonly timeoutMs?: number;
 }
@@ -35,7 +38,7 @@ export interface ModelAdapterHarness {
   /** A fresh adapter whose transport answers `scenario`. */
   adapter(scenario: ModelScenario, settings: ConformanceModelSettings): ModelAdapter;
   /** Scenarios this provider cannot produce, with the reason; they are reported as skipped. */
-  readonly skip?: Partial<Record<ModelScenarioKind, string>>;
+  readonly skip?: Partial<Record<ModelConformanceKind, string>>;
 }
 
 export interface ModelConformanceCase {
@@ -58,8 +61,8 @@ const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u;
 const detail = 'PRIVATE-PROVIDER-DETAIL-7f3a';
 
 /** What the adapter must report for the scenario's token counts: rounded up to a whole micro. */
-export function expectedCostMicros(inputTokens: number, outputTokens: number, pricing = settings.pricing): number {
-  return Number((BigInt(inputTokens) * BigInt(pricing.inputMicrosPerMillionTokens) + BigInt(outputTokens) * BigInt(pricing.outputMicrosPerMillionTokens) + 999_999n) / 1_000_000n);
+export function expectedCostMicros(inputTokens: number, outputTokens: number, pricing: TokenPricing = settings.pricing): number {
+  return tokenCostMicros(pricing, inputTokens, outputTokens)!;
 }
 
 const request = (signal: AbortSignal = new AbortController().signal, withTools = false): ModelRequest => ({
@@ -99,7 +102,7 @@ const scenarios = {
   streamFinal: { kind: 'stream_final', chunks: ['{"answer":"Order ', 'ord-1 shipped ', 'yesterday."}'], output: { answer: 'Order ord-1 shipped yesterday.' }, inputTokens: 900, outputTokens: 12 },
 } as const satisfies Record<string, ModelScenario>;
 
-const cases: readonly { name: string; kind: ModelScenarioKind; run: (harness: ModelAdapterHarness) => Promise<void> }[] = [
+const cases: readonly { name: string; kind: ModelConformanceKind; run: (harness: ModelAdapterHarness) => Promise<void> }[] = [
   { name: 'uses the id and cost bound it was given', kind: 'final', run: async harness => {
     const adapter = harness.adapter(scenarios.final, settings);
     check(adapter.id === settings.id, `The adapter id is ${adapter.id}, not ${settings.id}.`);
@@ -112,6 +115,15 @@ const cases: readonly { name: string; kind: ModelScenarioKind; run: (harness: Mo
     check(response.type === 'final' && same(response.output, scenarios.final.output), 'The final output must be the parsed JSON the provider returned.');
     const cost = expectedCostMicros(scenarios.final.inputTokens, scenarios.final.outputTokens);
     check(response.usage.costMicros === cost, `The cost must be ${cost} micros (tokens × prices, rounded up), got ${response.usage.costMicros}.`);
+  } },
+  { name: 'charges the long-context rates for the whole call above their threshold', kind: 'long_context', run: async harness => {
+    const pricing: TokenPricing = { ...settings.pricing, longContext: { aboveInputTokens: 10_000, inputMicrosPerMillionTokens: 2_500_000, outputMicrosPerMillionTokens: 15_000_000 } };
+    const scenario = { kind: 'final', output: { answer: 'A long report.' }, inputTokens: 12_000, outputTokens: 300 } as const;
+    const long = await harness.adapter(scenario, { ...settings, pricing }).generate(request());
+    const expected = expectedCostMicros(12_000, 300, pricing);
+    check(long.usage.costMicros === expected, `Above aboveInputTokens the whole call is charged at the long-context rates: ${expected} micros, got ${long.usage.costMicros}.`);
+    const short = await harness.adapter({ ...scenario, inputTokens: 9_000 }, { ...settings, pricing }).generate(request());
+    check(short.usage.costMicros === expectedCostMicros(9_000, 300), 'At or below the threshold the standard rates apply.');
   } },
   { name: 'returns tool calls with their Mayura tool ids, valid call ids and parsed input', kind: 'tool_calls', run: async harness => {
     const response = await harness.adapter(scenarios.toolCalls, settings).generate(request(undefined, true));

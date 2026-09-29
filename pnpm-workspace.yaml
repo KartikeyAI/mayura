@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - packages/cli/starters/*
+  - extensions/*
 minimumReleaseAge: 1440
 strictDepBuilds: true
 onlyBuiltDependencies:

@@ -54,6 +54,18 @@ describe('model registry', () => {
     expect(models.list()[0]).toMatchObject({ id: 'fake/m2', pricing: catalog.models.m2.pricing, catalogAsOf: '2026-09-01' });
   });
 
+  it('passes long-context rates to the provider, and refuses ones cheaper than the standard rates', () => {
+    const longContext = { aboveInputTokens: 272_000, inputMicrosPerMillionTokens: 2_000_000, outputMicrosPerMillionTokens: 3_000_000 };
+    const { provider, seen } = fakeProvider();
+    const models = createModels({ providers: [provider], prices: { 'fake/m1': { ...prices['fake/m1'], longContext } }, maxCallCostMicros: 10 });
+    models.model('fake/m1');
+    expect(seen[0]!.pricing).toEqual({ ...prices['fake/m1'], longContext });
+    for (const bad of [{ ...longContext, inputMicrosPerMillionTokens: 999_999 }, { ...longContext, aboveInputTokens: 0 }, { ...longContext, outputMicrosPerMillionTokens: 1.5 }, null]) {
+      expect(() => createModels({ providers: [fakeProvider().provider], prices: { 'fake/m1': { ...prices['fake/m1'], longContext: bad as never } }, maxCallCostMicros: 10 }))
+        .toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringMatching(/longContext/) }));
+    }
+  });
+
   it('refuses a registry without a cost bound, duplicate or malformed providers, and adapters that ignore their settings', () => {
     const { provider } = fakeProvider();
     for (const options of [{ providers: [provider] }, { providers: [provider], maxCallCostMicros: -1 }, { providers: [], maxCallCostMicros: 1 },

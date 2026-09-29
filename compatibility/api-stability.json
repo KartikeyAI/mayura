@@ -60,6 +60,9 @@
     "@mayura/tools/host"
   ],
   "experimentalEntryPoints": [],
+  "extensionEntryPoints": [
+    "@mayurajs/provider-openai"
+  ],
   "internalPackages": [
     "@mayura/consumer-tests",
     "@mayura/inspector-ui",

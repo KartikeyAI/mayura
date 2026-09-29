@@ -144,7 +144,7 @@ jobs:
         run: |
           git config user.name "$GIT_COMMITTER_NAME"
           git config user.email "$GIT_COMMITTER_EMAIL"
-          git add -A -- package.json packages compatibility scripts CHANGELOG.md
+          git add -A -- package.json packages extensions compatibility scripts CHANGELOG.md
           committed=false
           if git diff --cached --quiet; then echo "The version $VERSION is already committed."
           else git commit -m "chore(release): v$VERSION [skip ci]"; committed=true; fi

@@ -1580,6 +1580,14 @@
         "kind": "function",
         "declaration": "3610d695ada58393"
       },
+      "tokenCostMicros": {
+        "kind": "function",
+        "declaration": "0f4a7491b83d08da"
+      },
+      "TokenPricing": {
+        "kind": "interface",
+        "declaration": "be5cd31ce72b9580"
+      },
       "utf8ByteLength": {
         "kind": "function",
         "declaration": "611a0b0d9bc15d79"
@@ -2440,7 +2448,7 @@
       },
       "ModelPricing": {
         "kind": "interface",
-        "declaration": "30062a148bc19ccc"
+        "declaration": "fd7b11c77eb0dc09"
       },
       "ModelProvider": {
         "kind": "interface",
@@ -2902,7 +2910,7 @@
       },
       "ModelPricing": {
         "kind": "interface",
-        "declaration": "30062a148bc19ccc"
+        "declaration": "fd7b11c77eb0dc09"
       },
       "ModelProvider": {
         "kind": "interface",
@@ -5516,7 +5524,7 @@
     "@mayura/testing": {
       "ConformanceModelSettings": {
         "kind": "interface",
-        "declaration": "c2eb00cb7a6e6474"
+        "declaration": "f71e845b72876612"
       },
       "conformanceTools": {
         "kind": "const",
@@ -5524,7 +5532,7 @@
       },
       "expectedCostMicros": {
         "kind": "function",
-        "declaration": "833ebbcbb55f6d22"
+        "declaration": "056c167691e8fdfb"
       },
       "modelAdapterConformance": {
         "kind": "const",
@@ -5532,11 +5540,15 @@
       },
       "ModelAdapterHarness": {
         "kind": "interface",
-        "declaration": "9f07a16b5db82bf4"
+        "declaration": "134165316eb5f0ee"
       },
       "ModelConformanceCase": {
         "kind": "interface",
         "declaration": "79e1042091e510df"
+      },
+      "ModelConformanceKind": {
+        "kind": "type",
+        "declaration": "cbc7c49761925a44"
       },
       "ModelScenario": {
         "kind": "type",
@@ -7181,6 +7193,20 @@
       "WebhookTriggerOptions": {
         "kind": "interface",
         "declaration": "bbbab4ccb6c41af2"
+      }
+    },
+    "@mayurajs/provider-openai": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "781763c0b1d17fe3"
+      },
+      "openai": {
+        "kind": "function",
+        "declaration": "0906818a39d68867"
+      },
+      "OpenAIProviderOptions": {
+        "kind": "interface",
+        "declaration": "8555a11a645e4519"
       }
     }
   }

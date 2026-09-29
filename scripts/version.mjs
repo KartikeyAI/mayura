@@ -26,8 +26,9 @@ const mentions = [
   'packages/exporter-otlp/src/signals.ts', 'packages/exporter-otlp/src/otlp-http-json.ts',
   'packages/adapter-code-docker/image/Dockerfile', 'scripts/server-image.mjs', 'scripts/code-sandbox-image.mjs',
 ];
-const manifests = () => ['package.json', ...readdirSync(join(workspace, 'packages'), { withFileTypes: true })
-  .filter(entry => entry.isDirectory() && existsSync(join(workspace, 'packages', entry.name, 'package.json'))).map(entry => `packages/${entry.name}/package.json`)];
+/** The root manifest, every workspace package's and every extension's (the @mayurajs packages, released in lockstep). */
+const manifests = () => ['package.json', ...['packages', 'extensions'].flatMap(folder => existsSync(join(workspace, folder)) ? readdirSync(join(workspace, folder), { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && existsSync(join(workspace, folder, entry.name, 'package.json'))).map(entry => `${folder}/${entry.name}/package.json`) : [])];
 
 function parse(version) {
   const match = semver.exec(version); assert(match, `Not a semantic version: ${version}`);

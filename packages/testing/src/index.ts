@@ -97,4 +97,4 @@ export async function testTool<T extends AnyTool>(tool: T, input: unknown, optio
   const snapshot = budget.snapshot();
   return { outcome, spentMicros: Number(snapshot.spentMicros), reservedMicros: snapshot.reservedMicros, receipt: outcome.receipt ?? receipt };
 }
-export { conformanceTools, expectedCostMicros, modelAdapterConformance, type ConformanceModelSettings, type ModelAdapterHarness, type ModelConformanceCase, type ModelScenario, type ModelScenarioKind } from './model-conformance.js';
+export { conformanceTools, expectedCostMicros, modelAdapterConformance, type ConformanceModelSettings, type ModelAdapterHarness, type ModelConformanceCase, type ModelConformanceKind, type ModelScenario, type ModelScenarioKind } from './model-conformance.js';

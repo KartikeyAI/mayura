@@ -75,6 +75,31 @@ await writeFile(join(full, 'tsconfig.json'), JSON.stringify({ compilerOptions: {
   include: ['consumer.ts'] }, null, 2));
 await run([join(full, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(full, 'tsconfig.json'), '--pretty', 'false'], full, { timeout: 300_000 });
 
+// 3. Every @mayurajs extension, installed offline next to this bundle as its peer: it loads, and a strict consumer
+// type-checks against its declarations and mayura's.
+const { extensions } = await import('./extensions.mjs');
+const extensionResults = {};
+for (const extension of extensions()) {
+  const name = `@mayurajs/${extension.name}`;
+  const directory = join(output, `extension-${extension.name}`); await mkdir(directory);
+  const closure = await packClosure([[name, workspace]]);
+  const typescript = await packClosure([['typescript', workspace], [compilerPlatform, join(workspace, 'node_modules', '.pnpm')], ['@types/node', workspace]]);
+  const overrides = Object.fromEntries([...closure, ...typescript].filter(entry => entry !== 'mayura' && entry !== name).map(entry => [entry, packages.get(entry).archive]));
+  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: `extension-${extension.name}`, private: true, type: 'module',
+    dependencies: { mayura: pathToFileURL(archive).href, [name]: packages.get(name).archive },
+    devDependencies: Object.fromEntries([...typescript].filter(entry => ['typescript', compilerPlatform, '@types/node'].includes(entry)).map(entry => [entry, packages.get(entry).archive])), overrides }, null, 2));
+  const config = join(directory, 'empty.npmrc'); await writeFile(config, '');
+  await run([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--userconfig', config, '--cache', join(output, 'npm-cache')], directory, { timeout: 600_000 });
+  await writeFile(join(directory, 'probe.mjs'), `const module = await import(${JSON.stringify(name)}); console.log(JSON.stringify(Object.keys(module).length));\n`);
+  const exported = JSON.parse((await run([join(directory, 'probe.mjs')], directory)).stdout);
+  assert(exported > 0, `${name} did not load next to the bundle.`);
+  await writeFile(join(directory, 'consumer.ts'), `import * as extension from '${name}';\nimport { createModels } from 'mayura';\nexport const used = [extension, createModels];\n`);
+  await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
+    strict: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'] }, include: ['consumer.ts'] }, null, 2));
+  await run([join(directory, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(directory, 'tsconfig.json'), '--pretty', 'false'], directory, { timeout: 300_000 });
+  extensionResults[name] = exported;
+}
+
 const files = (await readdir(join(staged, 'lib'))).length;
 console.log(JSON.stringify({ status: 'passed', package: `${manifest.name}@${manifest.version}`, tarballBytes: packed[0].size, unpackedBytes: packed[0].unpackedSize,
-  archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: Object.keys(lightResults).length, rewritten: summary.rewritten, output }));
+  archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: Object.keys(lightResults).length, rewritten: summary.rewritten, extensions: extensionResults, output }));

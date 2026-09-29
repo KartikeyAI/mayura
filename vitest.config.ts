@@ -16,14 +16,14 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['packages/*/test/**/*.test.ts'],
+          include: ['packages/*/test/**/*.test.ts', 'extensions/*/test/**/*.test.ts'],
           exclude: ['**/*.integration.test.ts'],
         },
       },
       {
         test: {
           name: 'integration',
-          include: ['packages/*/test/**/*.integration.test.ts'],
+          include: ['packages/*/test/**/*.integration.test.ts', 'extensions/*/test/**/*.integration.test.ts'],
           testTimeout: slowRunner ? 90_000 : 30_000,
         },
       },
