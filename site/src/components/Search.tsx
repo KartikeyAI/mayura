@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { SearchEntry } from 'virtual:mayura-search';
 
 interface Result { entry: SearchEntry; score: number; snippet: string }
@@ -70,7 +71,9 @@ export function SearchButton() {
         <span className="hidden sm:inline">Search docs</span>
         <kbd className="ml-auto hidden rounded border border-line px-1.5 font-sans text-[0.7rem] sm:inline">Ctrl K</kbd>
       </button>
-      {open && <SearchDialog onClose={() => setOpen(false)} />}
+      {/* Rendered into <body>: the header's backdrop-filter makes it the containing block of any fixed element
+          inside it, which would shrink the full-screen overlay to the header's height. */}
+      {open && createPortal(<SearchDialog onClose={() => setOpen(false)} />, document.body)}
     </>
   );
 }
@@ -131,11 +134,11 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
             <li key={`${result.entry.slug}#${result.entry.id}`} id={`search-${i}`} role="option" aria-selected={i === active}
               onMouseMove={() => setActive(i)} onClick={() => go(result)}
               className={`cursor-pointer rounded-lg px-3 py-2.5 ${i === active ? 'bg-primary/10' : ''}`}>
-              <div className="flex items-baseline gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
                 <span className={`text-sm font-medium ${i === active ? 'text-primary' : 'text-fg'}`}>
                   <Highlighted text={result.entry.title} words={words} />
                 </span>
-                <span className="truncate text-xs text-muted">
+                <span className="text-xs text-muted sm:truncate">
                   {result.entry.id ? `${result.entry.page} · ` : ''}{result.entry.section}
                 </span>
               </div>
