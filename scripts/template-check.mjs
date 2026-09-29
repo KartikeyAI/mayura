@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { applyProjectPlan, planProject, readProject, TEMPLATE_NAMES } from '../packages/cli/dist/index.js';
 import { compilerPlatform, createPacker } from './local-packages.mjs';
+import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -35,7 +36,7 @@ async function run(args, cwd, timeout = 60_000) {
 
 const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
 const canonicalArtifacts = await realpath(artifactRoot); assert(inside(workspace, canonicalArtifacts));
-const output = await mkdtemp(join(canonicalArtifacts, 'template-check-')); const tarballs = join(output, 'tarballs');
+const output = await workDirectory(join(canonicalArtifacts, 'template-check-')); const tarballs = join(output, 'tarballs');
 const cache = join(output, 'npm-cache'); await mkdir(tarballs); await mkdir(cache);
 // `mayura` is the published bundle; third-party packages come from the local installation (scripts/local-packages.mjs).
 const { npm, packages, packClosure } = createPacker({ output, tarballs });

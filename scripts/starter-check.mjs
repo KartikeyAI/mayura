@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { compilerPlatform, createPacker, environment, inside, installedDirectory, run, workspace } from './local-packages.mjs';
 import { applyProjectPlan, planStarter, readProject, STARTER_NAMES } from '../packages/cli/dist/index.js';
+import { workDirectory } from './work-directory.mjs';
 
 const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
 const only = argument('--only'); const skipPacked = process.argv.includes('--skip-packed');
@@ -47,7 +48,7 @@ for (const starter of selected) {
 if (!skipPacked) {
   // ---- Step 2: packed and offline ------------------------------------------------------------------------------------
   const artifacts = join(workspace, '.artifacts'); await mkdir(artifacts, { recursive: true });
-  const output = await mkdtemp(join(await realpath(artifacts), 'starter-check-')); const tarballs = join(output, 'tarballs'); const cache = join(output, 'npm-cache');
+  const output = await workDirectory(join(await realpath(artifacts), 'starter-check-')); const tarballs = join(output, 'tarballs'); const cache = join(output, 'npm-cache');
   await mkdir(tarballs); await mkdir(cache);
   const { npm, packages, packClosure } = createPacker({ output, tarballs });
 

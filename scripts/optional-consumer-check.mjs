@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
 import { gunzipSync } from 'node:zlib';
 import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
+import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -135,7 +136,7 @@ async function main() {
   assert(existsSync(tsc), 'Install/build the workspace first.');
   const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
   const canonicalRoot = await realpath(artifactRoot); assert(inside(workspace, canonicalRoot), 'Artifacts must remain in the canonical workspace.');
-  const output = await mkdtemp(join(canonicalRoot, 'optional-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
+  const output = await workDirectory(join(canonicalRoot, 'optional-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
   const packages = new Map(); const reports = [];
   for (const shortName of names) {
     const directory = join(workspace, 'packages', shortName); assert(existsSync(join(directory, 'dist', 'index.js')), 'Build all optional packages first.');

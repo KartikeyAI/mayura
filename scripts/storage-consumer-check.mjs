@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
+import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -102,7 +103,7 @@ function inspectMayura(name, files) {
     assert(!version.startsWith('workspace:'), 'Unresolved workspace protocol in archive.');
     assert.equal(version, dependency.startsWith('@mayura/') ? manifest.version : external[dependency]?.[0], 'Archive dependency must retain the exact qualified version.');
   }
-  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='workflows'?['.','./agents','./children','./composites','./ephemeral','./graphs','./lifecycle','./loops','./sagas']:['.'];
+  const expectedExports=name==='core'||name==='tools'?['.','./host']:name==='storage-sql'?['./host']:name==='storage-postgres'?['.','./driver']:name==='workflows'?['.','./agents','./children','./composites','./ephemeral','./graphs','./lifecycle','./loops','./sagas']:['.'];
   assert.deepEqual(Object.keys(manifest.exports ?? {}).sort(), expectedExports, 'Public export set changed.');
   let maps = 0;
   for (const [path, bytes] of files) {
@@ -136,7 +137,7 @@ async function main() {
   const npm = cli('npm'); const pnpm = cli('pnpm'); const tsc = join(workspace, 'node_modules', 'typescript', 'bin', 'tsc');
   const artifactRoot = join(workspace, '.artifacts'); await mkdir(artifactRoot, { recursive: true });
   assert(inside(workspace, await realpath(artifactRoot)));
-  const output = await mkdtemp(join(artifactRoot, 'storage-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
+  const output = await workDirectory(join(artifactRoot, 'storage-consumer-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
   const dependencyPackCache = join(output, 'dependency-pack-cache'); await mkdir(dependencyPackCache);
   const packages = new Map(); const reports = [];
   for (const name of Object.keys(mayura)) {

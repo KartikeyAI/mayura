@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { assertConsumerTypeFiles } from './consumer-type-isolation.mjs';
+import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -422,7 +423,7 @@ async function main() {
   await mkdir(artifactRoot, { recursive: true });
   const resolvedArtifactRoot = await realpath(artifactRoot);
   assert(inside(workspace, resolvedArtifactRoot), 'Artifact directory must remain inside the canonical workspace.');
-  const output = await mkdtemp(join(resolvedArtifactRoot, 'consumer-'));
+  const output = await workDirectory(join(resolvedArtifactRoot, 'consumer-'));
   const tarballs = join(output, 'tarballs');
   const application = join(output, 'application');
   await mkdir(tarballs);

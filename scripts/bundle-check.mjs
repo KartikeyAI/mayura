@@ -2,15 +2,16 @@
 // without the optional peers), import every entry point, type-check a strict consumer, and run the `mayura` command.
 //   node scripts/bundle-check.mjs
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bundle } from './bundle-package.mjs';
 import { compilerPlatform, createPacker, run, workspace } from './local-packages.mjs';
+import { workDirectory } from './work-directory.mjs';
 
 const artifacts = join(workspace, '.artifacts'); await mkdir(artifacts, { recursive: true });
-const output = await mkdtemp(join(artifacts, 'bundle-check-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
+const output = await workDirectory(join(artifacts, 'bundle-check-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
 const staged = join(output, 'mayura'); const summary = await bundle(staged);
 const { npm, packages, packClosure } = createPacker({ output, tarballs });
 const packed = JSON.parse((await run([npm, 'pack', staged, '--ignore-scripts', '--offline', '--pack-destination', tarballs, '--json'], workspace)).stdout);
