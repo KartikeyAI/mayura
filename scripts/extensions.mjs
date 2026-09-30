@@ -31,6 +31,7 @@ export const reviewedDependencies = {
   'filestorage-azure-blob': [],
   'filestorage-gcs': [],
   'filestorage-r2': [],
+  'filestorage-vercel-blob': [],
   'voice-assemblyai': [],
   'voice-azure': [],
   'voice-cartesia': [],

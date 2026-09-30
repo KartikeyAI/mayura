@@ -7839,6 +7839,20 @@
         "declaration": "710cf77228f62f23"
       }
     },
+    "@mayurajs/filestorage-vercel-blob": {
+      "vercelBlobApiVersion": {
+        "kind": "const",
+        "declaration": "05afb12890fdf10b"
+      },
+      "vercelBlobFiles": {
+        "kind": "function",
+        "declaration": "b3c883944679d177"
+      },
+      "VercelBlobFilesOptions": {
+        "kind": "interface",
+        "declaration": "69462e75afca4442"
+      }
+    },
     "@mayurajs/provider-anthropic": {
       "anthropic": {
         "kind": "function",

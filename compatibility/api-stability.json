@@ -67,6 +67,7 @@
     "@mayurajs/filestorage-azure-blob",
     "@mayurajs/filestorage-gcs",
     "@mayurajs/filestorage-r2",
+    "@mayurajs/filestorage-vercel-blob",
     "@mayurajs/provider-anthropic",
     "@mayurajs/provider-azure",
     "@mayurajs/provider-bedrock",

@@ -13,6 +13,7 @@
     { "path": "extensions/filestorage-azure-blob" },
     { "path": "extensions/filestorage-gcs" },
     { "path": "extensions/filestorage-r2" },
+    { "path": "extensions/filestorage-vercel-blob" },
     { "path": "extensions/voice-assemblyai" },
     { "path": "extensions/voice-azure" },
     { "path": "extensions/voice-cartesia" },

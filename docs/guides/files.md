@@ -122,6 +122,7 @@ Provider packages give `createFileStore` a backend for other services:
 | `@mayurajs/filestorage-gcs` | Google Cloud Storage, over its JSON API with an OAuth `token` source. A file's etag is its generation. | writes and deletes |
 | `@mayurajs/filestorage-azure-blob` | Azure Blob Storage, over its REST API with an account key (Shared Key), a Microsoft Entra ID `token` source or a SAS. | writes and deletes |
 | `@mayurajs/filestorage-r2` | Cloudflare R2 through a Workers binding (`env.FILES`): no keys or endpoints. Outside Workers, use `s3Files`. | writes (the binding cannot delete conditionally) |
+| `@mayurajs/filestorage-vercel-blob` | A private Vercel Blob store, with its read-write `token`. Reads bypass the CDN cache. No custom metadata. | writes and deletes |
 
 ```ts
 import { createFileStore } from 'mayura/files';
