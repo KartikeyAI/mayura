@@ -29,6 +29,8 @@ export const reviewedDependencies = {
   'storage-mongodb': ['mongodb'],
   'storage-mysql': ['mysql2'],
   'voice-assemblyai': [],
+  'voice-azure': [],
+  'voice-cartesia': [],
   'voice-deepgram': [],
   'voice-elevenlabs': [],
   'voice-google': [],

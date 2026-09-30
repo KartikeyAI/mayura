@@ -80,6 +80,8 @@ provider does not take). Messages are fixed text: nothing the provider wrote rea
 | `@mayurajs/voice-deepgram` | `nova-3` (at its multilingual rate) and `whisper-large` in the catalog; without a language, Deepgram detects it | `aura-2` and `aura` in the catalog; the voice completes the model, as in `aura-2` with voice `thalia-en` |
 | `@mayurajs/voice-assemblyai` | `universal-3-5-pro` and `universal-2` in the catalog; transcripts are deleted from AssemblyAI once read, unless `retainTranscripts: true` | None: AssemblyAI has no speech API |
 | `@mayurajs/voice-google` | `chirp_3`, `chirp_2` and `telephony` in the catalog, up to a minute of audio per call; without a language, Chirp 3 detects it | `chirp3-hd`, `studio`, `neural2`, `polyglot`, `wavenet` and `standard` in the catalog; the voice must belong to the family, as in `chirp3-hd` with `en-US-Chirp3-HD-Charon` |
+| `@mayurajs/voice-azure` | `fast` (fast transcription) in the catalog; `mai-transcribe-2` with your own price; without a language, Azure detects it | `neural`, `neural-hd` and `neural-hd-flash` in the catalog; the voice must belong to the family, as in `neural-hd` with `en-US-Ava:DragonHDLatestNeural`, and Azure OpenAI voices are refused |
+| `@mayurajs/voice-cartesia` | `ink-whisper` in the catalog; without a language, Cartesia assumes English | `sonic-3.6`, `sonic-3.5`, `sonic-3` and `sonic-latest` in the catalog; the voice is a Cartesia voice id |
 
 OpenAI bills some audio models per token rather than per minute or character. Their cost cannot be known from the
 audio or text before a call, so they are left out of the catalog: give a per-minute or per-character price you are

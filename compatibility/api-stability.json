@@ -76,6 +76,8 @@
     "@mayurajs/storage-mongodb",
     "@mayurajs/storage-mysql",
     "@mayurajs/voice-assemblyai",
+    "@mayurajs/voice-azure",
+    "@mayurajs/voice-cartesia",
     "@mayurajs/voice-deepgram",
     "@mayurajs/voice-elevenlabs",
     "@mayurajs/voice-google",

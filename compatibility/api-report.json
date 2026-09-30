@@ -7793,6 +7793,42 @@
         "declaration": "4f216a7d93101c71"
       }
     },
+    "@mayurajs/voice-azure": {
+      "azureVoice": {
+        "kind": "function",
+        "declaration": "8393e4ce18c56cb7"
+      },
+      "AzureVoiceOptions": {
+        "kind": "interface",
+        "declaration": "0937f0130813efb3"
+      },
+      "billableCharacters": {
+        "kind": "function",
+        "declaration": "7b67304f9d03a802"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      }
+    },
+    "@mayurajs/voice-cartesia": {
+      "cartesiaVersion": {
+        "kind": "const",
+        "declaration": "165c0a2c91839a9e"
+      },
+      "cartesiaVoice": {
+        "kind": "function",
+        "declaration": "4abc6e3e26fb6736"
+      },
+      "CartesiaVoiceOptions": {
+        "kind": "interface",
+        "declaration": "c6aeeb327efd7fb9"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      }
+    },
     "@mayurajs/voice-deepgram": {
       "catalog": {
         "kind": "const",

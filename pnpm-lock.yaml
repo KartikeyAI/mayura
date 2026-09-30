@@ -125,6 +125,12 @@ importers:
       '@mayurajs/voice-assemblyai':
         specifier: workspace:*
         version: link:extensions/voice-assemblyai
+      '@mayurajs/voice-azure':
+        specifier: workspace:*
+        version: link:extensions/voice-azure
+      '@mayurajs/voice-cartesia':
+        specifier: workspace:*
+        version: link:extensions/voice-cartesia
       '@mayurajs/voice-deepgram':
         specifier: workspace:*
         version: link:extensions/voice-deepgram
@@ -325,6 +331,18 @@ importers:
         version: link:../../packages/mayura
 
   extensions/voice-assemblyai:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/voice-azure:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/voice-cartesia:
     devDependencies:
       mayura:
         specifier: workspace:*

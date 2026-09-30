@@ -84,6 +84,8 @@
     "@mayurajs/storage-mongodb": "workspace:*",
     "@mayurajs/storage-mysql": "workspace:*",
     "@mayurajs/voice-assemblyai": "workspace:*",
+    "@mayurajs/voice-azure": "workspace:*",
+    "@mayurajs/voice-cartesia": "workspace:*",
     "@mayurajs/voice-deepgram": "workspace:*",
     "@mayurajs/voice-google": "workspace:*",
     "@mayurajs/voice-elevenlabs": "workspace:*",
