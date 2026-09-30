@@ -1,6 +1,6 @@
 ---
 title: "Storage"
-description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso), MySQL or MongoDB; run migrations, and back the store up."
+description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, D1 or DynamoDB; run migrations, and back the store up."
 ---
 
 Agents and ephemeral runs need no database. You add storage when something has to survive a restart: durable
@@ -33,6 +33,8 @@ process shuts down. Runtimes and memory that receive the store never close it fo
 | libSQL: Turso, a `sqld` server, or a local file | `@mayurajs/storage-libsql` | the package itself |
 | MySQL 8.0.19 or later | `@mayurajs/storage-mysql` | the package itself |
 | A MongoDB replica set or sharded cluster | `@mayurajs/storage-mongodb` | the package itself |
+| Cloudflare D1, from a Worker | `@mayurajs/storage-d1` | the package itself |
+| Amazon DynamoDB | `@mayurajs/storage-dynamodb` | the package itself |
 | Both factories from one import (existing apps) | `mayura/storage` | `better-sqlite3` and `pg` |
 | Your own adapter, types and `StorageError` only | `mayura/storage-contracts` | nothing |
 
@@ -192,6 +194,77 @@ losing transaction again. If a process dies in the middle of a transaction, the 
 it (`transactionLifetimeLimitSeconds`, 60 seconds by default); until then, writes to the documents it touched wait. State
 and event data are stored as the exact JSON text given, so keys MongoDB would restrict, such as `$set` or `a.b`, come
 back unchanged. Scheduler leases are measured on the server's clock, so every worker agrees on when a lease ends.
+
+## D1 and DynamoDB
+
+D1 and DynamoDB have no interactive transactions: D1 commits a `batch()` of statements at once, and DynamoDB a
+`TransactWriteItems` of at most 100 items. `@mayurajs/storage-d1` and `@mayurajs/storage-dynamodb` run the same state
+machines as the SQL stores as optimistic transactions. A transaction reads what it needs and holds its writes, then
+commits them in one atomic write that applies only if nothing it locked, read before an error, or wrote has changed
+since. If something has, it runs again with fresh reads, for up to 30 seconds (`retryForMs`). What a SQL store would
+lock with `FOR UPDATE`, these stores write at commit, so two writers of one record never both succeed. Reads that SQL
+makes without a lock see the latest committed value, as they do there. Everything the SQL stores keep is available,
+and both pass the same conformance suites, including crash tests that kill a process just before or after a commit.
+
+```bash
+npm install mayura @mayurajs/storage-d1
+```
+
+```ts
+import { createD1Store, type D1Database } from '@mayurajs/storage-d1';
+
+export default {
+  async fetch(_request: Request, env: { DB: D1Database }): Promise<Response> {
+    const store = createD1Store({ database: env.DB });
+    await store.initialize();
+    return new Response('ok');
+  },
+};
+```
+
+| D1 option | Notes |
+| --- | --- |
+| `database` | The D1 binding from your Worker's environment. |
+| `table` | The table that holds Mayura's documents; `mayura_documents` by default. `initialize()` creates it. |
+| `retryForMs` | How long a transaction keeps running again after conflicts; 30 seconds by default. |
+
+```bash
+npm install mayura @mayurajs/storage-dynamodb
+```
+
+```ts
+import { createDynamoStore } from '@mayurajs/storage-dynamodb';
+
+const store = createDynamoStore({
+  table: 'mayura',
+  region: 'us-east-1',
+  credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '', secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '' },
+});
+await store.initialize();
+```
+
+| DynamoDB option | Notes |
+| --- | --- |
+| `table` | A table with string partition key `p` and string sort key `s`. |
+| `region`, `credentials` | Required, unless you give `client`: nothing is read from the environment, AWS config files or instance metadata. `credentials` may be a function that returns fresh ones. |
+| `endpoint` | Another endpoint, such as a VPC endpoint: https only, or http on a loopback address (DynamoDB Local). |
+| `client` | A `DynamoDBClient` you create and own, instead of `region` and `credentials`. `store.close()` never destroys it. |
+| `createTable` | Create the table with on-demand capacity when it does not exist. Off by default: creating tables is a grant you give deliberately. |
+| `retryForMs` | As for D1. |
+
+Good to know:
+
+- Every call is a round trip to the database, and a transaction makes several. A Worker placed near its D1 database,
+  or a service in the same region as its table, keeps them short.
+- Under heavy contention on one record, transactions run again rather than wait, so throughput per record is lower
+  than on a SQL store. Different records never contend.
+- DynamoDB has no clock to read, so leases and deadlines use your hosts' clocks: keep them synchronized. D1 uses the
+  database's clock.
+- DynamoDB items are at most 400 KB: larger documents are split into chunk items, which count toward the 100 items one
+  transaction may write. An operation that needs more fails with `LIMIT_EXCEEDED` instead of partly applying. The
+  largest operations, such as a graph that waits on 128 different runs, can reach that limit on DynamoDB.
+- Memory search scans a scope's term index and ranks it in your process, so it grows with the number of records in
+  the scope.
 
 ## What uses the store
 

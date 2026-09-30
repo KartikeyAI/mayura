@@ -20,11 +20,23 @@ try {
       : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
       : options.adapter === 'mysql' ? (await import('./mysql.mjs')).mysqlStore(options)
       : options.adapter === 'mongodb' ? (await import('./mongodb.mjs')).mongoStore(options)
+      : ['d1-sqlite', 'dynamodb'].includes(options.adapter) ? await (await import('./document.mjs')).documentStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     await store.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize();
     if (publication) await store.workflows.cancel(options.cancel);
     else await store.executionWaits.drainReady({ ...options.stream, limit: 32 });
     await checkpoint();
+  } else if (['d1-sqlite', 'dynamodb'].includes(options.adapter)) {
+    // A document store's transaction commits once: stop just before the commit that writes the completion
+    // (publication) or a wait's resolution (drain).
+    const { documentKey, documentStoreBeforeCommit } = await import('./document.mjs');
+    let armed = false;
+    const relevant = writes => writes.some(write => write.kind === 'put' && (publication ? write.sort === documentKey('c') : write.body.includes('"type":"wait.resolved"')));
+    const store = await documentStoreBeforeCommit(options, async writes => { if (armed && relevant(writes)) await checkpoint(); });
+    await store.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize(); armed = true;
+    if (publication) await store.workflows.cancel(options.cancel);
+    else await store.executionWaits.drainReady({ ...options.stream, limit: 32 });
+    throw new Error();
   } else if (options.adapter === 'mongodb') {
     // MongoDB has no SQL layer to instrument: the public store stops before committing the transaction that wrote
     // the completion (publication) or a wait's resolution (drain).

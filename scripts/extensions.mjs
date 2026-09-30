@@ -23,6 +23,8 @@ export const reviewedDependencies = {
   'provider-mistral': ['@mistralai/mistralai'],
   'provider-ollama': ['ollama'],
   'provider-openai': ['openai'],
+  'storage-d1': [],
+  'storage-dynamodb': ['@aws-sdk/client-dynamodb'],
   'storage-libsql': ['@libsql/client'],
   'storage-mongodb': ['mongodb'],
   'storage-mysql': ['mysql2'],

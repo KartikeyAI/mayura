@@ -33,3 +33,11 @@ export { initialDurableBudgetState, reduceDurableBudgetState, type DurableBudget
 export { workflowTreeCommand, workflowTreeFacade } from './workflow-tree-validation.js';
 export { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
 export { createCommand, updateCommand, migrateCommand, identifier, cursor, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';
+/**
+ * The Mayura store on databases without interactive transactions: the same state machines, run as optimistic
+ * transactions over documents. An adapter implements `DocumentBackend`.
+ */
+export { createDocumentStore, type DocumentStore, type DocumentStoreOptions } from './document/store.js';
+export type { DocumentBackend, DocumentKey, DocumentRange, DocumentTransactionOptions, DocumentWrite, StoredDocument } from './document/session.js';
+export { memoryDocumentBackend } from './document/memory-backend.js';
+export { bounds as documentRangeBounds, compareKeys as compareDocumentKeys } from './document/keys.js';

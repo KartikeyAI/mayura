@@ -15,7 +15,7 @@ const { Pool } = postgresRequire('pg') as typeof import('pg');
 /** Fault access is confined to the disposable database owned by this one test. */
 export interface GraphFixture {
   readonly store: ReturnType<typeof createSqliteStore>;
-  readonly dialect: 'sqlite' | 'postgres' | 'mysql' | 'mongodb';
+  readonly dialect: 'sqlite' | 'postgres' | 'mysql' | 'mongodb' | 'document';
   readonly prefix: string;
   readonly childConfig: { readonly kind: 'sqlite'; readonly filename: string } | { readonly kind: 'mysql'; readonly uri: string }
     | { readonly kind: 'postgres'; readonly connectionString: string; readonly schema: string }

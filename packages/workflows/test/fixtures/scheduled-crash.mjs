@@ -13,6 +13,7 @@ if (backend.kind === 'sqlite' && !backend.filename.includes('mayura-scheduled-wo
 const store = backend.kind === 'sqlite' ? createSqliteStore({ filename: backend.filename })
   : backend.kind === 'mysql' ? (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlStore({ uri: backend.uri })
   : backend.kind === 'mongodb' ? (await import('../../../storage/test/fixtures/mongodb.mjs')).mongoStore({ uri: backend.uri, database: backend.database })
+  : ['d1-sqlite', 'dynamodb'].includes(backend.kind) ? await (await import('../../../storage/test/fixtures/document.mjs')).documentStore(backend)
   : createPostgresStore({ connectionString: backend.connectionString, schema: backend.schema });
 let effects = 0;
 let phase = 'initialize';

@@ -6,6 +6,8 @@
     { "path": "packages/mayura" },
     { "path": "extensions/provider-openai" },
     { "path": "extensions/storage-libsql" },
+    { "path": "extensions/storage-d1" },
+    { "path": "extensions/storage-dynamodb" },
     { "path": "extensions/storage-mongodb" },
     { "path": "extensions/storage-mysql" },
     { "path": "extensions/provider-anthropic" },

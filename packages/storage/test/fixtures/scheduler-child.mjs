@@ -8,6 +8,7 @@ try {
     : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
     : options.adapter === 'mysql' ? (await import('./mysql.mjs')).mysqlStore(options)
     : options.adapter === 'mongodb' ? (await import('./mongodb.mjs')).mongoStore(options)
+    : ['d1-sqlite', 'dynamodb'].includes(options.adapter) ? await (await import('./document.mjs')).documentStore(options)
     : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
   await store.initialize(); await store.scheduler.initialize();
   const [{ claim }] = await store.scheduler.claim({ scope: 'scheduler-a', workerId: 'crash-worker', limit: 1, leaseMs: 1_000 });

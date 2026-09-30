@@ -79,6 +79,8 @@
     "@mayurajs/provider-ollama": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
     "@mayurajs/storage-libsql": "workspace:*",
+    "@mayurajs/storage-d1": "workspace:*",
+    "@mayurajs/storage-dynamodb": "workspace:*",
     "@mayurajs/storage-mongodb": "workspace:*",
     "@mayurajs/storage-mysql": "workspace:*",
     "@opentelemetry/api": "1.9.1",

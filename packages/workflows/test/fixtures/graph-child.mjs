@@ -21,19 +21,35 @@ try {
   const options = config.backend;
   if (options.kind === 'sqlite' && !options.filename.includes('mayura-graph-workflows-')) throw new Error();
   if (options.kind === 'postgres' && !/^mayura_graph_workflow_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
-  if (!['sqlite', 'postgres', 'mysql', 'mongodb'].includes(options.kind)) throw new Error();
+  if (!['sqlite', 'postgres', 'mysql', 'mongodb', 'd1-sqlite', 'dynamodb'].includes(options.kind)) throw new Error();
   const registering = config.phase.startsWith('registration');
   if (config.phase.endsWith('after')) {
     stage = 'public-initialize';
     const store = options.kind === 'sqlite' ? createSqliteStore({ filename: options.filename })
       : options.kind === 'mysql' ? (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlStore({ uri: options.uri })
       : options.kind === 'mongodb' ? (await import('../../../storage/test/fixtures/mongodb.mjs')).mongoStore({ uri: options.uri, database: options.database })
+      : ['d1-sqlite', 'dynamodb'].includes(options.kind) ? await (await import('../../../storage/test/fixtures/document.mjs')).documentStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     await store.initialize(); await store.workflowGraphs.initialize();
     stage = 'public-command';
     if (registering) await store.workflowGraphs.submit(config.enrollment);
     else await store.workflowGraphs.advance(config.command);
     await checkpoint();
+  } else if (['d1-sqlite', 'dynamodb'].includes(options.kind)) {
+    // A document store's transaction commits once: stop just before the commit that writes the wait edges
+    // (registration) or the parent's new state (resolution).
+    stage = 'backend-create';
+    const { documentKey, documentStoreBeforeCommit } = await import('../../../storage/test/fixtures/document.mjs');
+    let armed = false;
+    const relevant = writes => writes.some(write => write.kind === 'put' && (registering ? write.sort === documentKey('w')
+      : write.partition === documentKey('run', config.command.scope, config.command.id) && write.sort === documentKey('r')));
+    const store = await documentStoreBeforeCommit(options, async writes => { if (armed && relevant(writes)) await checkpoint(); });
+    stage = 'reducer-initialize';
+    await store.initialize(); await store.workflowGraphs.initialize(); armed = true;
+    stage = 'reducer-command';
+    if (registering) await store.workflowGraphs.submit(config.enrollment);
+    else await store.workflowGraphs.advance(config.command);
+    throw new Error();
   } else if (options.kind === 'mongodb') {
     // MongoDB has no SQL layer to instrument: the public store stops before committing the transaction that wrote the
     // wait edges (registration) or the parent's new state (resolution).

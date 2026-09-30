@@ -5280,6 +5280,10 @@
         "kind": "interface",
         "declaration": "40be46d18dde3d4e"
       },
+      "compareDocumentKeys": {
+        "kind": "function",
+        "declaration": "0e57c0dc2e67da9d"
+      },
       "CompletionRow": {
         "kind": "interface",
         "declaration": "c28fe25fe15776ff"
@@ -5288,9 +5292,45 @@
         "kind": "function",
         "declaration": "9a40d75e84901f12"
       },
+      "createDocumentStore": {
+        "kind": "function",
+        "declaration": "e3775220afa8abf6"
+      },
       "cursor": {
         "kind": "function",
         "declaration": "2f5b3e8ef59c57d4"
+      },
+      "DocumentBackend": {
+        "kind": "interface",
+        "declaration": "450e35d0831908d6"
+      },
+      "DocumentKey": {
+        "kind": "interface",
+        "declaration": "b8f819d65daf2ade"
+      },
+      "DocumentRange": {
+        "kind": "interface",
+        "declaration": "f28f313442c32b17"
+      },
+      "documentRangeBounds": {
+        "kind": "function",
+        "declaration": "a16e4fc8aa524755"
+      },
+      "DocumentStore": {
+        "kind": "type",
+        "declaration": "56bfc6bb3c780a6e"
+      },
+      "DocumentStoreOptions": {
+        "kind": "interface",
+        "declaration": "34f933371fc5e643"
+      },
+      "DocumentTransactionOptions": {
+        "kind": "interface",
+        "declaration": "c6aa9e227a331305"
+      },
+      "DocumentWrite": {
+        "kind": "type",
+        "declaration": "271af675b34f68ff"
       },
       "DurableBudgetDatabase": {
         "kind": "class",
@@ -5363,6 +5403,10 @@
       "initializeOwnership": {
         "kind": "function",
         "declaration": "513923b066415211"
+      },
+      "memoryDocumentBackend": {
+        "kind": "function",
+        "declaration": "c96f3674b725d283"
       },
       "MemoryIndexDatabase": {
         "kind": "class",
@@ -5451,6 +5495,10 @@
       "SchedulerTransaction": {
         "kind": "interface",
         "declaration": "1f007bd7d6ede39d"
+      },
+      "StoredDocument": {
+        "kind": "interface",
+        "declaration": "a53cee2f11971681"
       },
       "storedObject": {
         "kind": "function",
@@ -7437,6 +7485,58 @@
       "ResponsesProviderOptions": {
         "kind": "interface",
         "declaration": "0c2baf80f6bc0ca2"
+      }
+    },
+    "@mayurajs/storage-d1": {
+      "createD1Store": {
+        "kind": "function",
+        "declaration": "1f34714d0799a0f7"
+      },
+      "d1Backend": {
+        "kind": "function",
+        "declaration": "a674b9a544de177c"
+      },
+      "D1Database": {
+        "kind": "interface",
+        "declaration": "ff6e9ddab25914c1"
+      },
+      "D1PreparedStatement": {
+        "kind": "interface",
+        "declaration": "12e6cc68a6df4943"
+      },
+      "D1Store": {
+        "kind": "type",
+        "declaration": "45825114ad9c3161"
+      },
+      "D1StoreOptions": {
+        "kind": "interface",
+        "declaration": "b0846bd50931f1d5"
+      }
+    },
+    "@mayurajs/storage-dynamodb": {
+      "createDynamoStore": {
+        "kind": "function",
+        "declaration": "e9f6fe83c0e1fc02"
+      },
+      "DynamoAwsCredentials": {
+        "kind": "type",
+        "declaration": "59d050ee4e6d3dfd"
+      },
+      "dynamoBackend": {
+        "kind": "function",
+        "declaration": "1708da7489e2d95e"
+      },
+      "dynamoClient": {
+        "kind": "function",
+        "declaration": "020d03b97bce5aeb"
+      },
+      "DynamoStore": {
+        "kind": "type",
+        "declaration": "33693c82fa98f03c"
+      },
+      "DynamoStoreOptions": {
+        "kind": "interface",
+        "declaration": "34beae8336bd996b"
       }
     },
     "@mayurajs/storage-libsql": {

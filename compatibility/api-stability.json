@@ -69,6 +69,8 @@
     "@mayurajs/provider-mistral",
     "@mayurajs/provider-ollama",
     "@mayurajs/provider-openai",
+    "@mayurajs/storage-d1",
+    "@mayurajs/storage-dynamodb",
     "@mayurajs/storage-libsql",
     "@mayurajs/storage-mongodb",
     "@mayurajs/storage-mysql"

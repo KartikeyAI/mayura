@@ -76,6 +76,8 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
         if (fixture.dialect === 'mysql' && ['wrong table', 'partial', 'wrong collation'].includes(mismatch)) return;
         // MongoDB also names an index within its collection, and has no expression indexes.
         if (fixture.dialect === 'mongodb' && ['wrong table', 'expression'].includes(mismatch)) return;
+        // Document stores keep discovery in their own ordered partition: there is no database index to collide with.
+        if (fixture.dialect === 'document') return;
         await submit(`index-collision-${mismatch.replaceAll(' ', '-')}`);
         const collation = fixture.dialect === 'postgres' ? '"C"' : 'BINARY';
         const incompatibleCollation = fixture.dialect === 'postgres' ? '"POSIX"' : 'NOCASE';
@@ -103,7 +105,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
 
     it('preserves a same-named table object instead of replacing it with an index', async () => {
       // MySQL names an index within its table, and MongoDB within its collection: a same-named table is no collision.
-      if (fixture.dialect === 'mysql' || fixture.dialect === 'mongodb') return;
+      if (fixture.dialect === 'mysql' || fixture.dialect === 'mongodb' || fixture.dialect === 'document') return;
       await fixture.query(`CREATE TABLE ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value TEXT NOT NULL)`);
       await fixture.query(`INSERT INTO ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value) VALUES (?)`, ['retained-fixture-value']);
       const catalog = () => fixture.dialect === 'sqlite'
@@ -122,10 +124,11 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
         ? fixture.query('SELECT name FROM sqlite_master WHERE type = ? AND name = ?', ['index', 'mayura_workflow_owners_discovery'])
         : fixture.dialect === 'mysql' ? fixture.query(`SELECT TABLE_NAME AS table_name, GROUP_CONCAT(CONCAT_WS(':', SEQ_IN_INDEX, COALESCE(COLUMN_NAME, EXPRESSION), NON_UNIQUE, COALESCE(COLLATION, '')) ORDER BY SEQ_IN_INDEX) AS definition FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ? GROUP BY TABLE_NAME`, ['mayura_workflow_owners_discovery'])
         : fixture.query('SELECT indexname FROM pg_indexes WHERE schemaname = ? AND indexname = ?', [fixture.childConfig.kind === 'postgres' ? fixture.childConfig.schema : '', 'mayura_workflow_owners_discovery']);
-      expect(await indexExists()).toEqual([]);
+      if (fixture.dialect !== 'document') expect(await indexExists()).toEqual([]);
       const before = await fingerprint(); const first = await discover().scan();
       expect(first.candidates.map(candidate => candidate.reference.runId)).toEqual(runs.map(run => run.id).sort()); expect(first.examined).toBe(3); expect(first.nextCursor).toBeNull();
-      expect(await indexExists()).toHaveLength(1); expect(await fingerprint()).toEqual(before);
+      if (fixture.dialect !== 'document') expect(await indexExists()).toHaveLength(1);
+      expect(await fingerprint()).toEqual(before);
       await store.close(); store = await reopen();
       expect(await discover().scan()).toEqual(first);
     });
@@ -269,6 +272,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       // These are valid owned runs, not synthetic corrupt rows: all remain inspectable.
       for (let index = 0; index < 1_024; index++) await store.workflowGraphs.submit({ manifest, policy: { ...policy, policyVersion: `plan-policy-${index % 64}` }, resources: {}, input: null, idempotencyKey: `plan-filler-${index}` });
       const run = await submit('plan-selected'); await client.scan();
+      if (fixture.dialect === 'document') { expect((await client.scan()).candidates.map(candidate => candidate.reference.runId)).toEqual([run.id]); return; }
       if (fixture.discoveryIndex) {
         // MongoDB: the winning plan scans the discovery index in key order, with no in-memory sort.
         const plan = JSON.stringify(await fixture.discoveryIndex.explain(scopeHash, policyHash));
