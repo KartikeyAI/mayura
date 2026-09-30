@@ -7779,6 +7779,20 @@
         "declaration": "5238cca3c0083103"
       }
     },
+    "@mayurajs/voice-elevenlabs": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      },
+      "elevenlabsVoice": {
+        "kind": "function",
+        "declaration": "493a6c8cf02cdac1"
+      },
+      "ElevenLabsVoiceOptions": {
+        "kind": "interface",
+        "declaration": "53804461236a30ec"
+      }
+    },
     "@mayurajs/voice-openai": {
       "catalog": {
         "kind": "const",
