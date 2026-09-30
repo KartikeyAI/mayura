@@ -85,6 +85,7 @@
     "@mayurajs/storage-mysql": "workspace:*",
     "@mayurajs/voice-assemblyai": "workspace:*",
     "@mayurajs/voice-deepgram": "workspace:*",
+    "@mayurajs/voice-google": "workspace:*",
     "@mayurajs/voice-elevenlabs": "workspace:*",
     "@mayurajs/voice-openai": "workspace:*",
     "@opentelemetry/api": "1.9.1",

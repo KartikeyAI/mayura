@@ -31,6 +31,7 @@ export const reviewedDependencies = {
   'voice-assemblyai': [],
   'voice-deepgram': [],
   'voice-elevenlabs': [],
+  'voice-google': [],
   'voice-openai': ['openai'],
 };
 

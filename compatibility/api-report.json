@@ -7821,6 +7821,20 @@
         "declaration": "53804461236a30ec"
       }
     },
+    "@mayurajs/voice-google": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      },
+      "googleVoice": {
+        "kind": "function",
+        "declaration": "23e7ff91b72074e2"
+      },
+      "GoogleVoiceOptions": {
+        "kind": "interface",
+        "declaration": "924a3c890f7ff32a"
+      }
+    },
     "@mayurajs/voice-openai": {
       "catalog": {
         "kind": "const",

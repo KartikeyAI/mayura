@@ -78,6 +78,7 @@
     "@mayurajs/voice-assemblyai",
     "@mayurajs/voice-deepgram",
     "@mayurajs/voice-elevenlabs",
+    "@mayurajs/voice-google",
     "@mayurajs/voice-openai"
   ],
   "internalPackages": [

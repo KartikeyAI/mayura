@@ -131,6 +131,9 @@ importers:
       '@mayurajs/voice-elevenlabs':
         specifier: workspace:*
         version: link:extensions/voice-elevenlabs
+      '@mayurajs/voice-google':
+        specifier: workspace:*
+        version: link:extensions/voice-google
       '@mayurajs/voice-openai':
         specifier: workspace:*
         version: link:extensions/voice-openai
@@ -334,6 +337,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/voice-elevenlabs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/voice-google:
     devDependencies:
       mayura:
         specifier: workspace:*

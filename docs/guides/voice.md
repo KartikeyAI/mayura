@@ -79,6 +79,7 @@ provider does not take). Messages are fixed text: nothing the provider wrote rea
 | `@mayurajs/voice-elevenlabs` | `scribe_v2` in the catalog | `eleven_v4`, `eleven_v4_turbo`, `eleven_v3`, `eleven_v3_conversational`, `eleven_multilingual_v2` and `eleven_flash_v2_5` in the catalog; the voice is an ElevenLabs voice id |
 | `@mayurajs/voice-deepgram` | `nova-3` (at its multilingual rate) and `whisper-large` in the catalog; without a language, Deepgram detects it | `aura-2` and `aura` in the catalog; the voice completes the model, as in `aura-2` with voice `thalia-en` |
 | `@mayurajs/voice-assemblyai` | `universal-3-5-pro` and `universal-2` in the catalog; transcripts are deleted from AssemblyAI once read, unless `retainTranscripts: true` | None: AssemblyAI has no speech API |
+| `@mayurajs/voice-google` | `chirp_3`, `chirp_2` and `telephony` in the catalog, up to a minute of audio per call; without a language, Chirp 3 detects it | `chirp3-hd`, `studio`, `neural2`, `polyglot`, `wavenet` and `standard` in the catalog; the voice must belong to the family, as in `chirp3-hd` with `en-US-Chirp3-HD-Charon` |
 
 OpenAI bills some audio models per token rather than per minute or character. Their cost cannot be known from the
 audio or text before a call, so they are left out of the catalog: give a per-minute or per-character price you are
