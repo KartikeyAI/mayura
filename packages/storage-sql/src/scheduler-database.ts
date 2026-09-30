@@ -3,8 +3,8 @@ import { StorageError, type StoredEvent, type StoredEventInput } from './contrac
 import type { Claim, CompleteJobCommand, EvidenceDisposition, JobKey, JobRecord, JobReservation, ReceiptCommand, SchedulerEvidence } from './scheduler-contracts.js';
 import { canonical, evidenceSource, fields, hash, integer, object, reservation, schedulerCommand, schedulerDigest, settlement, type SchedulerMethod } from './scheduler-validation.js';
 import { identifier, nextCounter } from './validation.js';
-import { loadAggregate, lockRunIdentity, ownedRun, writerRequired } from './aggregate-session.js';
-import { advisoryLock, clockSql, insertIfAbsent, rowLock } from './dialect.js';
+import { writerRequired } from './aggregate-session.js';
+import { sqlSchedulerPersistence, sqlSchedulerTransaction, type SchedulerJobRow, type SchedulerPersistence, type SchedulerTransaction } from './scheduler-persistence.js';
 
 /** Internal parameterized SQL seam; implementations own a real short transaction. */
 export interface SchedulerSession { query<T>(sql: string, parameters?: readonly unknown[]): Promise<readonly T[]> }
@@ -23,11 +23,7 @@ interface Data {
   format: 1; job: Mutable<JobRecord>; reservation: JobReservation;
   lastClockMs: number; attempts: Attempt[]; commands: Journal[];
 }
-interface Row {
-  scope: string; job_id: string; reservation_key: string; invocation_id: string; run_id: string;
-  digest: string; state: string; due_at: number | string; lease_until: number | string | null;
-  deadline_at: number | string | null; revoked: number; version: number | string; data: string;
-}
+type Row = SchedulerJobRow;
 const STALE = Symbol('stale');
 const terminal = new Set(['succeeded','failed','blocked','cancelled','outcome_unknown']);
 const eventTypes = new Set(['job.reserved','job.cancelled','job.lease_expired','job.renewed','job.started','job.completed','job.claimed','job.receipt_recorded','job.recovered']);
@@ -113,92 +109,101 @@ function decode(row: Row): Data {
   } catch { return failure(); }
 }
 
-/** Shared state machine; there are no application callbacks inside these transactions. */
+/**
+ * Shared state machine; there are no application callbacks inside these transactions. It decides everything a job may
+ * do and reads and writes rows only through a `SchedulerPersistence`: the SQL layer's tables for a SQL backend, or a
+ * store's own (such as MongoDB's) for anything else.
+ */
 export class SchedulerDatabase {
   private initialized = false;
-  constructor(private readonly backend: SchedulerBackend, private readonly integration?: { runId: string; jobId?: string; events: StoredEventInput[]; clock: { value: number }; admissionExpiresAt?: number }) {}
-  /** Internal finite-operation seam. The caller owns the real transaction and aggregate-first locks. */
-  inSession(tx: SchedulerSession, runId: string, events: StoredEventInput[], jobId?: string, clock = { value: 0 }, admissionExpiresAt?: number): SchedulerDatabase {
+  private readonly persistence: SchedulerPersistence;
+  private readonly sql: SchedulerBackend | undefined;
+  constructor(backend: SchedulerBackend | SchedulerPersistence, private readonly integration?: { runId: string; jobId?: string; events: StoredEventInput[]; clock: { value: number }; admissionExpiresAt?: number }) {
+    this.sql = 'dialect' in backend ? backend : undefined;
+    this.persistence = 'dialect' in backend ? sqlSchedulerPersistence(backend) : backend;
+  }
+  /**
+   * Internal finite-operation seam. The caller owns the real transaction and aggregate-first locks: a SQL session on a
+   * SQL backend, or the store's own scheduler transaction.
+   */
+  inSession(tx: SchedulerSession | SchedulerTransaction, runId: string, events: StoredEventInput[], jobId?: string, clock = { value: 0 }, admissionExpiresAt?: number): SchedulerDatabase {
     if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED', 'Initialize scheduler storage before integrated use.');
-    const child = new SchedulerDatabase({ ...this.backend, transaction: body => body(tx) }, { runId, events, clock, ...(jobId === undefined ? {} : { jobId }), ...(admissionExpiresAt === undefined ? {} : { admissionExpiresAt }) });
+    let transaction: SchedulerTransaction;
+    if ('query' in tx) { if (!this.sql) failure(); transaction = sqlSchedulerTransaction(this.sql, tx); } else transaction = tx;
+    const within: SchedulerPersistence = { initialize: async () => {}, transaction: <T>(body: (session: SchedulerTransaction) => Promise<T>) => body(transaction) };
+    const child = new SchedulerDatabase(within, { runId, events, clock, ...(jobId === undefined ? {} : { jobId }), ...(admissionExpiresAt === undefined ? {} : { admissionExpiresAt }) });
     child.initialized = true; return child;
   }
-  private async access(tx: SchedulerSession, key: JobKey, mutation: boolean): Promise<string | undefined> {
-    const hint = (await tx.query<{ run_id: string }>(`SELECT run_id FROM ${this.table('jobs')} WHERE scope = ? AND job_id = ?`, [key.scope, key.jobId]))[0];
-    if (!hint) return undefined;
-    if (this.integration) { if (hint.run_id !== this.integration.runId || (this.integration.jobId !== undefined && key.jobId !== this.integration.jobId)) failure(); }
+  private async access(tx: SchedulerTransaction, key: JobKey, mutation: boolean): Promise<string | undefined> {
+    const hint = await tx.jobRunId(key);
+    if (hint === undefined) return undefined;
+    if (this.integration) { if (hint !== this.integration.runId || (this.integration.jobId !== undefined && key.jobId !== this.integration.jobId)) failure(); }
     else {
-      await loadAggregate(tx, this.backend, key.scope, hint.run_id);
-      if (mutation && await ownedRun(tx, this.backend, key.scope, hint.run_id)) writerRequired();
+      await tx.lockAggregate(key.scope, hint);
+      if (mutation && await tx.ownedRun(key.scope, hint)) writerRequired();
     }
-    return hint.run_id;
+    return hint;
   }
-  private table(name: string): string { return `${this.backend.prefix}mayura_scheduler_${name}`; }
-  private lock(skip = false): string { return rowLock(this.backend, skip); }
-  private async clock(tx: SchedulerSession, floor = 0): Promise<number> {
-    const sql = clockSql(this.backend);
-    const rows = await tx.query<{ now_ms: number | string }>(sql);
-    const now = Number(rows[0]?.now_ms);
+  private async clock(tx: SchedulerTransaction, floor = 0): Promise<number> {
+    const now = await tx.clock();
     if (!Number.isSafeInteger(now) || now < 0) failure();
     const observed = Math.max(floor, now, this.integration?.clock.value ?? 0);
     if (this.integration) this.integration.clock.value = observed;
     return observed;
   }
-  private async load(tx: SchedulerSession, key: JobKey, locked = false, skip = false): Promise<Data | undefined> {
-    const rows = await tx.query<Row>(`SELECT * FROM ${this.table('jobs')} WHERE scope = ? AND job_id = ?${locked ? this.lock(skip) : ''}`, [key.scope, key.jobId]);
-    if (!rows[0]) return undefined;
-    const data = decode(rows[0]);
-    const requests = await tx.query<{ resource_key: string }>(`SELECT resource_key FROM ${this.table('requests')} WHERE scope = ? AND job_id = ? ORDER BY resource_key`, [key.scope, key.jobId]);
-    // SQL collation need not match JS UTF-16 ordering; compare canonicalized identities.
-    if (!same(requests.map(item => item.resource_key).sort(), data.job.resourceKeys)) failure();
-    const held = await tx.query<{ resource_key: string; fence: number | string; disposition: string }>(`SELECT resource_key, fence, disposition FROM ${this.table('resources')} WHERE scope = ? AND job_id = ?`, [key.scope, key.jobId]);
+  private async load(tx: SchedulerTransaction, key: JobKey, locked = false, skip = false): Promise<Data | undefined> {
+    const row = await tx.job(key, locked ? (skip ? 'skip' : 'lock') : 'none');
+    if (!row) return undefined;
+    const data = decode(row);
+    const requests = await tx.requests(key);
+    // Stored ordering (a SQL collation) need not match JS UTF-16 ordering; compare canonicalized identities.
+    if (!same([...requests].sort(), data.job.resourceKeys)) failure();
+    const held = await tx.held(key, false);
     const expected = data.job.state === 'outcome_unknown' ? 'quarantined' : ['leased','started'].includes(data.job.state) ? 'held' : undefined;
     if (expected === undefined ? held.length !== 0 : held.length !== data.job.resourceKeys.length
       || held.some(row => !data.job.resourceKeys.includes(row.resource_key) || Number(row.fence) !== data.job.fence || row.disposition !== expected)) failure();
     return data;
   }
-  private async append(tx: SchedulerSession, data: Data, type: string, now: number): Promise<void> {
+  private async append(tx: SchedulerTransaction, data: Data, type: string, now: number): Promise<void> {
     const job = data.job;
     if (this.integration) { this.integration.events.push({ type, data: { nodeId: job.nodeId, jobId: job.jobId, fence: job.fence, state: job.state } }); return; }
-    await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('heads')} (scope, run_id, sequence) VALUES (?, ?, 0)`, [job.scope, job.runId], 'sequence');
-    const rows = await tx.query<{ sequence: number | string }>(`SELECT sequence FROM ${this.table('heads')} WHERE scope = ? AND run_id = ?${this.lock()}`, [job.scope, job.runId]);
-    const current = Number(rows[0]?.sequence); if (!Number.isSafeInteger(current) || current < 0) failure();
-    const sequence = nextCounter(current, 1);
-    await tx.query(`UPDATE ${this.table('heads')} SET sequence = ? WHERE scope = ? AND run_id = ?`, [sequence, job.scope, job.runId]);
-    await tx.query(`INSERT INTO ${this.table('events')} (scope, run_id, sequence, type, data, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [job.scope, job.runId, sequence, type, JSON.stringify({ jobId: job.jobId, fence: job.fence, state: job.state }), new Date(now).toISOString()]);
+    await tx.appendEvent(job.scope, job.runId, type, JSON.stringify({ jobId: job.jobId, fence: job.fence, state: job.state }), new Date(now).toISOString());
   }
-  private async save(tx: SchedulerSession, data: Data, type: string, now: number): Promise<void> {
+  private async save(tx: SchedulerTransaction, data: Data, type: string, now: number): Promise<void> {
     data.lastClockMs = Math.max(data.lastClockMs, now); data.job.version = nextCounter(data.job.version, 1);
     const serialized = JSON.stringify(object(data)); const j = data.job;
     const row: Row = { scope: j.scope, job_id: j.jobId, reservation_key: data.reservation.reservationKey, invocation_id: j.invocationId, run_id: j.runId, digest: schedulerDigest('reservation', data.reservation), state: j.state, due_at: j.dueAtMs, lease_until: j.leaseUntilMs, deadline_at: j.deadlineAtMs, revoked: Number(j.leaseRevoked), version: j.version, data: serialized };
     decode(row);
-    await tx.query(`UPDATE ${this.table('jobs')} SET state = ?, lease_until = ?, revoked = ?, version = ?, data = ? WHERE scope = ? AND job_id = ?`, [j.state, j.leaseUntilMs, Number(j.leaseRevoked), j.version, serialized, j.scope, j.jobId]);
+    await tx.updateJob(row);
     await this.append(tx, data, type, now);
   }
-  private async holds(tx: SchedulerSession, data: Data): Promise<boolean> {
-    const rows = await tx.query<{ resource_key: string; fence: number | string; disposition: string }>(`SELECT resource_key, fence, disposition FROM ${this.table('resources')} WHERE scope = ? AND job_id = ? ORDER BY resource_key`, [data.job.scope, data.job.jobId]);
+  private async holds(tx: SchedulerTransaction, data: Data): Promise<boolean> {
+    const rows = await tx.held({ scope: data.job.scope, jobId: data.job.jobId }, true);
     return rows.length === data.job.resourceKeys.length && rows.every(row => data.job.resourceKeys.includes(row.resource_key) && Number(row.fence) === data.job.fence && row.disposition === 'held');
   }
-  private async release(tx: SchedulerSession, data: Data, quarantine: boolean): Promise<void> {
+  private async release(tx: SchedulerTransaction, data: Data, quarantine: boolean): Promise<void> {
     const j = data.job;
-    if (quarantine) await tx.query(`UPDATE ${this.table('resources')} SET disposition = 'quarantined' WHERE scope = ? AND job_id = ? AND fence = ?`, [j.scope, j.jobId, j.fence]);
-    else await tx.query(`DELETE FROM ${this.table('resources')} WHERE scope = ? AND job_id = ? AND fence = ?`, [j.scope, j.jobId, j.fence]);
+    await tx.releaseResources(j.scope, j.jobId, j.fence, quarantine);
   }
   private live(data: Data, token: Claim, now: number): boolean {
     const j = data.job;
     return ['leased','started'].includes(j.state) && j.fence === token.fence && j.workerId === token.workerId && !j.cancelRequested && !j.leaseRevoked && j.leaseUntilMs !== null && j.leaseUntilMs > now && (j.deadlineAtMs === null || j.deadlineAtMs > now);
   }
   /** A tagged stale result commits revocation before the public method raises STALE_CLAIM. */
-  private async observeExpiry(tx: SchedulerSession, data: Data, now: number): Promise<void> {
+  private async observeExpiry(tx: SchedulerTransaction, data: Data, now: number): Promise<void> {
     const j = data.job;
     if (['leased','started'].includes(j.state) && !j.leaseRevoked && ((j.leaseUntilMs ?? 0) <= now || (j.deadlineAtMs !== null && j.deadlineAtMs <= now))) {
       j.leaseRevoked = true; await this.save(tx, data, 'job.lease_expired', now);
     }
   }
+  /** Inside a workflow, only its own run's (and job's) jobs; otherwise every run no workflow owns. */
+  private filter(): { runId?: string; jobId?: string } {
+    return this.integration ? { runId: this.integration.runId, ...(this.integration.jobId === undefined ? {} : { jobId: this.integration.jobId }) } : {};
+  }
   private token(data: Data): Claim {
     const j = data.job; return { scope: j.scope, jobId: j.jobId, workerId: j.workerId!, fence: j.fence, leaseUntilMs: j.leaseUntilMs! };
   }
-  private async unknown(tx: SchedulerSession, data: Data): Promise<void> {
+  private async unknown(tx: SchedulerTransaction, data: Data): Promise<void> {
     data.job.state = 'outcome_unknown'; data.job.leaseRevoked = true; data.job.output = null;
     const attempt = data.attempts.at(-1); if (attempt) attempt.ended = 'unknown';
     await this.release(tx, data, true);
@@ -217,33 +222,7 @@ export class SchedulerDatabase {
 
   private async initialize(): Promise<void> {
     if (this.initialized) return;
-    await this.backend.transaction(async tx => {
-      await advisoryLock(tx, this.backend, `mayura:scheduler-schema:${this.backend.prefix}`);
-      const t = (name: string) => this.table(name);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('meta')} (version INTEGER PRIMARY KEY CHECK(version = 1))`);
-      await insertIfAbsent(tx, this.backend, `INSERT INTO ${t('meta')} (version) VALUES (1)`, [], 'version');
-      const versions = await tx.query<{ version: number }>(`SELECT version FROM ${t('meta')}`);
-      if (versions.length !== 1 || versions[0]?.version !== 1) failure();
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('jobs')} (
-        scope TEXT NOT NULL, job_id TEXT NOT NULL, reservation_key TEXT NOT NULL, invocation_id TEXT NOT NULL, run_id TEXT NOT NULL,
-        digest TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('ready','leased','started','succeeded','failed','blocked','cancelled','outcome_unknown')),
-        due_at BIGINT NOT NULL CHECK(due_at >= 0), deadline_at BIGINT, lease_until BIGINT,
-        revoked INTEGER NOT NULL CHECK(revoked IN (0,1)), version BIGINT NOT NULL CHECK(version > 0), data TEXT NOT NULL,
-        PRIMARY KEY(scope, job_id), UNIQUE(scope, reservation_key), UNIQUE(scope, invocation_id))`);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('requests')} (scope TEXT NOT NULL, job_id TEXT NOT NULL, resource_key TEXT NOT NULL,
-        PRIMARY KEY(scope, job_id, resource_key), FOREIGN KEY(scope, job_id) REFERENCES ${t('jobs')}(scope, job_id))`);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('resources')} (scope TEXT NOT NULL, resource_key TEXT NOT NULL, job_id TEXT NOT NULL,
-        fence BIGINT NOT NULL CHECK(fence > 0), disposition TEXT NOT NULL CHECK(disposition IN ('held','quarantined')),
-        PRIMARY KEY(scope, resource_key), FOREIGN KEY(scope, job_id) REFERENCES ${t('jobs')}(scope, job_id))`);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('heads')} (scope TEXT NOT NULL, run_id TEXT NOT NULL, sequence BIGINT NOT NULL CHECK(sequence >= 0), PRIMARY KEY(scope, run_id))`);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${t('events')} (scope TEXT NOT NULL, run_id TEXT NOT NULL, sequence BIGINT NOT NULL CHECK(sequence > 0),
-        type TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(scope, run_id, sequence), FOREIGN KEY(scope, run_id) REFERENCES ${t('heads')}(scope, run_id))`);
-      await tx.query(`CREATE INDEX IF NOT EXISTS mayura_scheduler_ready ON ${t('jobs')} (scope, due_at, job_id) WHERE state = 'ready'`);
-      await tx.query(`CREATE INDEX IF NOT EXISTS mayura_scheduler_expired ON ${t('jobs')} (scope, lease_until, job_id) WHERE state IN ('leased','started')`);
-      await tx.query(`CREATE INDEX IF NOT EXISTS mayura_scheduler_deadline ON ${t('jobs')} (scope, deadline_at, job_id) WHERE state IN ('ready','leased','started')`);
-      await tx.query(`CREATE INDEX IF NOT EXISTS mayura_scheduler_held_job ON ${t('resources')} (scope, job_id)`);
-      await tx.query(`CREATE INDEX IF NOT EXISTS mayura_scheduler_requested_resource ON ${t('requests')} (scope, resource_key, job_id)`);
-    });
+    await this.persistence.initialize();
     this.initialized = true;
   }
 
@@ -254,8 +233,8 @@ export class SchedulerDatabase {
     if (method === 'reserve') return this.reserve(input as unknown as JobReservation);
     if (method === 'claim') return this.claim(input as unknown as { scope: string; workerId: string; limit: number; leaseMs: number });
     if (method === 'recover') return this.recover(input as unknown as { scope: string; limit: number });
-    if (method === 'events') return this.backend.transaction(async tx => {
-      const rows = await tx.query<{ sequence: number | string; type: string; data: string; created_at: string }>(`SELECT sequence, type, data, created_at FROM ${this.table('events')} WHERE scope = ? AND run_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`, [input['scope'], input['runId'], input['after'] ?? 0, input['limit'] ?? 1_000]);
+    if (method === 'events') return this.persistence.transaction(async tx => {
+      const rows = await tx.events(input['scope'] as string, input['runId'] as string, (input['after'] ?? 0) as number, (input['limit'] ?? 1_000) as number);
       return rows.map((row): StoredEvent => {
         try {
           const data = object(JSON.parse(row.data), 4096); fields(data, ['jobId','fence','state']);
@@ -268,7 +247,7 @@ export class SchedulerDatabase {
     });
     const token = input['claim'] as unknown as Claim | undefined;
     const key = token ?? input as unknown as JobKey;
-    const result = await this.backend.transaction(async tx => {
+    const result = await this.persistence.transaction(async tx => {
       const runHint = await this.access(tx, key, method !== 'read' && method !== 'receipts');
       // A row lock gives metadata inspection a coherent job/resource projection under READ COMMITTED.
       const data = await this.load(tx, key, true);
@@ -330,12 +309,12 @@ export class SchedulerDatabase {
   }
 
   private async reserve(input: JobReservation): Promise<unknown> {
-    return this.backend.transaction(async tx => {
+    return this.persistence.transaction(async tx => {
       if (this.integration) { if (input.runId !== this.integration.runId) failure(); }
       else {
-        await lockRunIdentity(tx, this.backend, input.scope, input.runId);
-        await loadAggregate(tx, this.backend, input.scope, input.runId);
-        if (await ownedRun(tx, this.backend, input.scope, input.runId)) writerRequired();
+        await tx.lockRunIdentity(input.scope, input.runId);
+        await tx.lockAggregate(input.scope, input.runId);
+        if (await tx.ownedRun(input.scope, input.runId)) writerRequired();
       }
       const now = await this.clock(tx); const digest = schedulerDigest('reservation', input);
       const j: Mutable<JobRecord> = {
@@ -346,39 +325,29 @@ export class SchedulerDatabase {
         leaseUntilMs: null, startedAtMs: null, leaseRevoked: false, cancelRequested: false, receipt: null, output: null,
       };
       const data: Data = { format: 1, job: j, reservation: input, lastClockMs: now, attempts: [], commands: [] };
-      const inserted = await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('jobs')} (scope, job_id, reservation_key, invocation_id, run_id, digest, state, due_at, deadline_at, lease_until, revoked, version, data)
-        VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, NULL, 0, 1, ?)`, [j.scope, j.jobId, input.reservationKey, j.invocationId, j.runId, digest, j.dueAtMs, j.deadlineAtMs, JSON.stringify(data)], 'job_id');
+      const inserted = await tx.insertJob({ scope: j.scope, job_id: j.jobId, reservation_key: input.reservationKey, invocation_id: j.invocationId, run_id: j.runId, digest,
+        state: 'ready', due_at: j.dueAtMs, deadline_at: j.deadlineAtMs, lease_until: null, revoked: 0, version: 1, data: JSON.stringify(data) });
       if (!inserted) {
-        const rows = await tx.query<Row>(`SELECT * FROM ${this.table('jobs')} WHERE scope = ? AND reservation_key = ?${this.lock()}`, [j.scope, input.reservationKey]);
-        const existing = rows[0]; if (!existing || existing.digest !== digest) conflict();
+        const existing = await tx.jobByReservation(j.scope, input.reservationKey); if (!existing || existing.digest !== digest) conflict();
         const current = await this.load(tx, { scope: j.scope, jobId: existing.job_id }, true);
         if (!current) failure();
         return { job: current.job, created: false };
       }
-      for (const resource of j.resourceKeys) await tx.query(`INSERT INTO ${this.table('requests')} (scope, job_id, resource_key) VALUES (?, ?, ?)`, [j.scope, j.jobId, resource]);
+      await tx.insertRequests(j.scope, j.jobId, j.resourceKeys);
       await this.append(tx, data, 'job.reserved', now);
       return { job: j, created: true };
     });
   }
 
   private async claim(input: { scope: string; workerId: string; limit: number; leaseMs: number }): Promise<unknown> {
-    const candidates = await this.backend.transaction(async tx => {
-      const now = await this.clock(tx);
-      return tx.query<{ job_id: string }>(`SELECT j.job_id FROM ${this.table('jobs')} j WHERE j.scope = ? AND j.state = 'ready' AND j.due_at <= ?
-        AND (j.deadline_at IS NULL OR j.deadline_at > ?) AND NOT EXISTS (SELECT 1 FROM ${this.table('requests')} r JOIN ${this.table('resources')} h ON h.scope = r.scope AND h.resource_key = r.resource_key WHERE r.scope = j.scope AND r.job_id = j.job_id)
-        AND NOT EXISTS (SELECT 1 FROM ${this.table('requests')} wanted JOIN ${this.table('requests')} owned ON owned.scope = wanted.scope AND owned.resource_key = wanted.resource_key
-          JOIN ${this.table('jobs')} owner ON owner.scope = owned.scope AND owner.job_id = owned.job_id
-          WHERE wanted.scope = j.scope AND wanted.job_id = j.job_id AND owner.job_id <> j.job_id AND owner.state IN ('leased','started','outcome_unknown'))
-        ${this.integration ? 'AND j.run_id = ?' + (this.integration.jobId === undefined ? '' : ' AND j.job_id = ?') : `AND NOT EXISTS (SELECT 1 FROM ${this.backend.prefix}mayura_workflow_owners w WHERE w.scope = j.scope AND w.aggregate_id = j.run_id)`}
-        ORDER BY j.due_at, j.job_id LIMIT 128`, [input.scope, now, now, ...(this.integration ? [this.integration.runId, ...(this.integration.jobId === undefined ? [] : [this.integration.jobId])] : [])]);
-    });
+    const candidates = await this.persistence.transaction(async tx => tx.claimCandidates({ scope: input.scope, now: await this.clock(tx), ...this.filter() }));
     const result: { job: JobRecord; claim: Claim }[] = [];
     for (const candidate of candidates) {
       if (result.length >= input.limit) break;
       try {
-        const claimed = await this.backend.transaction(async tx => {
-          const runHint = await this.access(tx, { scope: input.scope, jobId: candidate.job_id }, true);
-          const data = await this.load(tx, { scope: input.scope, jobId: candidate.job_id }, true, true); if (!data || data.job.state !== 'ready') return undefined;
+        const claimed = await this.persistence.transaction(async tx => {
+          const runHint = await this.access(tx, { scope: input.scope, jobId: candidate }, true);
+          const data = await this.load(tx, { scope: input.scope, jobId: candidate }, true, true); if (!data || data.job.state !== 'ready') return undefined;
           if (data.job.runId !== runHint) failure();
           const j = data.job; const now = await this.clock(tx, data.lastClockMs);
           if (j.cancelRequested || j.dueAtMs > now || (j.deadlineAtMs !== null && j.deadlineAtMs <= now)) return undefined;
@@ -386,14 +355,9 @@ export class SchedulerDatabase {
           const fence = j.fence + 1;
           // Redundant logical ownership stops overlap even if a normalized hold row was lost.
           // This is corruption defense, not protection against a privileged writer changing all copies.
-          const owners = await tx.query<{ job_id: string }>(`SELECT owner.job_id FROM ${this.table('requests')} wanted
-            JOIN ${this.table('requests')} owned ON owned.scope = wanted.scope AND owned.resource_key = wanted.resource_key
-            JOIN ${this.table('jobs')} owner ON owner.scope = owned.scope AND owner.job_id = owned.job_id
-            WHERE wanted.scope = ? AND wanted.job_id = ? AND owner.job_id <> ? AND owner.state IN ('leased','started','outcome_unknown') LIMIT 1`, [j.scope, j.jobId, j.jobId]);
-          if (owners.length > 0) return undefined;
+          if (await tx.resourceOwnedElsewhere(j.scope, j.jobId)) return undefined;
           for (const resource of j.resourceKeys) {
-            const held = await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('resources')} (scope, resource_key, job_id, fence, disposition) VALUES (?, ?, ?, ?, 'held')`, [j.scope, resource, j.jobId, fence], 'resource_key');
-            if (!held) throw new ResourceBusy();
+            if (!await tx.holdResource(j.scope, resource, j.jobId, fence)) throw new ResourceBusy();
           }
           const claimedAt = await this.clock(tx, now);
           if (j.deadlineAtMs !== null && j.deadlineAtMs <= claimedAt) throw new ResourceBusy();
@@ -408,7 +372,7 @@ export class SchedulerDatabase {
     return result;
   }
 
-  private async recordReceipt(tx: SchedulerSession, data: Data, command: ReceiptCommand, now: number): Promise<unknown> {
+  private async recordReceipt(tx: SchedulerTransaction, data: Data, command: ReceiptCommand, now: number): Promise<unknown> {
     const attempt = data.attempts.find(item => item.fence === command.fence);
     if (!attempt || attempt.startedAtMs === null) throw new StorageError('STALE_CLAIM', 'Evidence does not identify a started scheduler attempt.');
     if (command.receipt.callId !== data.reservation.intent['callId'] || command.receipt.toolId !== data.reservation.intent['toolId']) conflict();
@@ -439,18 +403,12 @@ export class SchedulerDatabase {
   }
 
   private async recover(input: { scope: string; limit: number }): Promise<unknown> {
-    const candidates = await this.backend.transaction(async tx => {
-      const now = await this.clock(tx);
-      return tx.query<{ job_id: string }>(`SELECT j.job_id FROM ${this.table('jobs')} j WHERE j.scope = ? AND j.state IN ('ready','leased','started')
-        AND (j.revoked = 1 OR j.lease_until <= ? OR j.deadline_at <= ?)
-        ${this.integration ? 'AND j.run_id = ?' + (this.integration.jobId === undefined ? '' : ' AND j.job_id = ?') : `AND NOT EXISTS (SELECT 1 FROM ${this.backend.prefix}mayura_workflow_owners w WHERE w.scope = j.scope AND w.aggregate_id = j.run_id)`}
-        ORDER BY j.job_id LIMIT ?`, [input.scope, now, now, ...(this.integration ? [this.integration.runId, ...(this.integration.jobId === undefined ? [] : [this.integration.jobId])] : []), input.limit]);
-    });
+    const candidates = await this.persistence.transaction(async tx => tx.recoverCandidates({ scope: input.scope, now: await this.clock(tx), limit: input.limit, ...this.filter() }));
     const result: JobRecord[] = [];
     for (const key of candidates) {
-      const recovered = await this.backend.transaction(async tx => {
-        const runHint = await this.access(tx, { scope: input.scope, jobId: key.job_id }, true);
-        const data = await this.load(tx, { scope: input.scope, jobId: key.job_id }, true, true); if (!data || terminal.has(data.job.state)) return undefined;
+      const recovered = await this.persistence.transaction(async tx => {
+        const runHint = await this.access(tx, { scope: input.scope, jobId: key }, true);
+        const data = await this.load(tx, { scope: input.scope, jobId: key }, true, true); if (!data || terminal.has(data.job.state)) return undefined;
         if (data.job.runId !== runHint) failure();
         const j = data.job; const now = await this.clock(tx, data.lastClockMs);
         const deadline = j.deadlineAtMs !== null && j.deadlineAtMs <= now;

@@ -5352,21 +5352,45 @@
         "kind": "interface",
         "declaration": "bd258f5baaef6578"
       },
+      "SchedulerCandidateFilter": {
+        "kind": "interface",
+        "declaration": "fffdab752ebd2efe"
+      },
       "SchedulerDatabase": {
         "kind": "class",
-        "declaration": "e2a2cbbeb857077b"
+        "declaration": "9fa17b2ed2787dd8"
+      },
+      "SchedulerEventRow": {
+        "kind": "interface",
+        "declaration": "4a31af8cee824482"
       },
       "schedulerFacade": {
         "kind": "function",
         "declaration": "b5c0c4c5fd1823c7"
       },
+      "SchedulerHeldRow": {
+        "kind": "interface",
+        "declaration": "c439f52ca467c512"
+      },
+      "SchedulerJobRow": {
+        "kind": "interface",
+        "declaration": "e95cd99ac85f2c2f"
+      },
       "SchedulerMethod": {
         "kind": "type",
         "declaration": "99acdc0a6cba256c"
       },
+      "SchedulerPersistence": {
+        "kind": "interface",
+        "declaration": "6b5ae2cc77554afc"
+      },
       "SchedulerSession": {
         "kind": "interface",
         "declaration": "83d7a8a47a9e64bc"
+      },
+      "SchedulerTransaction": {
+        "kind": "interface",
+        "declaration": "1f007bd7d6ede39d"
       },
       "storedObject": {
         "kind": "function",
@@ -7352,7 +7376,7 @@
       },
       "MongoStore": {
         "kind": "type",
-        "declaration": "91d57e2787d059c4"
+        "declaration": "0e901cac96cc417d"
       },
       "MongoStoreOptions": {
         "kind": "interface",

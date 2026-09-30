@@ -3,6 +3,8 @@
  * Both selected adapters share these exact reducer implementations and contracts identities.
  */
 export { SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
+/** The rows the scheduler state machine reads and writes, for stores that keep them outside this SQL layer. */
+export type { SchedulerCandidateFilter, SchedulerEventRow, SchedulerHeldRow, SchedulerJobRow, SchedulerPersistence, SchedulerTransaction } from './scheduler-persistence.js';
 export { ScheduledWorkflowDatabase } from './scheduled-database.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';

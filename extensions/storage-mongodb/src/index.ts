@@ -1,11 +1,12 @@
 import { MongoClient, MongoError, type ClientSession, type Collection, type Db } from 'mongodb';
-import { StorageError, storageError, type AggregateStore, type DurableBudgetAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
+import { StorageError, storageError, type AggregateStore, type DurableBudgetAggregateStore, type SchedulerAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
 import { mongoBudgets } from './budgets.js';
 import { mongoMemory } from './memory.js';
-import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, storedObject, submissionDigest, updateCommand } from 'mayura/storage-sql/host';
+import { mongoSchedulerPersistence } from './scheduler.js';
+import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand } from 'mayura/storage-sql/host';
 
-/** The Mayura store on MongoDB: aggregates (records, their versions and events), native memory and durable budgets. */
-export type MongoStore = AggregateStore & MemoryIndexAggregateStore & DurableBudgetAggregateStore;
+/** The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets and the leased scheduler. */
+export type MongoStore = AggregateStore & MemoryIndexAggregateStore & DurableBudgetAggregateStore & SchedulerAggregateStore;
 
 export interface MongoStoreOptions {
   /**
@@ -90,10 +91,12 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
       { session, ordered: true });
   };
   const current = (session: ClientSession, scope: string, id: string) => aggregates.findOne({ scope, id }, { session, projection: { _id: 0 } });
+  const schedulerDatabase = new SchedulerDatabase(mongoSchedulerPersistence(db, transaction));
 
   return {
     memory: mongoMemory(db, transaction, () => available()),
     durableBudgets: mongoBudgets(db, transaction, () => available()),
+    scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

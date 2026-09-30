@@ -7,9 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { describe, expect, it } from 'vitest';
+import type { JsonObject } from 'mayura';
 import { createMongoStore } from '../src/index.js';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
+import { identityIntegrityConformance } from '../../../packages/storage/test/identity-integrity-conformance.js';
+import { schedulerConformance } from '../../../packages/storage/test/scheduler-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
@@ -24,6 +27,14 @@ let configured: Promise<void> | undefined;
 const configureServer = () => configured ??= (async () => {
   const client = new MongoClient(server!); try { await client.db('admin').command({ setParameter: 1, transactionLifetimeLimitSeconds: 5 }); } finally { await client.close(); }
 })();
+
+/** Holds a write on one document in an open transaction until released: another writer conflicts and waits. */
+async function holdDocument(database: string, collection: string, filter: Record<string, unknown>): Promise<() => Promise<void>> {
+  const client = new MongoClient(server!); const session = client.startSession(); session.startTransaction();
+  await client.db(database).collection(collection).updateOne(filter, { $set: { lockedByTest: randomUUID() } }, { session });
+  let released = false;
+  return async () => { if (released) return; released = true; try { await session.abortTransaction(); } finally { await session.endSession(); await client.close(); } };
+}
 
 /**
  * The few SQL statements the durable-budget suite uses to read and tamper with rows, applied to the same documents.
@@ -59,19 +70,28 @@ async function fixture() {
 describe.skipIf(!server)('MongoDB', () => {
   const simple = async () => { const { open, cleanup } = await fixture(); return { store: open(), reopen: open, cleanup }; };
   aggregateConformance('MongoDB', simple);
+  identityIntegrityConformance('MongoDB', simple);
   memoryConformance('MongoDB', simple as never);
   nativeMemoryConformance('MongoDB', simple);
   workflowConformance('MongoDB', simple);
   durableBudgetConformance('MongoDB', async () => {
     const { database, open, cleanup } = await fixture();
     return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: budgetSql(database),
-      /** Holds a write on the root in an open transaction until released: another writer conflicts and waits. */
-      lockRoot: async (scope: string, id: string) => {
-        const client = new MongoClient(server!); const session = client.startSession(); session.startTransaction();
-        await client.db(database).collection('mayura_durable_budgets').updateOne({ scope, id }, { $set: { lockedByTest: randomUUID() } }, { session });
-        let released = false;
-        return async () => { if (released) return; released = true; try { await session.abortTransaction(); } finally { await session.endSession(); await client.close(); } };
-      }, cleanup } as never;
+      lockRoot: (scope: string, id: string) => holdDocument(database, 'mayura_durable_budgets', { scope, id }), cleanup } as never;
+  });
+  schedulerConformance('MongoDB', async () => {
+    const { database, open, cleanup } = await fixture();
+    return { store: open(), reopen: open, cleanup, childOptions: { adapter: 'mongodb', uri: server!, database },
+      holdJob: async () => ({ release: await holdDocument(database, 'mayura_scheduler_jobs', { scope: 'scheduler-a', job_id: 'job-a' }) }),
+      corruptJob: async mutate => {
+        const client = new MongoClient(server!);
+        try {
+          const jobs = client.db(database).collection('mayura_scheduler_jobs'); const filter = { scope: 'scheduler-a', job_id: 'job-a' };
+          const row = await jobs.findOne(filter);
+          const data = JSON.parse(String(row!['data'])) as JsonObject; mutate(data); const job = data['job'] as JsonObject;
+          await jobs.updateOne(filter, { $set: { data: JSON.stringify(data), state: job['state'], lease_until: job['leaseUntilMs'] } });
+        } finally { await client.close(); }
+      } };
   });
 
   it('keeps identifiers exact: case, accents and trailing spaces are different keys', async () => {
