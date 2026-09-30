@@ -48,6 +48,9 @@
       "path": "../exporter-otlp"
     },
     {
+      "path": "../files"
+    },
+    {
       "path": "../guardrails"
     },
     {

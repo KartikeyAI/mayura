@@ -43,6 +43,7 @@
     { "path": "packages/workstream" },
     { "path": "packages/context" },
     { "path": "packages/voice" },
+    { "path": "packages/files" },
     { "path": "packages/memory" },
     { "path": "packages/memory-remote" },
     { "path": "packages/sdk" },

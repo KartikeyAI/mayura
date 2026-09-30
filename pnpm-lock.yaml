@@ -146,6 +146,9 @@ importers:
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
+      '@smithy/signature-v4':
+        specifier: 5.7.4
+        version: 5.7.4
       '@types/better-sqlite3':
         specifier: 9.6.0
         version: 9.6.0
@@ -638,6 +641,15 @@ importers:
         specifier: workspace:*
         version: link:../observability
 
+  packages/files:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+
   packages/guardrails:
     dependencies:
       '@mayura/core':
@@ -731,6 +743,9 @@ importers:
       '@mayura/exporter-otlp':
         specifier: workspace:*
         version: link:../exporter-otlp
+      '@mayura/files':
+        specifier: workspace:*
+        version: link:../files
       '@mayura/guardrails':
         specifier: workspace:*
         version: link:../guardrails
@@ -983,6 +998,9 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
+      '@mayura/files':
+        specifier: workspace:*
+        version: link:../files
       '@mayura/tools':
         specifier: workspace:*
         version: link:../tools

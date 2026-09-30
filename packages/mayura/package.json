@@ -81,6 +81,10 @@
       "types": "./dist/exporter-otlp.d.ts",
       "import": "./dist/exporter-otlp.js"
     },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "import": "./dist/files.js"
+    },
     "./guardrails": {
       "types": "./dist/guardrails.d.ts",
       "import": "./dist/guardrails.js"
@@ -243,6 +247,7 @@
     "@mayura/context": "workspace:*",
     "@mayura/core": "workspace:*",
     "@mayura/exporter-otlp": "workspace:*",
+    "@mayura/files": "workspace:*",
     "@mayura/guardrails": "workspace:*",
     "@mayura/helpers": "workspace:*",
     "@mayura/memory": "workspace:*",

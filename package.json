@@ -70,6 +70,7 @@
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*",
     "@edge-runtime/vm": "5.0.0",
+    "@smithy/signature-v4": "5.7.4",
     "@mayurajs/provider-anthropic": "workspace:*",
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",

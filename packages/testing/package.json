@@ -21,6 +21,7 @@
   "dependencies": {
     "@mayura/core": "workspace:*",
     "@mayura/tools": "workspace:*",
+    "@mayura/files": "workspace:*",
     "@mayura/voice": "workspace:*"
   }
 }

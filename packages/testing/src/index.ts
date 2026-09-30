@@ -99,3 +99,4 @@ export async function testTool<T extends AnyTool>(tool: T, input: unknown, optio
 }
 export { conformanceTools, expectedCostMicros, modelAdapterConformance, type ConformanceModelSettings, type ModelAdapterHarness, type ModelConformanceCase, type ModelConformanceKind, type ModelScenario, type ModelScenarioKind } from './model-conformance.js';
 export { conformanceWav, voiceAdapterConformance, type VoiceAdapterHarness, type VoiceConformanceCase, type VoiceScenario, type VoiceScenarioKind } from './voice-conformance.js';
+export { fileStoreConformance, type FileStoreConformanceCase, type FileStoreHarness } from './files-conformance.js';

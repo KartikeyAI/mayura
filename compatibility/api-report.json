@@ -1687,6 +1687,120 @@
         "declaration": "2b7d237834fe34fc"
       }
     },
+    "@mayura/files": {
+      "BackendGetOptions": {
+        "kind": "interface",
+        "declaration": "edf55ecfc379053a"
+      },
+      "BackendListOptions": {
+        "kind": "interface",
+        "declaration": "456ca36c3c13e04b"
+      },
+      "BackendPutOptions": {
+        "kind": "interface",
+        "declaration": "93e273e8dffdeba8"
+      },
+      "compareFileKeys": {
+        "kind": "function",
+        "declaration": "fca75f18d5d241ab"
+      },
+      "createFileStore": {
+        "kind": "function",
+        "declaration": "9989edb4bcfb6e5f"
+      },
+      "DeleteFileOptions": {
+        "kind": "interface",
+        "declaration": "44d216c69daf9bf3"
+      },
+      "FileBackend": {
+        "kind": "interface",
+        "declaration": "c4ff5076ac6925ad"
+      },
+      "fileBody": {
+        "kind": "function",
+        "declaration": "bbd955fa856b5c28"
+      },
+      "fileConflict": {
+        "kind": "function",
+        "declaration": "299da5605d40d8d9"
+      },
+      "FileFailureReason": {
+        "kind": "type",
+        "declaration": "6b329e4c31f452c9"
+      },
+      "fileHttpFailure": {
+        "kind": "function",
+        "declaration": "3c3f9899ca6fa0b2"
+      },
+      "FileInfo": {
+        "kind": "interface",
+        "declaration": "0d999dc3558bc770"
+      },
+      "FileListing": {
+        "kind": "interface",
+        "declaration": "d5dba3f3a900ad09"
+      },
+      "fileResponseFailure": {
+        "kind": "function",
+        "declaration": "0aaafa9d9e77faf4"
+      },
+      "FileStore": {
+        "kind": "interface",
+        "declaration": "7b88917db82e4c73"
+      },
+      "FileStoreError": {
+        "kind": "class",
+        "declaration": "f7271f9b1f81b57e"
+      },
+      "FileStoreOptions": {
+        "kind": "interface",
+        "declaration": "c14a2b733bcf4588"
+      },
+      "fileTools": {
+        "kind": "function",
+        "declaration": "0c2e5b0e26db3e65"
+      },
+      "FileToolsOptions": {
+        "kind": "interface",
+        "declaration": "cfa7490b09176040"
+      },
+      "GetFileOptions": {
+        "kind": "interface",
+        "declaration": "d24e3cce700182c3"
+      },
+      "isFileKey": {
+        "kind": "function",
+        "declaration": "5786563b7d285060"
+      },
+      "ListFilesOptions": {
+        "kind": "interface",
+        "declaration": "17e67a235a79a474"
+      },
+      "memoryFiles": {
+        "kind": "function",
+        "declaration": "ec73a19e27e7180b"
+      },
+      "PutFileOptions": {
+        "kind": "interface",
+        "declaration": "bc38ae1dc3d52b82"
+      },
+      "S3Credentials": {
+        "kind": "type",
+        "declaration": "5fab728edcacbe32"
+      },
+      "s3Files": {
+        "kind": "function",
+        "declaration": "d0c3089e2fd78556"
+      },
+      "S3FilesOptions": {
+        "kind": "interface",
+        "declaration": "e08a5e067da6f052"
+      },
+      "StoredFile": {
+        "kind": "interface",
+        "declaration": "0cc423973290db75"
+      }
+    },
     "@mayura/guardrails": {
       "AuxiliaryCheck": {
         "kind": "interface",
@@ -5709,6 +5823,18 @@
       "expectedCostMicros": {
         "kind": "function",
         "declaration": "056c167691e8fdfb"
+      },
+      "fileStoreConformance": {
+        "kind": "const",
+        "declaration": "80417daa19ecf2a7"
+      },
+      "FileStoreConformanceCase": {
+        "kind": "interface",
+        "declaration": "1dbdca87f1b5a392"
+      },
+      "FileStoreHarness": {
+        "kind": "interface",
+        "declaration": "7abcc84f215979fd"
       },
       "modelAdapterConformance": {
         "kind": "const",
