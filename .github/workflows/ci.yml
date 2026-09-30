@@ -95,6 +95,10 @@ jobs:
           RUSTFS_ACCESS_KEY: mayuratest
           RUSTFS_SECRET_KEY: mayura_ci_test_only
         ports: [19000:9000]
+      # Azurite, Microsoft's Azure Storage emulator, for @mayurajs/filestorage-azure-blob's integration tests.
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5
+        ports: [10000:10000]
     env:
       MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
       MAYURA_TEST_LIBSQL_URL: ws://127.0.0.1:18080
@@ -103,6 +107,7 @@ jobs:
       MAYURA_TEST_DYNAMODB_URL: http://127.0.0.1:18000
       MAYURA_TEST_S3_URL: http://mayuratest:mayura_ci_test_only@127.0.0.1:19000
       MAYURA_TEST_GCS_URL: http://127.0.0.1:14443
+      MAYURA_TEST_AZURITE_URL: http://127.0.0.1:10000/devstoreaccount1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

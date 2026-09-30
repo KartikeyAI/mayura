@@ -7793,6 +7793,20 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/filestorage-azure-blob": {
+      "azureBlobFiles": {
+        "kind": "function",
+        "declaration": "20abd5f6cf345f9c"
+      },
+      "AzureBlobFilesOptions": {
+        "kind": "interface",
+        "declaration": "8212e3a2e2ec2c7a"
+      },
+      "azureBlobVersion": {
+        "kind": "const",
+        "declaration": "dc4dcc39e20835c2"
+      }
+    },
     "@mayurajs/filestorage-gcs": {
       "gcsFiles": {
         "kind": "function",

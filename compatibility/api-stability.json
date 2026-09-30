@@ -64,6 +64,7 @@
   ],
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
+    "@mayurajs/filestorage-azure-blob",
     "@mayurajs/filestorage-gcs",
     "@mayurajs/provider-anthropic",
     "@mayurajs/provider-azure",

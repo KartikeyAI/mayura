@@ -10,6 +10,7 @@
     { "path": "extensions/storage-dynamodb" },
     { "path": "extensions/storage-mongodb" },
     { "path": "extensions/storage-mysql" },
+    { "path": "extensions/filestorage-azure-blob" },
     { "path": "extensions/filestorage-gcs" },
     { "path": "extensions/voice-assemblyai" },
     { "path": "extensions/voice-azure" },

@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/filestorage-azure-blob':
+        specifier: workspace:*
+        version: link:extensions/filestorage-azure-blob
       '@mayurajs/filestorage-gcs':
         specifier: workspace:*
         version: link:extensions/filestorage-gcs
@@ -209,6 +212,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/filestorage-azure-blob:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/filestorage-gcs:
     devDependencies:
