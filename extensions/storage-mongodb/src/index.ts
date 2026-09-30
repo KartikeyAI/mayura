@@ -1,12 +1,13 @@
 import { MongoClient, MongoError, type ClientSession, type Collection, type Db } from 'mongodb';
-import { StorageError, storageError, type AggregateStore, type DurableBudgetAggregateStore, type SchedulerAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
+import { StorageError, storageError, type AggregateStore, type DurableBudgetAggregateStore, type ScheduledWorkflowAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
 import { mongoBudgets } from './budgets.js';
 import { mongoMemory } from './memory.js';
 import { mongoSchedulerPersistence } from './scheduler.js';
-import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand } from 'mayura/storage-sql/host';
+import { mongoScheduledPersistence } from './workflows.js';
+import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, writerRequired } from 'mayura/storage-sql/host';
 
-/** The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets and the leased scheduler. */
-export type MongoStore = AggregateStore & MemoryIndexAggregateStore & DurableBudgetAggregateStore & SchedulerAggregateStore;
+/** The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, the leased scheduler and scheduled workflows. */
+export type MongoStore = AggregateStore & MemoryIndexAggregateStore & DurableBudgetAggregateStore & ScheduledWorkflowAggregateStore;
 
 export interface MongoStoreOptions {
   /**
@@ -67,6 +68,7 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   const db: Db = client.db(options.database);
   const aggregates: Collection<AggregateDocument> = db.collection('mayura_aggregates');
   const events: Collection<EventDocument> = db.collection('mayura_events');
+  const owners = db.collection('mayura_workflow_owners');
 
   let initialized = false; let closed = false;
   let initializePromise: Promise<void> | undefined; let closePromise: Promise<void> | undefined;
@@ -92,11 +94,15 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   };
   const current = (session: ClientSession, scope: string, id: string) => aggregates.findOne({ scope, id }, { session, projection: { _id: 0 } });
   const schedulerDatabase = new SchedulerDatabase(mongoSchedulerPersistence(db, transaction));
+  const workflowsDatabase = new ScheduledWorkflowDatabase(mongoScheduledPersistence(db, transaction), schedulerDatabase);
+  /** A run enrolled in scheduled execution changes only through its scheduled writer. */
+  const unowned = async (session: ClientSession, scope: string, id: string) => { if (await owners.findOne({ scope, aggregate_id: id }, { session, projection: { _id: 1 } })) writerRequired(); };
 
   return {
     memory: mongoMemory(db, transaction, () => available()),
     durableBudgets: mongoBudgets(db, transaction, () => available()),
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
+    workflows: scheduledFacade((method, input) => { available(); return workflowsDatabase.execute(method, input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {
@@ -109,6 +115,8 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
               { key: { scope: 1, idempotencyKey: 1 }, name: 'mayura_aggregates_idempotency', unique: true },
             ]);
             await events.createIndexes([{ key: { scope: 1, aggregateId: 1, sequence: 1 }, name: 'mayura_events_sequence', unique: true }]);
+            // Plain updates check enrollment, so ownership exists before scheduled workflows are first used.
+            await owners.createIndexes([{ key: { scope: 1, aggregate_id: 1 }, name: 'mayura_workflow_owners_id', unique: true }]);
           } catch (error) { throw safeFailure(error); }
         })().then(() => { initialized = true; }).catch((error: unknown) => { initializePromise = undefined; throw error; });
       }
@@ -145,6 +153,7 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
       return transaction(async session => {
         const found = await current(session, input.scope, input.id);
         if (!found) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+        await unowned(session, input.scope, input.id);
         if (found.version !== input.expectedVersion) throw new StorageError('CONFLICT', 'The record changed after it was read (another writer updated it); read it again and retry.');
         const next: AggregateDocument = { ...found, state: JSON.stringify(input.state), version: nextCounter(found.version, 1), eventSequence: nextCounter(found.eventSequence, input.events.length) };
         // The version in the filter makes the write fail as a conflict if another transaction got there first.
@@ -161,6 +170,7 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
       return transaction(async session => {
         const found = await current(session, input.scope, input.id);
         if (!found) throw new StorageError('NOT_FOUND', 'Record was not found in this scope.');
+        await unowned(session, input.scope, input.id);
         if (found.version !== input.expectedVersion || found.definitionHash !== input.expectedDefinitionHash) throw new StorageError('CONFLICT', 'The record or its pinned definition changed after it was read; read it again and retry.');
         const next: AggregateDocument = { ...found, definitionHash: input.definitionHash, state: JSON.stringify(input.state), version: nextCounter(found.version, 1),
           eventSequence: nextCounter(found.eventSequence, input.events.length) };

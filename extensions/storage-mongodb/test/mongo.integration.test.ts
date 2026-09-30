@@ -12,10 +12,13 @@ import { createMongoStore } from '../src/index.js';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { identityIntegrityConformance } from '../../../packages/storage/test/identity-integrity-conformance.js';
+import { scheduledBounds } from '../../../packages/storage/test/scheduled-bounds-conformance.js';
 import { schedulerConformance } from '../../../packages/storage/test/scheduler-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
+import { scheduledWorkflowConformance } from '../../../packages/workflows/test/scheduled-conformance.js';
+import { mongoSql } from './sql-shim.js';
 
 const server = process.env['MAYURA_TEST_MONGODB_URL'];
 
@@ -36,27 +39,6 @@ async function holdDocument(database: string, collection: string, filter: Record
   return async () => { if (released) return; released = true; try { await session.abortTransaction(); } finally { await session.endSession(); await client.close(); } };
 }
 
-/**
- * The few SQL statements the durable-budget suite uses to read and tamper with rows, applied to the same documents.
- * Test-only instrumentation; any other statement fails the test.
- */
-function budgetSql(database: string) {
-  return async (sql: string, parameters: readonly unknown[] = []): Promise<readonly Record<string, unknown>[]> => {
-    const client = new MongoClient(server!);
-    try {
-      const db = client.db(database); const text = sql.replace(/\s+/g, ' ').trim();
-      const table = /^SELECT \* FROM (mayura_durable_budgets|mayura_durable_budget_events) ORDER BY 1,2$/.exec(text);
-      if (table) return await db.collection(table[1]!).find({}, { projection: { _id: 0 } }).sort({ scope: 1, id: 1, budgetId: 1, sequence: 1 }).toArray();
-      const [first, scope, id] = parameters as [unknown, string, string];
-      if (text === 'SELECT state FROM mayura_durable_budgets WHERE scope = ? AND id = ?') return await db.collection('mayura_durable_budgets').find({ scope: parameters[0], id: parameters[1] }, { projection: { _id: 0, state: 1 } }).toArray();
-      if (text === 'UPDATE mayura_durable_budgets SET state = ? WHERE scope = ? AND id = ?') { await db.collection('mayura_durable_budgets').updateOne({ scope, id }, { $set: { state: first } }); return []; }
-      if (text === 'UPDATE mayura_durable_budgets SET version = version + 1 WHERE scope = ? AND id = ?') { await db.collection('mayura_durable_budgets').updateOne({ scope: parameters[0], id: parameters[1] }, { $inc: { version: 1 } }); return []; }
-      if (text === 'UPDATE mayura_durable_budget_events SET data = ? WHERE scope = ? AND budget_id = ?') { await db.collection('mayura_durable_budget_events').updateMany({ scope, budgetId: id }, { $set: { data: first } }); return []; }
-      throw new Error(`The MongoDB test shim has no translation for: ${text}`);
-    } finally { await client.close(); }
-  };
-}
-
 async function fixture() {
   await configureServer();
   const database = `mayura_test_${randomUUID().replaceAll('-', '')}`;
@@ -74,9 +56,15 @@ describe.skipIf(!server)('MongoDB', () => {
   memoryConformance('MongoDB', simple as never);
   nativeMemoryConformance('MongoDB', simple);
   workflowConformance('MongoDB', simple);
+  scheduledBounds('MongoDB', simple);
+  scheduledWorkflowConformance('MongoDB', (async () => {
+    const { database, open, cleanup } = await fixture();
+    return { store: open(), reopen: open, dialect: 'mongodb', prefix: '', childConfig: { kind: 'mongodb', uri: server!, database }, query: mongoSql(server!, database),
+      lockAggregate: (scope: string, id: string) => holdDocument(database, 'mayura_aggregates', { scope, id }), cleanup };
+  }) as never);
   durableBudgetConformance('MongoDB', async () => {
     const { database, open, cleanup } = await fixture();
-    return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: budgetSql(database),
+    return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: mongoSql(server!, database),
       lockRoot: (scope: string, id: string) => holdDocument(database, 'mayura_durable_budgets', { scope, id }), cleanup } as never;
   });
   schedulerConformance('MongoDB', async () => {

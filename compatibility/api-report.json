@@ -5264,6 +5264,14 @@
       }
     },
     "@mayura/storage-sql/host": {
+      "AggregateRow": {
+        "kind": "interface",
+        "declaration": "1369817c23063f31"
+      },
+      "CompletionRow": {
+        "kind": "interface",
+        "declaration": "c28fe25fe15776ff"
+      },
       "createCommand": {
         "kind": "function",
         "declaration": "9a40d75e84901f12"
@@ -5344,9 +5352,17 @@
         "kind": "type",
         "declaration": "7babd3036ec20226"
       },
+      "ScheduledPersistence": {
+        "kind": "interface",
+        "declaration": "d36db77ee0e350e7"
+      },
+      "ScheduledTransaction": {
+        "kind": "interface",
+        "declaration": "2046f51084ebf4e1"
+      },
       "ScheduledWorkflowDatabase": {
         "kind": "class",
-        "declaration": "513f55c9d019bb22"
+        "declaration": "2fe0bff3ba2027cf"
       },
       "SchedulerBackend": {
         "kind": "interface",
@@ -5411,6 +5427,10 @@
       "workflowGraphFacade": {
         "kind": "function",
         "declaration": "714050b978fb711f"
+      },
+      "WorkflowOwnerRow": {
+        "kind": "interface",
+        "declaration": "6919ee3a0cdc75d5"
       },
       "WorkflowTreeCancellationResult": {
         "kind": "interface",
@@ -5479,6 +5499,10 @@
       "WorkflowTreeStartedTool": {
         "kind": "interface",
         "declaration": "7615aab19eda6f61"
+      },
+      "WorkflowWaitTargetRow": {
+        "kind": "interface",
+        "declaration": "5ec01deb6656e6e2"
       },
       "writerRequired": {
         "kind": "function",
@@ -7376,7 +7400,7 @@
       },
       "MongoStore": {
         "kind": "type",
-        "declaration": "0e901cac96cc417d"
+        "declaration": "69900aa91c03a684"
       },
       "MongoStoreOptions": {
         "kind": "interface",

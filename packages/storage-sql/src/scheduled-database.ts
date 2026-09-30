@@ -12,16 +12,14 @@ import {
   type WorkflowGraphDiscoveryStore, type WorkflowGraphDiscoveryScan, type WorkflowGraphDiscoveryCandidate,
 } from '@mayura/storage-contracts';
 import { StorageError, type StoredEventInput } from './contracts.js';
-import { aggregateRecord, createAggregate, initializeOwnership, loadAggregate, lockRunIdentity, lockSql,
-  storageClock, storedInteger, writeAggregate, type AggregateRow } from './aggregate-session.js';
-import { ResourceBusy, SchedulerDatabase, type SchedulerBackend, type SchedulerSession } from './scheduler-database.js';
+import { aggregateRecord, storedInteger, type AggregateRow } from './aggregate-session.js';
+import { ResourceBusy, SchedulerDatabase, type SchedulerBackend } from './scheduler-database.js';
 import { fields, hash, integer, object } from './scheduler-validation.js';
 import { scheduledCommand, type ScheduledMethod } from './scheduled-validation.js';
 import { createCommand, identifier, nextCounter } from './validation.js';
-import { checkCompletion, initializeCompletions, readCompletion } from './execution-completions.js';
-import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
+import { checkCompletion, completionOf } from './execution-completions.js';
 import { sha256Hex } from '@mayura/core/host';
-import { advisoryLock, binaryCollation } from './dialect.js';
+import { sqlScheduledPersistence, type ScheduledPersistence, type ScheduledTransaction, type WorkflowOwnerRow, type WorkflowWaitTargetRow } from './scheduled-persistence.js';
 
 interface Journal { id: string; digest: string; version: number; operation: string }
 interface Owner {
@@ -30,14 +28,9 @@ interface Owner {
   /** Definition digests this run was migrated from, oldest first. Job history pinned to them stays valid. */
   lineage?: string[];
 }
-interface OwnerRow {
-  scope: string; aggregate_id: string; profile: number; aggregate_version: number | string;
-  definition_hash: string; policy_hash: string; resource_hash: string; data: string;
-}
-interface Link { node_id: string; job_id: string }
-interface WaitTargetRow {
-  scope: string; aggregate_id: string; node_id: string; ordinal: number | string; run_id: string; definition_hash: string; policy_hash: string;
-}
+type OwnerRow = WorkflowOwnerRow;
+type WaitTargetRow = WorkflowWaitTargetRow;
+type Session = ScheduledTransaction;
 type Manifest = WorkflowManifest | WorkflowGraphManifest;
 type Node = WorkflowManifestNode | WorkflowGraphManifestNode;
 type State = WorkflowFormat2State | WorkflowGraphFormat3State;
@@ -62,6 +55,8 @@ function limited(): never { throw new StorageError('LIMIT_EXCEEDED', 'Scheduled 
 function digest(domain: string, value: unknown): string { return sha256Hex(workflowHashMaterial(domain, value)); }
 function same(a: unknown, b: unknown): boolean { return workflowHashMaterial('compare', a) === workflowHashMaterial('compare', b); }
 function graphManifest(manifest: Manifest): manifest is WorkflowGraphManifest { return 'format' in manifest && manifest.format === 3; }
+/** The store's time, never earlier than `floor`. */
+async function storageClock(tx: Session, floor = 0): Promise<number> { return Math.max(floor, storedInteger(await tx.clock())); }
 interface AccountingProjection { readonly receipt: ExecutionReceipt; readonly settlement: ExecutionSettlement }
 
 function executionSettlement(value: ExecutionSettlement | undefined, receipt: ExecutionReceipt, maximum: number): ExecutionSettlement {
@@ -81,8 +76,10 @@ function executionSettlement(value: ExecutionSettlement | undefined, receipt: Ex
 export class ScheduledWorkflowDatabase {
   private initialized = false;
   private discoveryInitialized = false;
-  constructor(private readonly backend: SchedulerBackend, private readonly scheduler: SchedulerDatabase) {}
-  private table(name: 'owners' | 'jobs' | 'wait_targets'): string { return `${this.backend.prefix}mayura_workflow_${name}`; }
+  private readonly persistence: ScheduledPersistence;
+  constructor(backend: SchedulerBackend | ScheduledPersistence, private readonly scheduler: SchedulerDatabase) {
+    this.persistence = 'dialect' in backend ? sqlScheduledPersistence(backend) : backend;
+  }
   private hashEnrollment(manifest: Manifest, policy: WorkflowPolicyManifest, resources: WorkflowResourcePlan) {
     return { scope: digest('mayura:scope:v1',policy.scope), definition: digest(graphManifest(manifest) ? 'mayura:workflow:v2' : 'mayura:workflow:v1',manifest),
       policy: digest('mayura:policy:v1',policy), resources: digest('mayura:workflow-resources:v1',resources) };
@@ -125,20 +122,18 @@ export class ScheduledWorkflowDatabase {
       return state;
     } catch { return failed(); }
   }
-  private async load(tx: SchedulerSession, scope: string, id: string, policyHash: string, skip = false, profile?: 1 | 2): Promise<LockedRun | undefined> {
-    const row = await loadAggregate(tx,this.backend,scope,id,skip);
+  private async load(tx: Session, scope: string, id: string, policyHash: string, skip = false, profile?: 1 | 2): Promise<LockedRun | undefined> {
+    const row = await tx.aggregate(scope,id,skip);
     if (!row) { if (skip) return undefined; throw new StorageError('NOT_FOUND','Workflow was not found in this scope.'); }
-    const ownerRow = (await tx.query<OwnerRow>(`SELECT * FROM ${this.table('owners')} WHERE scope = ? AND aggregate_id = ?`,[scope,id]))[0];
+    const ownerRow = await tx.owner(scope,id);
     if (!ownerRow) throw new StorageError('SCHEDULED_WRITER_REQUIRED','The run is not enrolled in scheduled execution.');
     if (profile !== undefined && Number(ownerRow.profile) !== profile) conflict();
     const owner = this.decode(ownerRow,row); if (ownerRow.policy_hash !== policyHash) conflict();
     const state = this.checkedState(row,owner);
     // Lock every bounded owned job before touching any resource. Controls can safely visit them in any order afterwards.
-    const jobRows = await tx.query<{ job_id: string }>(`SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ? ORDER BY job_id${lockSql(this.backend)}`,[scope,id]);
-    // A control command may release several jobs' holds: acquire those rows in one global key order.
-    await tx.query(`SELECT resource_key FROM ${this.backend.prefix}mayura_scheduler_resources WHERE scope = ? AND job_id IN (SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ?) ORDER BY resource_key${lockSql(this.backend)}`,[scope,scope,id]);
-    const links = await tx.query<Link>(`SELECT node_id, job_id FROM ${this.table('jobs')} WHERE scope = ? AND aggregate_id = ? ORDER BY job_id`,[scope,id]);
-    if (links.length > 128 || links.length !== jobRows.length || links.some((link,index) => link.job_id !== jobRows[index]?.job_id)) failed();
+    const jobIds = await tx.lockRunJobs(scope,id);
+    const links = await tx.links(scope,id);
+    if (links.length > 128 || links.length !== jobIds.length || links.some((link,index) => link.job_id !== jobIds[index])) failed();
     const events: StoredEventInput[] = []; const clock = { value: owner.clockFloor }; const jobs: JobRecord[] = [];
     const local = this.scheduler.inSession(tx,id,events,undefined,clock);
     for (const link of links) {
@@ -154,19 +149,19 @@ export class ScheduledWorkflowDatabase {
       jobs.push(job);
     }
     for (const [nodeId,step] of Object.entries(state.steps)) if (step.candidateHash !== null && !links.some(link => link.node_id === nodeId)) failed();
-    clock.value = await storageClock(tx,this.backend,clock.value);
+    clock.value = await storageClock(tx,clock.value);
     const waits = graphManifest(owner.manifest) ? workflowGraphTargets(owner.manifest,state.input) : {};
     const run: LockedRun = { row,owner,ownerRow,state,jobs,clock,events,waits,facts:{},targetFacts:new Map() };
     await this.checkWaitProjection(tx,run);
     await this.checkProjection(tx,run);
-    await checkCompletion(tx,this.backend,row,policyHash,state.status,false); return run;
+    await checkCompletion(tx,row,policyHash,state.status,false); return run;
   }
   /** Parent-owned immutable edges are recomputed from the admitted input, never trusted as a second authority.
    * Only immutable target facts/identity columns are read here; no target workflow lock is acquired.
    */
-  private async checkWaitProjection(tx: SchedulerSession, run: LockedRun): Promise<void> {
+  private async checkWaitProjection(tx: Session, run: LockedRun): Promise<void> {
     try {
-      const rows = await tx.query<WaitTargetRow>(`SELECT * FROM ${this.table('wait_targets')} WHERE scope = ? AND aggregate_id = ? LIMIT 129`,[run.row.scope,run.row.id]);
+      const rows: WaitTargetRow[] = await tx.waitTargets(run.row.scope,run.row.id);
       const expected = Object.entries(run.waits); const count = expected.reduce((total,[,targets]) => total + targets.length,0);
       if (rows.length !== count || count > 128) failed();
       const seen = new Set<string>();
@@ -184,7 +179,7 @@ export class ScheduledWorkflowDatabase {
           const key = JSON.stringify([reference.kind,reference.runId,reference.definitionHash,reference.policyHash]);
           if (!run.targetFacts.has(key)) {
             await this.checkTargetIdentity(tx,run.row.scope,run.row.id,run.ownerRow.policy_hash,reference);
-            run.targetFacts.set(key,await readCompletion(tx,this.backend,run.row.scope,reference));
+            run.targetFacts.set(key,await completionOf(tx,run.row.scope,reference));
           }
           // Repeated edges retain independent row/order checks above. Only immutable identities
           // and facts share this command-local observation; no target business lock is acquired.
@@ -204,15 +199,14 @@ export class ScheduledWorkflowDatabase {
     } catch { failed(); }
   }
   /** Verify already-existing immutable owner identities without taking target business locks. */
-  private async checkTargetIdentity(tx: SchedulerSession, scope: string, parentId: string, policyHash: string, reference: ExecutionRef): Promise<void> {
+  private async checkTargetIdentity(tx: Session, scope: string, parentId: string, policyHash: string, reference: ExecutionRef): Promise<void> {
     if (reference.runId === parentId || reference.policyHash !== policyHash) conflict();
-    const row = (await tx.query<Pick<OwnerRow,'scope'|'aggregate_id'|'profile'|'definition_hash'|'policy_hash'>>(
-      `SELECT scope,aggregate_id,profile,definition_hash,policy_hash FROM ${this.table('owners')} WHERE scope = ? AND aggregate_id = ?`,[scope,reference.runId]))[0];
+    const row = await tx.ownerIdentity(scope,reference.runId);
     if (!row || row.scope !== scope || row.aggregate_id !== reference.runId || ![1,2].includes(Number(row.profile))
       || row.definition_hash !== reference.definitionHash || row.policy_hash !== policyHash) conflict();
   }
   /** Independently derive effect facts and accounting from the attempt ledger, never from aggregate claims. */
-  private async checkProjection(tx: SchedulerSession,run: LockedRun): Promise<void> {
+  private async checkProjection(tx: Session,run: LockedRun): Promise<void> {
     try {
       let spent = 0;
       for (const node of run.owner.manifest.graph) {
@@ -247,7 +241,7 @@ export class ScheduledWorkflowDatabase {
       policyHash:run.ownerRow.policy_hash, resourceHash:run.ownerRow.resource_hash, jobs:run.jobs };
   }
   /** Reconstruct cost facts from immutable attempt evidence; legacy evidence remains conservatively fixed-cost. */
-  private async accounting(tx: SchedulerSession,run: LockedRun,job: JobRecord,node: ToolNode): Promise<AccountingProjection | undefined> {
+  private async accounting(tx: Session,run: LockedRun,job: JobRecord,node: ToolNode): Promise<AccountingProjection | undefined> {
     if (job.fence === 0) return undefined;
     const evidence = await this.local(tx,run).execute('receipts',{scope:run.row.scope,jobId:job.jobId,fence:job.fence}) as SchedulerEvidence[];
     let projected: AccountingProjection | undefined;
@@ -272,7 +266,7 @@ export class ScheduledWorkflowDatabase {
     }
     return projected && Object.freeze({receipt:projected.receipt,settlement:projected.settlement});
   }
-  private local(tx: SchedulerSession, run: LockedRun, jobId?: string, admissionExpiresAt?: number): SchedulerDatabase {
+  private local(tx: Session, run: LockedRun, jobId?: string, admissionExpiresAt?: number): SchedulerDatabase {
     return this.scheduler.inSession(tx,run.row.id,run.events,jobId,run.clock,admissionExpiresAt);
   }
   private replaceJob(run: LockedRun, job: JobRecord): void {
@@ -294,7 +288,7 @@ export class ScheduledWorkflowDatabase {
     if (run.owner.commands.length >= 1024) limited();
     run.owner.commands.push({ id:input['commandId'] as string,digest:this.semantic(method,input),version:nextCounter(storedInteger(run.row.version),1),operation:method });
   }
-  private async save(tx: SchedulerSession, run: LockedRun, method?: ScheduledMethod, input?: JsonObject, event?: StoredEventInput): Promise<void> {
+  private async save(tx: Session, run: LockedRun, method?: ScheduledMethod, input?: JsonObject, event?: StoredEventInput): Promise<void> {
     if (method && input) this.journal(run,method,input);
     if (event) run.events.push(event);
     if (run.events.length === 0) run.events.push({type:'workflow.control',data:{operation:method ?? 'projection'}});
@@ -303,10 +297,10 @@ export class ScheduledWorkflowDatabase {
     this.checkedState({ ...run.row,state:JSON.stringify(next) },run.owner);
     await this.checkWaitProjection(tx,run);
     await this.checkProjection(tx,run);
-    run.row = await writeAggregate(tx,this.backend,run.row,next,run.events,run.clock.value);
+    run.row = await tx.writeAggregate(run.row,next,run.events,run.clock.value);
     run.ownerRow.aggregate_version = run.row.version; run.ownerRow.data = JSON.stringify(object(run.owner));
-    await tx.query(`UPDATE ${this.table('owners')} SET aggregate_version = ?, data = ? WHERE scope = ? AND aggregate_id = ?`,[run.row.version,run.ownerRow.data,run.row.scope,run.row.id]);
-    await checkCompletion(tx,this.backend,run.row,run.ownerRow.policy_hash,run.state.status,true);
+    await tx.updateOwner(run.row.scope,run.row.id,run.row.version,run.ownerRow.data);
+    await checkCompletion(tx,run.row,run.ownerRow.policy_hash,run.state.status,true);
     run.events.length = 0;
   }
   /**
@@ -314,20 +308,12 @@ export class ScheduledWorkflowDatabase {
    * Steps with scheduler history and non-pending waits must be unchanged; other steps may only be carried unchanged
    * or re-enter as fresh pending steps. No other run may depend on this run's identity.
    */
-  private async migrateRun(tx: SchedulerSession, run: LockedRun, input: JsonObject): Promise<void> {
+  private async migrateRun(tx: Session, run: LockedRun, input: JsonObject): Promise<void> {
     const refuse = (message: string): never => { throw new StorageError('CONFLICT', `Migration refused: ${message}`); };
     if (run.state.status !== 'paused') refuse('the run must be paused.');
     if (run.jobs.some(job => job.state === 'leased' || job.state === 'started')) refuse('a job is leased or started.');
-    const dependents = await tx.query<{ aggregate_id: string }>(`SELECT aggregate_id FROM ${this.table('wait_targets')} WHERE scope = ? AND run_id = ? LIMIT 1`,[run.row.scope,run.row.id]);
-    if (dependents.length) refuse('another workflow waits on this run.');
-    // Execution waits are optional storage; probe the table without failing the transaction when it was never created.
-    const waitTable = `${this.backend.prefix}mayura_execution_wait_targets`;
-    const present = this.backend.dialect === 'postgres'
-      ? (await tx.query<{ found: string | null }>('SELECT to_regclass(?)::text AS found',[waitTable]))[0]?.found
-      : this.backend.dialect === 'mysql'
-        ? (await tx.query<{ name: string }>('SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',[waitTable]))[0]?.name
-        : (await tx.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",[waitTable]))[0]?.name;
-    if (present && (await tx.query(`SELECT run_id FROM ${waitTable} WHERE scope = ? AND run_id = ? LIMIT 1`,[run.row.scope,run.row.id])).length) refuse('an execution wait targets this run.');
+    if (await tx.workflowWaitsOn(run.row.scope,run.row.id)) refuse('another workflow waits on this run.');
+    if (await tx.executionWaitTargets(run.row.scope,run.row.id)) refuse('an execution wait targets this run.');
     const manifest = input['manifest'] as unknown as Manifest; const resources = input['resources'] as unknown as WorkflowResourcePlan;
     if (graphManifest(manifest) !== graphManifest(run.owner.manifest)) refuse('the workflow format cannot change.');
     const hashes = this.hashEnrollment(manifest,run.owner.policy,resources);
@@ -360,18 +346,16 @@ export class ScheduledWorkflowDatabase {
       const step = previous.steps[nodeId];
       if (step && step.status !== 'pending' && !same(waits[nodeId] ?? null,targets)) refuse(`wait "${nodeId}" already started and its targets changed.`);
     }
-    await tx.query(`DELETE FROM ${this.table('wait_targets')} WHERE scope = ? AND aggregate_id = ?`,[run.row.scope,run.row.id]);
+    await tx.deleteWaitTargets(run.row.scope,run.row.id);
     for (const [nodeId,targets] of Object.entries(waits)) for (const [ordinal,target] of targets.entries()) {
       await this.checkTargetIdentity(tx,run.row.scope,run.row.id,run.ownerRow.policy_hash,target);
-      await tx.query(`INSERT INTO ${this.table('wait_targets')} (scope,aggregate_id,node_id,ordinal,run_id,definition_hash,policy_hash) VALUES (?,?,?,?,?,?,?)`,
-        [run.row.scope,run.row.id,nodeId,ordinal,target.runId,target.definitionHash,target.policyHash]);
+      await tx.insertWaitTarget({scope:run.row.scope,aggregate_id:run.row.id,node_id:nodeId,ordinal,run_id:target.runId,definition_hash:target.definitionHash,policy_hash:target.policyHash});
     }
     const lineage = [...(run.owner.lineage ?? []), run.ownerRow.definition_hash];
     if (lineage.length > 64) limited();
     run.owner = { ...run.owner, manifest, resources, lineage };
     run.state = checked; run.waits = waits; run.targetFacts = new Map();
-    await tx.query(`UPDATE ${this.backend.prefix}mayura_aggregates SET definition_hash = ? WHERE scope = ? AND id = ?`,[hashes.definition,run.row.scope,run.row.id]);
-    await tx.query(`UPDATE ${this.table('owners')} SET definition_hash = ?, resource_hash = ? WHERE scope = ? AND aggregate_id = ?`,[hashes.definition,hashes.resources,run.row.scope,run.row.id]);
+    await tx.redefine(run.row.scope,run.row.id,hashes.definition,hashes.resources);
     run.row = { ...run.row, definition_hash: hashes.definition }; run.ownerRow = { ...run.ownerRow, definition_hash: hashes.definition, resource_hash: hashes.resources };
   }
   private node(run: LockedRun,id: string): ToolNode {
@@ -400,7 +384,7 @@ export class ScheduledWorkflowDatabase {
     if (executed) run.state.spentMicros = nextCounter(run.state.spentMicros,step.costReserved);
     step.costReserved = 0;
   }
-  private async refreshJob(tx: SchedulerSession,run: LockedRun,jobId: string): Promise<JobRecord> {
+  private async refreshJob(tx: Session,run: LockedRun,jobId: string): Promise<JobRecord> {
     const job = await this.local(tx,run).execute('read',{scope:run.row.scope,jobId}) as JobRecord | undefined;
     if (!job) failed(); this.replaceJob(run,job); return job;
   }
@@ -415,7 +399,7 @@ export class ScheduledWorkflowDatabase {
     else if (job.state === 'cancelled' && job.startedAtMs === null) { if (!terminalSteps.has(step.status)) step.status = 'skipped'; this.refund(run,step); }
     else if (job.state === 'blocked' && job.startedAtMs === null) { step.status = 'blocked'; this.refund(run,step); }
   }
-  private async cancelJob(tx: SchedulerSession,run: LockedRun,job: JobRecord,commandId: string): Promise<JobRecord> {
+  private async cancelJob(tx: Session,run: LockedRun,job: JobRecord,commandId: string): Promise<JobRecord> {
     const result = await this.local(tx,run).execute('cancel',{scope:run.row.scope,jobId:job.jobId,commandId}) as JobRecord;
     this.replaceJob(run,result); this.mirrorJob(run,result); return result;
   }
@@ -453,12 +437,12 @@ export class ScheduledWorkflowDatabase {
       return true;
     } catch { return false; }
   }
-  private async blockExpiredReview(tx: SchedulerSession,run: LockedRun,job: JobRecord): Promise<boolean> {
+  private async blockExpiredReview(tx: Session,run: LockedRun,job: JobRecord): Promise<boolean> {
     if (job.startedAtMs !== null || !['ready','leased'].includes(job.state) || !this.expiredReview(run,job)) return false;
     await this.cancelJob(tx,run,job,`review-expired:${job.jobId}`); run.state.steps[job.nodeId]!.status = 'blocked';
     run.events.push({type:'approval.expired',data:{nodeId:job.nodeId}}); return true;
   }
-  private async observeReviewExpiry(tx: SchedulerSession,run: LockedRun,nodeId: string): Promise<void> {
+  private async observeReviewExpiry(tx: Session,run: LockedRun,nodeId: string): Promise<void> {
     const job = run.jobs.find(item => item.nodeId === nodeId);
     if (job) await this.blockExpiredReview(tx,run,job);
     if (run.events.length === 0 && run.clock.value > run.owner.clockFloor) run.events.push({type:'approval.expiry_observed',data:{nodeId}});
@@ -503,28 +487,13 @@ export class ScheduledWorkflowDatabase {
   }
   private async initialize(): Promise<void> {
     if (this.initialized) return; await this.scheduler.execute('initialize',{});
-    await this.backend.transaction(async tx => {
-      await advisoryLock(tx, this.backend, `mayura:scheduled-schema:${this.backend.prefix}`);
-      await initializeOwnership(tx,this.backend);
-      await initializeCompletions(tx,this.backend);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('jobs')} (scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, node_id TEXT NOT NULL, job_id TEXT NOT NULL,
-        PRIMARY KEY(scope,aggregate_id,node_id), UNIQUE(scope,job_id), FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table('owners')}(scope,aggregate_id),
-        FOREIGN KEY(scope,job_id) REFERENCES ${this.backend.prefix}mayura_scheduler_jobs(scope,job_id))`);
-      await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('wait_targets')} (
-        scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, node_id TEXT NOT NULL, ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 31),
-        run_id TEXT NOT NULL, definition_hash TEXT NOT NULL, policy_hash TEXT NOT NULL,
-        PRIMARY KEY(scope,aggregate_id,node_id,ordinal), UNIQUE(scope,aggregate_id,node_id,run_id),
-        FOREIGN KEY(scope,aggregate_id) REFERENCES ${this.table('owners')}(scope,aggregate_id))`);
-    }); this.initialized = true;
+    await this.persistence.initialize(); this.initialized = true;
   }
   /** Discovery provisions its index only when explicitly requested, never as an unindexed fallback. */
   private async initializeDiscovery(): Promise<void> {
     if (this.discoveryInitialized) return;
     await this.initialize();
-    await this.backend.transaction(async tx => {
-      await advisoryLock(tx, this.backend, `mayura:scheduled-schema:${this.backend.prefix}`);
-      await initializeWorkflowGraphDiscoveryIndex(tx,this.backend);
-    });
+    await this.persistence.initializeDiscovery();
     this.discoveryInitialized = true;
   }
   /**
@@ -538,17 +507,13 @@ export class ScheduledWorkflowDatabase {
     const command = input as unknown as WorkflowGraphDiscoveryScan;
     try {
       const afterId = command.cursor?.afterId ?? '';
-      const collation = binaryCollation(this.backend);
-      const rows = await this.backend.transaction(tx => tx.query<{ aggregate_id: string }>(
-        `SELECT aggregate_id FROM ${this.table('owners')} WHERE scope = ? AND policy_hash = ? AND profile = 2
-          AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,
-        [command.scope,command.policyHash,afterId,command.limit]));
+      const rows = await this.persistence.transaction(tx => tx.discoverRuns(command.scope,command.policyHash,afterId,command.limit));
       if (rows.length > command.limit) failed();
       const candidates: WorkflowGraphDiscoveryCandidate[] = [];
       let previous = afterId;
       for (const row of rows) {
-        const id = hash(row.aggregate_id); if (id <= previous) failed(); previous = id;
-        const candidate = await this.backend.transaction(async tx => {
+        const id = hash(row); if (id <= previous) failed(); previous = id;
+        const candidate = await this.persistence.transaction(async tx => {
           // Do not use SKIP LOCKED: a selected parent is either validated or fails this entire page.
           const run = await this.load(tx,command.scope,id,command.policyHash,false,2);
           if (!run) failed();
@@ -565,14 +530,14 @@ export class ScheduledWorkflowDatabase {
   /** Internal finite maintenance; validates the full enrolled source before publishing old terminal state. */
   async materializeCompletion(scope: string, reference: ExecutionRef): Promise<ExecutionCompletion | undefined> {
     if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize scheduled workflow storage first.');
-    return this.backend.transaction(async tx => {
+    return this.persistence.transaction(async tx => {
       const run = await this.load(tx,scope,reference.runId,reference.policyHash);
       if (!run) throw new StorageError('NOT_FOUND','Workflow was not found in this scope.');
       if (run.row.definition_hash !== reference.definitionHash) conflict();
-      return checkCompletion(tx,this.backend,run.row,reference.policyHash,run.state.status,true);
+      return checkCompletion(tx,run.row,reference.policyHash,run.state.status,true);
     });
   }
-  private async enroll(tx: SchedulerSession,row: AggregateRow,input: JsonObject,now: number): Promise<LockedRun> {
+  private async enroll(tx: Session,row: AggregateRow,input: JsonObject,now: number): Promise<LockedRun> {
     const manifest = input['manifest'] as unknown as Manifest; const policy = input['policy'] as unknown as WorkflowPolicyManifest;
     const resources = input['resources'] as unknown as WorkflowResourcePlan; const hashes = this.hashEnrollment(manifest,policy,resources);
     if (hashes.scope !== row.scope || hashes.definition !== row.definition_hash) conflict();
@@ -581,9 +546,9 @@ export class ScheduledWorkflowDatabase {
     const profile = graphManifest(manifest) ? 2 : 1;
     const owner: Owner = {format:profile,manifest,policy,resources,clockFloor:now,commands:[]}; const state = this.checkedState(row,owner);
     if (state.status !== 'running' || state.spentMicros !== 0 || state.reservedMicros !== 0 || state.output !== null || Object.values(state.steps).some(step => step.status !== 'pending' || step.receipt !== null || step.approval !== null || step.candidateHash !== null || step.costReserved !== 0 || step.output !== null)) conflict();
-    if ((await tx.query(`SELECT job_id FROM ${this.backend.prefix}mayura_scheduler_jobs WHERE scope = ? AND run_id = ? LIMIT 1`,[row.scope,row.id])).length) conflict();
+    if (await tx.runHasJobs(row.scope,row.id)) conflict();
     const ownerRow: OwnerRow = {scope:row.scope,aggregate_id:row.id,profile,aggregate_version:row.version,definition_hash:hashes.definition,policy_hash:hashes.policy,resource_hash:hashes.resources,data:JSON.stringify(object(owner))};
-    await tx.query(`INSERT INTO ${this.table('owners')} (scope,aggregate_id,profile,aggregate_version,definition_hash,policy_hash,resource_hash,data) VALUES (?,?,?,?,?,?,?,?)`,[row.scope,row.id,profile,row.version,hashes.definition,hashes.policy,hashes.resources,ownerRow.data]);
+    await tx.insertOwner(ownerRow);
     const waits = graphManifest(manifest) ? workflowGraphTargets(manifest,state.input) : {};
     return {row,owner,ownerRow,state,jobs:[],clock:{value:now},events:[],waits,facts:{},targetFacts:new Map()};
   }
@@ -600,10 +565,10 @@ export class ScheduledWorkflowDatabase {
       if (target.runId === id || target.policyHash !== hashes.policy) conflict();
       await this.materializeCompletion(hashes.scope,target);
     }
-    return this.backend.transaction(async tx => {
-      await lockRunIdentity(tx,this.backend,hashes.scope,id); await loadAggregate(tx,this.backend,hashes.scope,id);
-      const now = await storageClock(tx,this.backend);
-      const created = await createAggregate(tx,this.backend,createCommand({scope:hashes.scope,id,idempotencyKey:key,definitionHash:hashes.definition,state:jsonValue(state) as JsonObject,events:[{type:'run.created',data:{}}]}),now);
+    return this.persistence.transaction(async tx => {
+      await tx.lockRunIdentity(hashes.scope,id); await tx.aggregate(hashes.scope,id,false);
+      const now = await storageClock(tx);
+      const created = await tx.createAggregate(createCommand({scope:hashes.scope,id,idempotencyKey:key,definitionHash:hashes.definition,state:jsonValue(state) as JsonObject,events:[{type:'run.created',data:{}}]}),now);
       if (!created.created) {
         const run = await this.load(tx,hashes.scope,id,hashes.policy,false,profile); if (!run || run.ownerRow.resource_hash !== hashes.resources) conflict();
         return {snapshot:this.snapshot(run),created:false};
@@ -612,8 +577,7 @@ export class ScheduledWorkflowDatabase {
       for (const [nodeId,targets] of Object.entries(waits)) {
         for (const [ordinal,target] of targets.entries()) {
           await this.checkTargetIdentity(tx,hashes.scope,id,hashes.policy,target);
-          await tx.query(`INSERT INTO ${this.table('wait_targets')} (scope,aggregate_id,node_id,ordinal,run_id,definition_hash,policy_hash) VALUES (?,?,?,?,?,?,?)`,
-            [hashes.scope,id,nodeId,ordinal,target.runId,target.definitionHash,target.policyHash]);
+          await tx.insertWaitTarget({scope:hashes.scope,aggregate_id:id,node_id:nodeId,ordinal,run_id:target.runId,definition_hash:target.definitionHash,policy_hash:target.policyHash});
         }
         run.events.push({type:'workflow.wait_registered',data:{nodeId}});
       }
@@ -628,18 +592,18 @@ export class ScheduledWorkflowDatabase {
     if (!this.initialized) throw new StorageError('STORE_NOT_INITIALIZED','Initialize scheduled workflow storage before use.');
     if (method === 'submit') return this.submit(input,profile);
     if (method === 'claim') return this.claim(input,profile);
-    const result = await this.backend.transaction(async tx => {
+    const result = await this.persistence.transaction(async tx => {
       const scope = input['scope'] as string; const id = input['id'] as string; const policyHash = input['policyHash'] as string;
       let run: LockedRun;
       if (method === 'attach') {
-        await lockRunIdentity(tx,this.backend,scope,id); const row = await loadAggregate(tx,this.backend,scope,id);
+        await tx.lockRunIdentity(scope,id); const row = await tx.aggregate(scope,id,false);
         if (!row) throw new StorageError('NOT_FOUND','Workflow was not found in this scope.');
-        const exists = (await tx.query(`SELECT aggregate_id FROM ${this.table('owners')} WHERE scope = ? AND aggregate_id = ?`,[scope,id])).length > 0;
+        const exists = await tx.ownedRun(scope,id);
         if (exists) { const previous = await this.load(tx,scope,id,policyHash,false,profile); if (!previous || !this.retry(previous,method,input)) conflict(); return this.snapshot(previous); }
         if (storedInteger(row.version) !== input['expectedVersion']) conflict();
         const hashes = this.hashEnrollment(input['manifest'] as unknown as WorkflowManifest,input['policy'] as unknown as WorkflowPolicyManifest,input['resources'] as unknown as WorkflowResourcePlan);
         if (hashes.policy !== policyHash) conflict();
-        run = await this.enroll(tx,row,input,await storageClock(tx,this.backend));
+        run = await this.enroll(tx,row,input,await storageClock(tx));
         await this.save(tx,run,method,input,{type:'workflow.enrolled',data:{profile:'scheduled-v1'}}); return this.snapshot(run);
       }
       run = (await this.load(tx,scope,id,policyHash,false,profile))!;
@@ -692,7 +656,7 @@ export class ScheduledWorkflowDatabase {
             const jobId = digest('mayura:workflow-job:v1',{scope,id,nodeId:node.id});
             const job = (await this.local(tx,run).execute('reserve',{scope,jobId,reservationKey:jobId,runId:id,nodeId:node.id,invocationId:`${id}/${step.callId}`,definitionHash:run.ownerRow.definition_hash,candidateHash:candidate,
               intent:{toolId:node.tool,callId:`${id}/${step.callId}`,policyHash},resourceKeys:run.owner.resources[node.id]!,delayMs:0}) as {job:JobRecord}).job;
-            await tx.query(`INSERT INTO ${this.table('jobs')} (scope,aggregate_id,node_id,job_id) VALUES (?,?,?,?)`,[scope,id,node.id,jobId]);
+            await tx.insertLink(scope,id,node.id,jobId);
             step.candidateHash = candidate; step.costReserved = node.costMicros; run.state.reservedMicros = nextCounter(run.state.reservedMicros,node.costMicros);
             this.replaceJob(run,job);
           }
@@ -789,12 +753,12 @@ export class ScheduledWorkflowDatabase {
   }
   private async claim(input: JsonObject, profile: 1 | 2): Promise<unknown> {
     const scope = input['scope'] as string; const id = input['id'] as string; const policy = input['policyHash'] as string;
-    const hints = await this.backend.transaction(async tx => { const run = await this.load(tx,scope,id,policy,false,profile); return run?.jobs.filter(job => job.state === 'ready').map(job => job.jobId) ?? []; });
+    const hints = await this.persistence.transaction(async tx => { const run = await this.load(tx,scope,id,policy,false,profile); return run?.jobs.filter(job => job.state === 'ready').map(job => job.jobId) ?? []; });
     const results: {job:JobRecord;claim:Claim}[] = [];
     for (const jobId of hints) {
       if (results.length >= (input['limit'] as number)) break;
       try {
-        const result = await this.backend.transaction(async tx => {
+        const result = await this.persistence.transaction(async tx => {
           // This is an explicit run request, not a global queue scan: skipping its busy aggregate
           // can make every cooperating worker return while eligible work is still ready.
           const run = await this.load(tx,scope,id,policy,false,profile); if (!run || terminalRuns.has(run.state.status) || run.state.status === 'paused') return undefined;
