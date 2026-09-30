@@ -1,8 +1,8 @@
 {
-  "name": "@mayurajs/storage-d1",
+  "name": "@mayurajs/voice-openai",
   "version": "1.0.0",
   "private": true,
-  "description": "Mayura storage on Cloudflare D1, as optimistic transactions over a Worker's D1 binding.",
+  "description": "OpenAI speech-to-text and text-to-speech for Mayura's voice registry, through the official OpenAI SDK.",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "src/**/*.ts", "README.md"],
@@ -11,5 +11,6 @@
   },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
   "peerDependencies": { "mayura": "workspace:^" },
+  "dependencies": { "openai": "7.23.0" },
   "devDependencies": { "mayura": "workspace:*" }
 }

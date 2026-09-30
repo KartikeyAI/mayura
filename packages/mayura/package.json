@@ -169,6 +169,10 @@
       "types": "./dist/tools__host.d.ts",
       "import": "./dist/tools__host.js"
     },
+    "./voice": {
+      "types": "./dist/voice.d.ts",
+      "import": "./dist/voice.js"
+    },
     "./workflows": {
       "types": "./dist/workflows.d.ts",
       "import": "./dist/workflows.js"
@@ -259,6 +263,7 @@
     "@mayura/terminal": "workspace:*",
     "@mayura/testing": "workspace:*",
     "@mayura/tools": "workspace:*",
+    "@mayura/voice": "workspace:*",
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*"
   }

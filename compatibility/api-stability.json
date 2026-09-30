@@ -39,6 +39,7 @@
     "@mayura/terminal",
     "@mayura/testing",
     "@mayura/tools",
+    "@mayura/voice",
     "@mayura/workflows",
     "@mayura/workflows/agents",
     "@mayura/workflows/children",
@@ -73,7 +74,8 @@
     "@mayurajs/storage-dynamodb",
     "@mayurajs/storage-libsql",
     "@mayurajs/storage-mongodb",
-    "@mayurajs/storage-mysql"
+    "@mayurajs/storage-mysql",
+    "@mayurajs/voice-openai"
   ],
   "internalPackages": [
     "@mayura/consumer-tests",

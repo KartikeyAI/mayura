@@ -5702,6 +5702,10 @@
         "kind": "const",
         "declaration": "5b9b3ba6a9ae6b00"
       },
+      "conformanceWav": {
+        "kind": "function",
+        "declaration": "3f2ce0f0e8816907"
+      },
       "expectedCostMicros": {
         "kind": "function",
         "declaration": "056c167691e8fdfb"
@@ -5757,6 +5761,26 @@
       "toolGrants": {
         "kind": "function",
         "declaration": "13720981742fc5a0"
+      },
+      "voiceAdapterConformance": {
+        "kind": "const",
+        "declaration": "9ff97fa10c049998"
+      },
+      "VoiceAdapterHarness": {
+        "kind": "interface",
+        "declaration": "77baf36ceac6e8c1"
+      },
+      "VoiceConformanceCase": {
+        "kind": "interface",
+        "declaration": "f38efcf5a0b78e20"
+      },
+      "VoiceScenario": {
+        "kind": "type",
+        "declaration": "ef823d5c63b7ec32"
+      },
+      "VoiceScenarioKind": {
+        "kind": "type",
+        "declaration": "09a588eb04db675f"
       }
     },
     "@mayura/tools": {
@@ -5889,6 +5913,172 @@
       "ToolBudgetTicketContext": {
         "kind": "interface",
         "declaration": "cce94f0e23dc6cfb"
+      }
+    },
+    "@mayura/voice": {
+      "Audio": {
+        "kind": "interface",
+        "declaration": "faf3c9f0118bb515"
+      },
+      "audioFromBase64": {
+        "kind": "function",
+        "declaration": "6bf74405f894bf42"
+      },
+      "audioToBase64": {
+        "kind": "function",
+        "declaration": "d27dea3b56850f8e"
+      },
+      "CatalogSpeaker": {
+        "kind": "interface",
+        "declaration": "a2d3324ac7db05e4"
+      },
+      "CatalogTranscriber": {
+        "kind": "interface",
+        "declaration": "d0820ef0b97d8ac1"
+      },
+      "characterCount": {
+        "kind": "function",
+        "declaration": "503850d5ab534447"
+      },
+      "createVoices": {
+        "kind": "function",
+        "declaration": "492104625c58636f"
+      },
+      "RegisteredVoice": {
+        "kind": "interface",
+        "declaration": "bd69778f480fd16a"
+      },
+      "Speaker": {
+        "kind": "interface",
+        "declaration": "a86a2898f01b2323"
+      },
+      "SpeakerSettings": {
+        "kind": "interface",
+        "declaration": "1047608f8adc5840"
+      },
+      "Speech": {
+        "kind": "interface",
+        "declaration": "8a4980bafd118a1b"
+      },
+      "speechCostMicros": {
+        "kind": "function",
+        "declaration": "707348104b036001"
+      },
+      "SpeechFormat": {
+        "kind": "type",
+        "declaration": "804fff8602300e18"
+      },
+      "SpeechPricing": {
+        "kind": "interface",
+        "declaration": "599322623033c210"
+      },
+      "SpeechRequest": {
+        "kind": "interface",
+        "declaration": "d66db5c1f23ead7a"
+      },
+      "speechTool": {
+        "kind": "function",
+        "declaration": "54ecf8f521bab432"
+      },
+      "SpeechToolOptions": {
+        "kind": "interface",
+        "declaration": "6ecb5589fe6a4ca2"
+      },
+      "Transcriber": {
+        "kind": "interface",
+        "declaration": "f783b1d3e8ccfa22"
+      },
+      "TranscriberSettings": {
+        "kind": "interface",
+        "declaration": "b443d0eea6c6a5bd"
+      },
+      "Transcript": {
+        "kind": "interface",
+        "declaration": "f9b3417a08a84bff"
+      },
+      "transcriptionCostMicros": {
+        "kind": "function",
+        "declaration": "4d038653f1077db8"
+      },
+      "TranscriptionPricing": {
+        "kind": "interface",
+        "declaration": "59624e7b97d86c0e"
+      },
+      "TranscriptionRequest": {
+        "kind": "interface",
+        "declaration": "5b53406c63ae29b2"
+      },
+      "transcriptionTool": {
+        "kind": "function",
+        "declaration": "014afc72096e851f"
+      },
+      "TranscriptionToolOptions": {
+        "kind": "interface",
+        "declaration": "e852f9b4b7db46bb"
+      },
+      "TranscriptSegment": {
+        "kind": "interface",
+        "declaration": "287844fdfad82025"
+      },
+      "voiceAudio": {
+        "kind": "function",
+        "declaration": "2dc777215816e176"
+      },
+      "voiceCall": {
+        "kind": "function",
+        "declaration": "989c7c9de7701db3"
+      },
+      "VoiceCall": {
+        "kind": "interface",
+        "declaration": "ad01ba99c0ae7ccc"
+      },
+      "VoiceCatalog": {
+        "kind": "interface",
+        "declaration": "757f78ebe9941d8b"
+      },
+      "voiceFailureMessage": {
+        "kind": "function",
+        "declaration": "c712db429d0bf957"
+      },
+      "voiceHttpFailure": {
+        "kind": "function",
+        "declaration": "8b8344180e9aa842"
+      },
+      "voiceJson": {
+        "kind": "function",
+        "declaration": "bb18b25820362e95"
+      },
+      "VoiceModelOptions": {
+        "kind": "interface",
+        "declaration": "9edcbf2859752524"
+      },
+      "VoiceProvider": {
+        "kind": "interface",
+        "declaration": "8aa09310cd07b6da"
+      },
+      "VoiceProviderError": {
+        "kind": "class",
+        "declaration": "4add74081cfcccc6"
+      },
+      "VoiceRegistry": {
+        "kind": "interface",
+        "declaration": "673a660783269196"
+      },
+      "voiceResponseFailure": {
+        "kind": "function",
+        "declaration": "a21caa1b51a66696"
+      },
+      "VoicesOptions": {
+        "kind": "interface",
+        "declaration": "c13e74d63c17873c"
+      },
+      "VoiceUsage": {
+        "kind": "interface",
+        "declaration": "400aa37dba95e422"
+      },
+      "wavDurationMs": {
+        "kind": "function",
+        "declaration": "6fe66961eb39323d"
       }
     },
     "@mayura/workflows": {
@@ -7587,6 +7777,20 @@
       "MysqlStoreOptions": {
         "kind": "interface",
         "declaration": "5238cca3c0083103"
+      }
+    },
+    "@mayurajs/voice-openai": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      },
+      "openaiVoice": {
+        "kind": "function",
+        "declaration": "4cdd7e8dab970fbb"
+      },
+      "OpenAIVoiceOptions": {
+        "kind": "interface",
+        "declaration": "c72ce020ea599153"
       }
     }
   }

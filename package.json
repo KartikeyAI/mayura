@@ -83,6 +83,7 @@
     "@mayurajs/storage-dynamodb": "workspace:*",
     "@mayurajs/storage-mongodb": "workspace:*",
     "@mayurajs/storage-mysql": "workspace:*",
+    "@mayurajs/voice-openai": "workspace:*",
     "@opentelemetry/api": "1.9.1",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",
@@ -99,6 +100,7 @@
     "typescript": "7.0.2",
     "vite": "8.3.0",
     "vitest": "5.0.1",
+    "miniflare": "4.20260730.0",
     "workerd": "1.20260927.1",
     "zod": "4.6.5"
   }

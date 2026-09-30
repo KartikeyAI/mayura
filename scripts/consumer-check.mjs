@@ -12,7 +12,7 @@ import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const packageNames = ['core', 'tools', 'runtime', 'testing', 'sdk'];
+const packageNames = ['core', 'tools', 'runtime', 'voice', 'testing', 'sdk'];
 
 function inside(parent, child) {
   const path = relative(parent, child);

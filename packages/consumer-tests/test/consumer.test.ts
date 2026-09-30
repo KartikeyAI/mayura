@@ -13,7 +13,7 @@ describe('packed developer installation', () => {
     // A caller's unrelated working directory must not change package or artifact resolution.
     const { stdout } = await exec(process.execPath, [script], { cwd: tmpdir(), timeout: 55_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     const report: unknown = JSON.parse(stdout);
-    expect(report).toMatchObject({ status: 'passed', installedPackageCount: 6 });
+    expect(report).toMatchObject({ status: 'passed', installedPackageCount: 7 });
     expect(report).toHaveProperty('checks', expect.arrayContaining(['strict-public-types', 'esm-agent-execution', 'no-native-or-provider-dependencies', 'declaration-map-targets', 'debugger-map-source-integrity', 'node-source-mapped-stack']));
   }, 60_000);
 

@@ -36,6 +36,7 @@ Rules that matter when writing Mayura code:
 - [Model routing](docs/guides/model-routing.md): Fail over between model providers with createModelRouter: priority order, a circuit breaker and conservative cost accounting.
 - [Streaming](docs/guides/streaming.md): Stream one text field of an agent's answer as the model writes it, with guards on every batch and the final output still checked.
 - [Vision: images and PDFs](docs/guides/vision.md): Agents that see: send images and PDFs with an agent's input, return screenshots from tools, and keep media checked, limited and out of logs.
+- [Voice](docs/guides/voice.md): Transcribe speech and speak text through voice providers, with explicit prices, a per-call cost bound and voice:<id> permissions.
 - [Child agents](docs/guides/child-agents.md): Let one agent call another as a tool, spawn child runs from your code, or race speculative branches, under one shared budget.
 - [Skills](docs/guides/skills.md): Give an agent SKILL.md folders of task instructions that it loads only when a task needs them.
 - [MCP tools](docs/guides/mcp.md): Wrap one operation of a Model Context Protocol server as a Mayura tool, with the effects, permissions and cost you declare.

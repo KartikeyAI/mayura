@@ -98,3 +98,4 @@ export async function testTool<T extends AnyTool>(tool: T, input: unknown, optio
   return { outcome, spentMicros: Number(snapshot.spentMicros), reservedMicros: snapshot.reservedMicros, receipt: outcome.receipt ?? receipt };
 }
 export { conformanceTools, expectedCostMicros, modelAdapterConformance, type ConformanceModelSettings, type ModelAdapterHarness, type ModelConformanceCase, type ModelConformanceKind, type ModelScenario, type ModelScenarioKind } from './model-conformance.js';
+export { conformanceWav, voiceAdapterConformance, type VoiceAdapterHarness, type VoiceConformanceCase, type VoiceScenario, type VoiceScenarioKind } from './voice-conformance.js';
