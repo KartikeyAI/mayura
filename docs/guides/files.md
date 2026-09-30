@@ -121,6 +121,7 @@ Provider packages give `createFileStore` a backend for other services:
 | built in: `s3Files` | S3 and S3-compatible services: Cloudflare R2, Backblaze B2, MinIO, RustFS and others | writes; deletes with `conditionalDelete` where the service honours them |
 | `@mayurajs/filestorage-gcs` | Google Cloud Storage, over its JSON API with an OAuth `token` source. A file's etag is its generation. | writes and deletes |
 | `@mayurajs/filestorage-azure-blob` | Azure Blob Storage, over its REST API with an account key (Shared Key), a Microsoft Entra ID `token` source or a SAS. | writes and deletes |
+| `@mayurajs/filestorage-r2` | Cloudflare R2 through a Workers binding (`env.FILES`): no keys or endpoints. Outside Workers, use `s3Files`. | writes (the binding cannot delete conditionally) |
 
 ```ts
 import { createFileStore } from 'mayura/files';

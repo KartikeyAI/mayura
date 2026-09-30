@@ -73,6 +73,7 @@
     "@smithy/signature-v4": "5.7.4",
     "@mayurajs/filestorage-azure-blob": "workspace:*",
     "@mayurajs/filestorage-gcs": "workspace:*",
+    "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",

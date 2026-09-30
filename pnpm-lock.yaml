@@ -89,6 +89,9 @@ importers:
       '@mayurajs/filestorage-gcs':
         specifier: workspace:*
         version: link:extensions/filestorage-gcs
+      '@mayurajs/filestorage-r2':
+        specifier: workspace:*
+        version: link:extensions/filestorage-r2
       '@mayurajs/provider-anthropic':
         specifier: workspace:*
         version: link:extensions/provider-anthropic
@@ -220,6 +223,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/filestorage-gcs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/filestorage-r2:
     devDependencies:
       mayura:
         specifier: workspace:*

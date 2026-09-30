@@ -7817,6 +7817,28 @@
         "declaration": "15d08b9f8241584b"
       }
     },
+    "@mayurajs/filestorage-r2": {
+      "R2BucketLike": {
+        "kind": "interface",
+        "declaration": "5d0eb8aacff6bb2c"
+      },
+      "r2Files": {
+        "kind": "function",
+        "declaration": "565c1d4e211229f6"
+      },
+      "R2FilesOptions": {
+        "kind": "interface",
+        "declaration": "d737faaed479fbee"
+      },
+      "R2ObjectBodyLike": {
+        "kind": "interface",
+        "declaration": "357f903a5f79ab40"
+      },
+      "R2ObjectLike": {
+        "kind": "interface",
+        "declaration": "710cf77228f62f23"
+      }
+    },
     "@mayurajs/provider-anthropic": {
       "anthropic": {
         "kind": "function",
