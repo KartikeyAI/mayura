@@ -420,6 +420,9 @@ importers:
       '@mayura/core':
         specifier: workspace:*
         version: link:../core
+      '@mayura/files':
+        specifier: workspace:*
+        version: link:../files
 
   packages/cli:
     dependencies:

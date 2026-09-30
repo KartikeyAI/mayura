@@ -152,6 +152,18 @@
         "kind": "interface",
         "declaration": "d7884761f5c3d65c"
       },
+      "ArtifactStore": {
+        "kind": "type",
+        "declaration": "b26f09e4576f58e7"
+      },
+      "ArtifactStoreOptions": {
+        "kind": "interface",
+        "declaration": "313d7919ff6cfad4"
+      },
+      "createArtifactStore": {
+        "kind": "function",
+        "declaration": "97d052f61f82236b"
+      },
       "createLocalArtifactStore": {
         "kind": "function",
         "declaration": "a425bb0e35c6eb45"
@@ -167,6 +179,104 @@
       "mediaFromArtifact": {
         "kind": "function",
         "declaration": "da317e7dbe60b4f4"
+      },
+      "PlanArtifactReconciliationOptions": {
+        "kind": "interface",
+        "declaration": "ac457c47c6793b16"
+      },
+      "StageArtifactInput": {
+        "kind": "interface",
+        "declaration": "b42156449a7e2500"
+      },
+      "StagedArtifact": {
+        "kind": "interface",
+        "declaration": "c716ab2fdffe02ec"
+      },
+      "StagingReconciliationOptions": {
+        "kind": "interface",
+        "declaration": "a02fc65c19bb8d6e"
+      },
+      "StagingReconciliationResult": {
+        "kind": "interface",
+        "declaration": "cef1904c59688076"
+      }
+    },
+    "@mayura/artifacts/files": {
+      "ArtifactAuditObservation": {
+        "kind": "interface",
+        "declaration": "bb14ec5a9722abdd"
+      },
+      "ArtifactAuditOptions": {
+        "kind": "interface",
+        "declaration": "d78bd6d4b412fe9f"
+      },
+      "ArtifactAuditResult": {
+        "kind": "interface",
+        "declaration": "93f515b8dc3673a2"
+      },
+      "ArtifactAuditStatus": {
+        "kind": "type",
+        "declaration": "a548d30b06dabd0e"
+      },
+      "ArtifactBackupOptions": {
+        "kind": "interface",
+        "declaration": "eb7040d4e6770121"
+      },
+      "ArtifactClassification": {
+        "kind": "type",
+        "declaration": "9f85ba2506d8d933"
+      },
+      "ArtifactDisclosure": {
+        "kind": "interface",
+        "declaration": "3b9aa08809a9283b"
+      },
+      "ArtifactDisclosurePolicy": {
+        "kind": "interface",
+        "declaration": "1167e7b885f3feb8"
+      },
+      "ArtifactReconciliationCandidate": {
+        "kind": "interface",
+        "declaration": "70bc15a087c57d0f"
+      },
+      "ArtifactReconciliationCursor": {
+        "kind": "interface",
+        "declaration": "d5bec87d8078c2ce"
+      },
+      "ArtifactReconciliationPlan": {
+        "kind": "interface",
+        "declaration": "91e57ee82b683939"
+      },
+      "ArtifactReconciliationResult": {
+        "kind": "interface",
+        "declaration": "cd92b5c0d21c3f4b"
+      },
+      "ArtifactReference": {
+        "kind": "interface",
+        "declaration": "6d376dfef1da8cff"
+      },
+      "ArtifactRestoreOptions": {
+        "kind": "interface",
+        "declaration": "74d12af80f511d71"
+      },
+      "ArtifactRestoreResult": {
+        "kind": "interface",
+        "declaration": "db43d86ffce3defb"
+      },
+      "ArtifactScope": {
+        "kind": "interface",
+        "declaration": "d7884761f5c3d65c"
+      },
+      "ArtifactStore": {
+        "kind": "type",
+        "declaration": "b26f09e4576f58e7"
+      },
+      "ArtifactStoreOptions": {
+        "kind": "interface",
+        "declaration": "313d7919ff6cfad4"
+      },
+      "createArtifactStore": {
+        "kind": "function",
+        "declaration": "97d052f61f82236b"
       },
       "PlanArtifactReconciliationOptions": {
         "kind": "interface",

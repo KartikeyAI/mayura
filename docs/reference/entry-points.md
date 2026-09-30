@@ -63,7 +63,8 @@ validator works too.
 | `mayura/memory` | Scoped long-term memory with provenance, correction and deletion. | `createMemoryStore`, `createNativeMemory`, `hashingEmbedder` | a storage adapter |
 | `mayura/memory-remote` | Mem0, Supermemory and OpenViking as search indexes over native memory. | `createRemoteMemoryBridge`, `mem0Memory`, `supermemory`, `openViking` | |
 | `mayura/context` | Selecting context for a model call within a size budget. | `assembleContext`, `byteTokenEstimator`, `createContextCache` | |
-| `mayura/artifacts` | Local content-addressed storage for files and reports. | `createLocalArtifactStore` | |
+| `mayura/artifacts` | Content-addressed storage for files and reports, on local disk or in a file store. | `createLocalArtifactStore`, `createArtifactStore` | |
+| `mayura/artifacts/files` | Artifacts in a file store only, without the local store: runs on edge runtimes. | `createArtifactStore` | a file store |
 | `mayura/files` | Files in S3, R2 and other object stores, with versions, tenant views and file tools. | `createFileStore`, `s3Files`, `memoryFiles`, `fileTools` | a file backend |
 | `mayura/voice` | Speech-to-text and text-to-speech with prices and per-call bounds. | `createVoices`, `transcriptionTool`, `speechTool` | a voice provider package |
 | `mayura/adapter-mcp` | Using a tool from an MCP server as a Mayura tool. | `defineMcpTool` | |

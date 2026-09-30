@@ -29,6 +29,10 @@
       "types": "./dist/artifacts.d.ts",
       "import": "./dist/artifacts.js"
     },
+    "./artifacts/files": {
+      "types": "./dist/artifacts__files.d.ts",
+      "import": "./dist/artifacts__files.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"

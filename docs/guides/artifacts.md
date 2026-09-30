@@ -1,10 +1,10 @@
 ---
 title: "Artifacts"
-description: "Store files your agents produce on local disk with verified content, per-tenant isolation, safe downloads, audits and backups."
+description: "Store files your agents produce on local disk or in S3, R2 and other file stores, with verified content, per-tenant isolation, safe downloads, audits and backups."
 ---
 
 Agents and workflows often produce files: a generated report, an exported CSV, an image. `mayura/artifacts` stores
-such files on the local filesystem. Each file is addressed by its SHA-256 digest, kept apart per tenant, checked again
+such files on the local filesystem, or in any [file store](files.md) such as S3 or Cloudflare R2. Each file is addressed by its SHA-256 digest, kept apart per tenant, checked again
 every time it is read, and handed out only as a download under a policy you choose. You get back a small JSON
 reference, which you save next to your own records.
 
@@ -29,6 +29,31 @@ const reference = await artifacts.commit(staged);
 
 const bytes = await artifacts.read(reference, scope);
 ```
+
+## In S3, R2 and other file stores
+
+`createArtifactStore` keeps artifacts in a [file store](files.md) instead of on local disk, with the same methods, the
+same references and the same checks. It runs wherever the file store does, edge runtimes included, and is also
+available as `mayura/artifacts/files`, which does not load the local store.
+
+```ts
+import { createArtifactStore } from 'mayura/artifacts/files';
+import { createFileStore, s3Files } from 'mayura/files';
+
+const files = createFileStore(s3Files({
+  bucket: 'acme-artifacts',
+  region: 'us-east-1',
+  credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '', secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '' },
+}), { maxFileBytes: 64 * 1024 * 1024 });
+
+const artifacts = createArtifactStore({ files: files.within('artifacts'), maxArtifactBytes: 10 * 1024 * 1024 });
+```
+
+Give it a view of its own: it writes `staging/` and `objects/` under the view and reports anything else there as an
+anomaly. The file store must keep preconditions (`conditionalWrites`), which commits and restores use to create each
+object only once. References are the same in both stores, so a backup from one restores into the other. Reconciliation
+uses each file's `etag` to skip files changed after planning; staging cleanup needs a store that reports when files
+were written. Limits on staged and committed artifacts are checked by each process, not across processes.
 
 ## Store options
 
@@ -108,8 +133,8 @@ records that point at them.
 
 - Holding a reference is not permission to read the file. Authenticate the caller, derive the scope from their
   verified identity, and check they may see the record the artifact belongs to.
-- The store is local to one host. It is not a shared network filesystem or an object store, and it does not scan for
-  malware, encrypt files or schedule backups.
+- The local store is local to one host; use `createArtifactStore` over a file store to share artifacts between hosts.
+  Neither store scans for malware, encrypts files or schedules backups.
 - Your database and the artifact folder are not updated in one transaction. Keep references in your records, and use
   `reconcileStaging` and the reconciliation plan to clean up after crashes.
 - To download from a remote source into any staging sink with a size limit and digest check, see `transferArtifact` in
