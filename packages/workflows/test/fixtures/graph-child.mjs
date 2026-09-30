@@ -21,11 +21,12 @@ try {
   const options = config.backend;
   if (options.kind === 'sqlite' && !options.filename.includes('mayura-graph-workflows-')) throw new Error();
   if (options.kind === 'postgres' && !/^mayura_graph_workflow_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
-  if (!['sqlite', 'postgres'].includes(options.kind)) throw new Error();
+  if (!['sqlite', 'postgres', 'mysql'].includes(options.kind)) throw new Error();
   const registering = config.phase.startsWith('registration');
   if (config.phase.endsWith('after')) {
     stage = 'public-initialize';
     const store = options.kind === 'sqlite' ? createSqliteStore({ filename: options.filename })
+      : options.kind === 'mysql' ? (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlStore({ uri: options.uri })
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     await store.initialize(); await store.workflowGraphs.initialize();
     stage = 'public-command';
@@ -59,6 +60,13 @@ try {
           database.exec('COMMIT'); return result;
         } catch (error) { database.exec('ROLLBACK'); throw error; }
       } };
+    } else if (options.kind === 'mysql') {
+      let changedParent = false;
+      const base = (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlBackend({ uri: options.uri }, {
+        intercept: async (sql, parameters, run) => { const rows = await run(); changedParent ||= relevant(sql, parameters); return rows; },
+        // Full parent/index/events reducer ran; all SQL remains uncommitted at this barrier.
+        beforeCommit: async () => { if (changedParent) await checkpoint(); } });
+      backend = { ...base, transaction: body => { changedParent = false; return base.transaction(body); } };
     } else {
       const require = createRequire(import.meta.resolve('@mayura/storage-postgres'));
       const { Pool } = require('pg'); const pool = new Pool({ connectionString: options.connectionString, max: 1 });

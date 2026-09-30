@@ -300,8 +300,9 @@ export function durableBudgetConformance(name: string, factory: () => Promise<Du
       expect(error).toMatchObject({ code: 'STORAGE_UNAVAILABLE' }); expect(String(error)).not.toContain('SECRET');
     });
 
-    it('allows an unrelated PostgreSQL root to progress while another root row is locked', async () => {
-      if (fixture.childOptions.adapter !== 'postgres') return; // SQLite deliberately serializes writers database-wide.
+    it('allows an unrelated root to progress while another root row is locked, where rows are locked', async () => {
+      // SQLite and libSQL deliberately serialize writers database-wide; PostgreSQL and MySQL lock rows.
+      if (!['postgres', 'mysql'].includes(fixture.childOptions.adapter)) return;
       await create(); const otherKey = { ...key, id: 'unrelated-root' }; await api.create({ ...otherKey, maxCostMicros: 10, maxCalls: 10 });
       const second = (await reopen()).durableBudgets; const release = await fixture.lockRoot(key.scope, key.id);
       let settled = false; const blocked = api.reserveBundle({ ...key, accountId: 'root', bundleId: 'blocked', operations: [{ id: 'blocked', maxCostMicros: 1 }] }).finally(() => { settled = true; });

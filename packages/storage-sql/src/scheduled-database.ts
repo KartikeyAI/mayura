@@ -21,6 +21,7 @@ import { createCommand, identifier, nextCounter } from './validation.js';
 import { checkCompletion, initializeCompletions, readCompletion } from './execution-completions.js';
 import { initializeWorkflowGraphDiscoveryIndex } from './workflow-graph-discovery-index.js';
 import { sha256Hex } from '@mayura/core/host';
+import { advisoryLock, binaryCollation } from './dialect.js';
 
 interface Journal { id: string; digest: string; version: number; operation: string }
 interface Owner {
@@ -323,7 +324,9 @@ export class ScheduledWorkflowDatabase {
     const waitTable = `${this.backend.prefix}mayura_execution_wait_targets`;
     const present = this.backend.dialect === 'postgres'
       ? (await tx.query<{ found: string | null }>('SELECT to_regclass(?)::text AS found',[waitTable]))[0]?.found
-      : (await tx.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",[waitTable]))[0]?.name;
+      : this.backend.dialect === 'mysql'
+        ? (await tx.query<{ name: string }>('SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',[waitTable]))[0]?.name
+        : (await tx.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",[waitTable]))[0]?.name;
     if (present && (await tx.query(`SELECT run_id FROM ${waitTable} WHERE scope = ? AND run_id = ? LIMIT 1`,[run.row.scope,run.row.id])).length) refuse('an execution wait targets this run.');
     const manifest = input['manifest'] as unknown as Manifest; const resources = input['resources'] as unknown as WorkflowResourcePlan;
     if (graphManifest(manifest) !== graphManifest(run.owner.manifest)) refuse('the workflow format cannot change.');
@@ -501,7 +504,7 @@ export class ScheduledWorkflowDatabase {
   private async initialize(): Promise<void> {
     if (this.initialized) return; await this.scheduler.execute('initialize',{});
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:scheduled-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx, this.backend, `mayura:scheduled-schema:${this.backend.prefix}`);
       await initializeOwnership(tx,this.backend);
       await initializeCompletions(tx,this.backend);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('jobs')} (scope TEXT NOT NULL, aggregate_id TEXT NOT NULL, node_id TEXT NOT NULL, job_id TEXT NOT NULL,
@@ -519,7 +522,7 @@ export class ScheduledWorkflowDatabase {
     if (this.discoveryInitialized) return;
     await this.initialize();
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:scheduled-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx, this.backend, `mayura:scheduled-schema:${this.backend.prefix}`);
       await initializeWorkflowGraphDiscoveryIndex(tx,this.backend);
     });
     this.discoveryInitialized = true;
@@ -535,7 +538,7 @@ export class ScheduledWorkflowDatabase {
     const command = input as unknown as WorkflowGraphDiscoveryScan;
     try {
       const afterId = command.cursor?.afterId ?? '';
-      const collation = this.backend.dialect === 'postgres' ? '"C"' : 'BINARY';
+      const collation = binaryCollation(this.backend);
       const rows = await this.backend.transaction(tx => tx.query<{ aggregate_id: string }>(
         `SELECT aggregate_id FROM ${this.table('owners')} WHERE scope = ? AND policy_hash = ? AND profile = 2
           AND aggregate_id COLLATE ${collation} > ? ORDER BY aggregate_id COLLATE ${collation} LIMIT ?`,

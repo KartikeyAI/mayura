@@ -75,9 +75,19 @@ jobs:
       libsql:
         image: ghcr.io/tursodatabase/libsql-server@sha256:f8ca0134cdded747793888e48591aece07647d9d598d3ac229aabfa93159ca88
         ports: [18080:8080]
+      # MySQL 8.4 for @mayurajs/storage-mysql's integration tests.
+      mysql:
+        image: mysql@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242
+        env:
+          MYSQL_ROOT_PASSWORD: mayura_ci_test_only
+        ports: [13306:3306]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pmayura_ci_test_only"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
       MAYURA_TEST_LIBSQL_URL: ws://127.0.0.1:18080
+      MAYURA_TEST_MYSQL_URL: mysql://root:mayura_ci_test_only@127.0.0.1:13306/mysql
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

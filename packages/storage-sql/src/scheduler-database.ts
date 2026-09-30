@@ -4,11 +4,12 @@ import type { Claim, CompleteJobCommand, EvidenceDisposition, JobKey, JobRecord,
 import { canonical, evidenceSource, fields, hash, integer, object, reservation, schedulerCommand, schedulerDigest, settlement, type SchedulerMethod } from './scheduler-validation.js';
 import { identifier, nextCounter } from './validation.js';
 import { loadAggregate, lockRunIdentity, ownedRun, writerRequired } from './aggregate-session.js';
+import { advisoryLock, clockSql, insertIfAbsent, rowLock } from './dialect.js';
 
 /** Internal parameterized SQL seam; implementations own a real short transaction. */
 export interface SchedulerSession { query<T>(sql: string, parameters?: readonly unknown[]): Promise<readonly T[]> }
 export interface SchedulerBackend {
-  readonly dialect: 'sqlite' | 'postgres'; readonly prefix: string;
+  readonly dialect: 'sqlite' | 'postgres' | 'mysql'; readonly prefix: string;
   transaction<T>(body: (session: SchedulerSession) => Promise<T>): Promise<T>;
 }
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -133,11 +134,9 @@ export class SchedulerDatabase {
     return hint.run_id;
   }
   private table(name: string): string { return `${this.backend.prefix}mayura_scheduler_${name}`; }
-  private lock(skip = false): string { return this.backend.dialect === 'postgres' ? ` FOR UPDATE${skip ? ' SKIP LOCKED' : ''}` : ''; }
+  private lock(skip = false): string { return rowLock(this.backend, skip); }
   private async clock(tx: SchedulerSession, floor = 0): Promise<number> {
-    const sql = this.backend.dialect === 'postgres'
-      ? "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS now_ms"
-      : "SELECT CAST(strftime('%s','now') AS INTEGER) * 1000 + CAST(substr(strftime('%f','now'),4,3) AS INTEGER) AS now_ms";
+    const sql = clockSql(this.backend);
     const rows = await tx.query<{ now_ms: number | string }>(sql);
     const now = Number(rows[0]?.now_ms);
     if (!Number.isSafeInteger(now) || now < 0) failure();
@@ -161,7 +160,7 @@ export class SchedulerDatabase {
   private async append(tx: SchedulerSession, data: Data, type: string, now: number): Promise<void> {
     const job = data.job;
     if (this.integration) { this.integration.events.push({ type, data: { nodeId: job.nodeId, jobId: job.jobId, fence: job.fence, state: job.state } }); return; }
-    await tx.query(`INSERT INTO ${this.table('heads')} (scope, run_id, sequence) VALUES (?, ?, 0) ON CONFLICT DO NOTHING`, [job.scope, job.runId]);
+    await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('heads')} (scope, run_id, sequence) VALUES (?, ?, 0)`, [job.scope, job.runId], 'sequence');
     const rows = await tx.query<{ sequence: number | string }>(`SELECT sequence FROM ${this.table('heads')} WHERE scope = ? AND run_id = ?${this.lock()}`, [job.scope, job.runId]);
     const current = Number(rows[0]?.sequence); if (!Number.isSafeInteger(current) || current < 0) failure();
     const sequence = nextCounter(current, 1);
@@ -219,10 +218,10 @@ export class SchedulerDatabase {
   private async initialize(): Promise<void> {
     if (this.initialized) return;
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))', [`mayura:scheduler-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx, this.backend, `mayura:scheduler-schema:${this.backend.prefix}`);
       const t = (name: string) => this.table(name);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${t('meta')} (version INTEGER PRIMARY KEY CHECK(version = 1))`);
-      await tx.query(`INSERT INTO ${t('meta')} (version) VALUES (1) ON CONFLICT DO NOTHING`);
+      await insertIfAbsent(tx, this.backend, `INSERT INTO ${t('meta')} (version) VALUES (1)`, [], 'version');
       const versions = await tx.query<{ version: number }>(`SELECT version FROM ${t('meta')}`);
       if (versions.length !== 1 || versions[0]?.version !== 1) failure();
       await tx.query(`CREATE TABLE IF NOT EXISTS ${t('jobs')} (
@@ -347,9 +346,9 @@ export class SchedulerDatabase {
         leaseUntilMs: null, startedAtMs: null, leaseRevoked: false, cancelRequested: false, receipt: null, output: null,
       };
       const data: Data = { format: 1, job: j, reservation: input, lastClockMs: now, attempts: [], commands: [] };
-      const inserted = await tx.query<{ job_id: string }>(`INSERT INTO ${this.table('jobs')} (scope, job_id, reservation_key, invocation_id, run_id, digest, state, due_at, deadline_at, lease_until, revoked, version, data)
-        VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, NULL, 0, 1, ?) ON CONFLICT DO NOTHING RETURNING job_id`, [j.scope, j.jobId, input.reservationKey, j.invocationId, j.runId, digest, j.dueAtMs, j.deadlineAtMs, JSON.stringify(data)]);
-      if (inserted.length === 0) {
+      const inserted = await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('jobs')} (scope, job_id, reservation_key, invocation_id, run_id, digest, state, due_at, deadline_at, lease_until, revoked, version, data)
+        VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, NULL, 0, 1, ?)`, [j.scope, j.jobId, input.reservationKey, j.invocationId, j.runId, digest, j.dueAtMs, j.deadlineAtMs, JSON.stringify(data)], 'job_id');
+      if (!inserted) {
         const rows = await tx.query<Row>(`SELECT * FROM ${this.table('jobs')} WHERE scope = ? AND reservation_key = ?${this.lock()}`, [j.scope, input.reservationKey]);
         const existing = rows[0]; if (!existing || existing.digest !== digest) conflict();
         const current = await this.load(tx, { scope: j.scope, jobId: existing.job_id }, true);
@@ -393,8 +392,8 @@ export class SchedulerDatabase {
             WHERE wanted.scope = ? AND wanted.job_id = ? AND owner.job_id <> ? AND owner.state IN ('leased','started','outcome_unknown') LIMIT 1`, [j.scope, j.jobId, j.jobId]);
           if (owners.length > 0) return undefined;
           for (const resource of j.resourceKeys) {
-            const held = await tx.query<{ resource_key: string }>(`INSERT INTO ${this.table('resources')} (scope, resource_key, job_id, fence, disposition) VALUES (?, ?, ?, ?, 'held') ON CONFLICT DO NOTHING RETURNING resource_key`, [j.scope, resource, j.jobId, fence]);
-            if (held.length === 0) throw new ResourceBusy();
+            const held = await insertIfAbsent(tx, this.backend, `INSERT INTO ${this.table('resources')} (scope, resource_key, job_id, fence, disposition) VALUES (?, ?, ?, ?, 'held')`, [j.scope, resource, j.jobId, fence], 'resource_key');
+            if (!held) throw new ResourceBusy();
           }
           const claimedAt = await this.clock(tx, now);
           if (j.deadlineAtMs !== null && j.deadlineAtMs <= claimedAt) throw new ResourceBusy();

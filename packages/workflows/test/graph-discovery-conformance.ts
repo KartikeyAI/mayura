@@ -72,19 +72,22 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
 
     it.each(['wrong columns', 'wrong table', 'partial', 'descending', 'wrong collation', 'expression', 'unique'] as const)(
       'rejects a %s discovery index while preserving its native catalog identity and business data', async mismatch => {
+        // MySQL names an index within its table, and has no partial indexes or per-column collations.
+        if (fixture.dialect === 'mysql' && ['wrong table', 'partial', 'wrong collation'].includes(mismatch)) return;
         await submit(`index-collision-${mismatch.replaceAll(' ', '-')}`);
         const collation = fixture.dialect === 'postgres' ? '"C"' : 'BINARY';
         const incompatibleCollation = fixture.dialect === 'postgres' ? '"POSIX"' : 'NOCASE';
         let indexedTable = 'mayura_workflow_owners';
-        let keys = `scope,policy_hash,profile,aggregate_id COLLATE ${collation}`;
+        let keys = fixture.dialect === 'mysql' ? 'scope,policy_hash,profile,aggregate_id' : `scope,policy_hash,profile,aggregate_id COLLATE ${collation}`;
         if (mismatch === 'wrong columns') keys = 'scope';
         if (mismatch === 'wrong table') { indexedTable = 'mayura_aggregates'; keys = 'scope,id'; }
         if (mismatch === 'descending') keys += ' DESC';
         if (mismatch === 'wrong collation') keys = `scope,policy_hash,profile,aggregate_id COLLATE ${incompatibleCollation}`;
-        if (mismatch === 'expression') keys = 'scope,policy_hash,profile,lower(aggregate_id)';
+        if (mismatch === 'expression') keys = fixture.dialect === 'mysql' ? 'scope,policy_hash,profile,(lower(aggregate_id))' : 'scope,policy_hash,profile,lower(aggregate_id)';
         await fixture.query(`CREATE ${mismatch === 'unique' ? 'UNIQUE ' : ''}INDEX mayura_workflow_owners_discovery ON ${fixture.prefix}${indexedTable} (${keys})${mismatch === 'partial' ? ' WHERE profile = 2' : ''}`);
         const catalog = () => fixture.dialect === 'sqlite'
           ? fixture.query('SELECT type,name,tbl_name,rootpage,sql FROM sqlite_schema WHERE name = ?', ['mayura_workflow_owners_discovery'])
+          : fixture.dialect === 'mysql' ? fixture.query(`SELECT TABLE_NAME AS table_name, GROUP_CONCAT(CONCAT_WS(':', SEQ_IN_INDEX, COALESCE(COLUMN_NAME, EXPRESSION), NON_UNIQUE, COALESCE(COLLATION, '')) ORDER BY SEQ_IN_INDEX) AS definition FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ? GROUP BY TABLE_NAME`, ['mayura_workflow_owners_discovery'])
           : fixture.query(`SELECT c.oid::text AS oid,c.relkind,c.relname,i.indrelid::text AS table_oid,pg_get_indexdef(c.oid) AS definition
               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_index i ON i.indexrelid = c.oid
               WHERE n.nspname = ? AND c.relname = ?`, [fixture.childConfig.kind === 'postgres' ? fixture.childConfig.schema : '', 'mayura_workflow_owners_discovery']);
@@ -96,6 +99,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       });
 
     it('preserves a same-named table object instead of replacing it with an index', async () => {
+      if (fixture.dialect === 'mysql') return; // MySQL names an index within its table: a same-named table is no collision.
       await fixture.query(`CREATE TABLE ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value TEXT NOT NULL)`);
       await fixture.query(`INSERT INTO ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value) VALUES (?)`, ['retained-fixture-value']);
       const catalog = () => fixture.dialect === 'sqlite'
@@ -112,6 +116,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       const runs = [await submit(), await submit(), await submit()];
       const indexExists = async () => fixture.dialect === 'sqlite'
         ? fixture.query('SELECT name FROM sqlite_master WHERE type = ? AND name = ?', ['index', 'mayura_workflow_owners_discovery'])
+        : fixture.dialect === 'mysql' ? fixture.query(`SELECT TABLE_NAME AS table_name, GROUP_CONCAT(CONCAT_WS(':', SEQ_IN_INDEX, COALESCE(COLUMN_NAME, EXPRESSION), NON_UNIQUE, COALESCE(COLLATION, '')) ORDER BY SEQ_IN_INDEX) AS definition FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ? GROUP BY TABLE_NAME`, ['mayura_workflow_owners_discovery'])
         : fixture.query('SELECT indexname FROM pg_indexes WHERE schemaname = ? AND indexname = ?', [fixture.childConfig.kind === 'postgres' ? fixture.childConfig.schema : '', 'mayura_workflow_owners_discovery']);
       expect(await indexExists()).toEqual([]);
       const before = await fingerprint(); const first = await discover().scan();
@@ -213,7 +218,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
     });
 
     it('never acquires a target aggregate lock while validating a waiting parent candidate', async () => {
-      if (fixture.dialect !== 'postgres') return;
+      if (fixture.dialect === 'sqlite') return; // SQLite serializes all writers; PostgreSQL and MySQL lock rows.
       const source = await target(); const engine = runtime(); const wait = defineWorkflowGraph({ id: 'discovery.lock-order', version: '1', input: z.unknown(), output: z.unknown(), nodes: [{ kind: 'wait', id: 'wait', targets: { kind: 'literal', value: [source.reference] } }], result: result('wait') });
       const run = await engine.submit(wait, { input: null, idempotencyKey: 'locked-target' }); await engine.runUntilSettled(wait, run.id); const client = discover(); await client.scan();
       const release = await fixture.lockAggregate(scopeHash, source.run.id);
@@ -260,13 +265,20 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       // These are valid owned runs, not synthetic corrupt rows: all remain inspectable.
       for (let index = 0; index < 1_024; index++) await store.workflowGraphs.submit({ manifest, policy: { ...policy, policyVersion: `plan-policy-${index % 64}` }, resources: {}, input: null, idempotencyKey: `plan-filler-${index}` });
       const run = await submit('plan-selected'); await client.scan();
-      const collate = fixture.dialect === 'postgres' ? '"C"' : 'BINARY';
-      const sql = `SELECT aggregate_id FROM ${fixture.prefix}mayura_workflow_owners WHERE scope = ? AND policy_hash = ? AND profile = 2 AND aggregate_id COLLATE ${collate} > ? ORDER BY aggregate_id COLLATE ${collate} LIMIT ?`;
+      const collate = fixture.dialect === 'mysql' ? '' : ` COLLATE ${fixture.dialect === 'postgres' ? '"C"' : 'BINARY'}`;
+      const sql = `SELECT aggregate_id FROM ${fixture.prefix}mayura_workflow_owners WHERE scope = ? AND policy_hash = ? AND profile = 2 AND aggregate_id${collate} > ? ORDER BY aggregate_id${collate} LIMIT ?`;
       if (fixture.dialect === 'postgres') await fixture.query(`ANALYZE ${fixture.prefix}mayura_workflow_owners`);
+      else if (fixture.dialect === 'mysql') await fixture.query('ANALYZE TABLE mayura_workflow_owners');
       else await fixture.query('ANALYZE mayura_workflow_owners');
-      const plan = await fixture.query(`${fixture.dialect === 'postgres' ? 'EXPLAIN (FORMAT JSON)' : 'EXPLAIN QUERY PLAN'} ${sql}`, [scopeHash, policyHash, '', 16]);
+      const explain = fixture.dialect === 'postgres' ? 'EXPLAIN (FORMAT JSON)' : fixture.dialect === 'mysql' ? 'EXPLAIN FORMAT=JSON' : 'EXPLAIN QUERY PLAN';
+      const plan = await fixture.query(`${explain} ${sql}`, [scopeHash, policyHash, '', 16]);
       const serialized = JSON.stringify(plan); expect(serialized).toContain('mayura_workflow_owners_discovery');
       if (fixture.dialect === 'sqlite') { expect(serialized).toContain('SEARCH'); expect(serialized).not.toContain('USE TEMP B-TREE'); }
+      else if (fixture.dialect === 'mysql') {
+        const table = JSON.parse(String(plan[0]?.['EXPLAIN'])).query_block.ordering_operation.table;
+        expect(table).toMatchObject({ key: 'mayura_workflow_owners_discovery', access_type: 'range', used_key_parts: ['scope', 'policy_hash', 'profile', 'aggregate_id'] });
+        expect(JSON.parse(String(plan[0]?.['EXPLAIN'])).query_block.ordering_operation.using_filesort).toBe(false);
+      }
       else { expect(serialized).toMatch(/Index (Only )?Scan/); expect(serialized).not.toContain('Seq Scan'); }
       expect((await client.scan()).candidates.map(candidate => candidate.reference.runId)).toEqual([run.id]);
     }, 120_000);

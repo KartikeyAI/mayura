@@ -9,6 +9,7 @@ import {
 } from './durable-budget-state.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
 import { utf8ByteLength } from '@mayura/core/host';
+import { advisoryLock, updateReturning } from './dialect.js';
 
 interface RootRow {
   scope: string; id: string; policy_hash: string; format: number | string; mode: string; owner: string;
@@ -51,7 +52,7 @@ export class DurableBudgetDatabase {
   private async initialize(): Promise<void> {
     if (this.initialized) return;
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[`mayura:durable-budget-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx,this.backend,`mayura:durable-budget-schema:${this.backend.prefix}`);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table()} (
         scope TEXT NOT NULL,id TEXT NOT NULL,policy_hash TEXT NOT NULL,
         format INTEGER NOT NULL CHECK(format = 1),mode TEXT NOT NULL CHECK(mode = 'shared-ceiling-v1'),
@@ -66,9 +67,7 @@ export class DurableBudgetDatabase {
     this.initialized = true;
   }
   private async lockIdentity(tx: SchedulerSession, key: DurableBudgetKey): Promise<void> {
-    if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))',[
-      JSON.stringify(['mayura:durable-budget-root:v1',this.budgetProfile().owner,this.backend.prefix,key.scope,key.id]),
-    ]);
+    await advisoryLock(tx, this.backend, JSON.stringify(['mayura:durable-budget-root:v1',this.budgetProfile().owner,this.backend.prefix,key.scope,key.id]));
   }
   private event(row: EventRow, key: DurableBudgetKey): StoredEvent {
     try {
@@ -153,8 +152,8 @@ export class DurableBudgetDatabase {
         : reduceWorkflowTreeBudgetState(current.snapshot as WorkflowTreeBudgetSnapshot,method,command);
       if (result.changed) {
         if (!result.event || result.snapshot.version !== current.snapshot.version + 1 || result.snapshot.eventSequence !== current.snapshot.eventSequence + 1) failed();
-        const rows = await tx.query<RootRow>(`UPDATE ${this.table()} SET state = ?,version = ?,event_sequence = ? WHERE scope = ? AND id = ? RETURNING *`,
-          [canonical(result.snapshot),result.snapshot.version,result.snapshot.eventSequence,key.scope,key.id]);
+        const rows = await updateReturning<RootRow>(tx,this.backend,`UPDATE ${this.table()} SET state = ?,version = ?,event_sequence = ? WHERE scope = ? AND id = ?`,
+          [canonical(result.snapshot),result.snapshot.version,result.snapshot.eventSequence,key.scope,key.id],'*',`SELECT * FROM ${this.table()} WHERE scope = ? AND id = ?`,[key.scope,key.id]);
         if (rows.length !== 1) failed();
         await this.append(tx,result.snapshot,result.event,current.clockFloor);
       }

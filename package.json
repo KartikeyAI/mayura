@@ -79,6 +79,7 @@
     "@mayurajs/provider-ollama": "workspace:*",
     "@mayurajs/provider-openai": "workspace:*",
     "@mayurajs/storage-libsql": "workspace:*",
+    "@mayurajs/storage-mysql": "workspace:*",
     "@opentelemetry/api": "1.9.1",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",

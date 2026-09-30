@@ -5,6 +5,7 @@ import {
 import type { JsonObject } from '@mayura/core';
 import { lockSql, storedInteger } from './aggregate-session.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
+import { advisoryLock, updateReturning } from './dialect.js';
 
 interface RecordRow {
   id: string; version: number | string; status: string; sensitivity: string; body: string | null; valid_from: string | null; valid_until: string | null;
@@ -25,7 +26,7 @@ export class MemoryIndexDatabase {
   constructor(private readonly backend: SchedulerBackend) {}
   private t(name: string): string { return `${this.backend.prefix}mayura_memory_${name}`; }
   /** PostgreSQL index names are never schema-qualified; they live in their table's schema. */
-  private i(name: string): string { return `${this.backend.dialect === 'postgres' ? '' : this.backend.prefix}mayura_memory_${name}`; }
+  private i(name: string): string { return `${this.backend.dialect === 'sqlite' ? this.backend.prefix : ''}mayura_memory_${name}`; }
 
   async execute(method: MemoryIndexMethod, raw: unknown): Promise<unknown> {
     const command = memoryIndexCommand(method, raw) as Record<string, unknown>;
@@ -37,9 +38,9 @@ export class MemoryIndexDatabase {
 
   private async initialize(): Promise<void> {
     if (this.initialized) return;
-    const text = 'TEXT'; const big = this.backend.dialect === 'postgres' ? 'BIGINT' : 'INTEGER';
+    const text = 'TEXT'; const big = this.backend.dialect === 'sqlite' ? 'INTEGER' : 'BIGINT';
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))', [`mayura:memory-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx, this.backend, `mayura:memory-schema:${this.backend.prefix}`);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.t('records')} (
         scope ${text} NOT NULL, id ${text} NOT NULL, version ${big} NOT NULL, status ${text} NOT NULL CHECK(status IN ('active','superseded','deleted')),
         sensitivity ${text} NOT NULL, body ${text}, term_count INTEGER NOT NULL DEFAULT 0, valid_from ${text}, valid_until ${text},
@@ -69,7 +70,7 @@ export class MemoryIndexDatabase {
   }
 
   private async lockScope(tx: SchedulerSession, scope: string): Promise<void> {
-    if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))', [JSON.stringify(['mayura:memory-scope:v1', this.backend.prefix, scope])]);
+    await advisoryLock(tx, this.backend, JSON.stringify(['mayura:memory-scope:v1', this.backend.prefix, scope]));
   }
   private async change(tx: SchedulerSession, scope: string, kind: 'record' | 'edge', id: string, version: number, status: string): Promise<number> {
     const last = (await tx.query<{ sequence: number | string | null }>(`SELECT MAX(sequence) AS sequence FROM ${this.t('changes')} WHERE scope = ?`, [scope]))[0]?.sequence;
@@ -288,8 +289,9 @@ export class MemoryIndexDatabase {
       });
       case 'setCentroids': return this.backend.transaction(async tx => {
         await this.lockScope(tx, scope);
-        const updated = await tx.query<{ scope: string }>(`UPDATE ${this.t('indexes')} SET centroids = ?, trained_at = ? WHERE scope = ? AND embedder_id = ? AND dimensions = ? RETURNING scope`,
-          [JSON.stringify(command['centroids']), command['trainedAt'], scope, command['embedderId'], command['dimensions']]);
+        const updated = await updateReturning<{ scope: string }>(tx, this.backend, `UPDATE ${this.t('indexes')} SET centroids = ?, trained_at = ? WHERE scope = ? AND embedder_id = ? AND dimensions = ?`,
+          [JSON.stringify(command['centroids']), command['trainedAt'], scope, command['embedderId'], command['dimensions']], 'scope',
+          `SELECT scope FROM ${this.t('indexes')} WHERE scope = ? AND embedder_id = ? AND dimensions = ?`, [scope, command['embedderId'], command['dimensions']]);
         if (updated.length !== 1) conflict('The memory vector index does not exist or has different dimensions.');
         await tx.query(`UPDATE ${this.t('vectors')} SET list = NULL WHERE scope = ? AND embedder_id = ?`, [scope, command['embedderId']]);
         return undefined;
@@ -297,8 +299,9 @@ export class MemoryIndexDatabase {
       case 'assignLists': return this.backend.transaction(async tx => {
         let assigned = 0;
         for (const [recordId, list] of command['entries'] as [string, number][]) {
-          const rows = await tx.query<{ record_id: string }>(`UPDATE ${this.t('vectors')} SET list = ? WHERE scope = ? AND embedder_id = ? AND record_id = ? RETURNING record_id`,
-            [list, scope, command['embedderId'], recordId]);
+          const rows = await updateReturning<{ record_id: string }>(tx, this.backend, `UPDATE ${this.t('vectors')} SET list = ? WHERE scope = ? AND embedder_id = ? AND record_id = ?`,
+            [list, scope, command['embedderId'], recordId], 'record_id',
+            `SELECT record_id FROM ${this.t('vectors')} WHERE scope = ? AND embedder_id = ? AND record_id = ?`, [scope, command['embedderId'], recordId]);
           assigned += rows.length;
         }
         return assigned;

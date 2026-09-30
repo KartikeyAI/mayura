@@ -17,7 +17,7 @@ const { Pool } = postgresRequire('pg') as typeof import('pg');
 /** Raw SQL is test-only fault instrumentation, scoped to one disposable fixture. */
 export interface ScheduledFixture extends WorkflowFixture {
   readonly prefix: string;
-  readonly childConfig: { readonly kind: 'sqlite'; readonly filename: string }
+  readonly childConfig: { readonly kind: 'sqlite'; readonly filename: string } | { readonly kind: 'mysql'; readonly uri: string }
     | { readonly kind: 'postgres'; readonly connectionString: string; readonly schema: string };
   query(sql: string, parameters?: readonly unknown[]): Promise<readonly Record<string, unknown>[]>;
   /** Hold a real database lock while the runtime's independent connection waits. */

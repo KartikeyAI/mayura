@@ -1,6 +1,6 @@
 ---
 title: "Storage"
-description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL or libSQL (Turso), run migrations, and back the store up."
+description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, run migrations, and back the store up."
 ---
 
 Agents and ephemeral runs need no database. You add storage when something has to survive a restart: durable
@@ -31,6 +31,7 @@ process shuts down. Runtimes and memory that receive the store never close it fo
 | SQLite: local development, tests, a single host | `mayura/storage-sqlite` | `better-sqlite3` |
 | PostgreSQL: several servers and workers sharing state | `mayura/storage-postgres` | `pg` |
 | libSQL: Turso, a `sqld` server, or a local file | `@mayurajs/storage-libsql` | the package itself |
+| MySQL 8.0.19 or later | `@mayurajs/storage-mysql` | the package itself |
 | Both factories from one import (existing apps) | `mayura/storage` | `better-sqlite3` and `pg` |
 | Your own adapter, types and `StorageError` only | `mayura/storage-contracts` | nothing |
 
@@ -129,6 +130,37 @@ writer wait on its side instead: `sqld` waits up to 5 seconds, then rolls back t
 A local file keeps SQLite's durability settings: write-ahead logging, a full sync on every commit, and foreign keys.
 A remote server's durability is the server's to configure.
 
+## MySQL
+
+`@mayurajs/storage-mysql` runs the same store on MySQL 8.0.19 or later (InnoDB), through `mysql2`, with the same SQL
+layer as SQLite and PostgreSQL.
+
+```bash
+npm install mayura @mayurajs/storage-mysql
+```
+
+```ts
+import { createMysqlStore } from '@mayurajs/storage-mysql';
+
+const store = createMysqlStore({ uri: process.env.DATABASE_URL ?? '', tls: true });
+await store.initialize();
+```
+
+| Option | Notes |
+| --- | --- |
+| `uri` | A `mysql://` URL with the user, password, host, port and database; the database holds Mayura's tables. Keep it in your secret configuration. Give this or `driver`. |
+| `tls` | `true` to require TLS and verify the server's certificate, or `{ ca }` to verify it against your CA. Most hosted MySQL needs this. |
+| `pool` | `{ max, connectionTimeoutMs, idleTimeoutMs }`, as for PostgreSQL. |
+| `driver` | A `mysql2/promise` pool you create and own. It must not set the `CLIENT_FOUND_ROWS` flag, which `mysql2` sets by default: create it with `flags: ['-FOUND_ROWS']`. `initialize()` checks, and `store.close()` never ends it. |
+
+Every operation is one transaction at `READ COMMITTED`, with a 5 second lock wait; rows are locked with `FOR UPDATE`,
+and work that has no row to lock yet takes a named lock (`GET_LOCK`), released when the transaction ends. A deadlock or
+a lock that could not be taken reports a `CONFLICT` to retry. Identifiers are stored as bytes (`VARBINARY`) and text as
+`utf8mb4` compared by code point, so keys that differ only in case, accents or trailing spaces stay different keys, as
+on SQLite and PostgreSQL. MySQL commits a transaction before any change to a table's definition, so `initialize()`
+creates Mayura's tables under a named lock rather than in one transaction; every step can safely run again.
+
+## What uses the store
 
 | Feature | How it uses the store | Extra setup |
 | --- | --- | --- |

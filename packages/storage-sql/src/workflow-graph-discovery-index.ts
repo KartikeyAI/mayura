@@ -11,6 +11,21 @@ function invalid(): never { throw new StorageError('STORAGE_UNAVAILABLE','The wo
  * catalog metadata, never parsed DDL text, and leave incompatible objects intact.
  */
 export async function initializeWorkflowGraphDiscoveryIndex(tx: SchedulerSession, backend: SchedulerBackend): Promise<void> {
+  if (backend.dialect === 'mysql') {
+    // MySQL has no CREATE INDEX IF NOT EXISTS; its key columns are VARBINARY, which already compare byte by byte.
+    const statistics = `FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`;
+    if ((await tx.query(`SELECT INDEX_NAME ${statistics} LIMIT 1`, [table, name])).length === 0) {
+      await tx.query(`CREATE INDEX ${name} ON ${backend.prefix}${table} (${columns.join(',')})`);
+    }
+    const keys = await tx.query<{ ordinal: number | string; column_name: string; non_unique: number | string; sub_part: number | null; index_type: string; expression: string | null; direction: string | null }>(
+      `SELECT SEQ_IN_INDEX AS ordinal, COLUMN_NAME AS column_name, NON_UNIQUE AS non_unique, SUB_PART AS sub_part, INDEX_TYPE AS index_type,
+        EXPRESSION AS expression, COLLATION AS direction ${statistics} ORDER BY SEQ_IN_INDEX LIMIT 5`, [table, name]);
+    if (keys.length !== columns.length || keys.some((key, ordinal) => Number(key.ordinal) !== ordinal + 1 || key.column_name !== columns[ordinal]
+      || Number(key.non_unique) !== 1 || key.sub_part !== null || key.index_type !== 'BTREE' || key.expression !== null || key.direction !== 'A')) invalid();
+    const type = await tx.query<{ data_type: string }>(`SELECT DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`, [table, 'aggregate_id']);
+    if (type[0]?.data_type !== 'varbinary') invalid();
+    return;
+  }
   const collation = backend.dialect === 'postgres' ? '"C"' : 'BINARY';
   await tx.query(`CREATE INDEX IF NOT EXISTS ${name} ON ${backend.prefix}${table}
     (scope,policy_hash,profile,aggregate_id COLLATE ${collation})`);

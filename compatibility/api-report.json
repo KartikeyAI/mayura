@@ -5334,7 +5334,7 @@
       },
       "SchedulerBackend": {
         "kind": "interface",
-        "declaration": "7073bd0518e002c8"
+        "declaration": "bd258f5baaef6578"
       },
       "SchedulerDatabase": {
         "kind": "class",
@@ -7327,6 +7327,28 @@
       "LibsqlStoreOptions": {
         "kind": "interface",
         "declaration": "b77794b125629265"
+      }
+    },
+    "@mayurajs/storage-mysql": {
+      "createMysqlStore": {
+        "kind": "function",
+        "declaration": "87a440ff55b8493b"
+      },
+      "MysqlDriverConnection": {
+        "kind": "interface",
+        "declaration": "57750953e2c8241b"
+      },
+      "MysqlDriverPool": {
+        "kind": "interface",
+        "declaration": "a45cfbbb5c5cd6dc"
+      },
+      "MysqlStore": {
+        "kind": "type",
+        "declaration": "2e64fe543c255ce3"
+      },
+      "MysqlStoreOptions": {
+        "kind": "interface",
+        "declaration": "5238cca3c0083103"
       }
     }
   }

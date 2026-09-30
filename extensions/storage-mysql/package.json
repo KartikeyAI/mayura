@@ -1,0 +1,16 @@
+{
+  "name": "@mayurajs/storage-mysql",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mayura storage on MySQL 8, through mysql2.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "dependencies": { "mysql2": "3.24.4" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

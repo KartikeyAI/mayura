@@ -24,6 +24,7 @@ export const reviewedDependencies = {
   'provider-ollama': ['ollama'],
   'provider-openai': ['openai'],
   'storage-libsql': ['@libsql/client'],
+  'storage-mysql': ['mysql2'],
 };
 
 /**

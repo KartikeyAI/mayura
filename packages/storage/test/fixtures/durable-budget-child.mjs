@@ -13,10 +13,11 @@ try {
   if (!process.send || !options || !['reserve-before', 'reserve-after', 'start-before', 'start-after', 'settle-before', 'settle-after'].includes(options.phase)) throw new Error();
   if (options.adapter === 'sqlite' && !options.filename.includes('mayura-durable-budgets-')) throw new Error();
   if (options.adapter === 'postgres' && !/^mayura_durable_budget_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
-  if (!['sqlite', 'postgres', 'libsql'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
+  if (!['sqlite', 'postgres', 'libsql', 'mysql'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
   if (options.phase.endsWith('after')) {
     const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
       : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
+      : options.adapter === 'mysql' ? (await import('./mysql.mjs')).mysqlStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     stage = 'initialize'; await store.initialize(); await store.durableBudgets.initialize();
     stage = 'public-command'; await store.durableBudgets[options.method](options.command); await checkpoint();
@@ -34,9 +35,9 @@ try {
         try { const result = await body(session); if (armed && changed) await checkpoint(); database.exec('COMMIT'); return result; }
         catch (error) { database.exec('ROLLBACK'); throw error; }
       } };
-    } else if (options.adapter === 'libsql') {
+    } else if (options.adapter === 'libsql' || options.adapter === 'mysql') {
       let changed = false;
-      const base = (await import('./libsql.mjs')).libsqlBackend(options, {
+      const base = (options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlBackend : (await import('./mysql.mjs')).mysqlBackend)(options, {
         intercept: async (sql, _parameters, run) => { const rows = await run(); changed ||= /(?:UPDATE|INSERT INTO).*mayura_durable_budgets\b/.test(sql); return rows; },
         beforeCommit: async () => { if (armed && changed) await checkpoint(); } });
       backend = { ...base, transaction: body => { changed = false; return base.transaction(body); } };

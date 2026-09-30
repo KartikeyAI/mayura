@@ -428,8 +428,8 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
     });
 
     it('advances a parent without acquiring a mutable target lock after target admission', async () => {
-      // SQLite serializes all writers. PostgreSQL exercises the finer row-lock exclusion.
-      if (fixture.dialect !== 'postgres') return;
+      // SQLite serializes all writers. PostgreSQL and MySQL exercise the finer row-lock exclusion.
+      if (fixture.dialect === 'sqlite') return;
       const source = await target(); const definition = waitGraph([source.reference]); const engine = runtime();
       const run = await engine.submit(definition, { input: null, idempotencyKey: 'lock-order' }); await engine.runUntilSettled(definition, run.id); await finish(source.reference, 'succeeded');
       const release = await fixture.lockAggregate(scopeHash, source.run.id);

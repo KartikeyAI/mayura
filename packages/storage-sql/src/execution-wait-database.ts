@@ -10,6 +10,7 @@ import { identifier } from './validation.js';
 import type { ScheduledWorkflowDatabase } from './scheduled-database.js';
 import type { SchedulerBackend, SchedulerSession } from './scheduler-database.js';
 import { sha256Hex, utf8ByteLength } from '@mayura/core/host';
+import { advisoryLock } from './dialect.js';
 
 interface StreamRow { scope: string; stream_id: string; policy_hash: string; format: number; wait_count: number | string; event_sequence: number | string }
 interface WaitRow { scope: string; stream_id: string; wait_id: string; version: number | string; status: string; registration_sequence: number | string; definition_hash: string; data: string }
@@ -31,7 +32,7 @@ export class ExecutionWaitDatabase {
     if (this.initialized) return;
     await this.workflows.execute('initialize', {});
     await this.backend.transaction(async tx => {
-      if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))', [`mayura:execution-wait-schema:${this.backend.prefix}`]);
+      await advisoryLock(tx, this.backend, `mayura:execution-wait-schema:${this.backend.prefix}`);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${this.table('streams')} (
         scope TEXT NOT NULL, stream_id TEXT NOT NULL, policy_hash TEXT NOT NULL, format INTEGER NOT NULL CHECK(format = 1),
         wait_count INTEGER NOT NULL CHECK(wait_count BETWEEN 0 AND 128), event_sequence INTEGER NOT NULL CHECK(event_sequence BETWEEN 0 AND 257),
@@ -168,7 +169,7 @@ export class ExecutionWaitDatabase {
     }
     return this.backend.transaction(async tx => {
       if (method === 'open') {
-        if (this.backend.dialect === 'postgres') await tx.query('SELECT pg_advisory_xact_lock(hashtext(?))', [JSON.stringify(['mayura:execution-stream:v1', this.backend.prefix, scope, key.streamId])]);
+        await advisoryLock(tx, this.backend, JSON.stringify(['mayura:execution-stream:v1', this.backend.prefix, scope, key.streamId]));
         const found = await tx.query(`SELECT stream_id FROM ${this.table('streams')} WHERE scope = ? AND stream_id = ?`, [scope, key.streamId]);
         if (found.length) { await this.stream(tx, key); return; }
         await tx.query(`INSERT INTO ${this.table('streams')} (scope,stream_id,policy_hash,format,wait_count,event_sequence) VALUES (?,?,?,1,0,0)`, [scope, key.streamId, key.policyHash]);

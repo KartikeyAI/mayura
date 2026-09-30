@@ -11,6 +11,7 @@ const backend = config.backend;
 if (backend.kind === 'postgres' && !/^mayura_scheduled_workflow_[a-f0-9]{32}$/.test(backend.schema)) throw new Error('Unexpected disposable schema.');
 if (backend.kind === 'sqlite' && !backend.filename.includes('mayura-scheduled-workflows-')) throw new Error('Unexpected disposable database.');
 const store = backend.kind === 'sqlite' ? createSqliteStore({ filename: backend.filename })
+  : backend.kind === 'mysql' ? (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlStore({ uri: backend.uri })
   : createPostgresStore({ connectionString: backend.connectionString, schema: backend.schema });
 let effects = 0;
 let phase = 'initialize';

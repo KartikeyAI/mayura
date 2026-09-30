@@ -69,7 +69,8 @@
     "@mayurajs/provider-mistral",
     "@mayurajs/provider-ollama",
     "@mayurajs/provider-openai",
-    "@mayurajs/storage-libsql"
+    "@mayurajs/storage-libsql",
+    "@mayurajs/storage-mysql"
   ],
   "internalPackages": [
     "@mayura/consumer-tests",
