@@ -85,7 +85,10 @@ export function gcsFiles(options: GcsFilesOptions): FileBackend {
     const response = await send(url(objectPath(key), { ifGenerationMatch: ifMatch === undefined ? undefined : generation(ifMatch) }), { method: 'GET', signal });
     if (response.status === 404) { void response.body?.cancel().catch(() => undefined); return undefined; }
     if (!response.ok) throw fileResponseFailure(response);
-    return describe(await json(response, 1_048_576), key);
+    const file = describe(await json(response, 1_048_576), key);
+    // Checked here too, so a conditional read holds even where the precondition is not applied (as in some emulators).
+    if (ifMatch !== undefined && file.etag !== ifMatch) throw fileConflict();
+    return file;
   };
 
   return Object.freeze({

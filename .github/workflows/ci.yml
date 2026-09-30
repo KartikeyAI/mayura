@@ -102,6 +102,7 @@ jobs:
       MAYURA_TEST_MONGODB_URL: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
       MAYURA_TEST_DYNAMODB_URL: http://127.0.0.1:18000
       MAYURA_TEST_S3_URL: http://mayuratest:mayura_ci_test_only@127.0.0.1:19000
+      MAYURA_TEST_GCS_URL: http://127.0.0.1:14443
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -119,6 +120,8 @@ jobs:
           for attempt in $(seq 1 30); do docker exec mongodb mongosh --quiet --eval "db.adminCommand('ping')" && break; sleep 2; done
           docker exec mongodb mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
           for attempt in $(seq 1 30); do [ "$(docker exec mongodb mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 2; done
+      # fake-gcs-server needs command-line flags (plain HTTP), which service containers cannot take.
+      - run: docker run -d -p 127.0.0.1:14443:4443 fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef -scheme http -port 4443 -public-host 127.0.0.1:14443 && for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:14443/storage/v1/b > /dev/null && break; sleep 1; done
       - run: node scripts/ci-step.mjs -- pnpm test:integration
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
   # Entry points outside the Node-only list bundle for edge runtimes, and the runtime probe (agents, the server handler,
