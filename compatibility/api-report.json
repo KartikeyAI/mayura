@@ -7779,6 +7779,20 @@
         "declaration": "5238cca3c0083103"
       }
     },
+    "@mayurajs/voice-deepgram": {
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      },
+      "deepgramVoice": {
+        "kind": "function",
+        "declaration": "a099840232b62fb2"
+      },
+      "DeepgramVoiceOptions": {
+        "kind": "interface",
+        "declaration": "78580538a32d69d8"
+      }
+    },
     "@mayurajs/voice-elevenlabs": {
       "catalog": {
         "kind": "const",

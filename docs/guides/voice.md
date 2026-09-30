@@ -77,6 +77,7 @@ provider does not take). Messages are fixed text: nothing the provider wrote rea
 | --- | --- | --- |
 | `@mayurajs/voice-openai` | `whisper-1` in the catalog; `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` and `gpt-transcribe` with your own price | `tts-1`, `tts-1-hd` in the catalog; `gpt-4o-mini-tts` with your own price |
 | `@mayurajs/voice-elevenlabs` | `scribe_v2` in the catalog | `eleven_v4`, `eleven_v4_turbo`, `eleven_v3`, `eleven_v3_conversational`, `eleven_multilingual_v2` and `eleven_flash_v2_5` in the catalog; the voice is an ElevenLabs voice id |
+| `@mayurajs/voice-deepgram` | `nova-3` (at its multilingual rate) and `whisper-large` in the catalog; without a language, Deepgram detects it | `aura-2` and `aura` in the catalog; the voice completes the model, as in `aura-2` with voice `thalia-en` |
 
 OpenAI bills some audio models per token rather than per minute or character. Their cost cannot be known from the
 audio or text before a call, so they are left out of the catalog: give a per-minute or per-character price you are
