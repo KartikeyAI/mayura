@@ -182,8 +182,9 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
       return token;
     } : key,
     baseURL, organization: options.organization ?? null, project: options.project ?? null, defaultHeaders: headers,
-    // Mayura owns retries and time limits: one SDK attempt per call, and its own timer never fires before Mayura's.
-    maxRetries: 0, timeout: 2_147_483_647,
+    // Mayura owns retries and time limits: one SDK attempt per call, and its own timer never fires before Mayura's. The
+    // SDK's logging, which OPENAI_LOG would switch on (logging each request, prompts included), stays off.
+    maxRetries: 0, timeout: 2_147_483_647, logLevel: 'off',
     fetch: boundedFetch(() => options.fetch ?? globalThis.fetch, maxResponseBytes),
   });
 

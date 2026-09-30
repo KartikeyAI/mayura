@@ -174,8 +174,9 @@ export function anthropic(options: AnthropicProviderOptions): ModelProvider {
   const media = mediaOption(options.media);
   const client = new Anthropic({
     apiKey: options.apiKey, authToken: null, baseURL, defaultHeaders: headers,
-    // Mayura owns retries and time limits: one SDK attempt per call, and the SDK's own timer never fires first.
-    maxRetries: 0, timeout: 2_147_483_647,
+    // Mayura owns retries and time limits: one SDK attempt per call, and the SDK's own timer never fires first. The
+    // SDK's logging, which ANTHROPIC_LOG would switch on (logging each request, prompts included), stays off.
+    maxRetries: 0, timeout: 2_147_483_647, logLevel: 'off',
     fetch: boundedFetch(() => options.fetch ?? globalThis.fetch, maxResponseBytes),
   });
 

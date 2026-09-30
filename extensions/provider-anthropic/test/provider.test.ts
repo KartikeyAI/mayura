@@ -60,6 +60,8 @@ describe('@mayurajs/provider-anthropic', () => {
 
   it('sends a strict Messages request to Anthropic with the key, and nothing from the environment', async () => {
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://attacker.example'); vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'token-from-env');
+    // ANTHROPIC_LOG would make the SDK log each request, prompts included.
+    vi.stubEnv('ANTHROPIC_LOG', 'debug'); const logged = ['log', 'info', 'warn', 'error', 'debug'].map(level => vi.spyOn(console, level as 'log'));
     const seen: Seen = [];
     await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('claude-test', settings).generate(request());
     expect(seen).toHaveLength(1);
@@ -67,6 +69,7 @@ describe('@mayurajs/provider-anthropic', () => {
     expect(seen[0]!.headers.get('x-api-key')).toBe('fixture-key');
     expect(seen[0]!.headers.get('authorization')).toBeNull();
     expect(seen[0]!.body).toMatchObject({ model: 'claude-test', max_tokens: 64, system: 'Be brief.', output_config: { format: { type: 'json_schema' } } });
+    for (const spy of logged) { expect(spy).not.toHaveBeenCalled(); spy.mockRestore(); }
   });
 
   it('makes one attempt per call, and reports an overloaded Anthropic (529) as unavailable', async () => {

@@ -55,6 +55,8 @@ describe('@mayurajs/provider-openai', () => {
 
   it('sends a strict Responses request to OpenAI, with the key, and nothing from the environment', async () => {
     vi.stubEnv('OPENAI_BASE_URL', 'https://attacker.example/v1'); vi.stubEnv('OPENAI_ORG_ID', 'org-from-env'); vi.stubEnv('OPENAI_PROJECT_ID', 'proj-from-env');
+    // OPENAI_LOG would make the SDK log each request, prompts included.
+    vi.stubEnv('OPENAI_LOG', 'debug'); const logged = ['log', 'info', 'warn', 'error', 'debug'].map(level => vi.spyOn(console, level as 'log'));
     const seen: { url: string; body: JsonObject; headers: Headers }[] = [];
     await openai({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('gpt-test', settings).generate(request);
     expect(seen).toHaveLength(1);
@@ -63,6 +65,7 @@ describe('@mayurajs/provider-openai', () => {
     expect(seen[0]!.headers.get('openai-organization')).toBeNull();
     expect(seen[0]!.headers.get('openai-project')).toBeNull();
     expect(seen[0]!.body).toMatchObject({ model: 'gpt-test', store: false, max_output_tokens: 64, text: { format: { type: 'json_schema', strict: true } } });
+    for (const spy of logged) { expect(spy).not.toHaveBeenCalled(); spy.mockRestore(); }
   });
 
   it('makes one attempt per call: the SDK never retries on its own', async () => {
