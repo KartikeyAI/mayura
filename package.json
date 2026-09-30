@@ -83,6 +83,7 @@
     "@mayurajs/storage-dynamodb": "workspace:*",
     "@mayurajs/storage-mongodb": "workspace:*",
     "@mayurajs/storage-mysql": "workspace:*",
+    "@mayurajs/voice-assemblyai": "workspace:*",
     "@mayurajs/voice-deepgram": "workspace:*",
     "@mayurajs/voice-elevenlabs": "workspace:*",
     "@mayurajs/voice-openai": "workspace:*",

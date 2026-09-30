@@ -122,6 +122,9 @@ importers:
       '@mayurajs/storage-mysql':
         specifier: workspace:*
         version: link:extensions/storage-mysql
+      '@mayurajs/voice-assemblyai':
+        specifier: workspace:*
+        version: link:extensions/voice-assemblyai
       '@mayurajs/voice-deepgram':
         specifier: workspace:*
         version: link:extensions/voice-deepgram
@@ -313,6 +316,12 @@ importers:
       mysql2:
         specifier: 3.24.4
         version: 3.24.4(@types/node@24.13.6)
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/voice-assemblyai:
     devDependencies:
       mayura:
         specifier: workspace:*

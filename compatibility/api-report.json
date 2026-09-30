@@ -7779,6 +7779,20 @@
         "declaration": "5238cca3c0083103"
       }
     },
+    "@mayurajs/voice-assemblyai": {
+      "assemblyaiVoice": {
+        "kind": "function",
+        "declaration": "f206e04a7b2b713c"
+      },
+      "AssemblyAIVoiceOptions": {
+        "kind": "interface",
+        "declaration": "72502bf568c970ef"
+      },
+      "catalog": {
+        "kind": "const",
+        "declaration": "4f216a7d93101c71"
+      }
+    },
     "@mayurajs/voice-deepgram": {
       "catalog": {
         "kind": "const",

@@ -75,6 +75,7 @@
     "@mayurajs/storage-libsql",
     "@mayurajs/storage-mongodb",
     "@mayurajs/storage-mysql",
+    "@mayurajs/voice-assemblyai",
     "@mayurajs/voice-deepgram",
     "@mayurajs/voice-elevenlabs",
     "@mayurajs/voice-openai"
