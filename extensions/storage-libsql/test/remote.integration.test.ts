@@ -16,6 +16,9 @@ import { schedulerConformance } from '../../../packages/storage/test/scheduler-c
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
+import { workflowTreeCapabilityConformance } from '../../../packages/storage/test/workflow-tree-capability-conformance.js';
+import { workflowTreeRuntimeConformance } from '../../../packages/workflows/test/tree-runtime-conformance.js';
+import { workflowTreeCoordinatorConformance } from '../../../packages/workflows/test/tree-coordinator-conformance.js';
 
 const remote = process.env['MAYURA_TEST_LIBSQL_URL'];
 
@@ -55,6 +58,10 @@ describe.skipIf(!remote)('libSQL server', () => {
   memoryConformance('libSQL server', simple as never);
   nativeMemoryConformance('libSQL server', simple);
   workflowConformance('libSQL server', simple);
+  const trees = async () => { await reset(); return { open, cleanup: reset }; };
+  workflowTreeCapabilityConformance('libSQL server', trees as never);
+  workflowTreeRuntimeConformance('libSQL server', trees as never);
+  workflowTreeCoordinatorConformance('libSQL server', trees as never);
   schedulerConformance('libSQL server', async () => {
     await reset();
     return { store: open(), reopen: open, cleanup: reset, childOptions: children,

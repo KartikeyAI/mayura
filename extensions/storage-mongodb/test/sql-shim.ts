@@ -9,7 +9,7 @@
 import { MongoClient, type Document } from 'mongodb';
 
 /** Collections whose documents name fields in camelCase; the rest use the SQL column names. */
-const camel = new Set(['mayura_aggregates', 'mayura_events', 'mayura_durable_budgets', 'mayura_durable_budget_events']);
+const camel = new Set(['mayura_aggregates', 'mayura_events', 'mayura_durable_budgets', 'mayura_durable_budget_events', 'mayura_workflow_tree_budgets', 'mayura_workflow_tree_budget_events']);
 const field = (table: string, column: string) => camel.has(table) ? column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()) : column;
 const identifier = /^[a-z_][a-z0-9_]*$/;
 

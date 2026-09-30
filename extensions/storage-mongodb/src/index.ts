@@ -1,17 +1,18 @@
 import { MongoClient, MongoError, type ClientSession, type Collection, type Db } from 'mongodb';
-import { StorageError, storageError, type DurableBudgetAggregateStore, type WorkflowGraphDiscoveryAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
-import { mongoBudgets } from './budgets.js';
+import { StorageError, storageError, type DurableBudgetAggregateStore, type WorkflowGraphDiscoveryAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
+import { mongoBudgetPersistence } from './budget-rows.js';
 import { mongoMemory } from './memory.js';
 import { mongoSchedulerPersistence } from './scheduler.js';
 import { mongoExecutionWaitPersistence } from './execution-waits.js';
+import { mongoWorkflowTreePersistence } from './trees.js';
 import { mongoScheduledPersistence } from './workflows.js';
-import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, executionWaitFacade, ExecutionWaitDatabase, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, writerRequired } from 'mayura/storage-sql/host';
+import { createCommand, cursor, durableBudgetFacade, DurableBudgetDatabase, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, executionWaitFacade, ExecutionWaitDatabase, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, WorkflowTreeDatabase, workflowTreeDiscoveryFacade, workflowTreeFacade, writerRequired } from 'mayura/storage-sql/host';
 
 /**
  * The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, the leased
- * scheduler, scheduled workflows and workflow graphs with execution waits and discovery.
+ * scheduler, scheduled workflows, workflow graphs with execution waits and discovery, and workflow trees with discovery.
  */
-export type MongoStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & WorkflowGraphDiscoveryAggregateStore;
+export type MongoStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & WorkflowGraphDiscoveryAggregateStore & WorkflowTreeDiscoveryAggregateStore;
 
 export interface MongoStoreOptions {
   /**
@@ -100,17 +101,24 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   const schedulerDatabase = new SchedulerDatabase(mongoSchedulerPersistence(db, transaction));
   const workflowsDatabase = new ScheduledWorkflowDatabase(mongoScheduledPersistence(db, transaction), schedulerDatabase);
   const executionWaitDatabase = new ExecutionWaitDatabase(mongoExecutionWaitPersistence(db, transaction), workflowsDatabase);
+  const budgets = mongoBudgetPersistence(db, transaction);
+  const durableBudgetDatabase = new DurableBudgetDatabase(budgets);
+  const workflowTreeDatabase = new WorkflowTreeDatabase(mongoWorkflowTreePersistence(db, transaction), schedulerDatabase, budgets);
+  /** Every capability call: only after initialization, and a driver failure reported without the driver's text. */
+  const guarded = <T>(run: () => Promise<T>): Promise<T> => { available(); return run().catch((error: unknown) => { throw safeFailure(error); }); };
   /** A run enrolled in scheduled execution changes only through its scheduled writer. */
   const unowned = async (session: ClientSession, scope: string, id: string) => { if (await owners.findOne({ scope, aggregate_id: id }, { session, projection: { _id: 1 } })) writerRequired(); };
 
   return {
     memory: mongoMemory(db, transaction, () => available()),
-    durableBudgets: mongoBudgets(db, transaction, () => available()),
-    scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
-    workflows: scheduledFacade((method, input) => { available(); return workflowsDatabase.execute(method, input); }),
-    workflowGraphs: workflowGraphFacade((method, input) => { available(); return workflowsDatabase.execute(method, input, 2); }),
-    workflowGraphDiscovery: workflowGraphDiscoveryFacade((method, input) => { available(); return workflowsDatabase.discover(method, input); }),
-    executionWaits: executionWaitFacade((method, input) => { available(); return executionWaitDatabase.execute(method, input); }),
+    durableBudgets: durableBudgetFacade((method, input) => guarded(() => durableBudgetDatabase.execute(method, input))),
+    scheduler: schedulerFacade((method, input) => guarded(() => schedulerDatabase.execute(method, input))),
+    workflows: scheduledFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input))),
+    workflowGraphs: workflowGraphFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input, 2))),
+    workflowGraphDiscovery: workflowGraphDiscoveryFacade((method, input) => guarded(() => workflowsDatabase.discover(method, input))),
+    executionWaits: executionWaitFacade((method, input) => guarded(() => executionWaitDatabase.execute(method, input))),
+    workflowTrees: workflowTreeFacade((method, input) => guarded(() => workflowTreeDatabase.execute(method, input))),
+    workflowTreeDiscovery: workflowTreeDiscoveryFacade((method, input) => guarded(() => workflowTreeDatabase.discover(method, input))),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

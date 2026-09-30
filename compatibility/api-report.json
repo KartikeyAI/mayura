@@ -5268,6 +5268,18 @@
         "kind": "interface",
         "declaration": "1369817c23063f31"
       },
+      "BudgetEventRow": {
+        "kind": "interface",
+        "declaration": "928a021c359824e7"
+      },
+      "BudgetLedger": {
+        "kind": "type",
+        "declaration": "c9c8f24b782145a5"
+      },
+      "BudgetRootRow": {
+        "kind": "interface",
+        "declaration": "40be46d18dde3d4e"
+      },
       "CompletionRow": {
         "kind": "interface",
         "declaration": "c28fe25fe15776ff"
@@ -5282,7 +5294,7 @@
       },
       "DurableBudgetDatabase": {
         "kind": "class",
-        "declaration": "7c5504405df8f329"
+        "declaration": "6f3f7014be9c1d27"
       },
       "durableBudgetFacade": {
         "kind": "function",
@@ -5292,9 +5304,17 @@
         "kind": "type",
         "declaration": "7ed139cbbb76840c"
       },
+      "DurableBudgetPersistence": {
+        "kind": "interface",
+        "declaration": "9b192995f110026b"
+      },
       "DurableBudgetReduction": {
         "kind": "interface",
         "declaration": "c89eab67cd94d9e4"
+      },
+      "DurableBudgetTransaction": {
+        "kind": "interface",
+        "declaration": "14c6f2c59a3a0dc9"
       },
       "EVENT_PAGE_SIZE": {
         "kind": "const",
@@ -5482,7 +5502,7 @@
       },
       "WorkflowTreeDatabase": {
         "kind": "class",
-        "declaration": "5161d8087d723578"
+        "declaration": "0ab489f7b2a7dcd3"
       },
       "workflowTreeDiscoveryFacade": {
         "kind": "function",
@@ -5492,9 +5512,21 @@
         "kind": "function",
         "declaration": "62b6f8d79e5e663e"
       },
+      "WorkflowTreeJobRow": {
+        "kind": "interface",
+        "declaration": "f1a44fcc3ebed021"
+      },
       "WorkflowTreeMemberResult": {
         "kind": "interface",
         "declaration": "5c8d784a555eb8fd"
+      },
+      "WorkflowTreeMemberRow": {
+        "kind": "interface",
+        "declaration": "fefcc7ecc72f1c22"
+      },
+      "WorkflowTreePersistence": {
+        "kind": "interface",
+        "declaration": "638ec36f12e642c2"
       },
       "WorkflowTreePreparedTool": {
         "kind": "interface",
@@ -5523,6 +5555,10 @@
       "WorkflowTreeStartedTool": {
         "kind": "interface",
         "declaration": "7615aab19eda6f61"
+      },
+      "WorkflowTreeTransaction": {
+        "kind": "interface",
+        "declaration": "3f28caad71eb6a8c"
       },
       "WorkflowWaitTargetRow": {
         "kind": "interface",
@@ -7424,7 +7460,7 @@
       },
       "MongoStore": {
         "kind": "type",
-        "declaration": "10e2580c4ebbf95d"
+        "declaration": "c0ddc54901a24100"
       },
       "MongoStoreOptions": {
         "kind": "interface",

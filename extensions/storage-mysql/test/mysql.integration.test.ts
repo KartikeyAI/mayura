@@ -21,6 +21,9 @@ import { graphWorkflowConformance } from '../../../packages/workflows/test/graph
 import { graphCoordinatorConformance } from '../../../packages/workflows/test/graph-coordinator-conformance.js';
 import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
 import { scheduledWorkflowConformance } from '../../../packages/workflows/test/scheduled-conformance.js';
+import { workflowTreeCapabilityConformance } from '../../../packages/storage/test/workflow-tree-capability-conformance.js';
+import { workflowTreeRuntimeConformance } from '../../../packages/workflows/test/tree-runtime-conformance.js';
+import { workflowTreeCoordinatorConformance } from '../../../packages/workflows/test/tree-coordinator-conformance.js';
 
 const server = process.env['MAYURA_TEST_MYSQL_URL'];
 
@@ -76,6 +79,9 @@ describe.skipIf(!server)('MySQL', () => {
   graphWorkflowConformance('MySQL', workflowFixture as never);
   graphDiscoveryConformance('MySQL', workflowFixture as never);
   graphCoordinatorConformance('MySQL', workflowFixture as never);
+  workflowTreeCapabilityConformance('MySQL', fixture as never);
+  workflowTreeRuntimeConformance('MySQL', fixture as never);
+  workflowTreeCoordinatorConformance('MySQL', fixture as never);
   schedulerConformance('MySQL', async () => {
     const { uri, sql, open, cleanup } = await fixture();
     return { store: open(), reopen: open, cleanup, childOptions: { adapter: 'mysql', uri },

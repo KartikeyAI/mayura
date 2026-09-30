@@ -23,6 +23,10 @@ import { graphWorkflowConformance } from '../../../packages/workflows/test/graph
 import { graphCoordinatorConformance } from '../../../packages/workflows/test/graph-coordinator-conformance.js';
 import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
 import { mongoSql } from './sql-shim.js';
+import { workflowTreeCapabilityConformance } from '../../../packages/storage/test/workflow-tree-capability-conformance.js';
+import { workflowTreeRuntimeConformance } from '../../../packages/workflows/test/tree-runtime-conformance.js';
+import { workflowTreeCoordinatorConformance } from '../../../packages/workflows/test/tree-coordinator-conformance.js';
+import type { WorkflowTreeManifest, WorkflowTreePolicyManifest } from 'mayura/storage-contracts';
 
 const server = process.env['MAYURA_TEST_MONGODB_URL'];
 
@@ -85,6 +89,28 @@ describe.skipIf(!server)('MongoDB', () => {
   graphWorkflowConformance('MongoDB', workflowFixture as never);
   graphDiscoveryConformance('MongoDB', workflowFixture as never);
   graphCoordinatorConformance('MongoDB', workflowFixture as never);
+  workflowTreeCapabilityConformance('MongoDB', fixture as never);
+  workflowTreeRuntimeConformance('MongoDB', fixture as never);
+  workflowTreeCoordinatorConformance('MongoDB', fixture as never);
+  it('scans workflow-tree discovery through its index, in key order, over populated history', async () => {
+    const { database, open, cleanup } = await fixture(); const store = open();
+    const manifest: WorkflowTreeManifest = { format: 4, id: 'plan-root', version: '1', graph: [{ kind: 'tool', id: 'work', dependsOn: [], tool: 'fixture/tool', toolVersion: '1', effects: 'none',
+      capabilities: [], costMicros: 1, approval: false, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'work', path: [] } };
+    const policy: WorkflowTreePolicyManifest = { scope: { principalId: 'plan', projectId: 'tree-discovery' }, permissions: ['tool:fixture/tool'], policyVersion: 'selected',
+      maxCostMicros: 1, maxCalls: 1, maxOutputBytes: 1_024, approvalTtlMs: 1_000 };
+    const client = new MongoClient(server!);
+    try {
+      await store.initialize(); await store.workflowTrees.initialize(); await store.workflowTreeDiscovery.initialize();
+      for (let offset = 0; offset < 128; offset += 16) await Promise.all(Array.from({ length: 16 }, (_, step) => store.workflowTrees.submit({ manifest,
+        policy: { ...policy, policyVersion: `filler-${offset + step}` }, resources: { work: [] }, input: null, idempotencyKey: `filler-${offset + step}` })));
+      const selected = (await store.workflowTrees.submit({ manifest, policy, resources: { work: [] }, input: null, idempotencyKey: 'selected' })).snapshot;
+      // The same query the store runs for a tree discovery scan.
+      const plan = JSON.stringify((await client.db(database).collection('mayura_workflow_owners').find({ scope: selected.record.scope, policy_hash: selected.policyHash, profile: 3,
+        aggregate_id: { $gt: '' } }, { projection: { _id: 0, aggregate_id: 1 } }).sort({ aggregate_id: 1 }).limit(16).explain('queryPlanner'))['queryPlanner']['winningPlan']);
+      expect(plan).toContain('"indexName":"mayura_workflow_owners_discovery"'); expect(plan).toContain('"stage":"IXSCAN"'); expect(plan).not.toContain('"stage":"SORT"');
+      expect((await store.workflowTreeDiscovery.scan({ scope: selected.record.scope, policyHash: selected.policyHash, cursor: null, limit: 32 })).candidates.map(candidate => candidate.rootId)).toEqual([selected.rootId]);
+    } finally { await client.close(); await store.close(); await cleanup(); }
+  }, 120_000);
   executionWaitConformance('MongoDB', async () => {
     const { database, open, cleanup } = await fixture();
     return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: mongoSql(server!, database), cleanup } as never;

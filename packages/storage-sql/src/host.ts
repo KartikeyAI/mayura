@@ -14,7 +14,11 @@ export { ExecutionWaitDatabase } from './execution-wait-database.js';
 /** The rows the execution wait state machine reads and writes. */
 export type { ExecutionStreamRow, ExecutionWaitEventRow, ExecutionWaitPersistence, ExecutionWaitRow, ExecutionWaitTargetRow, ExecutionWaitTransaction } from './execution-wait-persistence.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';
+/** The rows the durable budget reducer reads and writes. */
+export type { BudgetEventRow, BudgetLedger, BudgetRootRow, DurableBudgetPersistence, DurableBudgetTransaction } from './durable-budget-persistence.js';
 export { WorkflowTreeDatabase } from './workflow-tree-database.js';
+/** The rows the workflow tree state machine reads and writes besides the scheduled workflow and budget ones. */
+export type { WorkflowTreeJobRow, WorkflowTreeMemberRow, WorkflowTreePersistence, WorkflowTreeTransaction } from './workflow-tree-persistence.js';
 export { MemoryIndexDatabase } from './memory-database.js';
 export { memoryIndexFacade } from '@mayura/storage-contracts';
 export type { WorkflowTreeCancellationResult, WorkflowTreeChildAdmission, WorkflowTreeChildCancellationResult, WorkflowTreeClaimedTool, WorkflowTreeCompletedTool, WorkflowTreeMemberResult, WorkflowTreePreparedTool, WorkflowTreeReceiptResult, WorkflowTreeRecoveryResult, WorkflowTreeRenewedTool, WorkflowTreeRootSnapshot, WorkflowTreeRootSubmission, WorkflowTreeStartedTool } from '@mayura/storage-contracts';

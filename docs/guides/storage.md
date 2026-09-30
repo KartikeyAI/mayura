@@ -1,6 +1,6 @@
 ---
 title: "Storage"
-description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, and everything but workflow trees in MongoDB; run migrations, and back the store up."
+description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso), MySQL or MongoDB; run migrations, and back the store up."
 ---
 
 Agents and ephemeral runs need no database. You add storage when something has to survive a restart: durable
@@ -32,7 +32,7 @@ process shuts down. Runtimes and memory that receive the store never close it fo
 | PostgreSQL: several servers and workers sharing state | `mayura/storage-postgres` | `pg` |
 | libSQL: Turso, a `sqld` server, or a local file | `@mayurajs/storage-libsql` | the package itself |
 | MySQL 8.0.19 or later | `@mayurajs/storage-mysql` | the package itself |
-| MongoDB replica set: everything except workflow trees so far | `@mayurajs/storage-mongodb` | the package itself |
+| A MongoDB replica set or sharded cluster | `@mayurajs/storage-mongodb` | the package itself |
 | Both factories from one import (existing apps) | `mayura/storage` | `better-sqlite3` and `pg` |
 | Your own adapter, types and `StorageError` only | `mayura/storage-contracts` | nothing |
 
@@ -164,9 +164,9 @@ creates Mayura's tables under a named lock rather than in one transaction; every
 ## MongoDB
 
 `@mayurajs/storage-mongodb` stores aggregates (the records and events the server's submission journal and run records
-use), [native memory](memory-and-context.md), durable budgets, the leased job scheduler, scheduled
-[durable workflows](durable-workflows.md), workflow graphs, execution waits and graph discovery in MongoDB, through the
-official `mongodb` driver. Workflow trees are not on MongoDB yet: use another adapter for those.
+use), [native memory](memory-and-context.md), durable budgets, the leased job scheduler, and
+[durable workflows](durable-workflows.md) with their graphs, trees, waits and discovery in MongoDB, through the
+official `mongodb` driver: everything the SQL stores keep.
 
 ```bash
 npm install mayura @mayurajs/storage-mongodb
