@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/filestorage-gcs':
+        specifier: workspace:*
+        version: link:extensions/filestorage-gcs
       '@mayurajs/provider-anthropic':
         specifier: workspace:*
         version: link:extensions/provider-anthropic
@@ -206,6 +209,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/filestorage-gcs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/provider-anthropic:
     dependencies:

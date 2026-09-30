@@ -112,6 +112,26 @@ const r2 = createFileStore(s3Files({
 }), { maxFileBytes: 50 * 1024 * 1024 });
 ```
 
+## Other services
+
+Provider packages give `createFileStore` a backend for other services:
+
+| Package | Service | Preconditions |
+| --- | --- | --- |
+| built in: `s3Files` | S3 and S3-compatible services: Cloudflare R2, Backblaze B2, MinIO, RustFS and others | writes; deletes with `conditionalDelete` where the service honours them |
+| `@mayurajs/filestorage-gcs` | Google Cloud Storage, over its JSON API with an OAuth `token` source. A file's etag is its generation. | writes and deletes |
+
+```ts
+import { createFileStore } from 'mayura/files';
+import { gcsFiles } from '@mayurajs/filestorage-gcs';
+
+const files = createFileStore(gcsFiles({
+  bucket: 'acme-reports',
+  // An OAuth access token source, such as google-auth-library's () => auth.getAccessToken().
+  token: async () => process.env.GCS_ACCESS_TOKEN ?? '',
+}), { maxFileBytes: 10 * 1024 * 1024 });
+```
+
 ## File tools for agents
 
 `fileTools(store, { name })` gives an agent tools over one store: `<name>.read` and `<name>.list`, and with

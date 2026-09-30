@@ -7793,6 +7793,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/filestorage-gcs": {
+      "gcsFiles": {
+        "kind": "function",
+        "declaration": "61151da63dcb4eea"
+      },
+      "GcsFilesOptions": {
+        "kind": "interface",
+        "declaration": "15d08b9f8241584b"
+      }
+    },
     "@mayurajs/provider-anthropic": {
       "anthropic": {
         "kind": "function",

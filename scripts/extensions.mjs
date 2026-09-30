@@ -28,6 +28,7 @@ export const reviewedDependencies = {
   'storage-libsql': ['@libsql/client'],
   'storage-mongodb': ['mongodb'],
   'storage-mysql': ['mysql2'],
+  'filestorage-gcs': [],
   'voice-assemblyai': [],
   'voice-azure': [],
   'voice-cartesia': [],
