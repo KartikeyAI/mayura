@@ -1,6 +1,6 @@
 ---
 title: "Storage"
-description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, run migrations, and back the store up."
+description: "Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, and memory and budgets in MongoDB; run migrations, and back the store up."
 ---
 
 Agents and ephemeral runs need no database. You add storage when something has to survive a restart: durable
@@ -32,6 +32,7 @@ process shuts down. Runtimes and memory that receive the store never close it fo
 | PostgreSQL: several servers and workers sharing state | `mayura/storage-postgres` | `pg` |
 | libSQL: Turso, a `sqld` server, or a local file | `@mayurajs/storage-libsql` | the package itself |
 | MySQL 8.0.19 or later | `@mayurajs/storage-mysql` | the package itself |
+| MongoDB replica set: memory, budgets and server records so far | `@mayurajs/storage-mongodb` | the package itself |
 | Both factories from one import (existing apps) | `mayura/storage` | `better-sqlite3` and `pg` |
 | Your own adapter, types and `StorageError` only | `mayura/storage-contracts` | nothing |
 
@@ -159,6 +160,37 @@ a lock that could not be taken reports a `CONFLICT` to retry. Identifiers are st
 `utf8mb4` compared by code point, so keys that differ only in case, accents or trailing spaces stay different keys, as
 on SQLite and PostgreSQL. MySQL commits a transaction before any change to a table's definition, so `initialize()`
 creates Mayura's tables under a named lock rather than in one transaction; every step can safely run again.
+
+## MongoDB
+
+`@mayurajs/storage-mongodb` stores aggregates (the records and events the server's submission journal and run records
+use), [native memory](memory-and-context.md) and durable budgets in MongoDB, through the official `mongodb` driver.
+Durable workflows and scheduled jobs are not on MongoDB yet: use another adapter for those.
+
+```bash
+npm install mayura @mayurajs/storage-mongodb
+```
+
+```ts
+import { createMongoStore } from '@mayurajs/storage-mongodb';
+
+const store = createMongoStore({ uri: process.env.MONGODB_URL ?? '', database: 'mayura' });
+await store.initialize();
+await store.memory.initialize();
+```
+
+| Option | Notes |
+| --- | --- |
+| `uri` | A `mongodb://` or `mongodb+srv://` URL of a replica set or sharded cluster: multi-document transactions need one, and a single-node replica set is enough. Keep it in your secret configuration. Give this or `client`. |
+| `database` | The database that holds Mayura's collections. |
+| `client` | A `MongoClient` you create and own, instead of `uri`. `store.close()` never closes it. |
+
+Every write is one multi-document transaction with majority write concern, so a record and its events, or a budget and
+its journal, change together or not at all. Writers that touch the same document conflict, and the driver runs the
+losing transaction again. If a process dies in the middle of a transaction, the server keeps it open until it aborts
+it (`transactionLifetimeLimitSeconds`, 60 seconds by default); until then, writes to the documents it touched wait. State
+and event data are stored as the exact JSON text given, so keys MongoDB would restrict, such as `$set` or `a.b`, come
+back unchanged.
 
 ## What uses the store
 

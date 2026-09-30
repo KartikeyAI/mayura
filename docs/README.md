@@ -47,7 +47,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 
 ## Data, safety and extensions
 
-- [Storage](guides/storage.md): SQLite, PostgreSQL, libSQL (Turso) and MySQL.
+- [Storage](guides/storage.md): SQLite, PostgreSQL, libSQL (Turso), MySQL and MongoDB.
 - [Memory and context](guides/memory-and-context.md): what an agent remembers and sees.
 - [Guardrails](guides/guardrails.md): check, block or redact inputs and outputs.
 - [Lifecycle hooks](guides/lifecycle-hooks.md): code that can stop a run at defined points.

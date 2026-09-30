@@ -13,14 +13,21 @@ try {
   if (!process.send || !options || !['reserve-before', 'reserve-after', 'start-before', 'start-after', 'settle-before', 'settle-after'].includes(options.phase)) throw new Error();
   if (options.adapter === 'sqlite' && !options.filename.includes('mayura-durable-budgets-')) throw new Error();
   if (options.adapter === 'postgres' && !/^mayura_durable_budget_[a-f0-9]{32}$/.test(options.schema)) throw new Error();
-  if (!['sqlite', 'postgres', 'libsql', 'mysql'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
+  if (!['sqlite', 'postgres', 'libsql', 'mysql', 'mongodb'].includes(options.adapter) || !['reserveBundle', 'start', 'settle'].includes(options.method)) throw new Error();
   if (options.phase.endsWith('after')) {
     const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
       : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
       : options.adapter === 'mysql' ? (await import('./mysql.mjs')).mysqlStore(options)
+      : options.adapter === 'mongodb' ? (await import('./mongodb.mjs')).mongoStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     stage = 'initialize'; await store.initialize(); await store.durableBudgets.initialize();
     stage = 'public-command'; await store.durableBudgets[options.method](options.command); await checkpoint();
+  } else if (options.adapter === 'mongodb') {
+    // MongoDB has no SQL layer to instrument: the public store runs on a client that stops before its commit.
+    let armed = false;
+    const store = (await import('./mongodb.mjs')).mongoStoreBeforeCommit(options, async () => { if (armed) await checkpoint(); });
+    stage = 'initialize'; await store.initialize(); await store.durableBudgets.initialize(); armed = true;
+    stage = 'transaction-command'; await store.durableBudgets[options.method](options.command); throw new Error();
   } else {
     let armed = false; let backend;
     if (options.adapter === 'sqlite') {

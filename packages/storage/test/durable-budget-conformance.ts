@@ -301,8 +301,9 @@ export function durableBudgetConformance(name: string, factory: () => Promise<Du
     });
 
     it('allows an unrelated root to progress while another root row is locked, where rows are locked', async () => {
-      // SQLite and libSQL deliberately serialize writers database-wide; PostgreSQL and MySQL lock rows.
-      if (!['postgres', 'mysql'].includes(fixture.childOptions.adapter)) return;
+      // SQLite and libSQL deliberately serialize writers database-wide; PostgreSQL and MySQL lock rows, and MongoDB
+      // retries a writer that conflicts with an open transaction on the same document.
+      if (!['postgres', 'mysql', 'mongodb'].includes(fixture.childOptions.adapter)) return;
       await create(); const otherKey = { ...key, id: 'unrelated-root' }; await api.create({ ...otherKey, maxCostMicros: 10, maxCalls: 10 });
       const second = (await reopen()).durableBudgets; const release = await fixture.lockRoot(key.scope, key.id);
       let settled = false; const blocked = api.reserveBundle({ ...key, accountId: 'root', bundleId: 'blocked', operations: [{ id: 'blocked', maxCostMicros: 1 }] }).finally(() => { settled = true; });

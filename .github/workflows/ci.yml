@@ -88,6 +88,7 @@ jobs:
       MAYURA_TEST_POSTGRES_URL: postgresql://mayura:mayura_ci_test_only@127.0.0.1:5432/mayura
       MAYURA_TEST_LIBSQL_URL: ws://127.0.0.1:18080
       MAYURA_TEST_MYSQL_URL: mysql://root:mayura_ci_test_only@127.0.0.1:13306/mysql
+      MAYURA_TEST_MONGODB_URL: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -98,6 +99,13 @@ jobs:
       - run: npm install --global pnpm@10.17.1 --ignore-scripts
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: node scripts/ci-step.mjs -- pnpm typecheck
+      # A single-node MongoDB replica set (transactions need one) for @mayurajs/storage-mongodb. Service containers take no
+      # command line, and MongoDB needs --replSet, so it is started here.
+      - run: |
+          docker run -d --name mongodb -p 127.0.0.1:27017:27017 mongo@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do docker exec mongodb mongosh --quiet --eval "db.adminCommand('ping')" && break; sleep 2; done
+          docker exec mongodb mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
+          for attempt in $(seq 1 30); do [ "$(docker exec mongodb mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 2; done
       - run: node scripts/ci-step.mjs -- pnpm test:integration
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
   # Entry points outside the Node-only list bundle for edge runtimes, and the runtime probe (agents, the server handler,

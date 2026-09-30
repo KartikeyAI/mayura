@@ -16,6 +16,8 @@ export { executionWaitFacade } from './execution-wait-validation.js';
 export { workflowGraphDiscoveryFacade } from './workflow-graph-discovery-validation.js';
 export { workflowTreeDiscoveryFacade } from './workflow-tree-discovery-validation.js';
 export { durableBudgetFacade } from './durable-budget-validation.js';
+/** The durable budget arithmetic, shared by stores that do not use this SQL layer, so every store charges alike. */
+export { initialDurableBudgetState, reduceDurableBudgetState, type DurableBudgetMutation, type DurableBudgetReduction } from './durable-budget-state.js';
 export { workflowTreeCommand, workflowTreeFacade } from './workflow-tree-validation.js';
 export { initializeOwnership, ownedRun, writerRequired } from './aggregate-session.js';
 export { createCommand, updateCommand, migrateCommand, identifier, cursor, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE } from './validation.js';

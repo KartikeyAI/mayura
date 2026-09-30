@@ -53,7 +53,7 @@ Rules that matter when writing Mayura code:
 
 ## Data, safety and extensions
 
-- [Storage](docs/guides/storage.md): Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, run migrations, and back the store up.
+- [Storage](docs/guides/storage.md): Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso) or MySQL, and memory and budgets in MongoDB; run migrations, and back the store up.
 - [Memory and context](docs/guides/memory-and-context.md): Give agents scoped long-term memory with lexical, semantic and hybrid search, and assemble prompt context within a budget.
 - [Guardrails](docs/guides/guardrails.md): Check, redact or block what goes into and comes out of an agent with local guards, processor pipelines and model-backed moderation.
 - [Lifecycle hooks](docs/guides/lifecycle-hooks.md): Run your own checks and observers at fixed points of an agent run: before model and tool calls, before output release, and at the end.

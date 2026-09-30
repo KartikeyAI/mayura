@@ -5280,6 +5280,14 @@
         "kind": "function",
         "declaration": "c83259a573ca101c"
       },
+      "DurableBudgetMutation": {
+        "kind": "type",
+        "declaration": "7ed139cbbb76840c"
+      },
+      "DurableBudgetReduction": {
+        "kind": "interface",
+        "declaration": "c89eab67cd94d9e4"
+      },
       "EVENT_PAGE_SIZE": {
         "kind": "const",
         "declaration": "6f6cf37b5a503e60"
@@ -5295,6 +5303,10 @@
       "identifier": {
         "kind": "function",
         "declaration": "dea82c6ee3dbe517"
+      },
+      "initialDurableBudgetState": {
+        "kind": "function",
+        "declaration": "3c72aadc8c81be11"
       },
       "initializeOwnership": {
         "kind": "function",
@@ -5319,6 +5331,10 @@
       "ownedRun": {
         "kind": "function",
         "declaration": "c255b1c2c5f088f0"
+      },
+      "reduceDurableBudgetState": {
+        "kind": "function",
+        "declaration": "a15eb61281467d95"
       },
       "scheduledFacade": {
         "kind": "function",
@@ -7327,6 +7343,20 @@
       "LibsqlStoreOptions": {
         "kind": "interface",
         "declaration": "b77794b125629265"
+      }
+    },
+    "@mayurajs/storage-mongodb": {
+      "createMongoStore": {
+        "kind": "function",
+        "declaration": "821d50c13945e773"
+      },
+      "MongoStore": {
+        "kind": "type",
+        "declaration": "91d57e2787d059c4"
+      },
+      "MongoStoreOptions": {
+        "kind": "interface",
+        "declaration": "bd48050a11cdca0e"
       }
     },
     "@mayurajs/storage-mysql": {
