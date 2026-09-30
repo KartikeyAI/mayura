@@ -40,11 +40,19 @@ export function mongoSchedulerPersistence(db: Db, transaction: Transaction): Sch
   };
 }
 
-/** The server's clock, as an offset from this process's; a transaction measures it once, before it starts. */
+/**
+ * The server's clock, as an offset from this process's; a transaction reads it once, before it starts. The offset
+ * changes only as the two clocks drift, so a measurement is reused for a second rather than costing every transaction
+ * a round trip. Leases and deadlines are enforced against stored clock floors, which never move backwards.
+ */
+const offsets = new WeakMap<Db, { value: number; measuredAt: number }>();
 export async function serverClockOffset(db: Db): Promise<number> {
+  const cached = offsets.get(db); const now = Date.now();
+  if (cached && now >= cached.measuredAt && now - cached.measuredAt < 1_000) return cached.value;
   const before = Date.now(); const hello = await db.admin().command({ hello: 1 }); const after = Date.now();
   const server = hello['localTime'] instanceof Date ? hello['localTime'].getTime() : after;
-  return server - Math.round((before + after) / 2);
+  const value = server - Math.round((before + after) / 2);
+  offsets.set(db, { value, measuredAt: after }); return value;
 }
 
 /** Writes the document so another transaction that writes it conflicts; the value itself is never read. True when it exists. */

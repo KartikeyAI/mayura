@@ -74,6 +74,8 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       'rejects a %s discovery index while preserving its native catalog identity and business data', async mismatch => {
         // MySQL names an index within its table, and has no partial indexes or per-column collations.
         if (fixture.dialect === 'mysql' && ['wrong table', 'partial', 'wrong collation'].includes(mismatch)) return;
+        // MongoDB also names an index within its collection, and has no expression indexes.
+        if (fixture.dialect === 'mongodb' && ['wrong table', 'expression'].includes(mismatch)) return;
         await submit(`index-collision-${mismatch.replaceAll(' ', '-')}`);
         const collation = fixture.dialect === 'postgres' ? '"C"' : 'BINARY';
         const incompatibleCollation = fixture.dialect === 'postgres' ? '"POSIX"' : 'NOCASE';
@@ -84,8 +86,9 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
         if (mismatch === 'descending') keys += ' DESC';
         if (mismatch === 'wrong collation') keys = `scope,policy_hash,profile,aggregate_id COLLATE ${incompatibleCollation}`;
         if (mismatch === 'expression') keys = fixture.dialect === 'mysql' ? 'scope,policy_hash,profile,(lower(aggregate_id))' : 'scope,policy_hash,profile,lower(aggregate_id)';
-        await fixture.query(`CREATE ${mismatch === 'unique' ? 'UNIQUE ' : ''}INDEX mayura_workflow_owners_discovery ON ${fixture.prefix}${indexedTable} (${keys})${mismatch === 'partial' ? ' WHERE profile = 2' : ''}`);
-        const catalog = () => fixture.dialect === 'sqlite'
+        if (fixture.discoveryIndex) await fixture.discoveryIndex.create(mismatch as Exclude<typeof mismatch, 'wrong table' | 'expression'>);
+        else await fixture.query(`CREATE ${mismatch === 'unique' ? 'UNIQUE ' : ''}INDEX mayura_workflow_owners_discovery ON ${fixture.prefix}${indexedTable} (${keys})${mismatch === 'partial' ? ' WHERE profile = 2' : ''}`);
+        const catalog = () => fixture.discoveryIndex ? fixture.discoveryIndex.list() : fixture.dialect === 'sqlite'
           ? fixture.query('SELECT type,name,tbl_name,rootpage,sql FROM sqlite_schema WHERE name = ?', ['mayura_workflow_owners_discovery'])
           : fixture.dialect === 'mysql' ? fixture.query(`SELECT TABLE_NAME AS table_name, GROUP_CONCAT(CONCAT_WS(':', SEQ_IN_INDEX, COALESCE(COLUMN_NAME, EXPRESSION), NON_UNIQUE, COALESCE(COLLATION, '')) ORDER BY SEQ_IN_INDEX) AS definition FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ? GROUP BY TABLE_NAME`, ['mayura_workflow_owners_discovery'])
           : fixture.query(`SELECT c.oid::text AS oid,c.relkind,c.relname,i.indrelid::text AS table_oid,pg_get_indexdef(c.oid) AS definition
@@ -99,7 +102,8 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       });
 
     it('preserves a same-named table object instead of replacing it with an index', async () => {
-      if (fixture.dialect === 'mysql') return; // MySQL names an index within its table: a same-named table is no collision.
+      // MySQL names an index within its table, and MongoDB within its collection: a same-named table is no collision.
+      if (fixture.dialect === 'mysql' || fixture.dialect === 'mongodb') return;
       await fixture.query(`CREATE TABLE ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value TEXT NOT NULL)`);
       await fixture.query(`INSERT INTO ${fixture.prefix}mayura_workflow_owners_discovery (fixture_value) VALUES (?)`, ['retained-fixture-value']);
       const catalog = () => fixture.dialect === 'sqlite'
@@ -114,7 +118,7 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
 
     it('discovers existing owned runs after index provisioning and close/reopen without a backfill', async () => {
       const runs = [await submit(), await submit(), await submit()];
-      const indexExists = async () => fixture.dialect === 'sqlite'
+      const indexExists = async () => fixture.discoveryIndex ? fixture.discoveryIndex.list() : fixture.dialect === 'sqlite'
         ? fixture.query('SELECT name FROM sqlite_master WHERE type = ? AND name = ?', ['index', 'mayura_workflow_owners_discovery'])
         : fixture.dialect === 'mysql' ? fixture.query(`SELECT TABLE_NAME AS table_name, GROUP_CONCAT(CONCAT_WS(':', SEQ_IN_INDEX, COALESCE(COLUMN_NAME, EXPRESSION), NON_UNIQUE, COALESCE(COLLATION, '')) ORDER BY SEQ_IN_INDEX) AS definition FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ? GROUP BY TABLE_NAME`, ['mayura_workflow_owners_discovery'])
         : fixture.query('SELECT indexname FROM pg_indexes WHERE schemaname = ? AND indexname = ?', [fixture.childConfig.kind === 'postgres' ? fixture.childConfig.schema : '', 'mayura_workflow_owners_discovery']);
@@ -265,6 +269,13 @@ export function graphDiscoveryConformance(name: string, factory: () => Promise<G
       // These are valid owned runs, not synthetic corrupt rows: all remain inspectable.
       for (let index = 0; index < 1_024; index++) await store.workflowGraphs.submit({ manifest, policy: { ...policy, policyVersion: `plan-policy-${index % 64}` }, resources: {}, input: null, idempotencyKey: `plan-filler-${index}` });
       const run = await submit('plan-selected'); await client.scan();
+      if (fixture.discoveryIndex) {
+        // MongoDB: the winning plan scans the discovery index in key order, with no in-memory sort.
+        const plan = JSON.stringify(await fixture.discoveryIndex.explain(scopeHash, policyHash));
+        expect(plan).toContain('"indexName":"mayura_workflow_owners_discovery"'); expect(plan).toContain('"stage":"IXSCAN"'); expect(plan).not.toContain('"stage":"SORT"');
+        expect((await client.scan()).candidates.map(candidate => candidate.reference.runId)).toEqual([run.id]);
+        return;
+      }
       const collate = fixture.dialect === 'mysql' ? '' : ` COLLATE ${fixture.dialect === 'postgres' ? '"C"' : 'BINARY'}`;
       const sql = `SELECT aggregate_id FROM ${fixture.prefix}mayura_workflow_owners WHERE scope = ? AND policy_hash = ? AND profile = 2 AND aggregate_id${collate} > ? ORDER BY aggregate_id${collate} LIMIT ?`;
       if (fixture.dialect === 'postgres') await fixture.query(`ANALYZE ${fixture.prefix}mayura_workflow_owners`);

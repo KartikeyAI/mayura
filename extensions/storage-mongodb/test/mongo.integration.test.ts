@@ -11,6 +11,7 @@ import type { JsonObject } from 'mayura';
 import { createMongoStore } from '../src/index.js';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
+import { executionWaitConformance } from '../../../packages/storage/test/execution-waits-conformance.js';
 import { identityIntegrityConformance } from '../../../packages/storage/test/identity-integrity-conformance.js';
 import { scheduledBounds } from '../../../packages/storage/test/scheduled-bounds-conformance.js';
 import { schedulerConformance } from '../../../packages/storage/test/scheduler-conformance.js';
@@ -18,6 +19,9 @@ import { memoryConformance } from '../../../packages/memory/test/conformance.js'
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { scheduledWorkflowConformance } from '../../../packages/workflows/test/scheduled-conformance.js';
+import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
+import { graphCoordinatorConformance } from '../../../packages/workflows/test/graph-coordinator-conformance.js';
+import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
 import { mongoSql } from './sql-shim.js';
 
 const server = process.env['MAYURA_TEST_MONGODB_URL'];
@@ -57,11 +61,34 @@ describe.skipIf(!server)('MongoDB', () => {
   nativeMemoryConformance('MongoDB', simple);
   workflowConformance('MongoDB', simple);
   scheduledBounds('MongoDB', simple);
-  scheduledWorkflowConformance('MongoDB', (async () => {
+  /** The workflow suites' fixture: row tampering through the SQL shim, a real held write on an aggregate, and native index access. */
+  const workflowFixture = async () => {
     const { database, open, cleanup } = await fixture();
+    const owners = async <T>(body: (collection: import('mongodb').Collection) => Promise<T>) => {
+      const client = new MongoClient(server!); try { return await body(client.db(database).collection('mayura_workflow_owners')); } finally { await client.close(); }
+    };
     return { store: open(), reopen: open, dialect: 'mongodb', prefix: '', childConfig: { kind: 'mongodb', uri: server!, database }, query: mongoSql(server!, database),
-      lockAggregate: (scope: string, id: string) => holdDocument(database, 'mayura_aggregates', { scope, id }), cleanup };
-  }) as never);
+      lockAggregate: (scope: string, id: string) => holdDocument(database, 'mayura_aggregates', { scope, id }), cleanup,
+      discoveryIndex: {
+        create: (mismatch: string) => owners(async collection => {
+          const key = mismatch === 'wrong columns' ? { scope: 1 } : { scope: 1, policy_hash: 1, profile: 1, aggregate_id: mismatch === 'descending' ? -1 : 1 };
+          await collection.createIndex(key, { name: 'mayura_workflow_owners_discovery', ...(mismatch === 'unique' ? { unique: true } : {}),
+            ...(mismatch === 'partial' ? { partialFilterExpression: { profile: 2 } } : {}), ...(mismatch === 'wrong collation' ? { collation: { locale: 'en', strength: 2 } } : {}) });
+        }),
+        list: () => owners(async collection => (await collection.listIndexes().toArray().catch(() => [])).filter(index => index['name'] === 'mayura_workflow_owners_discovery')),
+        // The same query the store runs for a discovery scan.
+        explain: (scope: string, policyHash: string) => owners(async collection => (await collection.find({ scope, policy_hash: policyHash, profile: 2, aggregate_id: { $gt: '' } },
+          { projection: { _id: 0, aggregate_id: 1 } }).sort({ aggregate_id: 1 }).limit(16).explain('queryPlanner'))['queryPlanner']['winningPlan']),
+      } };
+  };
+  scheduledWorkflowConformance('MongoDB', workflowFixture as never);
+  graphWorkflowConformance('MongoDB', workflowFixture as never);
+  graphDiscoveryConformance('MongoDB', workflowFixture as never);
+  graphCoordinatorConformance('MongoDB', workflowFixture as never);
+  executionWaitConformance('MongoDB', async () => {
+    const { database, open, cleanup } = await fixture();
+    return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: mongoSql(server!, database), cleanup } as never;
+  });
   durableBudgetConformance('MongoDB', async () => {
     const { database, open, cleanup } = await fixture();
     return { store: open(), reopen: open, prefix: '', childOptions: { adapter: 'mongodb', uri: server!, database }, query: mongoSql(server!, database),

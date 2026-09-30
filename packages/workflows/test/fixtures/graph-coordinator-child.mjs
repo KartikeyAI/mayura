@@ -14,9 +14,10 @@ try {
   const backend = config.backend;
   if (backend.kind === 'sqlite' && !backend.filename.includes('mayura-graph-workflows-')) throw new Error();
   if (backend.kind === 'postgres' && !/^mayura_graph_workflow_[a-f0-9]{32}$/.test(backend.schema)) throw new Error();
-  if (!['sqlite', 'postgres', 'mysql'].includes(backend.kind)) throw new Error();
+  if (!['sqlite', 'postgres', 'mysql', 'mongodb'].includes(backend.kind)) throw new Error();
   store = backend.kind === 'sqlite' ? createSqliteStore({ filename: backend.filename })
     : backend.kind === 'mysql' ? (await import('../../../storage/test/fixtures/mysql.mjs')).mysqlStore({ uri: backend.uri })
+    : backend.kind === 'mongodb' ? (await import('../../../storage/test/fixtures/mongodb.mjs')).mongoStore({ uri: backend.uri, database: backend.database })
     : createPostgresStore({ connectionString: backend.connectionString, schema: backend.schema });
   await store.initialize(); await store.workflowGraphs.initialize();
   const effects = [0, 0];

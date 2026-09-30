@@ -1,13 +1,17 @@
 import { MongoClient, MongoError, type ClientSession, type Collection, type Db } from 'mongodb';
-import { StorageError, storageError, type AggregateStore, type DurableBudgetAggregateStore, type ScheduledWorkflowAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
+import { StorageError, storageError, type DurableBudgetAggregateStore, type WorkflowGraphDiscoveryAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
 import { mongoBudgets } from './budgets.js';
 import { mongoMemory } from './memory.js';
 import { mongoSchedulerPersistence } from './scheduler.js';
+import { mongoExecutionWaitPersistence } from './execution-waits.js';
 import { mongoScheduledPersistence } from './workflows.js';
-import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, writerRequired } from 'mayura/storage-sql/host';
+import { createCommand, cursor, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, executionWaitFacade, ExecutionWaitDatabase, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, writerRequired } from 'mayura/storage-sql/host';
 
-/** The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, the leased scheduler and scheduled workflows. */
-export type MongoStore = AggregateStore & MemoryIndexAggregateStore & DurableBudgetAggregateStore & ScheduledWorkflowAggregateStore;
+/**
+ * The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, the leased
+ * scheduler, scheduled workflows and workflow graphs with execution waits and discovery.
+ */
+export type MongoStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & WorkflowGraphDiscoveryAggregateStore;
 
 export interface MongoStoreOptions {
   /**
@@ -95,6 +99,7 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   const current = (session: ClientSession, scope: string, id: string) => aggregates.findOne({ scope, id }, { session, projection: { _id: 0 } });
   const schedulerDatabase = new SchedulerDatabase(mongoSchedulerPersistence(db, transaction));
   const workflowsDatabase = new ScheduledWorkflowDatabase(mongoScheduledPersistence(db, transaction), schedulerDatabase);
+  const executionWaitDatabase = new ExecutionWaitDatabase(mongoExecutionWaitPersistence(db, transaction), workflowsDatabase);
   /** A run enrolled in scheduled execution changes only through its scheduled writer. */
   const unowned = async (session: ClientSession, scope: string, id: string) => { if (await owners.findOne({ scope, aggregate_id: id }, { session, projection: { _id: 1 } })) writerRequired(); };
 
@@ -103,6 +108,9 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
     durableBudgets: mongoBudgets(db, transaction, () => available()),
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     workflows: scheduledFacade((method, input) => { available(); return workflowsDatabase.execute(method, input); }),
+    workflowGraphs: workflowGraphFacade((method, input) => { available(); return workflowsDatabase.execute(method, input, 2); }),
+    workflowGraphDiscovery: workflowGraphDiscoveryFacade((method, input) => { available(); return workflowsDatabase.discover(method, input); }),
+    executionWaits: executionWaitFacade((method, input) => { available(); return executionWaitDatabase.execute(method, input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

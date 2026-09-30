@@ -1,4 +1,4 @@
-import type { ClientSession, Collection, Db, Document } from 'mongodb';
+import { MongoServerError, type ClientSession, type Collection, type Db, type Document } from 'mongodb';
 import { StorageError } from 'mayura/storage-contracts';
 import {
   identifier, nextCounter, storedObject, submissionDigest,
@@ -44,7 +44,14 @@ export function mongoScheduledPersistence(db: Db, transaction: Transaction): Sch
       await completions.createIndexes([{ key: { scope: 1, run_id: 1 }, name: 'mayura_execution_completions_id', unique: true }]);
     },
     initializeDiscovery: async () => {
-      await owners.createIndexes([{ key: { scope: 1, policy_hash: 1, profile: 1, aggregate_id: 1 }, name: 'mayura_workflow_owners_discovery' }]);
+      // A same-named index is not proof of a usable access path: an existing one must be exactly this one.
+      const invalid = () => new StorageError('STORAGE_UNAVAILABLE', 'The workflow graph discovery index failed integrity validation.');
+      try { await owners.createIndexes([{ key: { scope: 1, policy_hash: 1, profile: 1, aggregate_id: 1 }, name: 'mayura_workflow_owners_discovery' }]); }
+      catch (error) { if (error instanceof MongoServerError && [85, 86].includes(error.code as number)) throw invalid(); throw error; }
+      const index = (await owners.listIndexes().toArray()).find(item => item['name'] === 'mayura_workflow_owners_discovery');
+      const allowed = new Set(['v', 'key', 'name']);
+      if (!index || Object.keys(index).some(option => !allowed.has(option))
+        || JSON.stringify(index['key']) !== JSON.stringify({ scope: 1, policy_hash: 1, profile: 1, aggregate_id: 1 })) throw invalid();
     },
     transaction: async body => { const skew = await serverClockOffset(db); return transaction(session => body(mongoScheduledRows(db, session, skew))); },
   };
@@ -92,10 +99,11 @@ export function mongoScheduledRows(db: Db, session: ClientSession, skew: number)
     writeAggregate: async (current, state, input, now) => {
       const version = nextCounter(counter(current.version), 1); const sequence = counter(current.event_sequence);
       const next = { state: JSON.stringify(storedObject(state)), version, eventSequence: nextCounter(sequence, input.length) };
-      const updated = await aggregates.findOneAndUpdate({ scope: current.scope, id: current.id }, { $set: next }, { ...noId, returnDocument: 'after', session });
-      if (!updated) throw new StorageError('STORAGE_UNAVAILABLE', 'Locked aggregate disappeared.');
+      // The record is locked: the new row is known without reading back its (up to megabytes of) state.
+      const updated = await aggregates.updateOne({ scope: current.scope, id: current.id }, { $set: next }, { session });
+      if (updated.matchedCount !== 1) throw new StorageError('STORAGE_UNAVAILABLE', 'Locked aggregate disappeared.');
       await append(current.scope, current.id, sequence, input, now);
-      return row(updated);
+      return { ...current, state: next.state, version: next.version, event_sequence: next.eventSequence };
     },
     redefine: async (scope, id, definitionHash, resourceHash) => {
       await aggregates.updateOne({ scope, id }, { $set: { definitionHash } }, { session });

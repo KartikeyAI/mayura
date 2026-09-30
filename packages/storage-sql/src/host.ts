@@ -11,6 +11,8 @@ export type { ScheduledPersistence, ScheduledTransaction, WorkflowOwnerRow, Work
 export type { AggregateRow } from './aggregate-session.js';
 export type { CompletionRow } from './execution-completions.js';
 export { ExecutionWaitDatabase } from './execution-wait-database.js';
+/** The rows the execution wait state machine reads and writes. */
+export type { ExecutionStreamRow, ExecutionWaitEventRow, ExecutionWaitPersistence, ExecutionWaitRow, ExecutionWaitTargetRow, ExecutionWaitTransaction } from './execution-wait-persistence.js';
 export { DurableBudgetDatabase } from './durable-budget-database.js';
 export { WorkflowTreeDatabase } from './workflow-tree-database.js';
 export { MemoryIndexDatabase } from './memory-database.js';

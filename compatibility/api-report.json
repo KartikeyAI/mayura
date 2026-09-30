@@ -5300,13 +5300,37 @@
         "kind": "const",
         "declaration": "6f6cf37b5a503e60"
       },
+      "ExecutionStreamRow": {
+        "kind": "interface",
+        "declaration": "3d1d2b03f678facb"
+      },
       "ExecutionWaitDatabase": {
         "kind": "class",
-        "declaration": "29afb62be3568552"
+        "declaration": "85bf83b2d19d3033"
+      },
+      "ExecutionWaitEventRow": {
+        "kind": "interface",
+        "declaration": "c5f77dd8239c9ceb"
       },
       "executionWaitFacade": {
         "kind": "function",
         "declaration": "152c354308614da5"
+      },
+      "ExecutionWaitPersistence": {
+        "kind": "interface",
+        "declaration": "269411d10778702b"
+      },
+      "ExecutionWaitRow": {
+        "kind": "interface",
+        "declaration": "ca149cb0a39344d6"
+      },
+      "ExecutionWaitTargetRow": {
+        "kind": "interface",
+        "declaration": "b5c2065bed46eff8"
+      },
+      "ExecutionWaitTransaction": {
+        "kind": "interface",
+        "declaration": "754d74f3e7cdf72e"
       },
       "identifier": {
         "kind": "function",
@@ -7400,7 +7424,7 @@
       },
       "MongoStore": {
         "kind": "type",
-        "declaration": "69900aa91c03a684"
+        "declaration": "10e2580c4ebbf95d"
       },
       "MongoStoreOptions": {
         "kind": "interface",

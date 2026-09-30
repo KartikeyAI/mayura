@@ -2,6 +2,7 @@
 // statements. This applies them to the same MongoDB documents. It understands only the shapes the suites use:
 //   SELECT <columns | *> FROM <table> [WHERE <column> = ? [AND ...]] [ORDER BY ...] [LIMIT <n>]
 //   UPDATE <table> SET <column> = ? | <column> = <column> + 1 [, ...] WHERE <column> = ? [AND ...]
+// where a `?` may also be an integer literal.
 //   DELETE FROM <table> WHERE <column> = ? [AND ...]
 //   INSERT INTO <table> (<columns>) VALUES (?, ...)
 // Any other statement fails the test.
@@ -16,9 +17,9 @@ function where(table: string, clause: string | undefined, parameters: unknown[])
   const filter: Document = {};
   if (!clause) return filter;
   for (const condition of clause.split(/\s+AND\s+/i)) {
-    const match = /^([a-z_][a-z0-9_]*)\s*=\s*\?$/i.exec(condition.trim());
+    const match = /^([a-z_][a-z0-9_]*)\s*=\s*(\?|\d+)$/i.exec(condition.trim());
     if (!match) throw new Error(`The MongoDB test shim cannot filter on: ${condition}`);
-    filter[field(table, match[1]!)] = parameters.shift();
+    filter[field(table, match[1]!)] = match[2] === '?' ? parameters.shift() : Number(match[2]);
   }
   return filter;
 }
@@ -56,9 +57,9 @@ export function mongoSql(uri: string, database: string) {
         const [, table, assignments, clause] = match as unknown as [string, string, string, string];
         const set: Document = {}; const inc: Document = {};
         for (const assignment of assignments.split(/, ?/)) {
-          const value = /^([a-z_][a-z0-9_]*) = \?$/i.exec(assignment.trim());
+          const value = /^([a-z_][a-z0-9_]*) = (\?|\d+)$/i.exec(assignment.trim());
           const increment = /^([a-z_][a-z0-9_]*) = ([a-z_][a-z0-9_]*) \+ 1$/i.exec(assignment.trim());
-          if (value) set[field(table, value[1]!)] = parameters.shift();
+          if (value) set[field(table, value[1]!)] = value[2] === '?' ? parameters.shift() : Number(value[2]);
           else if (increment && increment[1] === increment[2]) inc[field(table, increment[1]!)] = 1;
           else throw new Error(`The MongoDB test shim cannot assign: ${assignment}`);
         }

@@ -1,5 +1,6 @@
 // MongoDB for the crash-test subprocesses: the public store, or the public store on a client whose transactions call
-// `beforeCommit()` before committing, so a fixture can stop a process with a transaction written but not committed.
+// `beforeCommit(changed)` before committing, so a fixture can stop a process with a transaction written but not
+// committed. `changed` says whether the transaction sent a command `relevant(name, command)` accepts.
 // Test-only: the store itself has no failpoint. The mongodb driver is the extension's own dependency.
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,14 +19,19 @@ export function mongoOptions(options) {
 
 export const mongoStore = options => createMongoStore(mongoOptions(options));
 
-export function mongoStoreBeforeCommit(options, beforeCommit) {
+export function mongoStoreBeforeCommit(options, beforeCommit, relevant = () => false) {
   const { uri, database } = mongoOptions(options);
-  const client = new MongoClient(uri);
+  // A child runs one transaction at a time, so one flag follows the current transaction.
+  const client = new MongoClient(uri, { monitorCommands: true });
+  let changed = false;
+  client.on('commandStarted', event => { if (relevant(event.commandName, event.command)) changed = true; });
   const startSession = client.startSession.bind(client);
   client.startSession = (...args) => {
     const session = startSession(...args);
+    const start = session.startTransaction.bind(session);
+    session.startTransaction = (...startArgs) => { changed = false; return start(...startArgs); };
     const commit = session.commitTransaction.bind(session);
-    session.commitTransaction = async (...commitArgs) => { await beforeCommit(); return commit(...commitArgs); };
+    session.commitTransaction = async (...commitArgs) => { await beforeCommit(changed); return commit(...commitArgs); };
     return session;
   };
   return createMongoStore({ client, database });

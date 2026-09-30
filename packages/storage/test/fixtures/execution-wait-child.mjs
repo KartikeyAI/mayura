@@ -19,11 +19,23 @@ try {
     const store = options.adapter === 'sqlite' ? createSqliteStore({ filename: options.filename })
       : options.adapter === 'libsql' ? (await import('./libsql.mjs')).libsqlStore(options)
       : options.adapter === 'mysql' ? (await import('./mysql.mjs')).mysqlStore(options)
+      : options.adapter === 'mongodb' ? (await import('./mongodb.mjs')).mongoStore(options)
       : createPostgresStore({ connectionString: options.connectionString, schema: options.schema });
     await store.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize();
     if (publication) await store.workflows.cancel(options.cancel);
     else await store.executionWaits.drainReady({ ...options.stream, limit: 32 });
     await checkpoint();
+  } else if (options.adapter === 'mongodb') {
+    // MongoDB has no SQL layer to instrument: the public store stops before committing the transaction that wrote
+    // the completion (publication) or a wait's resolution (drain).
+    let armed = false;
+    const relevant = (name, command) => name === 'insert' && (publication ? command.insert === 'mayura_execution_completions'
+      : command.insert === 'mayura_execution_wait_events' && command.documents.some(document => document.type === 'wait.resolved'));
+    const store = (await import('./mongodb.mjs')).mongoStoreBeforeCommit(options, async changed => { if (armed && changed) await checkpoint(); }, relevant);
+    await store.initialize(); await store.workflows.initialize(); await store.executionWaits.initialize(); armed = true;
+    if (publication) await store.workflows.cancel(options.cancel);
+    else await store.executionWaits.drainReady({ ...options.stream, limit: 32 });
+    throw new Error();
   } else {
     let armed = false;
     const intercept = async (sql, parameters, execute) => {

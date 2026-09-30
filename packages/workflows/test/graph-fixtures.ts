@@ -15,10 +15,18 @@ const { Pool } = postgresRequire('pg') as typeof import('pg');
 /** Fault access is confined to the disposable database owned by this one test. */
 export interface GraphFixture {
   readonly store: ReturnType<typeof createSqliteStore>;
-  readonly dialect: 'sqlite' | 'postgres' | 'mysql';
+  readonly dialect: 'sqlite' | 'postgres' | 'mysql' | 'mongodb';
   readonly prefix: string;
   readonly childConfig: { readonly kind: 'sqlite'; readonly filename: string } | { readonly kind: 'mysql'; readonly uri: string }
-    | { readonly kind: 'postgres'; readonly connectionString: string; readonly schema: string };
+    | { readonly kind: 'postgres'; readonly connectionString: string; readonly schema: string }
+    | { readonly kind: 'mongodb'; readonly uri: string; readonly database: string };
+  /** A store without SQL catalogs (MongoDB): create a mismatched discovery index natively, and list the one that exists. */
+  readonly discoveryIndex?: {
+    create(mismatch: 'wrong columns' | 'partial' | 'descending' | 'wrong collation' | 'unique'): Promise<void>;
+    list(): Promise<readonly unknown[]>;
+    /** The store's own plan for the discovery scan of one scope and policy. */
+    explain(scope: string, policyHash: string): Promise<unknown>;
+  };
   reopen(): ReturnType<typeof createSqliteStore>;
   query(sql: string, parameters?: readonly unknown[]): Promise<readonly Record<string, unknown>[]>;
   lockAggregate(scope: string, id: string): Promise<() => Promise<void>>;
