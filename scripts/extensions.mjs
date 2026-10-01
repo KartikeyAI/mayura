@@ -32,6 +32,7 @@ export const reviewedDependencies = {
   'deploy-aws-lambda': [],
   'deploy-azure': [],
   'deploy-cloudrun': [],
+  'deploy-digitalocean': [],
   'deploy-fly': [],
   'deploy-railway': [],
   'deploy-render': [],

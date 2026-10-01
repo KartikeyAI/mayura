@@ -14,6 +14,7 @@
     { "path": "extensions/deploy-aws-lambda" },
     { "path": "extensions/deploy-azure" },
     { "path": "extensions/deploy-cloudrun" },
+    { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
     { "path": "extensions/deploy-railway" },
     { "path": "extensions/deploy-render" },

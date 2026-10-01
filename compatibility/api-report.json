@@ -8013,6 +8013,16 @@
         "declaration": "d1c0dd55e96d1805"
       }
     },
+    "@mayurajs/deploy-digitalocean": {
+      "DigitalOceanSettings": {
+        "kind": "interface",
+        "declaration": "e34ad39078a735ef"
+      },
+      "digitalOceanTarget": {
+        "kind": "const",
+        "declaration": "77ba8a36f5ef6138"
+      }
+    },
     "@mayurajs/deploy-fly": {
       "FlyBuild": {
         "kind": "type",

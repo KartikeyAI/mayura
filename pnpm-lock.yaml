@@ -95,6 +95,9 @@ importers:
       '@mayurajs/deploy-cloudrun':
         specifier: workspace:*
         version: link:extensions/deploy-cloudrun
+      '@mayurajs/deploy-digitalocean':
+        specifier: workspace:*
+        version: link:extensions/deploy-digitalocean
       '@mayurajs/deploy-fly':
         specifier: workspace:*
         version: link:extensions/deploy-fly
@@ -304,6 +307,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/deploy-cloudrun:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/deploy-digitalocean:
     devDependencies:
       mayura:
         specifier: workspace:*
