@@ -31,11 +31,11 @@ function stable(value: unknown): string {
   if (typeof value !== 'string' || !stablePattern.test(value)) throw new MayuraError('INVALID_CONFIG', 'Exporter names must be bounded stable identifiers.');
   return value;
 }
-function destination(value: unknown, signal: 'traces' | 'metrics', allowLoopback: boolean): string {
+function destination(value: unknown, signal: 'traces' | 'metrics', allowLoopback: boolean, standardPath: boolean): string {
   try {
     if (typeof value !== 'string' || value.length > 2_048) throw new Error(); const url = new URL(value);
     const loopback = ['127.0.0.1', '[::1]'].includes(url.hostname);
-    if ((url.protocol !== 'https:' && !(allowLoopback && url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash || !url.pathname.endsWith(`/v1/${signal}`)) throw new Error();
+    if ((url.protocol !== 'https:' && !(allowLoopback && url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash || (standardPath && !url.pathname.endsWith(`/v1/${signal}`))) throw new Error();
     return url.href;
   } catch { throw new MayuraError('INVALID_CONFIG', `OTLP ${signal} require an explicit HTTPS endpoint ending in /v1/${signal}.`); }
 }
@@ -184,7 +184,8 @@ function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: Otlp
     config = Object.freeze(Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, options[key as keyof typeof defaults] ?? fallback]))) as typeof defaults;
     for (const [key, value] of Object.entries(config)) assertPositiveInteger(value, key);
     if (config.timeoutMs > 2_147_483_647 || config.maxBatchSize > 256 || config.maxRequestBytes > 16_777_216 || config.maxResponseBytes > 1_048_576) throw new Error();
-    endpoint = destination(options.endpoint, signalName, allow);
+    const standardPath = options.standardPath ?? true; if (typeof standardPath !== 'boolean') throw new Error();
+    endpoint = destination(options.endpoint, signalName, allow, standardPath);
     const hook = (options as OtlpHttpJsonTraceExporterOptions).spanAttributes;
     if (hook !== undefined && (signalName !== 'traces' || typeof hook !== 'function')) throw new Error();
     setup = Object.freeze({ serviceName: stable(options.serviceName), serviceVersion: options.serviceVersion === undefined ? undefined : stable(options.serviceVersion),

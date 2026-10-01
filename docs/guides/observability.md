@@ -142,6 +142,7 @@ drops one batch instead of disabling the sink.
 | Exporter option | Default | Meaning |
 | --- | --- | --- |
 | `endpoint` | required | Full signal URL ending in `/v1/logs`, `/v1/traces` or `/v1/metrics`. Must be HTTPS. |
+| `standardPath` | `true` | Traces and metrics: `false` takes another exact URL, for a provider whose endpoint has a different path. |
 | `serviceName`, `serviceVersion` | required, none | Resource attributes `service.name` and `service.version`. |
 | `headers` | none | Sent with every request, for example an authorization header. Never shown by `inspect()`. |
 | `allowInsecureLoopback` | `false` | Allow `http://127.0.0.1` or `http://[::1]` for a local collector. |
@@ -217,6 +218,7 @@ show Mayura's spans as AI traces. Each returns the exporter, so `sink`, `inspect
 | `@mayurajs/observability-arize` | [Arize AX](https://arize.com) (US, EU, Canada), with OpenInference attributes: `arizeTraceExporter({ spaceId, apiKey, projectName, region })` | traces |
 | `@mayurajs/observability-sentry` | [Sentry](https://sentry.io), any region or self-hosted, with Sentry's `gen_ai.*` span ops: `sentryTraceExporter({ dsn })` | traces (Sentry's OTLP ingestion is in beta) |
 | `@mayurajs/observability-betterstack` | A [Better Stack](https://betterstack.com) OpenTelemetry source: `betterStackTraceExporter({ sourceToken, ingestingHost })` | traces |
+| `@mayurajs/observability-posthog` | [PostHog](https://posthog.com) LLM analytics (US, EU): model calls as `$ai_generation` events: `posthogTraceExporter({ projectToken, region, distinctId })` | traces |
 
 ### Through your OpenTelemetry SDK
 

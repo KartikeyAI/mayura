@@ -54,8 +54,13 @@ export interface OtlpHttpJsonLogExporter {
 export type OtlpExtraAttributes = Readonly<Record<string, string | number>>;
 
 export interface OtlpHttpJsonSignalExporterOptions {
-  /** Complete signal-specific endpoint ending in `/v1/traces` or `/v1/metrics`. */
+  /** Complete signal-specific endpoint ending in `/v1/traces` or `/v1/metrics` (any path with `standardPath: false`). */
   readonly endpoint: string;
+  /**
+   * Require the endpoint to end in OTLP's `/v1/traces` or `/v1/metrics`; `true` by default. Set `false` for a
+   * provider whose endpoint is another exact URL, such as PostHog's. The endpoint is still HTTPS and explicit.
+   */
+  readonly standardPath?: boolean;
   readonly serviceName: string;
   readonly serviceVersion?: string;
   /** More resource attributes beside `service.name` and `service.version`, such as a provider's project name. */

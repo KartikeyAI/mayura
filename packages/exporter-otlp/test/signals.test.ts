@@ -79,6 +79,18 @@ describe('OTLP HTTP JSON trace and metric exporters', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('takes a provider\'s exact endpoint only with standardPath: false, still HTTPS and explicit', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
+    const endpoint = 'https://ingest.example/i/v0/ai/otel';
+    expect(() => createOtlpHttpJsonTraceExporter(traceOptions(fetch, { endpoint }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    await createOtlpHttpJsonTraceExporter(traceOptions(fetch, { endpoint, standardPath: false })).sink([trace], { signal: new AbortController().signal });
+    expect(fetch.mock.calls[0]![0]).toBe(endpoint);
+    for (const refused of ['http://ingest.example/i/v0/ai/otel', 'https://user:pass@ingest.example/otel', 'https://ingest.example/otel?token=1', 'https://ingest.example/otel#x']) {
+      expect(() => createOtlpHttpJsonTraceExporter(traceOptions(fetch, { endpoint: refused, standardPath: false }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    }
+    expect(() => createOtlpHttpJsonTraceExporter(traceOptions(fetch, { standardPath: 'no' as never }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
+
   it('groups compatible metric points and encodes gauge and cumulative sum data', async () => {
     let body: any; const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => { body = JSON.parse(init?.body as string); return response(); });
     const exporter = createOtlpHttpJsonMetricExporter(metricOptions(fetch));

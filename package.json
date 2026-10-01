@@ -83,6 +83,7 @@
     "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
     "@mayurajs/observability-langfuse": "workspace:*",
+    "@mayurajs/observability-posthog": "workspace:*",
     "@mayurajs/observability-sentry": "workspace:*",
     "@mayurajs/observability-datadog": "workspace:*",
     "@mayurajs/observability-arize": "workspace:*",

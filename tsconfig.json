@@ -19,6 +19,7 @@
     { "path": "extensions/filestorage-r2" },
     { "path": "extensions/filestorage-vercel-blob" },
     { "path": "extensions/observability-langfuse" },
+    { "path": "extensions/observability-posthog" },
     { "path": "extensions/observability-sentry" },
     { "path": "extensions/observability-datadog" },
     { "path": "extensions/observability-arize" },

@@ -119,6 +119,9 @@ importers:
       '@mayurajs/observability-langfuse':
         specifier: workspace:*
         version: link:extensions/observability-langfuse
+      '@mayurajs/observability-posthog':
+        specifier: workspace:*
+        version: link:extensions/observability-posthog
       '@mayurajs/observability-sentry':
         specifier: workspace:*
         version: link:extensions/observability-sentry
@@ -322,6 +325,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/observability-langfuse:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/observability-posthog:
     devDependencies:
       mayura:
         specifier: workspace:*

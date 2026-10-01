@@ -1750,7 +1750,7 @@
       },
       "OtlpHttpJsonSignalExporterOptions": {
         "kind": "interface",
-        "declaration": "352302feb05d5378"
+        "declaration": "50d5b114f4ed5f39"
       },
       "OtlpHttpJsonTraceExporter": {
         "kind": "interface",
@@ -7993,6 +7993,20 @@
       "LangfuseTraceExporterOptions": {
         "kind": "interface",
         "declaration": "74b600750117de50"
+      }
+    },
+    "@mayurajs/observability-posthog": {
+      "PostHogRegion": {
+        "kind": "type",
+        "declaration": "1051e75a51d22ae2"
+      },
+      "posthogTraceExporter": {
+        "kind": "function",
+        "declaration": "3a748c25f90a9a9a"
+      },
+      "PostHogTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "a152b5e554174f1d"
       }
     },
     "@mayurajs/observability-sentry": {

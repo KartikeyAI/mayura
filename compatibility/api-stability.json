@@ -74,6 +74,7 @@
     "@mayurajs/filestorage-r2",
     "@mayurajs/filestorage-vercel-blob",
     "@mayurajs/observability-langfuse",
+    "@mayurajs/observability-posthog",
     "@mayurajs/observability-sentry",
     "@mayurajs/observability-datadog",
     "@mayurajs/observability-arize",
