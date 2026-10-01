@@ -40,6 +40,7 @@ export const reviewedDependencies = {
   'sandbox-daytona': [],
   'sandbox-agentcore': ['@aws-sdk/client-bedrock-agentcore'],
   'sandbox-modal': ['modal'],
+  'sandbox-railway': ['railway'],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

@@ -8671,6 +8671,20 @@
         "declaration": "829b544379f9ea6d"
       }
     },
+    "@mayurajs/sandbox-railway": {
+      "railwaySandboxes": {
+        "kind": "function",
+        "declaration": "5bc9fbef22eb56bb"
+      },
+      "RailwaySandboxLike": {
+        "kind": "interface",
+        "declaration": "e5eb62880c6aec0a"
+      },
+      "RailwaySandboxOptions": {
+        "kind": "interface",
+        "declaration": "74ac290d6ecff5bf"
+      }
+    },
     "@mayurajs/sandbox-vercel": {
       "vercelSandboxes": {
         "kind": "function",
