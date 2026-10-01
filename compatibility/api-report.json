@@ -2940,6 +2940,10 @@
         "kind": "interface",
         "declaration": "3153865e1a35511f"
       },
+      "parseSandboxListing": {
+        "kind": "function",
+        "declaration": "6011191662e84acf"
+      },
       "ProviderSandboxSpec": {
         "kind": "interface",
         "declaration": "626acf0aaed49c1c"
@@ -3011,6 +3015,10 @@
       "sandboxResponseFailure": {
         "kind": "function",
         "declaration": "cf451385a14cc141"
+      },
+      "sandboxScripts": {
+        "kind": "const",
+        "declaration": "2aab8017541016cc"
       },
       "SandboxSource": {
         "kind": "type",
@@ -8605,6 +8613,20 @@
       "xdotoolKeys": {
         "kind": "function",
         "declaration": "c0055ea58de94535"
+      }
+    },
+    "@mayurajs/sandbox-vercel": {
+      "vercelSandboxes": {
+        "kind": "function",
+        "declaration": "789dba8c88869aec"
+      },
+      "VercelSandboxOptions": {
+        "kind": "interface",
+        "declaration": "6a5e06bddf4c8757"
+      },
+      "VercelSandboxRuntime": {
+        "kind": "type",
+        "declaration": "a76af63ac4d69a28"
       }
     },
     "@mayurajs/storage-d1": {

@@ -3,7 +3,7 @@ import { MayuraError, type JsonValue } from '@mayura/core';
 import type { AnyTool } from '@mayura/tools';
 import { testTool, toolGrants } from '../../testing/src/index.js';
 import {
-  createSandboxes, sandboxPath, sandboxPerRun, sandboxTools, SandboxError, sandboxHttpFailure,
+  createSandboxes, parseSandboxListing, sandboxPath, sandboxPerRun, sandboxScripts, sandboxTools, SandboxError, sandboxHttpFailure,
   type BackendExecOptions, type BackendExecResult, type ProviderSandboxSpec, type SandboxBackend, type SandboxDesktop, type SandboxFeatures, type SandboxProvider,
 } from '../src/index.js';
 
@@ -416,5 +416,22 @@ describe('sandboxTools', () => {
     const outcome = await run(tools, 'pc.screenshot', {});
     expect(outcome).toMatchObject({ status: 'succeeded', output: { width: 800, height: 600 }, media: [{ mediaType: 'image/png' }] });
     expect(await run(tools, 'pc.click', { x: 5, y: 6, button: 'side' })).toMatchObject({ status: 'failed', error: { code: 'INVALID_INPUT' } });
+  });
+});
+
+describe('sandboxScripts and parseSandboxListing', () => {
+  it('parses the list script\'s output, leaving out names it cannot list safely', () => {
+    const output = new TextEncoder().encode(['d', '4096', '1759312800', 'src', 'f', '12', '1759312801', 'with space.txt', 'f', '1', '0', 'bad\nname', 'o', '7', '5', 'link', ''].join('\u0000'));
+    expect(parseSandboxListing(output)).toEqual([
+      { name: 'src', type: 'directory', size: 0, modified: 1_759_312_800_000 }, { name: 'with space.txt', type: 'file', size: 12, modified: 1_759_312_801_000 },
+      { name: 'link', type: 'other', size: 7, modified: 5_000 }]);
+    expect(parseSandboxListing(new Uint8Array(0))).toEqual([]);
+    expect(() => parseSandboxListing(new TextEncoder().encode('f\u000012\u0000'))).toThrow(SandboxError);
+  });
+
+  it('tags commands by one variable that the kill script looks for', () => {
+    expect(sandboxScripts.tagVariable).toBe('MAYURA_SANDBOX_EXEC');
+    expect(sandboxScripts.kill).toContain('grep -qxF "MAYURA_SANDBOX_EXEC=$1"');
+    expect(Object.isFrozen(sandboxScripts)).toBe(true);
   });
 });

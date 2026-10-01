@@ -191,6 +191,9 @@ importers:
       '@mayurajs/sandbox-e2b-desktop':
         specifier: workspace:*
         version: link:extensions/sandbox-e2b-desktop
+      '@mayurajs/sandbox-vercel':
+        specifier: workspace:*
+        version: link:extensions/sandbox-vercel
       '@mayurajs/storage-d1':
         specifier: workspace:*
         version: link:extensions/storage-d1
@@ -547,6 +550,12 @@ importers:
       '@mayurajs/sandbox-e2b':
         specifier: workspace:*
         version: link:../sandbox-e2b
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/sandbox-vercel:
     devDependencies:
       mayura:
         specifier: workspace:*

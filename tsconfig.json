@@ -17,6 +17,7 @@
     { "path": "extensions/deploy-cloudflare" },
     { "path": "extensions/sandbox-e2b" },
     { "path": "extensions/sandbox-e2b-desktop" },
+    { "path": "extensions/sandbox-vercel" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

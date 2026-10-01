@@ -1,10 +1,11 @@
 import { MayuraError } from '@mayura/core';
-import { SandboxError, type BackendExecResult, type ProviderSandboxSpec, type SandboxBackend, type SandboxEntry, type SandboxProvider } from '../contracts.js';
+import { SandboxError, type BackendExecResult, type ProviderSandboxSpec, type SandboxBackend, type SandboxProvider } from '../contracts.js';
 import { sandboxPath } from '../sandboxes.js';
+import { parseSandboxListing, sandboxScripts } from '../scripts.js';
 import { dockerApi, dockerSocketPath } from './api.js';
 import { dockerCli } from './cli.js';
 import type { DockerEngine } from './engine.js';
-import { environmentScript, execScript, killScript, listScript, readScript, removeScript, stateDirectory, writeScript } from './scripts.js';
+import { environmentScript, execScript, stateDirectory, writeScript } from './scripts.js';
 
 export interface DockerSandboxOptions {
   /**
@@ -40,7 +41,6 @@ export interface DockerSandboxOptions {
 
 const imagePattern = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,511}$/u;
 const randomHex = (bytes: number) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
-const decoder = new TextDecoder();
 
 function whole(value: number | undefined, name: string, fallback: number, min: number, max: number): number {
   const result = value ?? fallback;
@@ -142,20 +142,20 @@ export function dockerSandboxes(options: DockerSandboxOptions): SandboxProvider 
         const stop = new AbortController();
         // Ending the call ends the command: every process carrying its tag is killed, then the attached streams close.
         const onAbort = () => {
-          void run(script(killScript, [tag]), { maxOutputBytes: 4_096, signal: AbortSignal.timeout(15_000) }).catch(() => undefined).finally(() => stop.abort());
+          void run(script(sandboxScripts.kill, [tag]), { maxOutputBytes: 4_096, signal: AbortSignal.timeout(15_000) }).catch(() => undefined).finally(() => stop.abort());
         };
         if (execOptions.signal.aborted) onAbort(); else execOptions.signal.addEventListener('abort', onAbort, { once: true });
         try {
           const stdin = execOptions.stdin?.byteLength ? execOptions.stdin : undefined;
           const result = await run(script(execScript, [stdin ? String(stdin.byteLength) : '-', execOptions.cwd, envFile, ...command]),
-            { env: { MAYURA_SANDBOX_EXEC: tag }, maxOutputBytes: execOptions.maxOutputBytes, signal: stop.signal, ...(stdin ? { stdin } : {}) });
+            { env: { [sandboxScripts.tagVariable]: tag }, maxOutputBytes: execOptions.maxOutputBytes, signal: stop.signal, ...(stdin ? { stdin } : {}) });
           // A command killed because the call ended has no exit code of its own.
           if (execOptions.signal.aborted || result.exitCode === undefined) return { stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
           return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
         } finally { execOptions.signal.removeEventListener('abort', onAbort); }
       },
       readFile: async (path, { maxBytes, signal: callSignal }) => {
-        const result = await fileCall(readScript, [path, String(maxBytes)], { maxOutputBytes: maxBytes + 1, signal: callSignal });
+        const result = await fileCall(sandboxScripts.read, [path, String(maxBytes)], { maxOutputBytes: maxBytes + 1, signal: callSignal });
         if (result.exitCode === 3) return undefined;
         if (result.exitCode === 4) throw new MayuraError('INVALID_INPUT', 'That path is not a file.');
         if (result.exitCode === 6 || result.stdout.byteLength > maxBytes) throw new MayuraError('LIMIT_EXCEEDED', `The file is larger than ${maxBytes} bytes.`);
@@ -164,23 +164,14 @@ export function dockerSandboxes(options: DockerSandboxOptions): SandboxProvider 
       },
       writeFile: (path, data, { signal: callSignal }) => writeFile(path, data, callSignal),
       listFiles: async (path, { limit, signal: callSignal }) => {
-        const result = await fileCall(listScript, [path, String(limit)], { maxOutputBytes: 64 * 1_048_576, signal: callSignal });
+        const result = await fileCall(sandboxScripts.list, [path, String(limit)], { maxOutputBytes: 64 * 1_048_576, signal: callSignal });
         if (result.exitCode === 3) return undefined;
         if (result.exitCode === 4) throw new MayuraError('INVALID_INPUT', 'That path is not a directory.');
         if (result.exitCode !== 0 || result.truncated) throw new SandboxError('rejected');
-        const fields = decoder.decode(result.stdout).split('\u0000'); fields.pop();
-        if (fields.length % 4 !== 0) throw new SandboxError('invalid_response');
-        const entries: SandboxEntry[] = [];
-        for (let index = 0; index < fields.length; index += 4) {
-          const [type, size, modified, entryName] = fields.slice(index, index + 4) as [string, string, string, string];
-          // Names with control characters cannot be listed safely, so they are left out.
-          if (/[\u0000-\u001f\u007f]/u.test(entryName) || !/^\d{1,16}$/u.test(size) || !/^\d{1,16}$/u.test(modified)) continue;
-          entries.push({ name: entryName, type: type === 'f' ? 'file' : type === 'd' ? 'directory' : 'other', size: type === 'd' ? 0 : Number(size), modified: Number(modified) * 1_000 });
-        }
-        return entries;
+        return parseSandboxListing(result.stdout);
       },
       removeFile: async (path, { recursive, signal: callSignal }) => {
-        const result = await fileCall(removeScript, [path, recursive ? '1' : '0'], { maxOutputBytes: 4_096, signal: callSignal });
+        const result = await fileCall(sandboxScripts.remove, [path, recursive ? '1' : '0'], { maxOutputBytes: 4_096, signal: callSignal });
         if (result.exitCode === 7) throw new MayuraError('INVALID_INPUT', 'The directory is not empty; remove it with recursive.');
         if (result.exitCode !== 0) throw new SandboxError('rejected');
       },

@@ -1,6 +1,6 @@
 import { MayuraError } from 'mayura';
 import {
-  SandboxError, sandboxHttpFailure, sandboxResponseFailure,
+  SandboxError, sandboxHttpFailure, sandboxResponseFailure, sandboxScripts,
   type BackendExecResult, type ProviderSandboxSpec, type SandboxBackend, type SandboxEntry, type SandboxProvider,
 } from 'mayura/sandbox';
 
@@ -54,15 +54,6 @@ class Collector {
 // Commands run through sh, so a missing program or directory is a failed command, as on every provider.
 // $1: the directory; then the command.
 const execScript = 'cd -- "$1" || exit; shift; exec "$@"';
-// Stops every process of one command, found by the tag in its environment. $1: the tag's value.
-const killScript = [
-  'for _round in 1 2; do',
-  '  for _dir in /proc/[0-9]*; do',
-  '    _pid=${_dir#/proc/}; [ "$_pid" = "$$" ] && continue',
-  '    if tr "\\000" "\\n" < "$_dir/environ" 2>/dev/null | grep -qxF "MAYURA_SANDBOX_EXEC=$1"; then kill -KILL "$_pid" 2>/dev/null; fi',
-  '  done',
-  'done',
-].join('\n');
 const signals: Readonly<Record<string, number>> = { hangup: 1, interrupt: 2, quit: 3, aborted: 6, killed: 9, 'segmentation fault': 11, 'broken pipe': 13, terminated: 15 };
 
 /** A Connect error's code, from an end-of-stream message or a unary error body. */
@@ -208,7 +199,7 @@ export function e2bSandboxes(options: E2bSandboxOptions): SandboxProvider {
         const tag = randomHex(12);
         const stop = new AbortController();
         const stdin = execOptions.stdin?.byteLength ? execOptions.stdin : undefined;
-        const run = await start(['/bin/sh', '-c', execScript, 'mayura', execOptions.cwd, ...command], { ...execOptions.env, MAYURA_SANDBOX_EXEC: tag },
+        const run = await start(['/bin/sh', '-c', execScript, 'mayura', execOptions.cwd, ...command], { ...execOptions.env, [sandboxScripts.tagVariable]: tag },
           stdin !== undefined, execOptions.maxOutputBytes, stop.signal);
         // Ending the call ends the command: SIGKILL to it, and to every process carrying its tag, then the stream closes.
         const onAbort = () => {
@@ -217,7 +208,7 @@ export function e2bSandboxes(options: E2bSandboxOptions): SandboxProvider {
             const kill = AbortSignal.timeout(8_000);
             const pid = await Promise.race([run.pid, new Promise<undefined>(resolve => setTimeout(resolve, 3_000))]).catch(() => undefined);
             if (pid !== undefined) await unary('process.Process/SendSignal', { process: { pid }, signal: 'SIGNAL_SIGKILL' }, kill).catch(() => undefined);
-            const killer = await start(['/bin/sh', '-c', killScript, 'mayura', tag], {}, false, 4_096, kill).catch(() => undefined);
+            const killer = await start(['/bin/sh', '-c', sandboxScripts.kill, 'mayura', tag], {}, false, 4_096, kill).catch(() => undefined);
             await killer?.ended.catch(() => undefined);
           })().finally(() => stop.abort());
         };

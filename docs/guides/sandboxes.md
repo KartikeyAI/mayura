@@ -189,6 +189,7 @@ the container's configuration or on the host's command lines.
 | `mayura/sandbox/docker` | Docker containers on your machine | none, all | on 127.0.0.1 | no |
 | `@mayurajs/sandbox-e2b` | [E2B](https://e2b.dev) Firecracker microVMs from a template | none, all, domains (ports 80 and 443) | public URL | no |
 | `@mayurajs/sandbox-e2b-desktop` | E2B sandboxes with an Xfce desktop, and a live view in the browser | none, all, domains (ports 80 and 443) | public URL | yes |
+| `@mayurajs/sandbox-vercel` | [Vercel Sandbox](https://vercel.com/docs/sandbox) Firecracker microVMs; no standard input | none, all, domains | public URL (1024 and up) | no |
 
 ## Writing a provider
 
@@ -197,6 +198,10 @@ resolves with a `SandboxBackend`. `createSandboxes` checks every path, size and 
 and everything the provider returns before the caller sees it. A provider maps failures to `SandboxError` (use
 `sandboxHttpFailure(status)` for HTTP statuses) without the provider's own text, and stops a command and everything it
 started when `exec`'s signal aborts.
+
+A provider whose API only runs commands can do the rest with `sandboxScripts` from `mayura/sandbox`: shell scripts that
+read, list and remove files, and stop every process of a command by a tag in its environment (`sandboxScripts.kill`),
+with `parseSandboxListing` for the listing.
 
 `sandboxConformance` from `mayura/sandbox/testing` runs the contract against a real sandbox:
 
