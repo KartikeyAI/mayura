@@ -80,6 +80,7 @@
     "@mayurajs/sandbox-vercel",
     "@mayurajs/sandbox-daytona",
     "@mayurajs/sandbox-agentcore",
+    "@mayurajs/sandbox-modal",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

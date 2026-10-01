@@ -197,6 +197,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-daytona` | [Daytona](https://www.daytona.io) sandboxes from a snapshot | none, all, domains | signed URL | with `desktop: true` |
 | `@mayurajs/sandbox-fly` | [Fly.io Machines](https://fly.io/docs/machines/) in one of your apps | all only | no | no |
 | `@mayurajs/sandbox-agentcore` | [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) Code Interpreter sessions | as the interpreter was made | no | no |
+| `@mayurajs/sandbox-modal` | [Modal](https://modal.com/docs/guide/sandboxes) gVisor or VM sandboxes; Node, Deno and Bun | none, all, domains | tunnel URL | no |
 
 ## Writing a provider
 

@@ -44,6 +44,7 @@
     "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
   },
   "devDependencies": {
+    "@bufbuild/protobuf": "2.16.0",
     "mayura": "workspace:*",
     "@mayura/adapter-code-docker": "workspace:*",
     "@mayura/adapter-code-quickjs": "workspace:*",
@@ -85,6 +86,7 @@
     "@mayurajs/sandbox-vercel": "workspace:*",
     "@mayurajs/sandbox-daytona": "workspace:*",
     "@mayurajs/sandbox-agentcore": "workspace:*",
+    "@mayurajs/sandbox-modal": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",

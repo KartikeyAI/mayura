@@ -8661,6 +8661,16 @@
         "declaration": "59c4ade89ce7b0a2"
       }
     },
+    "@mayurajs/sandbox-modal": {
+      "modalSandboxes": {
+        "kind": "function",
+        "declaration": "19c30ea862b239f0"
+      },
+      "ModalSandboxOptions": {
+        "kind": "interface",
+        "declaration": "829b544379f9ea6d"
+      }
+    },
     "@mayurajs/sandbox-vercel": {
       "vercelSandboxes": {
         "kind": "function",

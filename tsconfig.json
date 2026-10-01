@@ -21,6 +21,7 @@
     { "path": "extensions/sandbox-vercel" },
     { "path": "extensions/sandbox-daytona" },
     { "path": "extensions/sandbox-agentcore" },
+    { "path": "extensions/sandbox-modal" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
