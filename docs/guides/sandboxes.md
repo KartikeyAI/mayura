@@ -201,6 +201,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-railway` | [Railway](https://docs.railway.com/sandboxes) Linux VMs from Railway's default image | all only | Railway domain | no |
 | `@mayurajs/sandbox-northflank` | [Northflank](https://northflank.com/docs/v1/application/sandboxes) microVM services; Node | all only | no | no |
 | `@mayurajs/sandbox-codesandbox` | [CodeSandbox](https://codesandbox.io/docs/sdk) private microVMs from a template; Node | all only | host-token URL | no |
+| `@mayurajs/sandbox-cloudflare` | [Cloudflare Sandboxes](https://developers.cloudflare.com/sandbox/) through your sandbox bridge Worker; any runtime | all only | no | no |
 
 ## Writing a provider
 

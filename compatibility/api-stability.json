@@ -80,6 +80,7 @@
     "@mayurajs/sandbox-vercel",
     "@mayurajs/sandbox-daytona",
     "@mayurajs/sandbox-agentcore",
+    "@mayurajs/sandbox-cloudflare",
     "@mayurajs/sandbox-codesandbox",
     "@mayurajs/sandbox-modal",
     "@mayurajs/sandbox-railway",

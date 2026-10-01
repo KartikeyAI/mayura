@@ -8617,6 +8617,16 @@
         "declaration": "473cfa8fab0acc79"
       }
     },
+    "@mayurajs/sandbox-cloudflare": {
+      "cloudflareSandboxes": {
+        "kind": "function",
+        "declaration": "2b6d6831fa35bddb"
+      },
+      "CloudflareSandboxOptions": {
+        "kind": "interface",
+        "declaration": "3ad51819b5794c39"
+      }
+    },
     "@mayurajs/sandbox-codesandbox": {
       "CodeSandboxClientLike": {
         "kind": "interface",

@@ -191,6 +191,9 @@ importers:
       '@mayurajs/sandbox-agentcore':
         specifier: workspace:*
         version: link:extensions/sandbox-agentcore
+      '@mayurajs/sandbox-cloudflare':
+        specifier: workspace:*
+        version: link:extensions/sandbox-cloudflare
       '@mayurajs/sandbox-codesandbox':
         specifier: workspace:*
         version: link:extensions/sandbox-codesandbox
@@ -568,6 +571,12 @@ importers:
       '@aws-sdk/client-bedrock-agentcore':
         specifier: 3.1141.0
         version: 3.1141.0
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/sandbox-cloudflare:
     devDependencies:
       mayura:
         specifier: workspace:*
