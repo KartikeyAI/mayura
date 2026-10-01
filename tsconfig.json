@@ -16,6 +16,7 @@
     { "path": "extensions/deploy-fly" },
     { "path": "extensions/deploy-railway" },
     { "path": "extensions/deploy-render" },
+    { "path": "extensions/deploy-vercel" },
     { "path": "extensions/filestorage-agentfs" },
     { "path": "extensions/filestorage-azure-blob" },
     { "path": "extensions/filestorage-files-sdk" },

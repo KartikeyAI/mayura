@@ -39,6 +39,7 @@ project's own dependencies.
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
 | `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |
 | `@mayurajs/deploy-render` | `render` | [Render](https://render.com): a Blueprint with a web service, a background worker and PostgreSQL, each service migrating first; released with `render deploys create --wait` |
+| `@mayurajs/deploy-vercel` | `vercel` | [Vercel Functions](https://vercel.com/docs/functions): the API behind a `/v1` rewrite, workflows advanced by Vercel Cron with `CRON_SECRET`, storage migrated from your machine before each deploy |
 
 ## mayura.deploy.json
 

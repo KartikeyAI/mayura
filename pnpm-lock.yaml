@@ -101,6 +101,9 @@ importers:
       '@mayurajs/deploy-render':
         specifier: workspace:*
         version: link:extensions/deploy-render
+      '@mayurajs/deploy-vercel':
+        specifier: workspace:*
+        version: link:extensions/deploy-vercel
       '@mayurajs/filestorage-agentfs':
         specifier: workspace:*
         version: link:extensions/filestorage-agentfs
@@ -310,6 +313,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/deploy-render:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/deploy-vercel:
     devDependencies:
       mayura:
         specifier: workspace:*

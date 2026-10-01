@@ -34,6 +34,7 @@ export const reviewedDependencies = {
   'deploy-fly': [],
   'deploy-railway': [],
   'deploy-render': [],
+  'deploy-vercel': [],
   'filestorage-agentfs': [],
   'filestorage-azure-blob': [],
   'filestorage-files-sdk': [],

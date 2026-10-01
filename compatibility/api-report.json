@@ -8037,6 +8037,16 @@
         "declaration": "8f248e3112f9f125"
       }
     },
+    "@mayurajs/deploy-vercel": {
+      "VercelSettings": {
+        "kind": "interface",
+        "declaration": "d2db49b92fe4636a"
+      },
+      "vercelTarget": {
+        "kind": "const",
+        "declaration": "801bbd67a66451e8"
+      }
+    },
     "@mayurajs/filestorage-agentfs": {
       "agentFsFiles": {
         "kind": "function",

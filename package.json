@@ -80,6 +80,7 @@
     "@mayurajs/deploy-fly": "workspace:*",
     "@mayurajs/deploy-railway": "workspace:*",
     "@mayurajs/deploy-render": "workspace:*",
+    "@mayurajs/deploy-vercel": "workspace:*",
     "@mayurajs/filestorage-agentfs": "workspace:*",
     "@mayurajs/filestorage-azure-blob": "workspace:*",
     "@mayurajs/filestorage-files-sdk": "workspace:*",
