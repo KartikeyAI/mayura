@@ -30,6 +30,7 @@ export const reviewedDependencies = {
   'storage-mysql': ['mysql2'],
   'deploy-fly': [],
   'deploy-railway': [],
+  'deploy-render': [],
   'filestorage-agentfs': [],
   'filestorage-azure-blob': [],
   'filestorage-files-sdk': [],

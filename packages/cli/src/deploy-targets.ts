@@ -21,7 +21,16 @@ function needImage(release: DeployRelease, target: string): string {
   return release.image;
 }
 
-export function dockerfile(project: DeployProject): string {
+/**
+ * The application image: built once, it runs any role. With `entrypoint: false` it has no entry point, and its default
+ * command is the full `node …/bin.js serve` line, for platforms whose start commands replace the entry point.
+ */
+export function dockerfile(project: DeployProject, options: { readonly entrypoint?: boolean } = {}): string {
+  const cli = 'node_modules/mayura/lib/cli/dist/bin.js';
+  const start = options.entrypoint === false
+    ? `CMD ["node", "${cli}", "serve", "--app", "${project.app}"]`
+    : `ENTRYPOINT ["node", "${cli}"]
+CMD ["serve", "--app", "${project.app}"]`;
   return `# One image for every role; the command chooses serve, worker or migrate.
 FROM ${nodeImage} AS build
 WORKDIR /app
@@ -38,8 +47,7 @@ COPY --from=build --chown=65532:65532 /app/dist ./dist
 USER 65532:65532
 ENV NODE_ENV=production MAYURA_ENV=production
 EXPOSE ${project.port} ${project.probePort}
-ENTRYPOINT ["node", "node_modules/mayura/lib/cli/dist/bin.js"]
-CMD ["serve", "--app", "${project.app}"]
+${start}
 `;
 }
 export const dockerignore = 'node_modules\ndist\n.data\n.env\n.env.*\n*.sqlite*\n.git\n';

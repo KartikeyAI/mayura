@@ -656,7 +656,7 @@
       },
       "dockerfile": {
         "kind": "function",
-        "declaration": "06856d4a6c67a13f"
+        "declaration": "21971aa3e1710f31"
       },
       "dockerignore": {
         "kind": "const",
@@ -7987,6 +7987,20 @@
       "railwayTarget": {
         "kind": "const",
         "declaration": "4732d64b4302c3b6"
+      }
+    },
+    "@mayurajs/deploy-render": {
+      "RenderAutoDeploy": {
+        "kind": "type",
+        "declaration": "5347866ae697df42"
+      },
+      "RenderSettings": {
+        "kind": "interface",
+        "declaration": "b6e5e405418a871b"
+      },
+      "renderTarget": {
+        "kind": "const",
+        "declaration": "8f248e3112f9f125"
       }
     },
     "@mayurajs/filestorage-agentfs": {

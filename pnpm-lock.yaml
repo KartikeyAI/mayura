@@ -89,6 +89,9 @@ importers:
       '@mayurajs/deploy-railway':
         specifier: workspace:*
         version: link:extensions/deploy-railway
+      '@mayurajs/deploy-render':
+        specifier: workspace:*
+        version: link:extensions/deploy-render
       '@mayurajs/filestorage-agentfs':
         specifier: workspace:*
         version: link:extensions/filestorage-agentfs
@@ -274,6 +277,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/deploy-railway:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/deploy-render:
     devDependencies:
       mayura:
         specifier: workspace:*
