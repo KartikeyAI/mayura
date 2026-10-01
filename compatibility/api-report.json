@@ -7965,6 +7965,20 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/deploy-cloudrun": {
+      "CloudRunBuild": {
+        "kind": "type",
+        "declaration": "a2e12a25553abae2"
+      },
+      "CloudRunSettings": {
+        "kind": "interface",
+        "declaration": "7a275bc4cc6d3c6f"
+      },
+      "cloudRunTarget": {
+        "kind": "const",
+        "declaration": "d1c0dd55e96d1805"
+      }
+    },
     "@mayurajs/deploy-fly": {
       "FlyBuild": {
         "kind": "type",

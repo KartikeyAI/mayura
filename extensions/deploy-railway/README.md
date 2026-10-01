@@ -22,8 +22,6 @@ mayura deploy --target railway --apply --confirm <digest>
   the build is done, and Railway finishes the rollout.
 - Settings in `mayura.deploy.json` under `targets.railway`: `serverService` and `workerService` (`<name>-server` and
   `<name>-worker` by default), and `environment` (the linked one by default).
-- The Railway CLI uses its own login, or `RAILWAY_TOKEN` in CI; Mayura reads neither. On Windows, install the CLI's
-  `.exe` (for example with Scoop): `mayura deploy` starts tools without a shell, so the npm `.cmd` shim is not
-  supported there.
+- The Railway CLI uses its own login, or `RAILWAY_TOKEN` in CI; Mayura reads neither.
 
 See [Deploy with mayura deploy](https://mayurajs.com/docs/cli/deploy/). Apache-2.0.

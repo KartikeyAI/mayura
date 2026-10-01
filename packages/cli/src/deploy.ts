@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
-import { isAbsolute, join, parse, resolve } from 'node:path';
+import { delimiter, extname, isAbsolute, join, parse, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { assertSafeDirectory, canonicalTarget, digest, planChanges, writePlannedFiles, type FileChange } from './files.js';
@@ -233,15 +234,50 @@ export type DeployRunner = (step: DeployStep, context: { readonly directory: str
 export interface DeployStepResult { readonly id: string; readonly status: 'succeeded' | 'failed' | 'cancelled' | 'skipped'; readonly exitCode?: number }
 export interface DeployResult { readonly status: 'succeeded' | 'failed' | 'cancelled'; readonly target: string; readonly release: DeployRelease; readonly steps: readonly DeployStepResult[] }
 
+/** Characters cmd.exe interprets even inside double quotes, or that end a quoted argument. */
+const cmdUnsafe = /["%!^&|<>()\r\n]|\\$/u;
+
 /**
- * The default runner: spawns the tool by name from PATH with the arguments as given (no shell), in the project
- * directory. Its output goes to standard error, so standard output stays the CLI's own result; `stdin` is written to the
- * tool and closed. Cancelling stops the tool.
+ * How to start a tool. Elsewhere than Windows, by name. On Windows, the tool is found on PATH with PATHEXT: an `.exe`
+ * starts directly, and a `.cmd` or `.bat` (gcloud, az, and CLIs installed with npm) starts through cmd.exe, each
+ * argument quoted, and only when no argument holds a character cmd.exe would interpret; such an argument is refused
+ * rather than escaped.
+ */
+function launch(tool: string, args: readonly string[]): { readonly file: string; readonly args: readonly string[]; readonly verbatim: boolean } {
+  if (process.platform !== 'win32' || /[\\/]/u.test(tool)) return { file: tool, args, verbatim: false };
+  const extensions = (process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  for (const folder of (process.env['PATH'] ?? '').split(delimiter).filter(Boolean)) {
+    for (const extension of extensions) {
+      const candidate = join(folder, `${tool}${extension.toLowerCase()}`);
+      let file = false; try { file = existsSync(candidate) && statSync(candidate).isFile(); } catch { file = false; }
+      if (!file) continue;
+      if (!/^\.(?:cmd|bat)$/iu.test(extname(candidate))) return { file: candidate, args, verbatim: false };
+      if (cmdUnsafe.test(candidate) || args.some(arg => cmdUnsafe.test(arg))) {
+        throw new MayuraError('INVALID_INPUT', `${tool} is a Windows script, which runs through cmd.exe; an argument holds a character cmd.exe would interpret (" % ! ^ & | < > ( ) or a trailing backslash).`);
+      }
+      const line = [candidate, ...args].map(part => `"${part}"`).join(' ');
+      return { file: process.env['ComSpec'] ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
+    }
+  }
+  return { file: tool, args, verbatim: false };
+}
+
+/**
+ * The default runner: starts the tool found on PATH with the arguments as given, without a shell (on Windows, a
+ * `.cmd` tool through cmd.exe with quoted, checked arguments), in the project directory. Its output goes to standard
+ * error, so standard output stays the CLI's own result; `stdin` is written to the tool and closed. Cancelling stops the
+ * tool, and on Windows everything it started.
  */
 export const spawnDeployStep: DeployRunner = (step, { directory, signal }) => new Promise((resolvePromise, reject) => {
-  const child = spawn(step.tool, [...step.args], { cwd: directory, shell: false, windowsHide: true, stdio: [step.stdin === undefined ? 'ignore' : 'pipe', 2, 2] });
+  let command: ReturnType<typeof launch>;
+  try { command = launch(step.tool, step.args); } catch (error) { reject(error); return; }
+  const child = spawn(command.file, [...command.args], { cwd: directory, shell: false, windowsHide: true, windowsVerbatimArguments: command.verbatim,
+    stdio: [step.stdin === undefined ? 'ignore' : 'pipe', 2, 2] });
   let killer: ReturnType<typeof setTimeout> | undefined;
-  const stop = (): void => { child.kill('SIGTERM'); killer = setTimeout(() => child.kill('SIGKILL'), 10_000); killer.unref?.(); };
+  const stop = (): void => {
+    if (process.platform === 'win32' && child.pid !== undefined) { spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).on('error', () => child.kill()); return; }
+    child.kill('SIGTERM'); killer = setTimeout(() => child.kill('SIGKILL'), 10_000); killer.unref?.();
+  };
   signal.addEventListener('abort', stop, { once: true });
   child.once('error', error => { signal.removeEventListener('abort', stop); if (killer) clearTimeout(killer);
     reject((error as NodeJS.ErrnoException).code === 'ENOENT' ? new MayuraError('NOT_FOUND', `${step.tool} was not found on PATH.`) : new MayuraError('TOOL_FAILED', `${step.tool} could not be started.`)); });

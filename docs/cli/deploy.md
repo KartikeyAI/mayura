@@ -33,6 +33,7 @@ project's own dependencies.
 
 | Package | Target | Platform |
 |---|---|---|
+| `@mayurajs/deploy-cloudrun` | `cloudrun` | [Google Cloud Run](https://cloud.google.com/run): a migration job run to completion, then the server and an always-on internal worker as services, secrets from Secret Manager |
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
 | `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |
 | `@mayurajs/deploy-render` | `render` | [Render](https://render.com): a Blueprint with a web service, a background worker and PostgreSQL, each service migrating first; released with `render deploys create --wait` |
@@ -122,8 +123,9 @@ is planned. Arguments are passed as given, without a shell.
 
 ## Good to know
 
-- Only `.exe` tools can be started on Windows without a shell. Tools installed as `.cmd` scripts are not supported
-  there yet.
+- On Windows, `.exe` tools start directly. Tools that are `.cmd` scripts (gcloud, az, and CLIs installed with npm)
+  start through cmd.exe with each argument quoted. An argument cmd.exe would interpret (`" % ! ^ & | < > ( )` or a
+  trailing backslash) is refused, not escaped. Ctrl+C stops the tool and everything it started.
 - `deploy init` writes files atomically and refuses links and paths outside the project, like
   [mayura init](init.md).
 - Use `--directory <dir>` to work on a project other than the current directory.

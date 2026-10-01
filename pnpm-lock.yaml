@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/deploy-cloudrun':
+        specifier: workspace:*
+        version: link:extensions/deploy-cloudrun
       '@mayurajs/deploy-fly':
         specifier: workspace:*
         version: link:extensions/deploy-fly
@@ -269,6 +272,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/deploy-cloudrun:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/deploy-fly:
     devDependencies:

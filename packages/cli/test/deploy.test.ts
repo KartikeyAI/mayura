@@ -190,6 +190,42 @@ describe('deploy runs', () => {
   });
 });
 
+describe.runIf(process.platform === 'win32')('deploy runs on Windows', () => {
+  async function withTool(script: string, run: (directory: string) => Promise<void>): Promise<void> {
+    const root = await project(); const bin = join(root, 'bin'); await mkdir(bin);
+    await writeFile(join(bin, 'mayura-fake-tool.cmd'), script);
+    const path = process.env['PATH']; process.env['PATH'] = `${bin};${path}`;
+    try { await run(root); } finally { process.env['PATH'] = path; }
+  }
+
+  it('starts a .cmd tool through cmd.exe with each argument intact, and reports its exit code', async () => {
+    await withTool('@echo off\r\n>"%~dp0args.txt" echo %*\r\nexit /b 7\r\n', async root => {
+      const step: DeployStep = { id: 'x', description: 'x', tool: 'mayura-fake-tool', args: ['deploy', 'with spaces', '--set-secrets=A=a:latest,B=b:1', 'path/to/app.js'] };
+      expect(await spawnDeployStep(step, { directory: root, signal: new AbortController().signal })).toEqual({ exitCode: 7 });
+      expect((await readFile(join(root, 'bin', 'args.txt'), 'utf8')).trim()).toBe('"deploy" "with spaces" "--set-secrets=A=a:latest,B=b:1" "path/to/app.js"');
+    });
+  });
+
+  it('refuses an argument cmd.exe would interpret, before starting anything', async () => {
+    await withTool('@echo off\r\n>"%~dp0ran.txt" echo ran\r\n', async root => {
+      for (const arg of ['a & calc', '%PATH%', 'x"y', 'a|b', 'dir\\', '(x)', 'line\nbreak', '!x!']) {
+        await expect(spawnDeployStep({ id: 'x', description: 'x', tool: 'mayura-fake-tool', args: [arg] }, { directory: root, signal: new AbortController().signal }))
+          .rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      }
+      await expect(readFile(join(root, 'bin', 'ran.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  it('stops a .cmd tool and what it started when cancelled', async () => {
+    await withTool(`@echo off\r\n"${process.execPath}" -e "setTimeout(()=>{},60000)"\r\n`, async root => {
+      const controller = new AbortController(); const started = Date.now();
+      const running = spawnDeployStep({ id: 'x', description: 'x', tool: 'mayura-fake-tool', args: [] }, { directory: root, signal: controller.signal });
+      setTimeout(() => controller.abort(), 500);
+      expect((await running).exitCode).not.toBe(0); expect(Date.now() - started).toBeLessThan(15_000);
+    });
+  });
+});
+
 describe('deploy targets', () => {
   it('resolves built-in targets, and @mayurajs/deploy-* packages installed in the project', async () => {
     const root = await project();
