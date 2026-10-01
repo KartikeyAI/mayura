@@ -116,6 +116,9 @@ importers:
       '@mayurajs/observability-langfuse':
         specifier: workspace:*
         version: link:extensions/observability-langfuse
+      '@mayurajs/observability-sentry':
+        specifier: workspace:*
+        version: link:extensions/observability-sentry
       '@mayurajs/provider-anthropic':
         specifier: workspace:*
         version: link:extensions/provider-anthropic
@@ -310,6 +313,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/observability-langfuse:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/observability-sentry:
     devDependencies:
       mayura:
         specifier: workspace:*

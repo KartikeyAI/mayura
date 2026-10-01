@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/observability-sentry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sentry for Mayura's traces, with Sentry's gen_ai span ops, over Sentry's OTLP endpoint.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

@@ -7985,6 +7985,20 @@
         "declaration": "74b600750117de50"
       }
     },
+    "@mayurajs/observability-sentry": {
+      "sentryAttributes": {
+        "kind": "function",
+        "declaration": "7adac15da49445f1"
+      },
+      "sentryTraceExporter": {
+        "kind": "function",
+        "declaration": "dd929961c1e3c0fe"
+      },
+      "SentryTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "b4a958657bca1244"
+      }
+    },
     "@mayurajs/provider-anthropic": {
       "anthropic": {
         "kind": "function",
