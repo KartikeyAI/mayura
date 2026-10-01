@@ -1506,7 +1506,7 @@
       },
       "ModelUsage": {
         "kind": "interface",
-        "declaration": "2fa9ba4502ab2456"
+        "declaration": "08c51244e6f0e5b5"
       },
       "Outcome": {
         "kind": "type",
@@ -1782,7 +1782,7 @@
       },
       "OtlpSpanAttributeName": {
         "kind": "type",
-        "declaration": "ca317da03cc7bb5b"
+        "declaration": "4f3fd7993b4391be"
       },
       "OtlpSpanAttributes": {
         "kind": "type",
@@ -3190,7 +3190,7 @@
       },
       "ModelUsage": {
         "kind": "interface",
-        "declaration": "2fa9ba4502ab2456"
+        "declaration": "08c51244e6f0e5b5"
       },
       "Outcome": {
         "kind": "type",

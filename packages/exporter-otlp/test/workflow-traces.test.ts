@@ -124,10 +124,10 @@ describe('agent run span projection', () => {
 
   it('carries OpenTelemetry GenAI attributes: the operation, provider, model, call cost, agent and tool', () => {
     const withModel = [run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'bedrock/anthropic.claude-sonnet-4-5' }),
-      event(3, 'model.completed', { step: 0, response: 'tool_calls', costMicros: 42 }), ...run.slice(3)];
+      event(3, 'model.completed', { step: 0, response: 'tool_calls', costMicros: 42, inputTokens: 1_200, outputTokens: 80 }), ...run.slice(3)];
     const [agent, model, tool] = agentRunTraceSpans(withModel);
     expect(model!.attributes).toEqual({ 'gen_ai.operation.name': 'chat', 'gen_ai.provider.name': 'aws.bedrock', 'gen_ai.request.model': 'anthropic.claude-sonnet-4-5',
-      'mayura.model.id': 'bedrock/anthropic.claude-sonnet-4-5', 'mayura.model.call': 1, 'mayura.cost.micros': 42 });
+      'mayura.model.id': 'bedrock/anthropic.claude-sonnet-4-5', 'mayura.model.call': 1, 'mayura.cost.micros': 42, 'gen_ai.usage.input_tokens': 1_200, 'gen_ai.usage.output_tokens': 80 });
     expect(tool!.attributes).toMatchObject({ 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.type': 'function', 'gen_ai.tool.name': 'library.search', 'gen_ai.tool.call.id': 'c-1' });
     expect(agent!.attributes).toMatchObject({ 'gen_ai.operation.name': 'invoke_agent', 'gen_ai.agent.id': 'planner' });
     const unknown = agentRunTraceSpans([run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'acme-llm/v2' }), event(3, 'model.completed', { step: 0, response: 'final' })]);

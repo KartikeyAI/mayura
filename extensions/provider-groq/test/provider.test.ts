@@ -103,7 +103,7 @@ describe('@mayurajs/provider-groq', () => {
     const seen: Seen = [];
     const response = await groq({ apiKey: 'fixture-key', fetch: async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(replies.shift()); } })
       .model('groq-test', settings).generate(request({ tools }));
-    expect(response).toEqual({ type: 'final', output: { answer: 'Shipped.' }, usage: { costMicros: (10 + 5 * 5) + (20 + 4 * 5) } });
+    expect(response).toEqual({ type: 'final', output: { answer: 'Shipped.' }, usage: { costMicros: (10 + 5 * 5) + (20 + 4 * 5), inputTokens: 10 + 20, outputTokens: 5 + 4 } });
     expect(seen).toHaveLength(2);
     expect(seen[0]!.body['response_format']).toBeUndefined();
     expect(seen[0]!.body).toMatchObject({ tool_choice: 'auto', tools: [{ function: { name: 'orders_lookup', strict: true } }] });

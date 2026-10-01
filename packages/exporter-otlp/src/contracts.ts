@@ -77,7 +77,7 @@ export type OtlpSpanAttributeName =
   | 'mayura.model.id' | 'mayura.cost.micros'
   // OpenTelemetry GenAI semantic conventions (development status): operation, provider, model, agent and tool.
   | 'gen_ai.operation.name' | 'gen_ai.provider.name' | 'gen_ai.request.model' | 'gen_ai.agent.id' | 'gen_ai.agent.name'
-  | 'gen_ai.tool.name' | 'gen_ai.tool.call.id' | 'gen_ai.tool.type';
+  | 'gen_ai.tool.name' | 'gen_ai.tool.call.id' | 'gen_ai.tool.type' | 'gen_ai.usage.input_tokens' | 'gen_ai.usage.output_tokens';
 export type OtlpSpanAttributes = Readonly<Partial<Record<OtlpSpanAttributeName, string | number>>>;
 
 /** Completed metadata-only span. IDs use the OTLP JSON hexadecimal representation. */

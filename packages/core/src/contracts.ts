@@ -97,7 +97,13 @@ export interface ModelDefinitionCheck {
 }
 /** The media a model can see: which types, and whether it can take a URL (which its provider then fetches). */
 export interface ModelMediaCapability { readonly types: readonly MediaType[]; readonly urls: boolean }
-export interface ModelUsage { readonly costMicros: number }
+export interface ModelUsage {
+  readonly costMicros: number;
+  /** The input (prompt) tokens the provider billed, cached ones included, when it reports them. */
+  readonly inputTokens?: number;
+  /** The output tokens the provider billed, reasoning included, when it reports them. */
+  readonly outputTokens?: number;
+}
 /** A failed provider invocation may still have confirmed billable usage. No raw failure text is accepted. */
 export class ModelInvocationError extends MayuraError {
   constructor(readonly costMicros: number) {

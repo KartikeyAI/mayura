@@ -278,8 +278,9 @@ export function mistral(options: MistralProviderOptions): ModelProvider {
             : object(jsonValue(JSON.parse(JSON.stringify(await chat.complete(body as never, callOptions))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
 
           const usage = object(payload['usage']);
-          knownCost = tokenCostMicros(settings.pricing, integer(usage['promptTokens']), integer(usage['completionTokens'])) ?? failed();
-          const accounting = { costMicros: knownCost };
+          const inputTokens = integer(usage['promptTokens']); const outputTokens = integer(usage['completionTokens']);
+          knownCost = tokenCostMicros(settings.pricing, inputTokens, outputTokens) ?? failed();
+          const accounting = { costMicros: knownCost, inputTokens, outputTokens };
           if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
           const choice = object(payload['choices'][0]); const message = object(choice['message']);
           const finish = choice['finishReason'];

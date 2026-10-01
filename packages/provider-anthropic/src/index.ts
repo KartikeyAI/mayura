@@ -291,7 +291,9 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         knownCost = Number(cost);
         if (payload['type'] !== 'message' || payload['role'] !== 'assistant' || !Array.isArray(payload['content'])
           || payload['content'].length < 1 || payload['content'].length > 256) return failed();
-        const accounting = { costMicros: knownCost };
+        // The input count includes cache writes and reads, which the API reports apart from the uncached input.
+        if (totalInputTokens > BigInt(Number.MAX_SAFE_INTEGER)) return failed();
+        const accounting = { costMicros: knownCost, inputTokens: Number(totalInputTokens), outputTokens };
         if (payload['stop_reason'] === 'tool_use') {
           const calls: ModelToolCall[] = [];
           const seen = new Set<string>();

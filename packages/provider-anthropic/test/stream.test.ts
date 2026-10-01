@@ -25,7 +25,7 @@ describe('Messages streaming', () => {
     const events = await collect(anthropicMessages(options(transport)).stream!(request()));
     // Cost: 100 input tokens at 3,000 plus 20 output tokens at 15,000 micros per million, rounded up.
     expect(events).toEqual([{ type: 'output.delta', text: '{"answer"' }, { type: 'output.delta', text: ':"four"}' },
-      { type: 'response', response: { type: 'final', output: { answer: 'four' }, usage: { costMicros: 1 } } }]);
+      { type: 'response', response: { type: 'final', output: { answer: 'four' }, usage: { costMicros: 1, inputTokens: 100, outputTokens: 20 } } }]);
     expect(JSON.parse(transport.mock.calls[0]![1]!.body as string)).toMatchObject({ stream: true });
   });
 
@@ -36,7 +36,7 @@ describe('Messages streaming', () => {
       { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '7}' } },
       { type: 'content_block_stop', index: 0 }, { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } }, { type: 'message_stop' }])))
       .stream!(request({ tools: [{ id: 'lookup', description: 'x', inputJsonSchema: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'], additionalProperties: false } }] })));
-    expect(events).toEqual([{ type: 'response', response: { type: 'tool_calls', calls: [{ id: 'toolu_1', toolId: 'lookup', input: { q: 7 } }], usage: { costMicros: 1 },
+    expect(events).toEqual([{ type: 'response', response: { type: 'tool_calls', calls: [{ id: 'toolu_1', toolId: 'lookup', input: { q: 7 } }], usage: { costMicros: 1, inputTokens: 100, outputTokens: 5 },
       continuation: expect.objectContaining({ provider: 'anthropic.messages.v1' }) } }]);
   });
 

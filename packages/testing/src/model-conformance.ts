@@ -87,12 +87,20 @@ function checkQuiet(error: unknown, where: string): void {
   const text = error instanceof Error ? `${error.message} ${String(error.stack ?? '')} ${JSON.stringify(error)}` : String(error);
   check(!text.includes(detail), `${where}: the provider's own error text reached the error.`);
 }
+/** Token counts are optional, but an adapter that reports them reports what the provider billed. */
+function checkTokens(response: ModelResponse, scenario: { readonly inputTokens: number; readonly outputTokens: number }, where: string): void {
+  if (response.usage.inputTokens !== undefined) check(response.usage.inputTokens === scenario.inputTokens, `${where}: inputTokens must be ${scenario.inputTokens}, got ${response.usage.inputTokens}.`);
+  if (response.usage.outputTokens !== undefined) check(response.usage.outputTokens === scenario.outputTokens, `${where}: outputTokens must be ${scenario.outputTokens}, got ${response.usage.outputTokens}.`);
+}
 function checkResponseShape(response: ModelResponse, where: string): void {
   check(response && (response.type === 'final' || response.type === 'tool_calls'), `${where}: the response type must be final or tool_calls.`);
   const keys = Object.keys(response).sort().join(',');
   const allowed = response.type === 'final' ? ['output', 'type', 'usage'] : ['calls', 'type', 'usage'];
   check(keys === allowed.join(',') || keys === [...allowed, 'continuation'].sort().join(','), `${where}: unexpected response fields ${keys}.`);
-  check(Object.keys(response.usage).join(',') === 'costMicros' && Number.isSafeInteger(response.usage.costMicros) && response.usage.costMicros >= 0, `${where}: usage must be exactly { costMicros } with a non-negative integer.`);
+  const usageKeys = Object.keys(response.usage);
+  check(usageKeys.includes('costMicros') && usageKeys.every(key => key === 'costMicros' || key === 'inputTokens' || key === 'outputTokens')
+    && usageKeys.every(key => { const value = (response.usage as unknown as Record<string, unknown>)[key]; return Number.isSafeInteger(value) && (value as number) >= 0; }),
+  `${where}: usage must be { costMicros } and optionally inputTokens and outputTokens, each a non-negative integer.`);
   if (response.continuation !== undefined) check(JSON.stringify(response.continuation).length <= 1_048_576, `${where}: the continuation must be bounded JSON.`);
 }
 
@@ -115,6 +123,7 @@ const cases: readonly { name: string; kind: ModelConformanceKind; run: (harness:
     check(response.type === 'final' && same(response.output, scenarios.final.output), 'The final output must be the parsed JSON the provider returned.');
     const cost = expectedCostMicros(scenarios.final.inputTokens, scenarios.final.outputTokens);
     check(response.usage.costMicros === cost, `The cost must be ${cost} micros (tokens × prices, rounded up), got ${response.usage.costMicros}.`);
+    checkTokens(response, scenarios.final, 'final');
   } },
   { name: 'charges the long-context rates for the whole call above their threshold', kind: 'long_context', run: async harness => {
     const pricing: TokenPricing = { ...settings.pricing, longContext: { aboveInputTokens: 10_000, inputMicrosPerMillionTokens: 2_500_000, outputMicrosPerMillionTokens: 15_000_000 } };
@@ -132,6 +141,7 @@ const cases: readonly { name: string; kind: ModelConformanceKind; run: (harness:
     check(same(response.calls.map(call => [call.toolId, call.input]), scenarios.toolCalls.calls.map(call => [call.toolId, call.input])), 'Each call must name the Mayura tool id and carry its parsed input, in order.');
     check(response.calls.every(call => identifier.test(call.id)) && new Set(response.calls.map(call => call.id)).size === response.calls.length, 'Call ids must be unique identifiers.');
     check(response.usage.costMicros === expectedCostMicros(scenarios.toolCalls.inputTokens, scenarios.toolCalls.outputTokens), 'Tool-call responses must be costed like final ones.');
+    checkTokens(response, scenarios.toolCalls, 'tool_calls');
   } },
   { name: 'streams output deltas, then exactly one response', kind: 'stream_final', run: async harness => {
     const adapter = harness.adapter(scenarios.streamFinal, settings);
@@ -143,6 +153,7 @@ const cases: readonly { name: string; kind: ModelConformanceKind; run: (harness:
     checkResponseShape(last.response, 'stream');
     check(last.response.type === 'final' && same(last.response.output, scenarios.streamFinal.output), 'The streamed response must carry the parsed output.');
     check(last.response.usage.costMicros === expectedCostMicros(scenarios.streamFinal.inputTokens, scenarios.streamFinal.outputTokens), 'A streamed response must be costed from its usage.');
+    checkTokens(last.response, scenarios.streamFinal, 'stream');
   } },
   { name: 'reports a refusal as refused', kind: 'refusal', run: async harness => {
     checkFailure(await failure(() => harness.adapter({ kind: 'refusal' }, settings).generate(request())), 'refused', 'refusal');

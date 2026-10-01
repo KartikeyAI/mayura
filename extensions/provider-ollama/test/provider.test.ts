@@ -120,7 +120,7 @@ describe('@mayurajs/provider-ollama', () => {
     const priced = { ...settings, pricing: { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 1_000_000 } };
     const response = await ollama({ fetch: async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(replies.shift()); } })
       .model('gpt-oss:20b', priced).generate(request({ tools }));
-    expect(response).toEqual({ type: 'final', output: { answer: 'LC-1' }, usage: { costMicros: 84 } });
+    expect(response).toEqual({ type: 'final', output: { answer: 'LC-1' }, usage: { costMicros: 84, inputTokens: 30 + 40, outputTokens: 8 + 6 } });
     expect(seen).toHaveLength(2);
     // A format would leave no way to call a tool, so the first call offers the tools alone; the second, the format alone.
     expect(seen[0]!.body['format']).toBeUndefined();

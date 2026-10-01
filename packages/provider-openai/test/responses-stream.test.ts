@@ -27,7 +27,7 @@ describe('Responses streaming', () => {
       { type: 'response.function_call_arguments.delta', delta: '{"secret"' }, completed(final)], 9));
     const events = await collect(openAIResponses(options(transport)).stream!(request()));
     expect(events).toEqual([{ type: 'output.delta', text: '{"answer":' }, { type: 'output.delta', text: '"five"}' },
-      { type: 'response', response: { type: 'final', output: { answer: 'five' }, usage: { costMicros: 1 } } }]);
+      { type: 'response', response: { type: 'final', output: { answer: 'five' }, usage: { costMicros: 1, inputTokens: 10, outputTokens: 2 } } }]);
     expect(JSON.parse(transport.mock.calls[0]![1]!.body as string)).toMatchObject({ stream: true, store: false });
   });
 

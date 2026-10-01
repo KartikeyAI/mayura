@@ -86,8 +86,8 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
         if (Object.hasOwn(metadata, 'modelId')) stableId(metadata['modelId']); break;
       case 'model.completed':
         if (managedModel(metadata, true)) break;
-        keys(metadata, ['step', 'response'], ['costMicros']); integer(metadata['step']);
-        if (Object.hasOwn(metadata, 'costMicros')) integer(metadata['costMicros']);
+        keys(metadata, ['step', 'response'], ['costMicros', 'inputTokens', 'outputTokens']); integer(metadata['step']);
+        for (const key of ['costMicros', 'inputTokens', 'outputTokens']) if (Object.hasOwn(metadata, key)) integer(metadata[key]);
         if (metadata['response'] !== 'final' && metadata['response'] !== 'tool_calls') throw new Error(); break;
       case 'tool.started':
         keys(metadata, ['callId', 'toolId']); stableId(metadata['callId']); stableId(metadata['toolId']); break;

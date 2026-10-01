@@ -1,7 +1,7 @@
 import { isModelFailureReason, MayuraError, ModelProviderError, freezeJson, jsonValue, type JsonObject, type JsonValue, type ModelAdapter, type ModelDefinitionCheck, type ModelFailureReason, type ModelRequest, type ModelResponse, type ModelStreamEvent, type MediaType } from '@mayura/core';
 import { streamModelCall } from '@mayura/core/host';
 import { isModelId } from './agent.js';
-import { modelCost, modelFailureCost } from './response.js';
+import { modelCost, modelFailureCost, modelTokens } from './response.js';
 
 /** One observed attempt. Metadata only: no prompt, output, credential or provider error text. */
 export interface ModelRouterAttempt {
@@ -164,7 +164,7 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
       succeeded(index);
       observe({ route: index, modelId: adapter.id, outcome: 'succeeded', costMicros: cost });
       const continuation = freezeJson(jsonValue({ router: id, route: index, ...(response.continuation === undefined ? {} : { inner: response.continuation }) }));
-      const usage = { costMicros: spent + cost };
+      const usage = { ...modelTokens(response), costMicros: spent + cost };
       return response.type === 'final' ? { type: 'final', output: response.output, usage, continuation } : { type: 'tool_calls', calls: response.calls, usage, continuation };
     }
     return stop();

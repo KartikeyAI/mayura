@@ -294,7 +294,7 @@ export function bedrock(options: BedrockProviderOptions): ModelProvider {
           const message = record(record(payload['output'])['message']);
           const content = Array.isArray(message['content']) ? message['content'] : failed();
           if (content.length > 256) return failed();
-          const accounting = { costMicros: knownCost };
+          const accounting = { costMicros: knownCost, inputTokens: inputTokens + cacheWrites + cacheReads, outputTokens };
           if (stop === 'tool_use') {
             const calls: ModelToolCall[] = []; const seen = new Set<string>();
             for (const raw of content) {

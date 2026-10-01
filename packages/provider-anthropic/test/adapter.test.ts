@@ -42,7 +42,7 @@ describe('Anthropic Messages adapter', () => {
   it('uses the fixed destination, explicit headers and strict schemas', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":42}' }]));
     const result = await anthropicMessages(options({ fetch })).generate(request());
-    expect(result).toEqual({ type: 'final', output: { answer: 42 }, usage: { costMicros: 1 } });
+    expect(result).toEqual({ type: 'final', output: { answer: 42 }, usage: { costMicros: 1, inputTokens: 2, outputTokens: 1 } });
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe('https://api.anthropic.com/v1/messages');
     expect(init?.headers).toEqual({ 'x-api-key': 'explicit-anthropic-key', 'anthropic-version': '2023-06-01', 'content-type': 'application/json' });
@@ -78,18 +78,18 @@ describe('Anthropic Messages adapter', () => {
       { role: 'assistant', calls: [{ id: 'call_1', toolId: 'value/read', input: { value: 1 } }] },
       { role: 'tool', callId: 'call_1', toolId: 'value/read', result: { value: 2 } },
     ] }));
-    expect(result).toEqual({ type: 'tool_calls', calls: [{ id: 'call_2', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1 },
+    expect(result).toEqual({ type: 'tool_calls', calls: [{ id: 'call_2', toolId: 'value/read', input: { value: 2 } }], usage: { costMicros: 1, inputTokens: 2, outputTokens: 1 },
       continuation: { provider: 'anthropic.messages.v1', model: 'claude-fixture', assistants: [[{ type: 'tool_use', id: 'call_2', name: 'value_read', input: { value: 2 } }]] } });
     const body = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string);
     expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'value_read', input: { value: 1 } }] });
     expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '{"value":2}' }] });
   });
 
-  it('charges ordinary, cache-creation and cache-read input tokens', async () => {
+  it('charges ordinary, cache-creation and cache-read input tokens, and counts them all as input', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response([{ type: 'text', text: '{"answer":1}' }], 'end_turn',
       { input_tokens: 2, cache_creation_input_tokens: 3, cache_read_input_tokens: 5, output_tokens: 7 }));
     await expect(anthropicMessages(options({ fetch, pricing: { inputMicrosPerMillionTokens: 1_000_000, outputMicrosPerMillionTokens: 2_000_000 } })).generate(request()))
-      .resolves.toMatchObject({ usage: { costMicros: 24 } });
+      .resolves.toMatchObject({ usage: { costMicros: 24, inputTokens: 2 + 3 + 5, outputTokens: 7 } });
   });
 
   it.each(['max_tokens', 'refusal', 'pause_turn', 'model_context'])('rejects nonterminal stop reason %s', async stopReason => {

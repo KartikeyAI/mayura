@@ -314,7 +314,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
             }
           } else return failed();
         }
-        const accounting = { costMicros: Number(computedCost) };
+        const accounting = { costMicros: Number(computedCost), inputTokens, outputTokens };
         if (calls.length > 0) {
           const continuation = jsonValue({ provider: 'openai.responses.v1', model, consumed: request.messages.length, history: [...input, ...payload['output']] }, { maxBytes: maxRequestBytes });
           return { type: 'tool_calls', calls, usage: accounting, continuation };
@@ -527,12 +527,12 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           });
           // Keep this turn as the provider sent it (with any reasoning) for the next call of the run.
           const continuation = jsonValue({ provider: 'openai-compatible.chat.v1', model, endpoint: url, assistants: [...assistants, assistantTurn(message)] }, { maxBytes: maxRequestBytes });
-          return { type: 'tool_calls', calls, usage: { costMicros: knownCost }, continuation };
+          return { type: 'tool_calls', calls, usage: { costMicros: knownCost, inputTokens, outputTokens }, continuation };
         }
         if (choice['finish_reason'] === 'length' || choice['finish_reason'] === 'content_filter' || typeof message['refusal'] === 'string') return failed('refused');
         if (choice['finish_reason'] === 'insufficient_system_resource' || choice['finish_reason'] === 'aborted') return failed('unavailable');
         if (choice['finish_reason'] !== 'stop' || typeof message['content'] !== 'string') return failed();
-        return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost } };
+        return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost, inputTokens, outputTokens } };
       } catch (error) {
         if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
         if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');

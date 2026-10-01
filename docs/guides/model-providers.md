@@ -341,6 +341,9 @@ export const myModel: ModelAdapter = {
 
 - `generate` returns either tool calls (each with its own `id`, the Mayura `toolId` and the input) or a final output,
   with the call's cost in micros. Mayura validates both before using them.
+- `usage` can also carry the tokens the provider billed, `inputTokens` (cached input included) and `outputTokens`
+  (reasoning included), as non-negative integers. They reach `model.completed` events and trace spans; leave them out
+  when the provider does not report them. Every Mayura provider reports them.
 - To say why a call failed, throw `new ModelProviderError(reason, { httpStatus, costMicros })` with one of the reasons
   above: the outcome then carries Mayura's message for that reason. Pass `costMicros` when the provider reported
   usage before failing, so the known cost is charged; otherwise the call keeps its full `maxCostMicros` reservation.

@@ -91,9 +91,10 @@ describe('@mayurajs/provider-bedrock', () => {
     expect(seen[0]!.headers.get('authorization')).toBe('Bearer fixture-bedrock-key');
   });
 
-  it('charges cache writes at twice the input rate and cache reads at the full rate', async () => {
+  it('charges cache writes at twice the input rate and cache reads at the full rate, and counts them as input', async () => {
     const body = converse([{ text: '{"answer":"ok"}' }], 'end_turn', usage(1_000, 100, { cacheWriteInputTokens: 2_000, cacheReadInputTokens: 3_000 }));
-    expect((await bedrock({ region: 'us-east-1', credentials, fetch: transport({ kind: 'raw', body }) }).model('m', settings).generate(request())).usage.costMicros).toBe(8_000 + 500);
+    const { usage: charged } = await bedrock({ region: 'us-east-1', credentials, fetch: transport({ kind: 'raw', body }) }).model('m', settings).generate(request());
+    expect(charged).toEqual({ costMicros: 8_000 + 500, inputTokens: 1_000 + 2_000 + 3_000, outputTokens: 100 });
   });
 
   it('keeps reasoning and its signature for the next call of the run, never releases it, and pairs results with calls', async () => {

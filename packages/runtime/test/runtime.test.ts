@@ -44,6 +44,14 @@ describe('ephemeral agent runtime', () => {
     // The model's id and the call's cost ride on model events, for trace exporters; nothing the model said does.
     expect(events[2]!.metadata).toEqual({ step: 0, modelCall: 1, modelId: 'fixture' });
     expect(events[3]!.metadata).toEqual({ step: 0, response: 'final', costMicros: 0 });
+    // Token counts, when the model reports them, ride along too.
+    const counted = runtime().submit(agent(scripted([{ type: 'final', output: 4, usage: { costMicros: 0, inputTokens: 12, outputTokens: 5 } }])), { input: 2 });
+    expect(await counted.result()).toEqual({ status: 'succeeded', output: 4 });
+    expect((await collect(counted.observe())).find(event => event.type === 'model.completed')!.metadata).toEqual({ step: 0, response: 'final', costMicros: 0, inputTokens: 12, outputTokens: 5 });
+    for (const usage of [{ costMicros: 0, inputTokens: -1 }, { costMicros: 0, outputTokens: '5' }, { costMicros: 0, tokens: 5 }]) {
+      const malformed = runtime().submit(agent(scripted([{ type: 'final', output: 4, usage }])), { input: 2 });
+      expect(await malformed.result()).toMatchObject({ status: 'failed' });
+    }
     expect(JSON.stringify(events)).not.toContain('instructions');
     expect(await collect(run.observe({ after: 5 }))).toHaveLength(1);
   });

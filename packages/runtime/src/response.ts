@@ -39,6 +39,28 @@ function exactKeys(value: JsonObject, keys: readonly string[]): void {
   if (Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key))) invalid();
 }
 
+/** Usage keys: `costMicros`, and optionally the token counts, each a non-negative safe integer. */
+function usageFields(usage: JsonObject): void {
+  if (!Object.hasOwn(usage, 'costMicros') || Object.keys(usage).some(key => key !== 'costMicros' && key !== 'inputTokens' && key !== 'outputTokens')) invalid();
+  for (const key of ['inputTokens', 'outputTokens']) {
+    if (!Object.hasOwn(usage, key)) continue;
+    const count = usage[key];
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) invalid();
+  }
+}
+
+/** The token counts of known usage, when the adapter reported them; nothing when it did not or the usage is malformed. */
+export function modelTokens(value: unknown): { readonly inputTokens?: number; readonly outputTokens?: number } {
+  try {
+    if (!value || typeof value !== 'object' || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) return {};
+    const descriptor = Object.getOwnPropertyDescriptor(value, 'usage');
+    if (!descriptor || !('value' in descriptor)) return {};
+    const usage = object(jsonValue(descriptor.value, { maxBytes: 512, maxDepth: 2 }));
+    usageFields(usage);
+    return { ...(typeof usage['inputTokens'] === 'number' ? { inputTokens: usage['inputTokens'] } : {}), ...(typeof usage['outputTokens'] === 'number' ? { outputTokens: usage['outputTokens'] } : {}) };
+  } catch { return {}; }
+}
+
 /** Read known usage without traversing malformed output or invoking an adapter-owned getter. */
 export function modelCost(value: unknown): number {
   try {
@@ -46,7 +68,7 @@ export function modelCost(value: unknown): number {
     const descriptor = Object.getOwnPropertyDescriptor(value, 'usage');
     if (!descriptor || !('value' in descriptor)) return invalid();
     const usage = object(jsonValue(descriptor.value, { maxBytes: 512, maxDepth: 2 }));
-    exactKeys(usage, ['costMicros']);
+    usageFields(usage);
     const amount = usage['costMicros'];
     if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0) return invalid();
     return amount;
@@ -58,13 +80,15 @@ export function modelResponse(value: unknown, maxBytes: number, maxCalls: number
   let response: JsonObject;
   try { response = object(jsonValue(value, { maxBytes })); } catch { return invalid(); }
   const usage = object(response['usage']);
-  exactKeys(usage, ['costMicros']);
+  usageFields(usage);
   if (!Number.isSafeInteger(usage['costMicros']) || typeof usage['costMicros'] !== 'number' || usage['costMicros'] < 0) invalid();
+  const usageOut = { costMicros: usage['costMicros'] as number, ...(typeof usage['inputTokens'] === 'number' ? { inputTokens: usage['inputTokens'] } : {}),
+    ...(typeof usage['outputTokens'] === 'number' ? { outputTokens: usage['outputTokens'] } : {}) };
   const continuation = Object.hasOwn(response, 'continuation') ? { continuation: response['continuation']! } : {};
   const continuationKeys = Object.hasOwn(response, 'continuation') ? ['continuation'] : [];
   if (response['type'] === 'final') {
     exactKeys(response, ['type', 'output', 'usage', ...continuationKeys]);
-    return { type: 'final', output: response['output']!, usage: { costMicros: usage['costMicros'] as number }, ...continuation };
+    return { type: 'final', output: response['output']!, usage: usageOut, ...continuation };
   }
   if (response['type'] !== 'tool_calls') return invalid();
   exactKeys(response, ['type', 'calls', 'usage', ...continuationKeys]);
@@ -74,7 +98,7 @@ export function modelResponse(value: unknown, maxBytes: number, maxCalls: number
   return {
     type: 'tool_calls',
     ...continuation,
-    usage: { costMicros: usage['costMicros'] as number },
+    usage: usageOut,
     calls: calls.map((entry) => {
       const call = object(entry);
       exactKeys(call, ['id', 'toolId', 'input']);

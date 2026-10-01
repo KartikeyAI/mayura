@@ -23,7 +23,7 @@ describe('loopback OpenAI-compatible chat adapter', () => {
   it('sends explicit schema/tools to one loopback destination without ambient credentials', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ role: 'assistant', content: '{"answer":42}' }));
     const result = await openAICompatibleChat(options({ fetch })).generate(request());
-    expect(result).toEqual({ type: 'final', output: { answer: 42 }, usage: { costMicros: 1 } });
+    expect(result).toEqual({ type: 'final', output: { answer: 42 }, usage: { costMicros: 1, inputTokens: 2, outputTokens: 1 } });
     const [url, init] = fetch.mock.calls[0]!; expect(url).toBe('http://127.0.0.1:11434/v1/chat/completions');
     expect(init?.headers).toEqual({ 'Content-Type': 'application/json' }); expect(init?.redirect).toBe('error');
     const body = JSON.parse(init?.body as string);

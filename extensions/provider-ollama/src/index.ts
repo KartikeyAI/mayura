@@ -189,7 +189,7 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
       const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
-        let knownCost: number | undefined;
+        let knownCost: number | undefined; let inputTokens = 0; let outputTokens = 0;
         try {
           const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
           if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
@@ -227,8 +227,9 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
               ? await assemble(await client.chat({ ...request, stream: true } as never) as unknown as AsyncIterable<unknown>, maxResponseBytes, stream)
               : object(jsonValue(JSON.parse(JSON.stringify(await client.chat({ ...request, stream: false } as never))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
             // Ollama leaves out the prompt count when the whole prompt was cached.
-            const cost = tokenCostMicros(settings.pricing, payload['prompt_eval_count'] === undefined ? 0 : integer(payload['prompt_eval_count']), integer(payload['eval_count'])) ?? failed();
-            knownCost = (knownCost ?? 0) + cost;
+            const prompt = payload['prompt_eval_count'] === undefined ? 0 : integer(payload['prompt_eval_count']); const completion = integer(payload['eval_count']);
+            knownCost = (knownCost ?? 0) + (tokenCostMicros(settings.pricing, prompt, completion) ?? failed());
+            inputTokens += prompt; outputTokens += completion;
             if (payload['done'] !== true) return failed();
             return payload;
           };
@@ -237,7 +238,7 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
             // Output cut off by the token limit is not an answer.
             if (finish === 'length') return failed('refused');
             if (finish !== 'stop' || typeof message['content'] !== 'string' || (Array.isArray(message['tool_calls']) && message['tool_calls'].length > 0)) return failed();
-            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost! } };
+            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost!, inputTokens, outputTokens } };
           };
           if (tools.length === 0) return finalFrom(await chat(body, onDelta));
 
@@ -256,7 +257,7 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
             });
             const thinking = typeof message['thinking'] === 'string' && message['thinking'] ? message['thinking'] : null;
             const continuation = jsonValue({ provider: 'ollama.chat.v1', model: name, assistants: [...assistants, { thinking, calls: calls.map(entry => entry.id) }] }, { maxBytes: maxRequestBytes });
-            return { type: 'tool_calls', calls, usage: { costMicros: knownCost! }, continuation };
+            return { type: 'tool_calls', calls, usage: { costMicros: knownCost!, inputTokens, outputTokens }, continuation };
           }
           if (finish === 'length') return failed('refused');
           if (finish !== 'stop') return failed();

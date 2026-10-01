@@ -755,7 +755,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           checkCancelled();
           const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
           continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
-          events.emit('model.completed', { step, response: response.type, ...(callCostMicros === undefined ? {} : { costMicros: callCostMicros }) });
+          events.emit('model.completed', { step, response: response.type, ...(callCostMicros === undefined ? {} : { costMicros: callCostMicros }),
+            ...(response.usage.inputTokens === undefined ? {} : { inputTokens: response.usage.inputTokens }), ...(response.usage.outputTokens === undefined ? {} : { outputTokens: response.usage.outputTokens }) });
           const modelObserved = await observe(Object.freeze({ stage: 'afterModelCall', step, modelId: agent.model.id, response: response.type,
             toolCalls: response.type === 'final' ? 0 : response.calls.length }), step);
           if (modelObserved) return { done: true, outcome: modelObserved };

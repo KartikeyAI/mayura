@@ -27,10 +27,11 @@ describe('createModelRouter', () => {
   it('fails over and charges a failed attempt its confirmed cost, or its full bound when the cost is unknown', async () => {
     const attempts: ModelRouterAttempt[] = [];
     const unknownCost = adapter('primary', 10, unavailable); const knownCost = adapter('second', 7, () => { throw new ModelInvocationError(4); });
-    const backup = adapter('backup', 20, () => final('b', 2));
+    const backup = adapter('backup', 20, () => ({ type: 'final', output: 'b', usage: { costMicros: 2, inputTokens: 300, outputTokens: 20 } }));
     const router = createModelRouter({ id: 'router.main', routes: [unknownCost, knownCost, backup], onAttempt: attempt => attempts.push(attempt) });
     const response = await router.generate(request());
-    expect(response).toMatchObject({ output: 'b', usage: { costMicros: 10 + 4 + 2 }, continuation: { route: 2 } });
+    // The tokens are the answering route's; the cost is every attempt's.
+    expect(response).toMatchObject({ output: 'b', usage: { costMicros: 10 + 4 + 2, inputTokens: 300, outputTokens: 20 }, continuation: { route: 2 } });
     expect(attempts.map(attempt => [attempt.modelId, attempt.outcome, attempt.costMicros])).toEqual([['primary', 'failed', null], ['second', 'failed', 4], ['backup', 'succeeded', 2]]);
   });
 

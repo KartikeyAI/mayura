@@ -1,6 +1,6 @@
 import { MayuraError, ModelProviderError, type ModelAdapter, type ModelMediaCapability, type ModelRequest, type ModelResponse, type ModelStreamEvent } from '@mayura/core';
 import { isModelId } from './agent.js';
-import { modelCost, modelFailureCost } from './response.js';
+import { modelCost, modelFailureCost, modelTokens } from './response.js';
 import { createModelRouter, failureReason, failureStatus, type ModelRouter, type ModelRouterOptions } from './router.js';
 
 /** List prices in micros (millionths of a US dollar) per million tokens. */
@@ -276,7 +276,7 @@ function withRetries(adapter: ModelAdapter, retry: { readonly attempts: number; 
     }
   };
   const charged = (response: ModelResponse, spent: number): ModelResponse => spent === 0 ? response
-    : Object.freeze({ ...response, usage: Object.freeze({ costMicros: modelCost(response) + spent }) });
+    : Object.freeze({ ...response, usage: Object.freeze({ ...modelTokens(response), costMicros: modelCost(response) + spent }) });
 
   return Object.freeze({
     id: adapter.id, capabilities: adapter.capabilities, maxCostMicros,

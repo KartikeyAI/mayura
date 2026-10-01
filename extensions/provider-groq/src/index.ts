@@ -192,7 +192,7 @@ export function groq(options: GroqProviderOptions): ModelProvider {
       const call = async (request: ModelRequest, onDelta?: (text: string) => void, consumer?: AbortSignal): Promise<ModelResponse> => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
-        let knownCost: number | undefined;
+        let knownCost: number | undefined; let inputTokens = 0; let outputTokens = 0;
         try {
           const signal = AbortSignal.any([request.signal, controller.signal, ...(consumer ? [consumer] : [])]);
           if (signal.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled.');
@@ -230,7 +230,9 @@ export function groq(options: GroqProviderOptions): ModelProvider {
               : object(jsonValue(JSON.parse(JSON.stringify(await client.chat.completions.create(request as never, { signal }))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
             // Reasoning tokens are part of the completion tokens; cached prompt tokens are charged at the full rate.
             const usage = object(payload['usage']);
-            knownCost = (knownCost ?? 0) + (tokenCostMicros(settings.pricing, integer(usage['prompt_tokens']), integer(usage['completion_tokens'])) ?? failed());
+            const prompt = integer(usage['prompt_tokens']); const completion = integer(usage['completion_tokens']);
+            knownCost = (knownCost ?? 0) + (tokenCostMicros(settings.pricing, prompt, completion) ?? failed());
+            inputTokens += prompt; outputTokens += completion;
             if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
             const choice = object(payload['choices'][0]); const message = object(choice['message']);
             if (typeof message['refusal'] === 'string' && message['refusal']) return failed('refused');
@@ -240,7 +242,7 @@ export function groq(options: GroqProviderOptions): ModelProvider {
             // Output cut off by the token limit is not an answer.
             if (finish === 'length') return failed('refused');
             if (finish !== 'stop' || typeof message['content'] !== 'string' || (Array.isArray(message['tool_calls']) && message['tool_calls'].length > 0)) return failed();
-            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost! } };
+            return { type: 'final', output: jsonValue(JSON.parse(message['content']) as JsonValue, { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost!, inputTokens, outputTokens } };
           };
           if (tools.length === 0) return finalFrom(await chat(body, onDelta));
 
@@ -261,7 +263,7 @@ export function groq(options: GroqProviderOptions): ModelProvider {
             if (calls.length === 0 || calls.length > 128) return failed();
             const reasoning = typeof message['reasoning'] === 'string' && message['reasoning'] ? message['reasoning'] : null;
             const continuation = jsonValue({ provider: 'groq.chat.v1', model: name, assistants: [...assistants, { reasoning, calls: calls.map(entry => entry.id) }] }, { maxBytes: maxRequestBytes });
-            return { type: 'tool_calls', calls, usage: { costMicros: knownCost! }, continuation };
+            return { type: 'tool_calls', calls, usage: { costMicros: knownCost!, inputTokens, outputTokens }, continuation };
           }
           if (finish === 'length') return failed('refused');
           if (finish !== 'stop') return failed();

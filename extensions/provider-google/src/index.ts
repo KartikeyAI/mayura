@@ -218,7 +218,7 @@ export function google(options: GoogleProviderOptions): ModelProvider {
           if (typeof finish === 'string' && REFUSED.has(finish)) return failed('refused');
           const parts = Array.isArray((candidate['content'] as JsonObject | undefined)?.['parts']) ? ((candidate['content'] as JsonObject)['parts'] as JsonValue[]).map(object) : [];
           if (parts.length > 256) return failed();
-          const accounting = { costMicros: knownCost };
+          const accounting = { costMicros: knownCost, inputTokens: input, outputTokens: output };
           const calls: ModelToolCall[] = []; const seen = new Set<string>();
           for (const [index, part] of parts.entries()) {
             const call = part['functionCall'] as JsonObject | undefined;

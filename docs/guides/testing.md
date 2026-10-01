@@ -65,6 +65,7 @@ scriptedModel(responses, { id?, maxCostMicros?, streamChunk?, media? })
   sent: `request.messages` holds the input, the agent's earlier tool calls and their results.
 - A response is `{ type: 'final', output, usage: { costMicros } }` or
   `{ type: 'tool_calls', calls: [{ id, toolId, input }], usage: { costMicros } }`. The `toolId` is the Mayura tool id.
+  `usage` can also carry `inputTokens` and `outputTokens`, to test what reaches events and traces.
 - **`id`** is the adapter id, `'scripted'` by default, so grant `model:scripted`. Give each model its own id when a
   test has several agents and you want to grant them separately.
 - **`maxCostMicros`** is the per-call bound, 0 by default.

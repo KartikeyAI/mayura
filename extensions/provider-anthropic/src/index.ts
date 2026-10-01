@@ -228,7 +228,7 @@ export function anthropic(options: AnthropicProviderOptions): ModelProvider {
           // Cache writes cost up to twice the input rate (one-hour cache) and reads less than it: both are charged high.
           knownCost = tokenCostMicros(settings.pricing, input + 2 * cacheWrites + cacheReads, output) ?? failed();
           if (payload['type'] !== 'message' || payload['role'] !== 'assistant' || !Array.isArray(payload['content']) || payload['content'].length < 1 || payload['content'].length > 256) return failed();
-          const accounting = { costMicros: knownCost };
+          const accounting = { costMicros: knownCost, inputTokens: input + cacheWrites + cacheReads, outputTokens: output };
           if (payload['stop_reason'] === 'tool_use') {
             const calls: ModelToolCall[] = []; const seen = new Set<string>();
             for (const raw of payload['content']) {

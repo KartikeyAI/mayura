@@ -112,6 +112,12 @@ describe('retries on the same model', () => {
     expect(calls()).toBe(3);
   });
 
+  it('keeps the token counts of the attempt that answered while charging every attempt', async () => {
+    const answered: ModelResponse = { type: 'final', output: { answer: 42 }, usage: { costMicros: 5, inputTokens: 120, outputTokens: 30 } };
+    const { model } = retried([new ModelProviderError('unavailable', { costMicros: 2 }), answered]);
+    expect(await model.generate(request())).toMatchObject({ usage: { costMicros: 7, inputTokens: 120, outputTokens: 30 } });
+  });
+
   it('charges the full bound for an attempt whose cost is unknown', async () => {
     const { model } = retried([new ModelProviderError('unavailable'), final(5)]);
     expect(await model.generate(request())).toMatchObject({ usage: { costMicros: 15 } });

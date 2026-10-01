@@ -75,8 +75,10 @@ export function agentRunTraceSpans(events: readonly RunEvent[], options: AgentRu
       if (!start) continue;
       if (typeof metadata['callId'] === 'string') guarded.delete(metadata['callId']); else model = undefined;
       const call = start.metadata['modelCall']; const cost = event.metadata['costMicros'];
+      const input = event.metadata['inputTokens']; const output = event.metadata['outputTokens'];
       spans.push(child(['model', String(start.sequence)], 'model.call', start, event, 'ok', { 'gen_ai.operation.name': 'chat', ...modelAttributes(start.metadata['modelId']),
-        ...(typeof call === 'number' ? { 'mayura.model.call': call } : {}), ...(typeof cost === 'number' ? { 'mayura.cost.micros': cost } : {}) }));
+        ...(typeof call === 'number' ? { 'mayura.model.call': call } : {}), ...(typeof cost === 'number' ? { 'mayura.cost.micros': cost } : {}),
+        ...(typeof input === 'number' ? { 'gen_ai.usage.input_tokens': input } : {}), ...(typeof output === 'number' ? { 'gen_ai.usage.output_tokens': output } : {}) }));
     } else if (event.type === 'tool.started') tools.set(String(metadata['callId']), event);
     else if (event.type === 'tool.completed') {
       const callId = String(metadata['callId']); const start = tools.get(callId); if (!start) continue; tools.delete(callId);

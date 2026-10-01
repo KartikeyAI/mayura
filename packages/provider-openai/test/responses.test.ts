@@ -79,7 +79,7 @@ describe('Responses request contract', () => {
     const transport = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
     const adapter = openAIResponses(options({ fetch: transport }));
     expect(adapter.id).toBe('openai.responses');
-    expect(await adapter.generate(request())).toEqual({ type: 'final', output: { answer: 5 }, usage: { costMicros: 1 } });
+    expect(await adapter.generate(request())).toEqual({ type: 'final', output: { answer: 5 }, usage: { costMicros: 1, inputTokens: 10, outputTokens: 2 } });
     expect(transport).toHaveBeenCalledTimes(1);
     const [url, init] = transport.mock.calls[0]!;
     expect(url).toBe('https://api.openai.com/v1/responses');
@@ -320,7 +320,7 @@ describe('private continuation and call correlation', () => {
     expect(JSON.stringify(first.calls)).not.toContain('PRIVATE');
     const messages: ModelMessage[] = [...initial.messages, { role: 'assistant', calls: first.calls }, { role: 'tool', callId: 'call_1', toolId: 'math/add.v1', result: { sum: 5 } }];
     const final = await adapter.generate(request({ messages, continuation: first.continuation }));
-    expect(final).toEqual({ type: 'final', output: { answer: 5 }, usage: { costMicros: 1 } });
+    expect(final).toEqual({ type: 'final', output: { answer: 5 }, usage: { costMicros: 1, inputTokens: 10, outputTokens: 2 } });
     const second = transmittedBody(transport, 1);
     expect(second['input']).toEqual([
       { role: 'user', content: '{"question":"2 + 3"}' }, reasoning, functionCall(),

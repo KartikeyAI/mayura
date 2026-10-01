@@ -79,11 +79,12 @@ describe('@mayurajs/provider-anthropic', () => {
     expect(seen).toHaveLength(1);
   });
 
-  it('charges prompt-cache writes at twice the input rate and cache reads at the full rate', async () => {
+  it('charges prompt-cache writes at twice the input rate and cache reads at the full rate, and counts them as input', async () => {
     const body = message([{ type: 'text', text: '{"answer":"ok"}' }], 'end_turn', usage(1_000, 100, { cache_creation_input_tokens: 2_000, cache_read_input_tokens: 3_000 }));
     const response = await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body }) }).model('claude-test', settings).generate(request());
     // (1,000 + 2 × 2,000 + 3,000) input tokens at $1/M, plus 100 output tokens at $5/M.
     expect(response.usage.costMicros).toBe(8_000 + 500);
+    expect([response.usage.inputTokens, response.usage.outputTokens]).toEqual([1_000 + 2_000 + 3_000, 100]);
   });
 
   it('keeps the model\'s thinking for the next call of the run, and never releases it', async () => {

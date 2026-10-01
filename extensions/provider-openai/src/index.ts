@@ -269,7 +269,7 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
               }
             } else return failed();
           }
-          const accounting = { costMicros: knownCost };
+          const accounting = { costMicros: knownCost, inputTokens, outputTokens };
           if (calls.length > 0) {
             const continuation = jsonValue({ provider: protocol, model: name, consumed: request.messages.length, history: [...input, ...payload['output']] }, { maxBytes: maxRequestBytes });
             return { type: 'tool_calls', calls, usage: accounting, continuation };

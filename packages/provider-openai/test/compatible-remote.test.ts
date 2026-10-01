@@ -20,7 +20,7 @@ describe('remote OpenAI-compatible providers', () => {
     const transport = vi.fn<typeof globalThis.fetch>(async () => completion());
     const adapter = make({ remote: { id: 'groq' } }, transport);
     expect(adapter.id).toBe('openai-compatible.groq');
-    expect(await adapter.generate(request())).toEqual({ type: 'final', output: { answer: 'ok' }, usage: { costMicros: 1 } });
+    expect(await adapter.generate(request())).toEqual({ type: 'final', output: { answer: 'ok' }, usage: { costMicros: 1, inputTokens: 10, outputTokens: 3 } });
     const [url, init] = transport.mock.calls[0]!;
     expect(url).toBe('https://api.provider.example/openai/v1/chat/completions');
     expect(init).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer fixture-key' } });
@@ -64,7 +64,7 @@ describe('remote OpenAI-compatible providers', () => {
     const streaming = make({}, async () => sse([chunk({ role: 'assistant', content: '{"answer":' }), chunk({ content: '"streamed"}' }), chunk({}, 'stop'),
       { choices: [], usage: { prompt_tokens: 10, completion_tokens: 3 } }, '[DONE]']));
     expect(await collect(streaming.stream!(request()))).toEqual([{ type: 'output.delta', text: '{"answer":' }, { type: 'output.delta', text: '"streamed"}' },
-      { type: 'response', response: { type: 'final', output: { answer: 'streamed' }, usage: { costMicros: 1 } } }]);
+      { type: 'response', response: { type: 'final', output: { answer: 'streamed' }, usage: { costMicros: 1, inputTokens: 10, outputTokens: 3 } } }]);
 
     const tools = make({}, async () => sse([chunk({ tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{"q":' } }] }),
       chunk({ tool_calls: [{ index: 0, function: { arguments: '4}' } }] }), chunk({}, 'tool_calls'), { choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }, '[DONE]']));
