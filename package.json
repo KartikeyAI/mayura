@@ -82,6 +82,7 @@
     "@mayurajs/filestorage-mesa": "workspace:*",
     "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
+    "@mayurajs/observability-langfuse": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",

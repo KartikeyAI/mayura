@@ -36,6 +36,7 @@ export const reviewedDependencies = {
   'filestorage-mesa': [],
   'filestorage-r2': [],
   'filestorage-vercel-blob': [],
+  'observability-langfuse': [],
   'voice-assemblyai': [],
   'voice-azure': [],
   'voice-cartesia': [],

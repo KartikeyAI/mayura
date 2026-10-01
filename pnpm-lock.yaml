@@ -107,6 +107,9 @@ importers:
       '@mayurajs/filestorage-vercel-blob':
         specifier: workspace:*
         version: link:extensions/filestorage-vercel-blob
+      '@mayurajs/observability-langfuse':
+        specifier: workspace:*
+        version: link:extensions/observability-langfuse
       '@mayurajs/provider-anthropic':
         specifier: workspace:*
         version: link:extensions/provider-anthropic
@@ -283,6 +286,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/filestorage-vercel-blob:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/observability-langfuse:
     devDependencies:
       mayura:
         specifier: workspace:*

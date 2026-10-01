@@ -7935,6 +7935,20 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/observability-langfuse": {
+      "LangfuseRegion": {
+        "kind": "type",
+        "declaration": "4545a34615c38c98"
+      },
+      "langfuseTraceExporter": {
+        "kind": "function",
+        "declaration": "927e3e1b047dd2e5"
+      },
+      "LangfuseTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "74b600750117de50"
+      }
+    },
     "@mayurajs/provider-anthropic": {
       "anthropic": {
         "kind": "function",

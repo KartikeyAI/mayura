@@ -199,6 +199,15 @@ await metrics.sink([
 ], { signal: AbortSignal.timeout(10_000) });
 ```
 
+### Observability providers
+
+These packages preset an OTLP exporter for one provider: its endpoint, its authentication and anything it needs to
+show Mayura's spans as AI traces. Each returns the exporter, so `sink`, `inspect()` and `close()` work as above.
+
+| Package | Provider | Signals |
+| --- | --- | --- |
+| `@mayurajs/observability-langfuse` | [Langfuse](https://langfuse.com) Cloud (EU, US, JP, HIPAA) or self-hosted: `langfuseTraceExporter({ publicKey, secretKey, region })` | traces |
+
 ### Through your OpenTelemetry SDK
 
 If your application already runs an OpenTelemetry SDK, send Mayura's spans and metrics through it instead of a second

@@ -18,6 +18,7 @@
     { "path": "extensions/filestorage-mesa" },
     { "path": "extensions/filestorage-r2" },
     { "path": "extensions/filestorage-vercel-blob" },
+    { "path": "extensions/observability-langfuse" },
     { "path": "extensions/voice-assemblyai" },
     { "path": "extensions/voice-azure" },
     { "path": "extensions/voice-cartesia" },
