@@ -74,6 +74,7 @@
     "@vercel/blob": "2.8.0",
     "agentfs-sdk": "0.6.4",
     "files-sdk": "2.6.2",
+    "@mayurajs/deploy-fly": "workspace:*",
     "@mayurajs/filestorage-agentfs": "workspace:*",
     "@mayurajs/filestorage-azure-blob": "workspace:*",
     "@mayurajs/filestorage-files-sdk": "workspace:*",

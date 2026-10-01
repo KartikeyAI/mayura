@@ -31,6 +31,10 @@ Platforms come as packages named `@mayurajs/deploy-<id>`: install one in the pro
 `mayura deploy targets` lists the built-in targets and the installed packages. Packages are loaded only from the
 project's own dependencies.
 
+| Package | Target | Platform |
+|---|---|---|
+| `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
+
 ## mayura.deploy.json
 
 `deploy init` writes `mayura.deploy.json` when the project has none. Everything in it has a default except the image:

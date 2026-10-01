@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/deploy-fly':
+        specifier: workspace:*
+        version: link:extensions/deploy-fly
       '@mayurajs/filestorage-agentfs':
         specifier: workspace:*
         version: link:extensions/filestorage-agentfs
@@ -260,6 +263,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/deploy-fly:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/filestorage-agentfs:
     devDependencies:

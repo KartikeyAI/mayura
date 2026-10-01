@@ -123,7 +123,7 @@ describe('deploy plans', () => {
     const root = await initialized();
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'x' }));
     await expect(planDeploy(kubernetesTarget as unknown as DeployTarget, root)).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('tag') });
-    await expect(planDeploy(kubernetesTarget as unknown as DeployTarget, root, { tag: 'bad tag' })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    await expect(planDeploy(kubernetesTarget as unknown as DeployTarget, root, { tag: 'bad tag' })).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('image tag') });
     await writeFile(join(root, 'deploy/kubernetes/worker.yaml'), 'kind: Deployment\n');
     await expect(planDeploy(kubernetesTarget as unknown as DeployTarget, root, { tag: 'v1' })).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('placeholder') });
   });

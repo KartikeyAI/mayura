@@ -66,6 +66,7 @@
   ],
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
+    "@mayurajs/deploy-fly",
     "@mayurajs/filestorage-agentfs",
     "@mayurajs/filestorage-azure-blob",
     "@mayurajs/filestorage-files-sdk",

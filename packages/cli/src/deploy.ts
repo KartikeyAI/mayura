@@ -51,8 +51,8 @@ export interface DeployTarget<Settings = unknown> {
   readonly description: string;
   /** The executables its steps run, by name, found on PATH: `docker`, `kubectl`, `flyctl`. No other program is run. */
   readonly tools: readonly string[];
-  /** Validates its section of `mayura.deploy.json` (`targets.<id>`), which may be absent. */
-  settings(value: JsonValue | undefined): Settings;
+  /** Validates its section of `mayura.deploy.json` (`targets.<id>`), which may be absent; defaults may use the project. */
+  settings(value: JsonValue | undefined, project: DeployProject): Settings;
   /** The files `mayura deploy init` writes, by path relative to the project. */
   files(context: DeployFilesContext<Settings>): Readonly<Record<string, string>>;
   /** The commands of one release, in order. */
@@ -165,7 +165,7 @@ const filePlans = new WeakMap<DeployFilesPlan, FilesState>();
 /** Plans the files a target needs, without writing: each is created, kept or replaced (a replacement shows its diff). */
 export async function planDeployFiles(target: DeployTarget, directory: string): Promise<DeployFilesPlan> {
   const checked = defineDeployTarget(target); const root = await directoryOf(directory);
-  const config = await readDeployConfig(root); const settings = checked.settings(config.targets[checked.id]);
+  const config = await readDeployConfig(root); const settings = checked.settings(config.targets[checked.id], config.project);
   const produced = checked.files({ project: config.project, settings });
   const entries = Object.entries(produced ?? {});
   if (entries.length > limits.files || entries.some(([path, content]) => !filePath.test(path) || typeof content !== 'string' || content.length > limits.fileBytes)) {
@@ -199,9 +199,10 @@ const runPlans = new WeakMap<DeployPlan, readonly string[]>();
 /** Plans one release: the commands, in order, with everything they are given. Nothing runs. */
 export async function planDeploy(target: DeployTarget, directory: string, options: { readonly tag?: string } = {}): Promise<DeployPlan> {
   const checked = defineDeployTarget(target); const root = await directoryOf(directory);
-  const config = await readDeployConfig(root); const settings = checked.settings(config.targets[checked.id]);
+  const config = await readDeployConfig(root); const settings = checked.settings(config.targets[checked.id], config.project);
   const tag = options.tag ?? config.version;
-  if (typeof tag !== 'string' || !imageTag.test(tag)) throw new MayuraError('INVALID_CONFIG', 'A release needs a tag: pass --tag, or give package.json a version.');
+  if (typeof tag !== 'string') throw new MayuraError('INVALID_CONFIG', 'A release needs a tag: pass --tag, or give package.json a version.');
+  if (!imageTag.test(tag)) throw new MayuraError('INVALID_CONFIG', 'A release tag is an image tag: letters, digits, ".", "_" and "-", at most 128, not starting with "." or "-".');
   const release: DeployRelease = Object.freeze({ tag, ...(config.project.image === undefined ? {} : { image: `${config.project.image}:${tag}` }) });
   const read = async (path: string): Promise<string> => {
     const content = await projectFile(root, path);

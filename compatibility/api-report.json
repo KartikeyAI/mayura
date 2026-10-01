@@ -652,7 +652,7 @@
       },
       "DeployTarget": {
         "kind": "interface",
-        "declaration": "1b7cc4ca217e1c26"
+        "declaration": "865cfde7d12fd63b"
       },
       "dockerfile": {
         "kind": "function",
@@ -7963,6 +7963,20 @@
       "WebhookTriggerOptions": {
         "kind": "interface",
         "declaration": "bbbab4ccb6c41af2"
+      }
+    },
+    "@mayurajs/deploy-fly": {
+      "FlyBuild": {
+        "kind": "type",
+        "declaration": "5f564f9dbf754f51"
+      },
+      "FlySettings": {
+        "kind": "interface",
+        "declaration": "8088cd504dfa0fdd"
+      },
+      "flyTarget": {
+        "kind": "const",
+        "declaration": "303d990d50ae427d"
       }
     },
     "@mayurajs/filestorage-agentfs": {
