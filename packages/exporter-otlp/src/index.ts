@@ -6,6 +6,7 @@ export type {
   OtlpSpanAttributes,
   OtlpTraceParent,
   ExactCount,
+  OtlpExtraAttributes,
   OtlpHttpJsonLogExporter,
   OtlpHttpJsonLogExporterOptions,
   OtlpLogExporterMetrics,

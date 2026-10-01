@@ -42,6 +42,43 @@ describe('OTLP HTTP JSON trace and metric exporters', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('adds a provider\'s span attributes after the catalog\'s, and its resource attributes to traces and metrics', async () => {
+    const bodies: any[] = []; const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => { bodies.push(JSON.parse(init?.body as string)); return response(); });
+    const seen: OtlpTraceSpan[] = [];
+    const exporter = createOtlpHttpJsonTraceExporter(traceOptions(fetch, { resourceAttributes: { 'openinference.project.name': 'support' },
+      spanAttributes: span => { seen.push(span); return span.attributes?.['gen_ai.operation.name'] === 'chat' ? { 'openinference.span.kind': 'LLM', 'llm.token_count.prompt': 5 } : undefined; } }));
+    await exporter.sink([{ ...trace, attributes: { 'gen_ai.operation.name': 'chat' } }, { ...trace, spanId: '3'.repeat(16) }], { signal: new AbortController().signal });
+    const [chat, plain] = bodies[0].resourceSpans[0].scopeSpans[0].spans;
+    expect(chat.attributes).toEqual([{ key: 'mayura.run.id', value: { stringValue: 'run-1' } }, { key: 'gen_ai.operation.name', value: { stringValue: 'chat' } },
+      { key: 'llm.token_count.prompt', value: { intValue: '5' } }, { key: 'openinference.span.kind', value: { stringValue: 'LLM' } }]);
+    expect(plain.attributes).toEqual([{ key: 'mayura.run.id', value: { stringValue: 'run-1' } }]);
+    expect(Object.isFrozen(seen[0]) && Object.isFrozen(seen[0]!.attributes)).toBe(true);
+    expect(bodies[0].resourceSpans[0].resource.attributes).toEqual([{ key: 'service.name', value: { stringValue: 'agent' } }, { key: 'openinference.project.name', value: { stringValue: 'support' } }]);
+    await createOtlpHttpJsonMetricExporter(metricOptions(fetch, { resourceAttributes: { 'posthog.distinct_id': 'user-1' } })).sink([gauge], { signal: new AbortController().signal });
+    expect(bodies[1].resourceMetrics[0].resource.attributes).toContainEqual({ key: 'posthog.distinct_id', value: { stringValue: 'user-1' } });
+  });
+
+  it.each([
+    { 'mayura.extra': 'x' }, { 'service.instance.id': 'x' }, { 'gen_ai.operation.name': 'chat' }, { 'Sentry.op': 'x' }, { sentry: 'x' }, { 'sentry.op': 'free text' },
+    { 'sentry.op': -1 }, { 'sentry.op': { nested: 'x' } }, Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`vendor.key_${index}`, 1])), ['sentry.op'],
+  ])('refuses the whole batch when a provider\'s span attributes break the rules (%#)', async derived => {
+    const fetch = vi.fn<typeof globalThis.fetch>(); const exporter = createOtlpHttpJsonTraceExporter(traceOptions(fetch, { spanAttributes: () => derived as never }));
+    await expect(exporter.sink([trace], { signal: new AbortController().signal })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(fetch).not.toHaveBeenCalled(); expect(exporter.inspect().metrics).toMatchObject({ recordsDropped: 1 });
+  });
+
+  it('refuses a batch when the provider\'s mapping throws, without its text, and bad attribute options at construction', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const exporter = createOtlpHttpJsonTraceExporter(traceOptions(fetch, { spanAttributes: () => { throw new MayuraError('INVALID_INPUT', 'SECRET mapping failure'); } }));
+    const caught = await exporter.sink([trace], { signal: new AbortController().signal }).catch((error: unknown) => error);
+    expect(caught).toMatchObject({ code: 'INVALID_INPUT' }); expect(`${String(caught)} ${JSON.stringify(caught)}`).not.toContain('SECRET');
+    for (const extra of [{ resourceAttributes: { 'service.name': 'other' } }, { resourceAttributes: { 'project.name': 'has spaces' } }, { spanAttributes: 'sentry.op' as never }]) {
+      expect(() => createOtlpHttpJsonTraceExporter(traceOptions(fetch, extra))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    }
+    expect(() => createOtlpHttpJsonMetricExporter({ ...metricOptions(fetch), spanAttributes: () => undefined } as never)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('groups compatible metric points and encodes gauge and cumulative sum data', async () => {
     let body: any; const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => { body = JSON.parse(init?.body as string); return response(); });
     const exporter = createOtlpHttpJsonMetricExporter(metricOptions(fetch));

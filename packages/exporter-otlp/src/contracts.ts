@@ -46,11 +46,20 @@ export interface OtlpHttpJsonLogExporter {
   close(): void;
 }
 
+/**
+ * Attributes a provider adds beyond Mayura's own: at most 16, with lowercase dotted keys (`openinference.span.kind`,
+ * `sentry.op`) outside the span-attribute catalog, `mayura.*` and `service.*`, and values that are bounded stable
+ * identifiers or non-negative safe integers, like the catalog's. They cannot carry free text.
+ */
+export type OtlpExtraAttributes = Readonly<Record<string, string | number>>;
+
 export interface OtlpHttpJsonSignalExporterOptions {
   /** Complete signal-specific endpoint ending in `/v1/traces` or `/v1/metrics`. */
   readonly endpoint: string;
   readonly serviceName: string;
   readonly serviceVersion?: string;
+  /** More resource attributes beside `service.name` and `service.version`, such as a provider's project name. */
+  readonly resourceAttributes?: OtlpExtraAttributes;
   readonly headers?: Readonly<Record<string, string>>;
   readonly allowInsecureLoopback?: boolean;
   readonly timeoutMs?: number;
@@ -59,7 +68,13 @@ export interface OtlpHttpJsonSignalExporterOptions {
   readonly maxResponseBytes?: number;
   readonly fetch?: typeof globalThis.fetch;
 }
-export type OtlpHttpJsonTraceExporterOptions = OtlpHttpJsonSignalExporterOptions;
+export interface OtlpHttpJsonTraceExporterOptions extends OtlpHttpJsonSignalExporterOptions {
+  /**
+   * Derives a provider's own attributes from each checked span, such as the span kind a provider reads instead of
+   * `gen_ai.operation.name`. A batch is refused whole when it throws or returns attributes outside the rules.
+   */
+  readonly spanAttributes?: (span: OtlpTraceSpan) => OtlpExtraAttributes | undefined;
+}
 export type OtlpHttpJsonMetricExporterOptions = OtlpHttpJsonSignalExporterOptions;
 
 /**

@@ -1728,6 +1728,10 @@
         "kind": "type",
         "declaration": "fc1f203aa74386ee"
       },
+      "OtlpExtraAttributes": {
+        "kind": "type",
+        "declaration": "ccc99209a4eab7e8"
+      },
       "OtlpHttpJsonLogExporter": {
         "kind": "interface",
         "declaration": "9543ca0eb4b69906"
@@ -1746,15 +1750,15 @@
       },
       "OtlpHttpJsonSignalExporterOptions": {
         "kind": "interface",
-        "declaration": "d09d28a2d05c064d"
+        "declaration": "352302feb05d5378"
       },
       "OtlpHttpJsonTraceExporter": {
         "kind": "interface",
         "declaration": "aa3264887dcfd4b4"
       },
       "OtlpHttpJsonTraceExporterOptions": {
-        "kind": "type",
-        "declaration": "80b336dfaad2dc52"
+        "kind": "interface",
+        "declaration": "dba8ff6c2617b7f0"
       },
       "OtlpLogExporterMetrics": {
         "kind": "interface",

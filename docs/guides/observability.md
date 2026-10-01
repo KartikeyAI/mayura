@@ -149,6 +149,12 @@ drops one batch instead of disabling the sink.
 | `maxBatchSize` | 256 | Records per request. |
 | `maxRequestBytes`, `maxResponseBytes` | 1 MiB, 64 KiB | Size bounds. |
 | `fetch` | global `fetch` | Your own transport, for example to add a proxy. |
+| `resourceAttributes` | none | Traces and metrics: more resource attributes, such as a provider's project name. |
+| `spanAttributes` | none | Traces: a function adding a provider's own attributes to each span, such as the span kind it reads. |
+
+Attributes from `resourceAttributes` and `spanAttributes` follow the catalog's rules: at most 16, lowercase dotted
+keys outside the catalog, `mayura.*` and `service.*`, and values that are stable identifiers or non-negative integers,
+so they cannot carry free text. A `spanAttributes` result outside these rules refuses the batch, like an invalid span.
 
 Each exporter sends one request at a time (a second concurrent call is refused), follows no redirects and never
 retries. `inspect()` reports attempted, accepted and dropped records, partial rejections, failures and timeouts.

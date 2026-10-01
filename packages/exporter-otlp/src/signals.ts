@@ -2,7 +2,7 @@ import { assertPositiveInteger, jsonValue, MayuraError, type JsonObject, type Js
 import type {
   ExactCount, OtlpHttpJsonMetricExporter, OtlpHttpJsonMetricExporterOptions, OtlpHttpJsonSignalExporterOptions,
   OtlpHttpJsonTraceExporter, OtlpHttpJsonTraceExporterOptions, OtlpLogExporterMetrics, OtlpMetricPoint,
-  OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpSpanAttributes, OtlpTraceSpan,
+  OtlpExtraAttributes, OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpSpanAttributes, OtlpTraceSpan,
 } from './contracts.js';
 
 const defaults = Object.freeze({ timeoutMs: 5_000, maxBatchSize: 256, maxRequestBytes: 1_048_576, maxResponseBytes: 65_536 });
@@ -73,6 +73,24 @@ function spanAttributes(value: JsonValue | undefined): JsonObject[] {
     return { key, value: typeof item === 'string' ? { stringValue: item } : { intValue: String(item) } };
   });
 }
+const extraKey = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/u;
+/** A provider's extra attributes, checked and encoded in key order; `refuse` reports anything outside the rules. */
+function extraAttributes(value: unknown, reserved: ReadonlySet<string>, refuse: () => never): JsonObject[] {
+  if (value === undefined) return [];
+  if (!value || typeof value !== 'object' || Array.isArray(value) || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) return refuse();
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Object.getOwnPropertySymbols(value).length || Object.keys(descriptors).length > 16) return refuse();
+  return Object.keys(descriptors).sort().map(key => {
+    const descriptor = descriptors[key]!; const item: unknown = descriptor.value;
+    if (!descriptor.enumerable || !('value' in descriptor) || key.length > 128 || !extraKey.test(key) || reserved.has(key) || key.startsWith('mayura.') || key.startsWith('service.')
+      || !((typeof item === 'string' && stablePattern.test(item)) || (typeof item === 'number' && Number.isSafeInteger(item) && item >= 0))) return refuse();
+    return { key, value: typeof item === 'string' ? { stringValue: item } : { intValue: String(item) } };
+  });
+}
+const refusedSpan = (): never => { throw new MayuraError('INVALID_INPUT', 'Trace span metadata is invalid.'); };
+type SpanAttributeHook = (span: OtlpTraceSpan) => OtlpExtraAttributes | undefined;
+interface EncodeSetup { readonly serviceName: string; readonly serviceVersion: string | undefined; readonly resource: readonly JsonObject[]; readonly spanAttributes: SpanAttributeHook | undefined }
+
 /** A span checked against the bounds and the attribute catalog, as a plain copy: what the OTLP encoder and the OpenTelemetry bridge accept. */
 export function checkedSpan(value: unknown): OtlpTraceSpan {
   const raw = object(jsonValue(value, { maxBytes: 8_192, maxDepth: 4, maxNodes: 96 }));
@@ -88,12 +106,18 @@ export function checkedSpan(value: unknown): OtlpTraceSpan {
     startTimeUnixNano: start, endTimeUnixNano: end, status: raw['status'] as OtlpTraceSpan['status'], ...(raw['runId'] === undefined ? {} : { runId: raw['runId'] as string }),
     ...(raw['attributes'] === undefined ? {} : { attributes: raw['attributes'] as OtlpSpanAttributes }) };
 }
-function span(value: unknown): JsonObject {
+function span(value: unknown, hook: SpanAttributeHook | undefined): JsonObject {
   const checked = checkedSpan(value);
+  let added: JsonObject[] = [];
+  if (hook) {
+    let derived: unknown;
+    try { derived = hook(Object.freeze({ ...checked, ...(checked.attributes === undefined ? {} : { attributes: Object.freeze({ ...checked.attributes }) }) })); } catch { return refusedSpan(); }
+    added = extraAttributes(derived, spanAttributeNames, refusedSpan);
+  }
   const status = checked.status === 'ok' ? 1 : checked.status === 'error' ? 2 : 0;
   return { traceId: checked.traceId, spanId: checked.spanId, ...(checked.parentSpanId === undefined ? {} : { parentSpanId: checked.parentSpanId }), name: checked.name, kind: 1,
     startTimeUnixNano: checked.startTimeUnixNano, endTimeUnixNano: checked.endTimeUnixNano, status: { code: status },
-    attributes: [...attributes({ 'mayura.run.id': checked.runId }), ...spanAttributes(checked.attributes as JsonValue | undefined)] };
+    attributes: [...attributes({ 'mayura.run.id': checked.runId }), ...spanAttributes(checked.attributes as JsonValue | undefined), ...added] };
 }
 function point(value: unknown): { readonly name: string; readonly kind: 'gauge'; readonly data: JsonObject }
   | { readonly name: string; readonly kind: 'sum'; readonly data: JsonObject; readonly monotonic: boolean } {
@@ -113,11 +137,11 @@ function point(value: unknown): { readonly name: string; readonly kind: 'gauge';
     ...(start === undefined ? {} : { startTimeUnixNano: start }), timeUnixNano: time, asDouble: raw['value'] };
   return kind === 'gauge' ? { name: raw['name'], kind, data } : { name: raw['name'], kind, data, monotonic: raw['monotonic'] as boolean };
 }
-function resource(serviceName: string, serviceVersion?: string): JsonObject { return { attributes: attributes({ 'service.name': serviceName, 'service.version': serviceVersion }) }; }
-function traceRequest(records: readonly unknown[], serviceName: string, serviceVersion?: string): JsonObject {
-  return { resourceSpans: [{ resource: resource(serviceName, serviceVersion), scopeSpans: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, spans: records.map(span) }] }] };
+function resource(setup: EncodeSetup): JsonObject { return { attributes: [...attributes({ 'service.name': setup.serviceName, 'service.version': setup.serviceVersion }), ...setup.resource] }; }
+function traceRequest(records: readonly unknown[], setup: EncodeSetup): JsonObject {
+  return { resourceSpans: [{ resource: resource(setup), scopeSpans: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, spans: records.map(record => span(record, setup.spanAttributes)) }] }] };
 }
-function metricRequest(records: readonly unknown[], serviceName: string, serviceVersion?: string): JsonObject {
+function metricRequest(records: readonly unknown[], setup: EncodeSetup): JsonObject {
   const grouped = new Map<string, ReturnType<typeof point>[]>();
   for (const item of records.map(point)) {
     const existing = grouped.get(item.name) ?? [];
@@ -127,7 +151,7 @@ function metricRequest(records: readonly unknown[], serviceName: string, service
   const encoded = [...grouped.values()].map(items => { const first = items[0]!; return { name: first.name,
     ...(first.kind === 'gauge' ? { gauge: { dataPoints: items.map(item => item.data) } }
       : { sum: { dataPoints: items.map(item => item.data), aggregationTemporality: 2, isMonotonic: first.monotonic } }) }; });
-  return { resourceMetrics: [{ resource: resource(serviceName, serviceVersion), scopeMetrics: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, metrics: encoded }] }] };
+  return { resourceMetrics: [{ resource: resource(setup), scopeMetrics: [{ scope: { name: '@mayura/observability', version: '1.0.0' }, metrics: encoded }] }] };
 }
 async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void operation.catch(() => undefined); throw signal.reason; } let listener: (() => void) | undefined;
@@ -153,14 +177,18 @@ function rejected(payload: JsonObject, field: 'rejectedSpans' | 'rejectedDataPoi
 }
 
 function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: OtlpHttpJsonSignalExporterOptions,
-  encode: (records: readonly T[], serviceName: string, serviceVersion?: string) => JsonObject, rejectedField: 'rejectedSpans' | 'rejectedDataPoints') {
-  let config: typeof defaults; let endpoint: string; let serviceName: string; let serviceVersion: string | undefined; let headers: Readonly<Record<string, string>>; let transport: typeof globalThis.fetch;
+  encode: (records: readonly T[], setup: EncodeSetup) => JsonObject, rejectedField: 'rejectedSpans' | 'rejectedDataPoints') {
+  let config: typeof defaults; let endpoint: string; let setup: EncodeSetup; let headers: Readonly<Record<string, string>>; let transport: typeof globalThis.fetch;
   try {
     const allow = options.allowInsecureLoopback ?? false; if (typeof allow !== 'boolean') throw new Error();
     config = Object.freeze(Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, options[key as keyof typeof defaults] ?? fallback]))) as typeof defaults;
     for (const [key, value] of Object.entries(config)) assertPositiveInteger(value, key);
     if (config.timeoutMs > 2_147_483_647 || config.maxBatchSize > 256 || config.maxRequestBytes > 16_777_216 || config.maxResponseBytes > 1_048_576) throw new Error();
-    endpoint = destination(options.endpoint, signalName, allow); serviceName = stable(options.serviceName); serviceVersion = options.serviceVersion === undefined ? undefined : stable(options.serviceVersion);
+    endpoint = destination(options.endpoint, signalName, allow);
+    const hook = (options as OtlpHttpJsonTraceExporterOptions).spanAttributes;
+    if (hook !== undefined && (signalName !== 'traces' || typeof hook !== 'function')) throw new Error();
+    setup = Object.freeze({ serviceName: stable(options.serviceName), serviceVersion: options.serviceVersion === undefined ? undefined : stable(options.serviceVersion),
+      resource: Object.freeze(extraAttributes(options.resourceAttributes, new Set(), () => { throw new Error(); })), spanAttributes: hook });
     headers = fixedHeaders(options.headers); transport = options.fetch ?? globalThis.fetch; if (typeof transport !== 'function') throw new Error();
   } catch (error) { if (error instanceof MayuraError) throw error; throw new MayuraError('INVALID_CONFIG', 'OTLP exporter configuration must contain supported explicit bounds and transport.'); }
   const counts = Object.fromEntries(metrics.map(key => [key, 0n])) as Record<Metric, bigint>; const count = (key: Metric, amount = 1): void => { counts[key] += BigInt(amount); };
@@ -171,7 +199,7 @@ function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: Otlp
     if (closed || inFlight) throw new MayuraError('CONFLICT', closed ? 'The telemetry exporter is closed.' : 'The telemetry exporter already has an active request.');
     if (!Array.isArray(records) || !records.length || records.length > config.maxBatchSize || !(context.signal instanceof AbortSignal)) { if (Array.isArray(records)) count('recordsDropped', records.length); throw new MayuraError('INVALID_INPUT', 'Telemetry batches require admitted records, a signal and supported bounds.'); }
     count('batchesAttempted'); count('recordsAttempted', records.length); let body: string;
-    try { body = JSON.stringify(jsonValue(encode(records, serviceName, serviceVersion), { maxBytes: config.maxRequestBytes, maxDepth: 16, maxNodes: 32_768 })); const bytes = new TextEncoder().encode(body).byteLength; if (bytes > config.maxRequestBytes) throw new Error(); count('requestBytes', bytes); }
+    try { body = JSON.stringify(jsonValue(encode(records, setup), { maxBytes: config.maxRequestBytes, maxDepth: 16, maxNodes: 32_768 })); const bytes = new TextEncoder().encode(body).byteLength; if (bytes > config.maxRequestBytes) throw new Error(); count('requestBytes', bytes); }
     catch (error) { count('recordsDropped', records.length); if (error instanceof MayuraError && error.code === 'INVALID_INPUT') throw error; throw new MayuraError('INVALID_INPUT', 'Telemetry batches require admitted records within the configured request bound.'); }
     const controller = new AbortController(); active = controller; inFlight = true; let timedOut = false; const timer = setTimeout(() => { timedOut = true; controller.abort(); }, config.timeoutMs);
     const relay = (): void => controller.abort(); context.signal.addEventListener('abort', relay, { once: true }); if (context.signal.aborted) relay();
