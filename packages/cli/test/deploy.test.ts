@@ -190,6 +190,47 @@ describe('deploy runs', () => {
   });
 });
 
+describe('deploy step outputs', () => {
+  const capturing = (steps: DeployStep[]) => defineDeployTarget({ id: 'capture', description: 'x', tools: ['aws'], settings: () => ({}), files: () => ({}), plan: () => steps }) as DeployTarget;
+  const start: DeployStep = { id: 'start', description: 'Start the task', tool: 'aws', args: ['ecs', 'run-task'], output: { match: 'arn:aws:ecs:[a-z0-9-]+:\\d{12}:task/[A-Za-z0-9/_-]+', as: 'task' } };
+  const wait: DeployStep = { id: 'wait', description: 'Wait for it', tool: 'aws', args: ['ecs', 'wait', 'tasks-stopped', '--tasks', '{{task}}'] };
+  const exit: DeployStep = { id: 'exit', description: 'Check its exit code', tool: 'aws', args: ['ecs', 'describe-tasks', '--tasks', '{{task}}'], output: { match: '0' } };
+  const arn = 'arn:aws:ecs:eu-west-1:123456789012:task/cluster/0123abcd';
+
+  it('passes a checked output to later steps, and fails a step whose output does not match', async () => {
+    const root = await project(); const ran: DeployStep[] = [];
+    const runner = (outputs: Record<string, string | undefined>): DeployRunner => async step => { ran.push(step); return { exitCode: 0, ...(outputs[step.id] === undefined ? {} : { output: outputs[step.id]! }) }; };
+    let plan = await planDeploy(capturing([start, wait, exit]), root, { tag: 'v1' });
+    expect(plan.steps[1]!.args).toContain('{{task}}');
+    expect(await runDeployPlan(plan, { confirmation: plan.digest, runner: runner({ start: `${arn}\n`, exit: '0\n' }) })).toMatchObject({ status: 'succeeded' });
+    expect(ran.map(step => step.args.at(-1))).toEqual(['run-task', arn, arn]);
+    // A migration that exited 1 fails its check, and nothing after it runs.
+    ran.length = 0; plan = await planDeploy(capturing([start, exit, wait]), root, { tag: 'v1' });
+    expect((await runDeployPlan(plan, { confirmation: plan.digest, runner: runner({ start: arn, exit: '1' }) })).steps.map(step => step.status)).toEqual(['succeeded', 'failed', 'skipped']);
+    // Output that is not what the step promised (here, text with a shell metacharacter) is never passed on.
+    ran.length = 0; plan = await planDeploy(capturing([start, wait]), root, { tag: 'v1' });
+    expect((await runDeployPlan(plan, { confirmation: plan.digest, runner: runner({ start: `${arn} & calc` }) })).status).toBe('failed');
+    expect(ran.map(step => step.id)).toEqual(['start']);
+    ran.length = 0; plan = await planDeploy(capturing([start, wait]), root, { tag: 'v1' });
+    expect((await runDeployPlan(plan, { confirmation: plan.digest, runner: runner({}) })).status).toBe('failed');
+  });
+
+  it('refuses a placeholder before its capture, a malformed check, and a name captured twice', async () => {
+    const root = await project();
+    for (const steps of [[wait, start], [{ ...start, output: { match: '(', as: 'task' } }], [{ ...start, output: { match: '', as: 'task' } }], [{ ...start, output: { match: 'x', as: 'Bad Name' } }],
+      [start, { ...start, id: 'again' }]]) {
+      await expect(planDeploy(capturing(steps as DeployStep[]), root, { tag: 'v1' })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    }
+  });
+
+  it('captures a real tool\'s standard output instead of showing it', async () => {
+    const root = await project();
+    const result = await spawnDeployStep({ id: 'x', description: 'x', tool: process.execPath, args: ['-e', `process.stdout.write(${JSON.stringify(`${arn}\n`)})`], output: { match: '.+' } },
+      { directory: root, signal: new AbortController().signal });
+    expect(result).toEqual({ exitCode: 0, output: `${arn}\n` });
+  });
+});
+
 describe.runIf(process.platform === 'win32')('deploy runs on Windows', () => {
   async function withTool(script: string, run: (directory: string) => Promise<void>): Promise<void> {
     const root = await project(); const bin = join(root, 'bin'); await mkdir(bin);

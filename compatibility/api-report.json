@@ -640,11 +640,11 @@
       },
       "DeployRunner": {
         "kind": "type",
-        "declaration": "ffc5c7814ac42252"
+        "declaration": "0595b7511539fe15"
       },
       "DeployStep": {
         "kind": "interface",
-        "declaration": "a14153239c63471f"
+        "declaration": "78d0f5ce9d68dae4"
       },
       "DeployStepResult": {
         "kind": "interface",
@@ -7963,6 +7963,16 @@
       "WebhookTriggerOptions": {
         "kind": "interface",
         "declaration": "bbbab4ccb6c41af2"
+      }
+    },
+    "@mayurajs/deploy-aws-ecs": {
+      "AwsEcsSettings": {
+        "kind": "interface",
+        "declaration": "2d8fa2f96db5f224"
+      },
+      "awsEcsTarget": {
+        "kind": "const",
+        "declaration": "52203435ccd6a449"
       }
     },
     "@mayurajs/deploy-cloudrun": {

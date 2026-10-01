@@ -44,6 +44,12 @@ export interface DeployStep {
   readonly args: readonly string[];
   /** Given to the tool's standard input, such as rendered manifests for `kubectl apply -f -`. */
   readonly stdin?: string;
+  /**
+   * What the tool must print: its standard output, trimmed, must fully match `match` (a regular expression), or the
+   * step fails, so a step can check a result its exit code does not carry. With `as`, later steps' arguments may use
+   * the output as `{{name}}`, such as a task an earlier step started. The output is captured rather than shown.
+   */
+  readonly output?: { readonly match: string; readonly as?: string };
 }
 
 /** Where a project can be deployed: the files it needs and the commands that deploy it. */
@@ -68,6 +74,8 @@ const imageRepository = /^(?=.{1,255}$)(?:[a-z0-9.-]+(?::\d{1,5})?\/)?[a-z0-9]+(
 const imageTag = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u;
 const modulePath = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9_][A-Za-z0-9_./-]{0,255}\.(?:js|mjs)$/u;
 const filePath = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9_.][A-Za-z0-9_./-]{0,255}$/u;
+const placeholder = /\{\{([a-z][A-Za-z0-9]{0,31})\}\}/gu;
+const captureName = /^[a-z][A-Za-z0-9]{0,31}$/u;
 const limits = Object.freeze({ steps: 64, args: 256, argBytes: 8_192, stdinBytes: 4_194_304, files: 64, fileBytes: 1_048_576 });
 
 /** Checks a target's shape once, so the CLI can refuse a malformed package before it plans anything. */
@@ -212,7 +220,7 @@ export async function planDeploy(target: DeployTarget, directory: string, option
   };
   const produced = await checked.plan({ project: config.project, settings, release, readFile: read });
   if (!Array.isArray(produced) || produced.length === 0 || produced.length > limits.steps) throw new MayuraError('INVALID_CONFIG', `Deploy target ${checked.id} planned no steps or too many.`);
-  const ids = new Set<string>(); const steps: DeployStep[] = [];
+  const ids = new Set<string>(); const steps: DeployStep[] = []; const captured = new Set<string>();
   for (const step of produced) {
     if (!step || typeof step !== 'object' || typeof step.id !== 'string' || !stepId.test(step.id) || ids.has(step.id) || typeof step.description !== 'string'
       || typeof step.tool !== 'string' || !checked.tools.includes(step.tool) || !Array.isArray(step.args) || step.args.length > limits.args
@@ -220,16 +228,33 @@ export async function planDeploy(target: DeployTarget, directory: string, option
       || (step.stdin !== undefined && (typeof step.stdin !== 'string' || step.stdin.length > limits.stdinBytes))) {
       throw new MayuraError('INVALID_CONFIG', `Deploy target ${checked.id} planned a step outside its tools or bounds.`);
     }
+    // A step may use only what earlier steps captured.
+    for (const arg of step.args) for (const [, name] of arg.matchAll(placeholder)) {
+      if (!captured.has(name!)) throw new MayuraError('INVALID_CONFIG', `Deploy target ${checked.id} uses {{${name}}} before a step captures it.`);
+    }
+    let output: DeployStep['output'];
+    if (step.output !== undefined) {
+      const { match, as } = step.output as { match?: unknown; as?: unknown };
+      let valid = typeof match === 'string' && match.length > 0 && match.length <= 256 && (as === undefined || (typeof as === 'string' && captureName.test(as) && !captured.has(as)));
+      if (valid) { try { new RegExp(match as string, 'u'); } catch { valid = false; } }
+      if (!valid) throw new MayuraError('INVALID_CONFIG', `Deploy target ${checked.id} planned a step with a malformed output check.`);
+      output = Object.freeze({ match: match as string, ...(as === undefined ? {} : { as: as as string }) });
+      if (as !== undefined) captured.add(as as string);
+    }
     ids.add(step.id);
-    steps.push(Object.freeze({ id: step.id, description: step.description, tool: step.tool, args: Object.freeze([...step.args]), ...(step.stdin === undefined ? {} : { stdin: step.stdin }) }));
+    steps.push(Object.freeze({ id: step.id, description: step.description, tool: step.tool, args: Object.freeze([...step.args]), ...(step.stdin === undefined ? {} : { stdin: step.stdin }),
+      ...(output === undefined ? {} : { output }) }));
   }
   const plan: DeployPlan = Object.freeze({ format: 'mayura.deploy-plan.v1', target: checked.id, directory: root, release, steps: Object.freeze(steps),
     digest: digest(JSON.stringify({ target: checked.id, directory: root, release, steps })) });
   runPlans.set(plan, checked.tools); return plan;
 }
 
-/** Runs one step: the tool with its arguments, without a shell, in the project directory. Resolves with its exit code. */
-export type DeployRunner = (step: DeployStep, context: { readonly directory: string; readonly signal: AbortSignal }) => Promise<{ readonly exitCode: number }>;
+/**
+ * Runs one step: the tool with its arguments, without a shell, in the project directory. Resolves with its exit code,
+ * and with its standard output when the step checks it (`output`).
+ */
+export type DeployRunner = (step: DeployStep, context: { readonly directory: string; readonly signal: AbortSignal }) => Promise<{ readonly exitCode: number; readonly output?: string }>;
 
 export interface DeployStepResult { readonly id: string; readonly status: 'succeeded' | 'failed' | 'cancelled' | 'skipped'; readonly exitCode?: number }
 export interface DeployResult { readonly status: 'succeeded' | 'failed' | 'cancelled'; readonly target: string; readonly release: DeployRelease; readonly steps: readonly DeployStepResult[] }
@@ -272,7 +297,9 @@ export const spawnDeployStep: DeployRunner = (step, { directory, signal }) => ne
   let command: ReturnType<typeof launch>;
   try { command = launch(step.tool, step.args); } catch (error) { reject(error); return; }
   const child = spawn(command.file, [...command.args], { cwd: directory, shell: false, windowsHide: true, windowsVerbatimArguments: command.verbatim,
-    stdio: [step.stdin === undefined ? 'ignore' : 'pipe', 2, 2] });
+    stdio: [step.stdin === undefined ? 'ignore' : 'pipe', step.output === undefined ? 2 : 'pipe', 2] });
+  // A checked step's output is kept (at most 64 KiB) for its check, not shown.
+  let output = ''; child.stdout?.setEncoding('utf8'); child.stdout?.on('data', (chunk: string) => { if (output.length < 65_536) output += chunk.slice(0, 65_536 - output.length); });
   let killer: ReturnType<typeof setTimeout> | undefined;
   const stop = (): void => {
     if (process.platform === 'win32' && child.pid !== undefined) { spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).on('error', () => child.kill()); return; }
@@ -281,7 +308,7 @@ export const spawnDeployStep: DeployRunner = (step, { directory, signal }) => ne
   signal.addEventListener('abort', stop, { once: true });
   child.once('error', error => { signal.removeEventListener('abort', stop); if (killer) clearTimeout(killer);
     reject((error as NodeJS.ErrnoException).code === 'ENOENT' ? new MayuraError('NOT_FOUND', `${step.tool} was not found on PATH.`) : new MayuraError('TOOL_FAILED', `${step.tool} could not be started.`)); });
-  child.once('close', code => { signal.removeEventListener('abort', stop); if (killer) clearTimeout(killer); resolvePromise({ exitCode: code ?? 1 }); });
+  child.once('close', code => { signal.removeEventListener('abort', stop); if (killer) clearTimeout(killer); resolvePromise({ exitCode: code ?? 1, ...(step.output === undefined ? {} : { output }) }); });
   if (step.stdin !== undefined) { child.stdin!.on('error', () => undefined); child.stdin!.end(step.stdin, 'utf8'); }
 });
 
@@ -296,14 +323,19 @@ export async function runDeployPlan(plan: DeployPlan, options: { readonly confir
   if (options?.confirmation !== plan.digest) throw new MayuraError('PERMISSION_DENIED', 'Running a deployment requires the displayed plan digest.');
   runPlans.delete(plan);
   const runner = options.runner ?? spawnDeployStep; const signal = options.signal ?? new AbortController().signal;
-  const results: DeployStepResult[] = []; let status: DeployResult['status'] = 'succeeded';
-  for (const step of plan.steps) {
+  const results: DeployStepResult[] = []; let status: DeployResult['status'] = 'succeeded'; const values = new Map<string, string>();
+  for (const planned of plan.steps) {
+    // Earlier steps' captured outputs fill this step's placeholders; each matched its step's own pattern.
+    const step: DeployStep = planned.args.some(arg => arg.includes('{{')) ? { ...planned, args: planned.args.map(arg => arg.replace(placeholder, (_, name: string) => values.get(name) ?? '')) } : planned;
     if (status !== 'succeeded') { results.push({ id: step.id, status: 'skipped' }); options.onStep?.({ id: step.id, description: step.description, status: 'skipped' }); continue; }
     if (signal.aborted) { status = 'cancelled'; results.push({ id: step.id, status: 'cancelled' }); options.onStep?.({ id: step.id, description: step.description, status: 'cancelled' }); continue; }
     if (!tools.includes(step.tool)) throw new MayuraError('INTEGRITY_VIOLATION', 'A deploy step names a tool outside its target.');
     options.onStep?.({ id: step.id, description: step.description, status: 'started' });
-    const { exitCode } = await runner(step, { directory: plan.directory, signal });
-    const outcome = signal.aborted ? 'cancelled' : exitCode === 0 ? 'succeeded' : 'failed';
+    const { exitCode, output } = await runner(step, { directory: plan.directory, signal });
+    const value = typeof output === 'string' ? output.trim() : undefined;
+    const checked = step.output === undefined || (value !== undefined && new RegExp(`^(?:${step.output.match})$`, 'u').test(value));
+    if (checked && step.output?.as !== undefined) values.set(step.output.as, value!);
+    const outcome = signal.aborted ? 'cancelled' : exitCode === 0 && checked ? 'succeeded' : 'failed';
     results.push({ id: step.id, status: outcome, exitCode }); options.onStep?.({ id: step.id, description: step.description, status: outcome });
     if (outcome !== 'succeeded') status = outcome;
   }

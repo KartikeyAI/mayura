@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/deploy-aws-ecs':
+        specifier: workspace:*
+        version: link:extensions/deploy-aws-ecs
       '@mayurajs/deploy-cloudrun':
         specifier: workspace:*
         version: link:extensions/deploy-cloudrun
@@ -272,6 +275,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/deploy-aws-ecs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/deploy-cloudrun:
     devDependencies:

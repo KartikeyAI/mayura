@@ -74,6 +74,7 @@
     "@vercel/blob": "2.8.0",
     "agentfs-sdk": "0.6.4",
     "files-sdk": "2.6.2",
+    "@mayurajs/deploy-aws-ecs": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",
     "@mayurajs/deploy-railway": "workspace:*",

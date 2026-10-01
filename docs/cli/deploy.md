@@ -33,6 +33,7 @@ project's own dependencies.
 
 | Package | Target | Platform |
 |---|---|---|
+| `@mayurajs/deploy-aws-ecs` | `aws-ecs` | [Amazon ECS on Fargate](https://aws.amazon.com/ecs/): task definitions at the release's image, a one-off migration task whose exit code is checked, then both services rolled out and awaited |
 | `@mayurajs/deploy-cloudrun` | `cloudrun` | [Google Cloud Run](https://cloud.google.com/run): a migration job run to completion, then the server and an always-on internal worker as services, secrets from Secret Manager |
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
 | `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |
@@ -120,6 +121,12 @@ export default defineDeployTarget({
 
 A target may run only the tools it declares, by name; a step naming any other program is refused when the release
 is planned. Arguments are passed as given, without a shell.
+
+A step can check what its tool prints with `output: { match, as }`. The tool's standard output, trimmed, must fully
+match the regular expression `match`, or the step fails. Use it for a result the exit code does not carry, such as a
+task's exit code. With `as`, later steps' arguments can use the output as `{{name}}`, such as the id of a task an
+earlier step started. A step may use only names captured before it, and only output that matched its pattern is
+passed on.
 
 ## Good to know
 
