@@ -64,6 +64,7 @@
   ],
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
+    "@mayurajs/filestorage-agentfs",
     "@mayurajs/filestorage-azure-blob",
     "@mayurajs/filestorage-gcs",
     "@mayurajs/filestorage-google-drive",

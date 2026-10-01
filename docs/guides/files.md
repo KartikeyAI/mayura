@@ -124,6 +124,7 @@ Provider packages give `createFileStore` a backend for other services:
 | `@mayurajs/filestorage-r2` | Cloudflare R2 through a Workers binding (`env.FILES`): no keys or endpoints. Outside Workers, use `s3Files`. | writes (the binding cannot delete conditionally) |
 | `@mayurajs/filestorage-vercel-blob` | A private Vercel Blob store, with its read-write `token`. Reads bypass the CDN cache. No custom metadata. | writes and deletes |
 | `@mayurajs/filestorage-google-drive` | One Google Drive folder (or the app's hidden folder), files named by their keys, with an OAuth `token` source. Listings read the whole folder; deletes go to the trash by default. | none: `ifMatch` and `ifNoneMatch` are refused |
+| `@mayurajs/filestorage-agentfs` | An AgentFS filesystem (Turso's SQLite filesystem for agents), keys as paths under a root. A file's etag is the SHA-256 of its content. | with `singleWriter: true`, writes and deletes; otherwise none |
 
 ```ts
 import { createFileStore } from 'mayura/files';

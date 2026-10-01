@@ -7793,6 +7793,20 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/filestorage-agentfs": {
+      "agentFsFiles": {
+        "kind": "function",
+        "declaration": "43fbe5d350a26fb3"
+      },
+      "AgentFsFilesOptions": {
+        "kind": "interface",
+        "declaration": "86a860de564f2571"
+      },
+      "AgentFsLike": {
+        "kind": "interface",
+        "declaration": "764a3c05b5254bf9"
+      }
+    },
     "@mayurajs/filestorage-azure-blob": {
       "azureBlobFiles": {
         "kind": "function",

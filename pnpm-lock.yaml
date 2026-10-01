@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/filestorage-agentfs':
+        specifier: workspace:*
+        version: link:extensions/filestorage-agentfs
       '@mayurajs/filestorage-azure-blob':
         specifier: workspace:*
         version: link:extensions/filestorage-azure-blob
@@ -185,6 +188,9 @@ importers:
       '@vercel/blob':
         specifier: 2.8.0
         version: 2.8.0
+      agentfs-sdk:
+        specifier: 0.6.4
+        version: 0.6.4
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
@@ -224,6 +230,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/filestorage-agentfs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/filestorage-azure-blob:
     devDependencies:
@@ -2628,6 +2640,34 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
+  '@tursodatabase/database-common@0.4.4':
+    resolution: {integrity: sha512-iuSYWgBQEETjwfWOmi3E4Q++jQTb+VOPXeaKozQqW8fXtgU6ZaYUMmWbqQVMGSS9sAWZlZi9qyPVz0rkT8zoqQ==}
+
+  '@tursodatabase/database-darwin-arm64@0.4.4':
+    resolution: {integrity: sha512-nQMYrJY1X0sNgNWdbuPdbNCL9S/Ei9KLMwx3hFdyUDYJWU0h7o+kZv50QoNXB7vb7LmEBMeVWZaVEQbHd/Ionw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@tursodatabase/database-linux-arm64-gnu@0.4.4':
+    resolution: {integrity: sha512-6vnnKBgAgfKhspr+nScPevOSrrnZwNJKuUbiHMSagOqNDZCzOAGDcfeC83sKd2QvZquR17l6V3tFxcFN5FnByQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@tursodatabase/database-linux-x64-gnu@0.4.4':
+    resolution: {integrity: sha512-N63wK6ow6wPmD1/BjBhbrR8/Ifo6+A6zavpzgsT5YABVC4wGZBvJ1TvSz935R9n5E8eqQNY8jKiQPJLwpgOjdw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@tursodatabase/database-win32-x64-msvc@0.4.4':
+    resolution: {integrity: sha512-TYEl5FaUAImgZew05FvxvcFWLb1AQ+Zeyw/ApEbBDqS7mQmbz8VGs4iq04ECzJG2esfBR+zrLdDEG3X1BnaDTg==}
+    cpu: [x64]
+    os: [win32]
+
+  '@tursodatabase/database@0.4.4':
+    resolution: {integrity: sha512-QkQ0qLp0AY8dC9BOrIMyeyUXoFCvhlRaH+wcg013OvzYufSmDnnzg44U0tQkmnXYfUZEIp+IpADO/UeGNL0M2Q==}
+
   '@types/better-sqlite3@9.6.0':
     resolution: {integrity: sha512-ZEEwBSgMu7GYJOynoagg5X9JbxfL6dTJDsgViJIqh67jV44kyOr9RXfmFjLK5rzC4MWssP06t9hu/JwGDnUbCg==}
 
@@ -2841,6 +2881,17 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
+  agentfs-sdk@0.6.4:
+    resolution: {integrity: sha512-exhzph6u+jZlh2V24O0Af9j9iweNYQ4Yb7M1SEYKE9ljxB/kKVaiaumK2zsTW/Pmi8kqPSezGvqqpi4+vkZTfQ==}
+    peerDependencies:
+      '@tursodatabase/serverless': ^0.2.4
+      just-bash: '>=2.0.0'
+    peerDependenciesMeta:
+      '@tursodatabase/serverless':
+        optional: true
+      just-bash:
+        optional: true
+
   aria-hidden@1.2.6:
     resolution: {integrity: sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA==}
     engines: {node: '>=10'}
@@ -2878,6 +2929,9 @@ packages:
 
   buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
+
+  buffer@6.0.3:
+    resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
@@ -3058,6 +3112,9 @@ packages:
   iconv-lite@0.7.3:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
+
+  ieee754@1.2.1:
+    resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
 
   is-buffer@2.0.5:
     resolution: {integrity: sha512-i2R6zNFDwgEHJyQUtJEk0XFi1i0dPFn/oqjK3/vPCcDeJvW5NQ83V8QbicfF1SupOaB0h8ntgBC2YiE7dfyctQ==}
@@ -5452,6 +5509,29 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.0(@types/node@24.13.6)(jiti@2.7.0)
 
+  '@tursodatabase/database-common@0.4.4': {}
+
+  '@tursodatabase/database-darwin-arm64@0.4.4':
+    optional: true
+
+  '@tursodatabase/database-linux-arm64-gnu@0.4.4':
+    optional: true
+
+  '@tursodatabase/database-linux-x64-gnu@0.4.4':
+    optional: true
+
+  '@tursodatabase/database-win32-x64-msvc@0.4.4':
+    optional: true
+
+  '@tursodatabase/database@0.4.4':
+    dependencies:
+      '@tursodatabase/database-common': 0.4.4
+    optionalDependencies:
+      '@tursodatabase/database-darwin-arm64': 0.4.4
+      '@tursodatabase/database-linux-arm64-gnu': 0.4.4
+      '@tursodatabase/database-linux-x64-gnu': 0.4.4
+      '@tursodatabase/database-win32-x64-msvc': 0.4.4
+
   '@types/better-sqlite3@9.6.0':
     dependencies:
       '@types/node': 24.13.6
@@ -5606,6 +5686,12 @@ snapshots:
 
   agent-base@7.1.4: {}
 
+  agentfs-sdk@0.6.4:
+    dependencies:
+      '@tursodatabase/database': 0.4.4
+      '@tursodatabase/database-common': 0.4.4
+      buffer: 6.0.3
+
   aria-hidden@1.2.6:
     dependencies:
       tslib: 2.8.1
@@ -5635,6 +5721,11 @@ snapshots:
   bson@7.3.3: {}
 
   buffer-equal-constant-time@1.0.1: {}
+
+  buffer@6.0.3:
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
 
   chai@6.2.2: {}
 
@@ -5808,6 +5899,8 @@ snapshots:
   iconv-lite@0.7.3:
     dependencies:
       safer-buffer: 2.1.2
+
+  ieee754@1.2.1: {}
 
   is-buffer@2.0.5: {}
 
