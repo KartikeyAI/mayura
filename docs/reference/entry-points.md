@@ -68,6 +68,9 @@ validator works too.
 | `mayura/artifacts/files` | Artifacts in a file store only, without the local store: runs on edge runtimes. | `createArtifactStore` | a file store |
 | `mayura/files` | Files in S3, R2 and other object stores, with versions, tenant views and file tools. | `createFileStore`, `s3Files`, `memoryFiles`, `fileTools` | a file backend |
 | `mayura/voice` | Speech-to-text and text-to-speech with prices and per-call bounds. | `createVoices`, `transcriptionTool`, `speechTool` | a voice provider package |
+| `mayura/sandbox` | Isolated Linux machines for agents: commands, files, ports and desktops, with lifetimes and no network by default. | `createSandboxes`, `sandboxTools`, `sandboxPerRun` | a sandbox provider |
+| `mayura/sandbox/testing` | The sandbox contract as test cases, to test a sandbox provider against a real sandbox. | `sandboxConformance` | |
+| `mayura/sandbox/docker` | Sandboxes as locked-down Docker containers on this machine, through the CLI or the Engine API. Node only. | `dockerSandboxes` | Docker |
 | `mayura/adapter-mcp` | Using a tool from an MCP server as a Mayura tool. | `defineMcpTool` | |
 | `mayura/helpers` | Small utilities: retries, deadlines, validated configuration, redacted logging. | `retry`, `withDeadline`, `pollUntil`, `validatedEnvironment`, `createRedactedLogger` | |
 

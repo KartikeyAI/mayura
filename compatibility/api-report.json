@@ -2911,6 +2911,148 @@
         "declaration": "4fe2c18361daf3a4"
       }
     },
+    "@mayura/sandbox": {
+      "BackendExecOptions": {
+        "kind": "interface",
+        "declaration": "20e866c1b28fef9b"
+      },
+      "BackendExecResult": {
+        "kind": "interface",
+        "declaration": "60424b11b22c37c0"
+      },
+      "createSandboxes": {
+        "kind": "function",
+        "declaration": "d6336430987330e0"
+      },
+      "CreateSandboxOptions": {
+        "kind": "interface",
+        "declaration": "942025993377fee3"
+      },
+      "Desktop": {
+        "kind": "interface",
+        "declaration": "ef92d2878d7dd04f"
+      },
+      "ExecOptions": {
+        "kind": "interface",
+        "declaration": "6c03c4301de9fb3d"
+      },
+      "ExecResult": {
+        "kind": "interface",
+        "declaration": "3153865e1a35511f"
+      },
+      "ProviderSandboxSpec": {
+        "kind": "interface",
+        "declaration": "626acf0aaed49c1c"
+      },
+      "Sandbox": {
+        "kind": "interface",
+        "declaration": "6bcd87b10e5a2a3a"
+      },
+      "SandboxBackend": {
+        "kind": "interface",
+        "declaration": "5d4bbcc4b4eb2f6d"
+      },
+      "SandboxDesktop": {
+        "kind": "interface",
+        "declaration": "a1735e373ad80704"
+      },
+      "SandboxEntry": {
+        "kind": "interface",
+        "declaration": "b71076a56f5ee44c"
+      },
+      "SandboxError": {
+        "kind": "class",
+        "declaration": "0ef38ed179caf83a"
+      },
+      "Sandboxes": {
+        "kind": "interface",
+        "declaration": "f99e3224cd33f369"
+      },
+      "SandboxesOptions": {
+        "kind": "interface",
+        "declaration": "9fa134ba48aa0946"
+      },
+      "SandboxFailureReason": {
+        "kind": "type",
+        "declaration": "9c8f11a3f0cb6f0e"
+      },
+      "SandboxFeatures": {
+        "kind": "interface",
+        "declaration": "5d04a36b033bd521"
+      },
+      "sandboxHttpFailure": {
+        "kind": "function",
+        "declaration": "0d11de62ebccdd34"
+      },
+      "SandboxNetwork": {
+        "kind": "type",
+        "declaration": "88e2c5de68c2aaf0"
+      },
+      "SandboxNetworkMode": {
+        "kind": "type",
+        "declaration": "bd43ba8b0560e4c6"
+      },
+      "sandboxPath": {
+        "kind": "function",
+        "declaration": "ffbf7107de51d7c2"
+      },
+      "sandboxPerRun": {
+        "kind": "function",
+        "declaration": "bfe61a59c17c9cc0"
+      },
+      "SandboxPerRun": {
+        "kind": "interface",
+        "declaration": "4525000cb609e42d"
+      },
+      "SandboxProvider": {
+        "kind": "interface",
+        "declaration": "f60381e93267325d"
+      },
+      "sandboxResponseFailure": {
+        "kind": "function",
+        "declaration": "cf451385a14cc141"
+      },
+      "SandboxSource": {
+        "kind": "type",
+        "declaration": "15b462f1aed288f2"
+      },
+      "sandboxTools": {
+        "kind": "function",
+        "declaration": "949271659a2719cb"
+      },
+      "SandboxToolsOptions": {
+        "kind": "interface",
+        "declaration": "6613eb3519cf7a3e"
+      }
+    },
+    "@mayura/sandbox/docker": {
+      "dockerSandboxes": {
+        "kind": "function",
+        "declaration": "9af57cc151587530"
+      },
+      "DockerSandboxOptions": {
+        "kind": "interface",
+        "declaration": "1b939f95d3aecf82"
+      }
+    },
+    "@mayura/sandbox/testing": {
+      "ConformanceSandbox": {
+        "kind": "interface",
+        "declaration": "df27293a43f9eb49"
+      },
+      "sandboxConformance": {
+        "kind": "const",
+        "declaration": "894d67071394fd42"
+      },
+      "SandboxConformanceCase": {
+        "kind": "interface",
+        "declaration": "3ffb1ad9e78eb45d"
+      },
+      "SandboxHarness": {
+        "kind": "interface",
+        "declaration": "02f843f324bf7c84"
+      }
+    },
     "@mayura/sdk": {
       "agentAsTool": {
         "kind": "function",

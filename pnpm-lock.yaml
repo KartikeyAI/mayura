@@ -1019,6 +1019,9 @@ importers:
       '@mayura/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@mayura/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@mayura/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -1109,6 +1112,15 @@ importers:
         version: link:../core
 
   packages/runtime:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/sandbox:
     dependencies:
       '@mayura/core':
         specifier: workspace:*

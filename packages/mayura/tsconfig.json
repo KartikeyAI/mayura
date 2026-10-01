@@ -75,6 +75,9 @@
       "path": "../runtime"
     },
     {
+      "path": "../sandbox"
+    },
+    {
       "path": "../sdk"
     },
     {

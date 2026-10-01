@@ -129,6 +129,18 @@
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.js"
     },
+    "./sandbox": {
+      "types": "./dist/sandbox.d.ts",
+      "import": "./dist/sandbox.js"
+    },
+    "./sandbox/docker": {
+      "types": "./dist/sandbox__docker.d.ts",
+      "import": "./dist/sandbox__docker.js"
+    },
+    "./sandbox/testing": {
+      "types": "./dist/sandbox__testing.d.ts",
+      "import": "./dist/sandbox__testing.js"
+    },
     "./sdk": {
       "types": "./dist/sdk.d.ts",
       "import": "./dist/sdk.js"
@@ -268,6 +280,7 @@
     "@mayura/provider-anthropic": "workspace:*",
     "@mayura/provider-openai": "workspace:*",
     "@mayura/runtime": "workspace:*",
+    "@mayura/sandbox": "workspace:*",
     "@mayura/sdk": "workspace:*",
     "@mayura/server": "workspace:*",
     "@mayura/server-node": "workspace:*",

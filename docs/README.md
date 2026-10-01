@@ -54,6 +54,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Lifecycle hooks](guides/lifecycle-hooks.md): code that can stop a run at defined points.
 - [Artifacts](guides/artifacts.md): store files that runs produce.
 - [Files](guides/files.md): files in S3, R2 and other object stores, with versions, tenant views and file tools.
+- [Sandboxes](guides/sandboxes.md): isolated Linux machines for agents to run commands and handle files in, on Docker or a hosted provider.
 - [Code Mode](guides/code-mode.md): run model-written code in a sandbox.
 - [Helpers](guides/helpers.md): configuration, secrets, retries and other utilities.
 
