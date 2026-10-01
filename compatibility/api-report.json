@@ -8015,6 +8015,24 @@
         "declaration": "74b600750117de50"
       }
     },
+    "@mayurajs/observability-langsmith": {
+      "langSmithAttributes": {
+        "kind": "function",
+        "declaration": "ec5f6254d8dccd22"
+      },
+      "LangSmithRegion": {
+        "kind": "type",
+        "declaration": "3bab4f36fb8f6b27"
+      },
+      "langSmithTraceExporter": {
+        "kind": "function",
+        "declaration": "d872b9c3ad257ac1"
+      },
+      "LangSmithTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "b592b636344ca305"
+      }
+    },
     "@mayurajs/observability-posthog": {
       "PostHogRegion": {
         "kind": "type",

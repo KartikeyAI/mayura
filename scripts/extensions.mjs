@@ -37,6 +37,7 @@ export const reviewedDependencies = {
   'filestorage-r2': [],
   'filestorage-vercel-blob': [],
   'observability-langfuse': [],
+  'observability-langsmith': [],
   'observability-posthog': [],
   'observability-sentry': [],
   'observability-datadog': [],

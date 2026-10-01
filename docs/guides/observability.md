@@ -218,6 +218,7 @@ show Mayura's spans as AI traces. Each returns the exporter, so `sink`, `inspect
 | Package | Provider | Signals |
 | --- | --- | --- |
 | `@mayurajs/observability-langfuse` | [Langfuse](https://langfuse.com) Cloud (EU, US, JP, HIPAA) or self-hosted: `langfuseTraceExporter({ publicKey, secretKey, region })` | traces |
+| `@mayurajs/observability-langsmith` | [LangSmith](https://smith.langchain.com) (US, EU, APAC, AWS US) or self-hosted, with LangSmith's run types: `langSmithTraceExporter({ apiKey, project, region })` | traces |
 | `@mayurajs/observability-datadog` | [Datadog](https://www.datadoghq.com) APM or LLM Observability, on any Datadog site: `datadogTraceExporter({ apiKey, site, llmObservability })` | traces |
 | `@mayurajs/observability-arize` | [Arize AX](https://arize.com) (US, EU, Canada), with OpenInference attributes: `arizeTraceExporter({ spaceId, apiKey, projectName, region })`; [Phoenix](https://phoenix.arize.com), self-hosted or Cloud, over protobuf: `phoenixTraceExporter({ baseUrl, apiKey, projectName })` | traces |
 | `@mayurajs/observability-sentry` | [Sentry](https://sentry.io), any region or self-hosted, with Sentry's `gen_ai.*` span ops: `sentryTraceExporter({ dsn })` | traces (Sentry's OTLP ingestion is in beta) |
