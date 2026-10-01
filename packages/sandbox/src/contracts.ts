@@ -16,7 +16,10 @@ export interface SandboxFeatures {
   readonly ports: boolean;
   /** Whether sandboxes have a desktop to see and control (`desktop`). */
   readonly desktop: boolean;
-  /** The network kinds the provider enforces; `'none'` is always among them. */
+  /**
+   * The network kinds the provider enforces. A provider that cannot keep sandboxes off the network leaves out
+   * `'none'`: its sandboxes are then created only when the network `'all'` is both allowed and asked for.
+   */
   readonly network: readonly SandboxNetworkMode[];
 }
 

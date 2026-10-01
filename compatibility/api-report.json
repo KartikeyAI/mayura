@@ -8625,6 +8625,16 @@
         "declaration": "c0055ea58de94535"
       }
     },
+    "@mayurajs/sandbox-fly": {
+      "flySandboxes": {
+        "kind": "function",
+        "declaration": "655cd6bc8c264cea"
+      },
+      "FlySandboxOptions": {
+        "kind": "interface",
+        "declaration": "59c4ade89ce7b0a2"
+      }
+    },
     "@mayurajs/sandbox-vercel": {
       "vercelSandboxes": {
         "kind": "function",

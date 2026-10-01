@@ -100,6 +100,10 @@ Each kind other than `'none'` must be listed in the `network` option of `createS
 not fails with `PERMISSION_DENIED`. So permission to reach the network is given once, where the sandboxes are set up,
 never by whoever creates a sandbox.
 
+A provider that cannot keep sandboxes off the network (Fly Machines, for one) leaves `'none'` out of its
+`features.network`. Its sandboxes are then created only with `'all'`, listed in `createSandboxes` and asked for;
+the default fails with `INVALID_INPUT` instead of making a sandbox that is online when you expect it offline.
+
 ```ts
 import { createSandboxes } from 'mayura/sandbox';
 import { dockerSandboxes } from 'mayura/sandbox/docker';
@@ -191,6 +195,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-e2b-desktop` | E2B sandboxes with an Xfce desktop, and a live view in the browser | none, all, domains (ports 80 and 443) | public URL | yes |
 | `@mayurajs/sandbox-vercel` | [Vercel Sandbox](https://vercel.com/docs/sandbox) Firecracker microVMs; no standard input | none, all, domains | public URL (1024 and up) | no |
 | `@mayurajs/sandbox-daytona` | [Daytona](https://www.daytona.io) sandboxes from a snapshot | none, all, domains | signed URL | with `desktop: true` |
+| `@mayurajs/sandbox-fly` | [Fly.io Machines](https://fly.io/docs/machines/) in one of your apps | all only | no | no |
 
 ## Writing a provider
 

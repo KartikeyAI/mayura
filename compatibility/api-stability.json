@@ -76,6 +76,7 @@
     "@mayurajs/deploy-cloudflare",
     "@mayurajs/sandbox-e2b",
     "@mayurajs/sandbox-e2b-desktop",
+    "@mayurajs/sandbox-fly",
     "@mayurajs/sandbox-vercel",
     "@mayurajs/sandbox-daytona",
     "@mayurajs/deploy-cloudrun",

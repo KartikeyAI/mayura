@@ -81,6 +81,7 @@
     "@mayurajs/deploy-cloudflare": "workspace:*",
     "@mayurajs/sandbox-e2b": "workspace:*",
     "@mayurajs/sandbox-e2b-desktop": "workspace:*",
+    "@mayurajs/sandbox-fly": "workspace:*",
     "@mayurajs/sandbox-vercel": "workspace:*",
     "@mayurajs/sandbox-daytona": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",

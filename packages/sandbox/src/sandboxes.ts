@@ -146,7 +146,7 @@ const cancelled = () => new MayuraError('CANCELLED', 'The sandbox call was cance
 function features(value: unknown): SandboxFeatures {
   const item = value as Partial<SandboxFeatures> | null;
   if (!item || typeof item !== 'object' || typeof item.stdin !== 'boolean' || typeof item.ports !== 'boolean' || typeof item.desktop !== 'boolean'
-    || !Array.isArray(item.network) || !item.network.includes('none') || item.network.some(mode => !networkModes.includes(mode))) throw new MayuraError('INVALID_CONFIG', 'The sandbox provider must declare its features.');
+    || !Array.isArray(item.network) || item.network.length === 0 || item.network.some(mode => !networkModes.includes(mode))) throw new MayuraError('INVALID_CONFIG', 'The sandbox provider must declare its features.');
   return Object.freeze({ stdin: item.stdin, ports: item.ports, desktop: item.desktop, network: Object.freeze([...new Set(item.network)]) });
 }
 
@@ -186,7 +186,10 @@ function labels(value: unknown, name = 'labels'): Readonly<Record<string, string
   return Object.freeze(Object.fromEntries(entries) as Record<string, string>);
 }
 function network(value: unknown, allowed: readonly SandboxNetworkMode[], provider: SandboxFeatures, id: string): SandboxNetwork {
-  if (value === undefined || value === 'none') return 'none';
+  if (value === undefined || value === 'none') {
+    if (!provider.network.includes('none')) throw new MayuraError('INVALID_INPUT', `The ${id} sandbox provider cannot keep sandboxes off the network: create them with the network 'all'.`);
+    return 'none';
+  }
   let mode: SandboxNetworkMode; let result: SandboxNetwork;
   if (value === 'all') { mode = 'all'; result = 'all'; } else {
     const allow = (value as { allow?: unknown } | null)?.allow;

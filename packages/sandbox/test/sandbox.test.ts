@@ -71,7 +71,7 @@ describe('createSandboxes', () => {
   it('refuses configuration it cannot honour', () => {
     const { provider } = fakeProvider();
     expect(() => createSandboxes({ ...provider, id: 'Bad Id' }, limits)).toThrow(/provider/u);
-    expect(() => createSandboxes({ ...provider, features: { ...provider.features, network: ['all'] } }, limits)).toThrow(/features/u);
+    expect(() => createSandboxes({ ...provider, features: { ...provider.features, network: [] } }, limits)).toThrow(/features/u);
     expect(() => createSandboxes({ ...provider, workdir: 'work' }, limits)).toThrow(/workdir/u);
     expect(() => createSandboxes(provider, { ...limits, maxLifetimeMs: 3_600_001 })).toThrow(/at most 3600000/u);
     expect(() => createSandboxes(provider, { ...limits, maxSandboxes: 0 })).toThrow(MayuraError);
@@ -97,6 +97,12 @@ describe('createSandboxes', () => {
     const { provider: plain } = fakeProvider({ features: { network: ['none', 'all'] } });
     expect(await failure(() => createSandboxes(plain, { ...limits, network: ['allowlist'] }).create({ lifetimeMs: 60_000, network: { allow: ['a.example'] } })))
       .toMatchObject({ code: 'INVALID_INPUT', message: expect.stringContaining('cannot enforce') });
+    // A provider that cannot keep sandboxes off the network creates them only with 'all', allowed and asked for.
+    const { provider: open2, created: openCreated } = fakeProvider({ features: { network: ['all'] } });
+    expect(await failure(() => createSandboxes(open2, limits).create({ lifetimeMs: 60_000 }))).toMatchObject({ code: 'INVALID_INPUT', message: expect.stringContaining('off the network') });
+    expect(await failure(() => createSandboxes(open2, limits).create({ lifetimeMs: 60_000, network: 'all' }))).toMatchObject({ code: 'PERMISSION_DENIED' });
+    await createSandboxes(open2, { ...limits, network: ['all'] }).create({ lifetimeMs: 60_000, network: 'all' });
+    expect(openCreated.map(spec => spec.network)).toEqual(['all']);
   });
 
   it('checks lifetimes, environment, ports, resources and labels before calling the provider', async () => {
