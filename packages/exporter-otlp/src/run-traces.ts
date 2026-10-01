@@ -20,6 +20,20 @@ function derivedId(parts: readonly string[], length: 16 | 32): string {
   const value = length === 16 ? hash64(bytes, 0n) : `${hash64(bytes, 1n)}${hash64(bytes, 2n)}`;
   return /^0+$/.test(value) ? `${value.slice(0, -1)}1` : value;
 }
+/**
+ * Mayura's model provider ids as OpenTelemetry's well-known `gen_ai.provider.name` values, where one exists; other
+ * providers keep their own id.
+ */
+const providerNames: Readonly<Record<string, string>> = { openai: 'openai', anthropic: 'anthropic', bedrock: 'aws.bedrock', azure: 'azure.ai.openai',
+  google: 'gcp.gemini', vertex: 'gcp.vertex_ai', mistral: 'mistral_ai', groq: 'groq', cohere: 'cohere', deepseek: 'deepseek', xai: 'x_ai', perplexity: 'perplexity' };
+/** GenAI attributes for a model call, from a registry id such as `openai/gpt-5`; nothing for an id without a provider. */
+function modelAttributes(modelId: unknown): OtlpSpanAttributes {
+  if (typeof modelId !== 'string' || !stable.test(modelId)) return {};
+  const slash = modelId.indexOf('/');
+  if (slash <= 0) return { 'mayura.model.id': modelId };
+  const provider = modelId.slice(0, slash); const model = modelId.slice(slash + 1);
+  return { 'mayura.model.id': modelId, 'gen_ai.provider.name': providerNames[provider] ?? provider, ...(model && stable.test(model) ? { 'gen_ai.request.model': model } : {}) };
+}
 const nanos = (milliseconds: number): string => (BigInt(milliseconds) * 1_000_000n).toString();
 const spanStatus = (status: unknown): OtlpTraceSpan['status'] => status === 'succeeded' ? 'ok' : status === 'cancelled' || status === undefined ? 'unset' : 'error';
 
@@ -60,21 +74,24 @@ export function agentRunTraceSpans(events: readonly RunEvent[], options: AgentRu
       const start = typeof metadata['callId'] === 'string' ? guarded.get(metadata['callId']) : model;
       if (!start) continue;
       if (typeof metadata['callId'] === 'string') guarded.delete(metadata['callId']); else model = undefined;
-      const call = start.metadata['modelCall'];
-      spans.push(child(['model', String(start.sequence)], 'model.call', start, event, 'ok', typeof call === 'number' ? { 'mayura.model.call': call } : {}));
+      const call = start.metadata['modelCall']; const cost = event.metadata['costMicros'];
+      spans.push(child(['model', String(start.sequence)], 'model.call', start, event, 'ok', { 'gen_ai.operation.name': 'chat', ...modelAttributes(start.metadata['modelId']),
+        ...(typeof call === 'number' ? { 'mayura.model.call': call } : {}), ...(typeof cost === 'number' ? { 'mayura.cost.micros': cost } : {}) }));
     } else if (event.type === 'tool.started') tools.set(String(metadata['callId']), event);
     else if (event.type === 'tool.completed') {
       const callId = String(metadata['callId']); const start = tools.get(callId); if (!start) continue; tools.delete(callId);
       const toolId = String(metadata['toolId']); const name = stable.test(`tool:${toolId}`) ? `tool:${toolId}` : 'tool.call';
-      spans.push(child(['tool', callId], name, start, event, spanStatus(metadata['status']), { 'mayura.tool.id': toolId, 'mayura.tool.status': String(metadata['status']),
+      spans.push(child(['tool', callId], name, start, event, spanStatus(metadata['status']), { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.type': 'function',
+        ...(stable.test(toolId) ? { 'gen_ai.tool.name': toolId } : {}), ...(stable.test(callId) ? { 'gen_ai.tool.call.id': callId } : {}),
+        'mayura.tool.id': toolId, 'mayura.tool.status': String(metadata['status']),
         ...(typeof metadata['execution'] === 'string' ? { 'mayura.workflow.receipt.execution': metadata['execution'] } : {}) }));
     }
   }
   const started = own.find(event => event.type === 'run.started'); if (!started) return spans;
   const completed = own.find(event => event.type === 'run.completed'); const last = completed ?? own[own.length - 1]!;
   const agentId = started.metadata['agentId']; const status = completed?.metadata['status'];
-  const attributes: Record<string, string | number> = {};
-  if (typeof agentId === 'string') attributes['mayura.agent.id'] = agentId;
+  const attributes: Record<string, string | number> = { 'gen_ai.operation.name': 'invoke_agent' };
+  if (typeof agentId === 'string') { attributes['mayura.agent.id'] = agentId; attributes['gen_ai.agent.id'] = agentId; attributes['gen_ai.agent.name'] = agentId; }
   if (typeof status === 'string') attributes['mayura.run.status'] = status;
   // Exact costs above 2^53 are decimal strings in run events; the span catalog carries safe integers only.
   for (const [key, name] of [['spentMicros', 'mayura.budget.spent_micros'], ['reservedMicros', 'mayura.budget.reserved_micros']] as const) {

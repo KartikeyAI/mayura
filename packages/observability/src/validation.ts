@@ -82,10 +82,12 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
         break;
       case 'model.started':
         if (managedModel(metadata, false)) break;
-        keys(metadata, ['step', 'modelCall']); integer(metadata['step']); integer(metadata['modelCall'], true); break;
+        keys(metadata, ['step', 'modelCall'], ['modelId']); integer(metadata['step']); integer(metadata['modelCall'], true);
+        if (Object.hasOwn(metadata, 'modelId')) stableId(metadata['modelId']); break;
       case 'model.completed':
         if (managedModel(metadata, true)) break;
-        keys(metadata, ['step', 'response']); integer(metadata['step']);
+        keys(metadata, ['step', 'response'], ['costMicros']); integer(metadata['step']);
+        if (Object.hasOwn(metadata, 'costMicros')) integer(metadata['costMicros']);
         if (metadata['response'] !== 'final' && metadata['response'] !== 'tool_calls') throw new Error(); break;
       case 'tool.started':
         keys(metadata, ['callId', 'toolId']); stableId(metadata['callId']); stableId(metadata['toolId']); break;
@@ -121,7 +123,8 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
         keys(metadata, ['step', 'modelCall', 'index', 'characters']); integer(metadata['step']); integer(metadata['modelCall'], true);
         integer(metadata['index']); integer(metadata['characters']); break;
       case 'output.withheld':
-        keys(metadata, ['step', 'modelCall']); integer(metadata['step']); integer(metadata['modelCall'], true); break;
+        keys(metadata, ['step', 'modelCall'], ['modelId']); integer(metadata['step']); integer(metadata['modelCall'], true);
+        if (Object.hasOwn(metadata, 'modelId')) stableId(metadata['modelId']); break;
       case 'events.gap':
         keys(metadata, ['from', 'to']);
         if (integer(metadata['from'], true) > integer(metadata['to'], true) || metadata['to'] !== sequence) throw new Error(); break;

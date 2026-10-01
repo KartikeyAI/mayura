@@ -41,6 +41,9 @@ describe('ephemeral agent runtime', () => {
     expect(events.map((event) => event.type)).toEqual(['run.started', 'step.started', 'model.started', 'model.completed', 'step.completed', 'run.completed']);
     expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(events[4]).toMatchObject({ metadata: { step: 0, result: 'final' } });
+    // The model's id and the call's cost ride on model events, for trace exporters; nothing the model said does.
+    expect(events[2]!.metadata).toEqual({ step: 0, modelCall: 1, modelId: 'fixture' });
+    expect(events[3]!.metadata).toEqual({ step: 0, response: 'final', costMicros: 0 });
     expect(JSON.stringify(events)).not.toContain('instructions');
     expect(await collect(run.observe({ after: 5 }))).toHaveLength(1);
   });

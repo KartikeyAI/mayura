@@ -66,7 +66,7 @@ Each event is `{ runId, sequence, timestamp, type, metadata }`. Sequences start 
 | --- | --- |
 | `run.started` | `profile`; optional `rootId`, `parentId`, `agentId` |
 | `step.started`, `step.completed` | `step`; on completion `result`: `tool_calls`, `final` or `stopped` |
-| `model.started`, `model.completed` | `step`, `modelCall`; on completion `response`: `final` or `tool_calls`. Guardrail model calls carry `purpose: 'guardrail'`, the check identity and the `decision` instead. |
+| `model.started`, `model.completed` | `step`, `modelCall`, and the model's `modelId` when it is a stable id; on completion `response` (`final` or `tool_calls`) and the call's `costMicros`. Guardrail model calls carry `purpose: 'guardrail'`, the check identity and the `decision` instead. |
 | `tool.started`, `tool.completed` | `callId`, `toolId`; on completion `status`, and when known `execution` (`not_started`, `succeeded`, `failed`, `unknown`) and `disclosure` (`released`, `withheld`) |
 | `hook.started`, `hook.completed` | `hookId`, `hookVersion`, `stage`, `invocationId`, `step`, `attempt`; on completion `status` |
 | `delegate.started`, `delegate.completed` | `childRunId`; `childAgentId` at start, `status` at completion |
@@ -170,6 +170,18 @@ if (spans.length > 0) await traces.sink(spans, { signal: AbortSignal.timeout(10_
 
 The projection pairs start and completion events, so raise `maxRecentEventsPerRun` for runs with many calls; a call
 whose start was evicted gets no span. Span attributes come from a fixed catalog of ids, statuses and integers.
+
+Spans also carry OpenTelemetry's GenAI attributes, so tools that understand them (Langfuse, Datadog, Arize, Honeycomb
+and others) show runs as AI traces:
+
+| Span | Attributes |
+| --- | --- |
+| `agent:<id>` | `gen_ai.operation.name: invoke_agent`, `gen_ai.agent.id`, `gen_ai.agent.name` |
+| `model.call` | `gen_ai.operation.name: chat`; for a registry id such as `openai/gpt-5`, `gen_ai.provider.name` (`openai`, `aws.bedrock`, `azure.ai.openai`, `gcp.gemini` and other well-known names) and `gen_ai.request.model`; `mayura.model.id` and the call's `mayura.cost.micros` |
+| `tool:<id>` | `gen_ai.operation.name: execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type: function` |
+
+OpenTelemetry's GenAI conventions are still in development; Mayura keeps its own span names and `mayura.*` attributes
+alongside them.
 
 ### Metrics
 

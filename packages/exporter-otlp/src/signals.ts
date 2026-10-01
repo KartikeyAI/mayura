@@ -21,7 +21,8 @@ const spanAttributeNames: ReadonlySet<string> = new Set<OtlpSpanAttributeName>([
   'mayura.workflow.definition.id', 'mayura.workflow.definition.version', 'mayura.workflow.definition.digest', 'mayura.workflow.status', 'mayura.workflow.events',
   'mayura.workflow.node.id', 'mayura.workflow.node.kind', 'mayura.workflow.step.status', 'mayura.workflow.step.code', 'mayura.workflow.receipt.execution',
   'mayura.workflow.child.run.id', 'mayura.agent.id', 'mayura.run.status', 'mayura.model.call', 'mayura.tool.id', 'mayura.tool.version', 'mayura.tool.status',
-  'mayura.budget.spent_micros', 'mayura.budget.reserved_micros', 'mayura.budget.max_micros', 'mayura.budget.step_cost_micros']);
+  'mayura.budget.spent_micros', 'mayura.budget.reserved_micros', 'mayura.budget.max_micros', 'mayura.budget.step_cost_micros', 'mayura.model.id', 'mayura.cost.micros',
+  'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.request.model', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.type']);
 
 const failed = (): never => { throw new MayuraError('TOOL_FAILED', 'The telemetry export failed. Inspect authorized local diagnostics.'); };
 function exact(value: bigint): ExactCount { return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString(); }

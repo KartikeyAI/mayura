@@ -150,6 +150,8 @@ describe('native metadata observer', () => {
     { ...start(), metadata: { profile: 'ephemeral', input: 'SECRET' } }, { ...start(), metadata: { profile: 'ephemeral', rootId: 'other' } },
     { ...start(), metadata: { profile: 'ephemeral', parentId: 'run-1', rootId: 'root' } },
     event(1, 'model.started', { step: -1, modelCall: 1 }), event(1, 'model.started', { step: 0, modelCall: 0 }),
+    event(1, 'model.started', { step: 0, modelCall: 1, modelId: 'SECRET prompt text' }), event(1, 'model.completed', { step: 0, response: 'final', costMicros: -1 }),
+    event(1, 'model.completed', { step: 0, response: 'final', costMicros: '7' }), event(1, 'model.completed', { step: 0, response: 'final', tokens: 3 }),
     event(1, 'tool.started', { callId: 'a', toolId: 'SECRET\nprivate' }),
     event(1, 'tool.completed', { callId: 'a', toolId: 'b', status: 'succeeded', execution: 'succeeded' }),
     event(1, 'tool.completed', { callId: 'a', toolId: 'b', status: 'failed', execution: 'succeeded', disclosure: 'released' }),

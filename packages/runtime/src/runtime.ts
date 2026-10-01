@@ -17,6 +17,9 @@ import { readHookDefinition, type ControlHookStage, type HookEvent, type HookEve
 import { evaluateHook, evaluateObserver } from './hook-execution.js';
 
 /** All bounds are finite; model/token/cost declarations do not turn trusted callbacks into a sandbox. */
+/** A model id observability may carry: a bounded stable identifier, as run event metadata requires. */
+const stableModelId = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
+
 export interface RuntimeLimits {
   readonly maxSteps?: number;
   readonly maxModelCalls?: number;
@@ -721,6 +724,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         // Hooks see what media there is (type and size by message), never its bytes.
         const hookMedia = Object.freeze(mediaOf.flatMap((items, index) => items ? [Object.freeze({ message: index, media: Object.freeze(items.map(mediaSummary)) })] : []));
         const primaryBundle = operationBundle('model', agent.model.maxCostMicros);
+        let callCostMicros: number | undefined;
         try {
           // A content-only projection: private instructions and provider continuation never
           // enter hook context. These immutable fields are the same ones sent to the adapter.
@@ -731,7 +735,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
             checkCancelled();
             const reservation = consumeCall(state, primaryBundle.entries[0]!, 'model');
-            events.emit('model.started', { step, modelCall: state.modelCalls });
+            // The model's id, when it is a stable identifier, lets trace exporters name the model and its provider.
+            events.emit('model.started', { step, modelCall: state.modelCalls, ...(stableModelId.test(agent.model.id) ? { modelId: agent.model.id } : {}) });
             let raw;
             const modelRequest = Object.freeze({ ...requestData, signal: controller.signal, maxOutputTokens: limits.maxOutputTokens });
             try { raw = agent.stream && agent.model.stream ? await streamModel(modelRequest, step, state.modelCalls) : await agent.model.generate(modelRequest); }
@@ -743,13 +748,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             }
             // Account independently validated usage even when the content envelope is malformed.
             // The callback may complete after cooperative cancellation; it cannot re-open disclosure.
-            reservation.settle(modelCost(raw));
+            callCostMicros = modelCost(raw);
+            reservation.settle(callCostMicros);
             return raw;
           }), controller.signal);
           checkCancelled();
           const response = modelResponse(rawResponse, limits.maxOutputBytes, limits.maxToolCalls);
           continuation = response.continuation === undefined ? undefined : freezeJson(jsonValue(response.continuation, { maxBytes: limits.maxContextBytes }));
-          events.emit('model.completed', { step, response: response.type });
+          events.emit('model.completed', { step, response: response.type, ...(callCostMicros === undefined ? {} : { costMicros: callCostMicros }) });
           const modelObserved = await observe(Object.freeze({ stage: 'afterModelCall', step, modelId: agent.model.id, response: response.type,
             toolCalls: response.type === 'final' ? 0 : response.calls.length }), step);
           if (modelObserved) return { done: true, outcome: modelObserved };

@@ -73,7 +73,11 @@ export type OtlpSpanAttributeName =
   | 'mayura.workflow.node.id' | 'mayura.workflow.node.kind' | 'mayura.workflow.step.status' | 'mayura.workflow.step.code'
   | 'mayura.workflow.receipt.execution' | 'mayura.workflow.child.run.id'
   | 'mayura.agent.id' | 'mayura.run.status' | 'mayura.model.call' | 'mayura.tool.id' | 'mayura.tool.version' | 'mayura.tool.status'
-  | 'mayura.budget.spent_micros' | 'mayura.budget.reserved_micros' | 'mayura.budget.max_micros' | 'mayura.budget.step_cost_micros';
+  | 'mayura.budget.spent_micros' | 'mayura.budget.reserved_micros' | 'mayura.budget.max_micros' | 'mayura.budget.step_cost_micros'
+  | 'mayura.model.id' | 'mayura.cost.micros'
+  // OpenTelemetry GenAI semantic conventions (development status): operation, provider, model, agent and tool.
+  | 'gen_ai.operation.name' | 'gen_ai.provider.name' | 'gen_ai.request.model' | 'gen_ai.agent.id' | 'gen_ai.agent.name'
+  | 'gen_ai.tool.name' | 'gen_ai.tool.call.id' | 'gen_ai.tool.type';
 export type OtlpSpanAttributes = Readonly<Partial<Record<OtlpSpanAttributeName, string | number>>>;
 
 /** Completed metadata-only span. IDs use the OTLP JSON hexadecimal representation. */

@@ -111,7 +111,8 @@ describe('agent run span projection', () => {
     const spans = agentRunTraceSpans(run);
     expect(spans.map(span => [span.name, span.status])).toEqual([['agent:planner', 'error'], ['model.call', 'ok'], ['tool:library.search', 'error']]);
     expect(spans[0]!.parentSpanId).toBeUndefined(); for (const span of spans.slice(1)) expect(span.parentSpanId).toBe(spans[0]!.spanId);
-    expect(spans[0]!.attributes).toEqual({ 'mayura.agent.id': 'planner', 'mayura.run.status': 'failed', 'mayura.budget.spent_micros': 7, 'mayura.budget.reserved_micros': 0 });
+    expect(spans[0]!.attributes).toEqual({ 'gen_ai.operation.name': 'invoke_agent', 'gen_ai.agent.id': 'planner', 'gen_ai.agent.name': 'planner',
+      'mayura.agent.id': 'planner', 'mayura.run.status': 'failed', 'mayura.budget.spent_micros': 7, 'mayura.budget.reserved_micros': 0 });
     expect(spans[2]).toMatchObject({ startTimeUnixNano: String(Date.parse(at(4)) * 1_000_000), endTimeUnixNano: String(Date.parse(at(5)) * 1_000_000) });
     expect(agentRunTraceSpans(run)).toEqual(spans);
     const parent = { traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) };
@@ -119,6 +120,30 @@ describe('agent run span projection', () => {
     expect(nested[0]).toMatchObject({ traceId: parent.traceId, parentSpanId: parent.spanId });
     expect(new Set(nested.map(span => span.spanId)).size).toBe(3); expect(nested[0]!.spanId).not.toBe(spans[0]!.spanId);
     for (const span of [...spans, ...nested]) { expect(span.traceId).toMatch(/^(?!0{32})[a-f0-9]{32}$/); expect(span.spanId).toMatch(/^(?!0{16})[a-f0-9]{16}$/); }
+  });
+
+  it('carries OpenTelemetry GenAI attributes: the operation, provider, model, call cost, agent and tool', () => {
+    const withModel = [run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'bedrock/anthropic.claude-sonnet-4-5' }),
+      event(3, 'model.completed', { step: 0, response: 'tool_calls', costMicros: 42 }), ...run.slice(3)];
+    const [agent, model, tool] = agentRunTraceSpans(withModel);
+    expect(model!.attributes).toEqual({ 'gen_ai.operation.name': 'chat', 'gen_ai.provider.name': 'aws.bedrock', 'gen_ai.request.model': 'anthropic.claude-sonnet-4-5',
+      'mayura.model.id': 'bedrock/anthropic.claude-sonnet-4-5', 'mayura.model.call': 1, 'mayura.cost.micros': 42 });
+    expect(tool!.attributes).toMatchObject({ 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.type': 'function', 'gen_ai.tool.name': 'library.search', 'gen_ai.tool.call.id': 'c-1' });
+    expect(agent!.attributes).toMatchObject({ 'gen_ai.operation.name': 'invoke_agent', 'gen_ai.agent.id': 'planner' });
+    const unknown = agentRunTraceSpans([run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'acme-llm/v2' }), event(3, 'model.completed', { step: 0, response: 'final' })]);
+    expect(unknown[1]!.attributes).toMatchObject({ 'gen_ai.provider.name': 'acme-llm', 'gen_ai.request.model': 'v2' });
+    const bare = agentRunTraceSpans([run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'openai.responses' }), event(3, 'model.completed', { step: 0, response: 'final' })]);
+    expect(bare[1]!.attributes).toEqual({ 'gen_ai.operation.name': 'chat', 'mayura.model.id': 'openai.responses', 'mayura.model.call': 1 });
+  });
+
+  it('exports GenAI attributes through the closed catalog of the OTLP trace exporter', async () => {
+    const bodies: string[] = [];
+    const exporter = createOtlpHttpJsonTraceExporter({ endpoint: 'https://collector.example/v1/traces', serviceName: 'svc',
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => { bodies.push(String(init?.body)); return new Response(null, { status: 200 }); }) as typeof fetch });
+    const spans = agentRunTraceSpans([run[0]!, event(2, 'model.started', { step: 0, modelCall: 1, modelId: 'openai/gpt-5' }), event(3, 'model.completed', { step: 0, response: 'final', costMicros: 9 }), run[5]!]);
+    await exporter.sink(spans, { signal: new AbortController().signal });
+    expect(bodies[0]).toContain('"gen_ai.request.model"'); expect(bodies[0]).toContain('"gpt-5"'); expect(bodies[0]).toContain('"gen_ai.provider.name"');
+    exporter.close();
   });
 
   it('skips events outside the metadata allowlist, unpaired starts and other runs, and rejects malformed parents', () => {
