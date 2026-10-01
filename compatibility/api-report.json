@@ -8591,6 +8591,16 @@
         "declaration": "0c2baf80f6bc0ca2"
       }
     },
+    "@mayurajs/sandbox-daytona": {
+      "daytonaSandboxes": {
+        "kind": "function",
+        "declaration": "673558716e68925a"
+      },
+      "DaytonaSandboxOptions": {
+        "kind": "interface",
+        "declaration": "cf2d2ee19ef00b01"
+      }
+    },
     "@mayurajs/sandbox-e2b": {
       "e2bSandboxes": {
         "kind": "function",

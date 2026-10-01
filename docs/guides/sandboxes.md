@@ -190,6 +190,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-e2b` | [E2B](https://e2b.dev) Firecracker microVMs from a template | none, all, domains (ports 80 and 443) | public URL | no |
 | `@mayurajs/sandbox-e2b-desktop` | E2B sandboxes with an Xfce desktop, and a live view in the browser | none, all, domains (ports 80 and 443) | public URL | yes |
 | `@mayurajs/sandbox-vercel` | [Vercel Sandbox](https://vercel.com/docs/sandbox) Firecracker microVMs; no standard input | none, all, domains | public URL (1024 and up) | no |
+| `@mayurajs/sandbox-daytona` | [Daytona](https://www.daytona.io) sandboxes from a snapshot | none, all, domains | signed URL | with `desktop: true` |
 
 ## Writing a provider
 
