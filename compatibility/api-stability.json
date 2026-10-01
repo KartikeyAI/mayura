@@ -68,6 +68,7 @@
   "extensionEntryPoints": [
     "@mayurajs/deploy-aws-ecs",
     "@mayurajs/deploy-aws-lambda",
+    "@mayurajs/deploy-azure",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-fly",
     "@mayurajs/deploy-railway",

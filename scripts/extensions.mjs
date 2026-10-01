@@ -30,6 +30,7 @@ export const reviewedDependencies = {
   'storage-mysql': ['mysql2'],
   'deploy-aws-ecs': [],
   'deploy-aws-lambda': [],
+  'deploy-azure': [],
   'deploy-cloudrun': [],
   'deploy-fly': [],
   'deploy-railway': [],

@@ -48,8 +48,13 @@ export interface DeployStep {
    * What the tool must print: its standard output, trimmed, must fully match `match` (a regular expression), or the
    * step fails, so a step can check a result its exit code does not carry. With `as`, later steps' arguments may use
    * the output as `{{name}}`, such as a task an earlier step started. The output is captured rather than shown.
+   * With `retry`, output that fully matches `retry.while` (a status still in progress, such as `Running`) runs the step
+   * again after `intervalSeconds`, up to `attempts` times, so a step can wait for an outcome its tool cannot wait for.
    */
-  readonly output?: { readonly match: string; readonly as?: string };
+  readonly output?: {
+    readonly match: string; readonly as?: string;
+    readonly retry?: { readonly while: string; readonly attempts: number; readonly intervalSeconds: number };
+  };
 }
 
 /** Where a project can be deployed: the files it needs and the commands that deploy it. */
@@ -234,11 +239,16 @@ export async function planDeploy(target: DeployTarget, directory: string, option
     }
     let output: DeployStep['output'];
     if (step.output !== undefined) {
-      const { match, as } = step.output as { match?: unknown; as?: unknown };
-      let valid = typeof match === 'string' && match.length > 0 && match.length <= 256 && (as === undefined || (typeof as === 'string' && captureName.test(as) && !captured.has(as)));
-      if (valid) { try { new RegExp(match as string, 'u'); } catch { valid = false; } }
+      const { match, as, retry } = step.output as { match?: unknown; as?: unknown; retry?: { while?: unknown; attempts?: unknown; intervalSeconds?: unknown } };
+      const pattern = (value: unknown): boolean => { if (typeof value !== 'string' || value.length === 0 || value.length > 256) return false; try { new RegExp(value, 'u'); return true; } catch { return false; } };
+      const whole = (value: unknown, min: number, max: number): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+      // At most an hour of waiting per step.
+      const valid = pattern(match) && (as === undefined || (typeof as === 'string' && captureName.test(as) && !captured.has(as)))
+        && (retry === undefined || (typeof retry === 'object' && retry !== null && pattern(retry.while) && whole(retry.attempts, 2, 720) && whole(retry.intervalSeconds, 1, 60)
+          && (retry.attempts as number) * (retry.intervalSeconds as number) <= 3_600));
       if (!valid) throw new MayuraError('INVALID_CONFIG', `Deploy target ${checked.id} planned a step with a malformed output check.`);
-      output = Object.freeze({ match: match as string, ...(as === undefined ? {} : { as: as as string }) });
+      output = Object.freeze({ match: match as string, ...(as === undefined ? {} : { as: as as string }),
+        ...(retry === undefined ? {} : { retry: Object.freeze({ while: retry.while as string, attempts: retry.attempts as number, intervalSeconds: retry.intervalSeconds as number }) }) });
       if (as !== undefined) captured.add(as as string);
     }
     ids.add(step.id);
@@ -331,15 +341,33 @@ export async function runDeployPlan(plan: DeployPlan, options: { readonly confir
     if (signal.aborted) { status = 'cancelled'; results.push({ id: step.id, status: 'cancelled' }); options.onStep?.({ id: step.id, description: step.description, status: 'cancelled' }); continue; }
     if (!tools.includes(step.tool)) throw new MayuraError('INTEGRITY_VIOLATION', 'A deploy step names a tool outside its target.');
     options.onStep?.({ id: step.id, description: step.description, status: 'started' });
-    const { exitCode, output } = await runner(step, { directory: plan.directory, signal });
-    const value = typeof output === 'string' ? output.trim() : undefined;
-    const checked = step.output === undefined || (value !== undefined && new RegExp(`^(?:${step.output.match})$`, 'u').test(value));
+    let attempt = 0; let exitCode: number; let value: string | undefined; let checked: boolean;
+    for (;;) {
+      attempt += 1;
+      const result = await runner(step, { directory: plan.directory, signal });
+      exitCode = result.exitCode; value = typeof result.output === 'string' ? result.output.trim() : undefined;
+      checked = step.output === undefined || (value !== undefined && new RegExp(`^(?:${step.output.match})$`, 'u').test(value));
+      const retry = step.output?.retry;
+      // Still in progress: wait and ask again, unless cancelled or out of attempts.
+      if (checked || exitCode !== 0 || retry === undefined || value === undefined || attempt >= retry.attempts || signal.aborted
+        || !new RegExp(`^(?:${retry.while})$`, 'u').test(value)) break;
+      await pause(retry.intervalSeconds * 1_000, signal);
+      if (signal.aborted) break;
+    }
     if (checked && step.output?.as !== undefined) values.set(step.output.as, value!);
     const outcome = signal.aborted ? 'cancelled' : exitCode === 0 && checked ? 'succeeded' : 'failed';
     results.push({ id: step.id, status: outcome, exitCode }); options.onStep?.({ id: step.id, description: step.description, status: outcome });
     if (outcome !== 'succeeded') status = outcome;
   }
   return Object.freeze({ status, target: plan.target, release: plan.release, steps: Object.freeze(results) });
+}
+
+/** Waits, or stops waiting as soon as the deployment is cancelled. */
+function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise(resolvePromise => {
+    const done = (): void => { clearTimeout(timer); signal.removeEventListener('abort', done); resolvePromise(); };
+    const timer = setTimeout(done, milliseconds); signal.addEventListener('abort', done, { once: true });
+  });
 }
 
 /** The ESM entry of an installed package, found the way Node finds it: `node_modules` here and in each parent. */

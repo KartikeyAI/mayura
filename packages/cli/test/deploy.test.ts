@@ -215,6 +215,26 @@ describe('deploy step outputs', () => {
     expect((await runDeployPlan(plan, { confirmation: plan.digest, runner: runner({}) })).status).toBe('failed');
   });
 
+  it('asks again while the output says the work is still in progress, and fails at once on any other answer', async () => {
+    const root = await project();
+    const poll: DeployStep = { id: 'poll', description: 'Wait for the job', tool: 'aws', args: ['status'], output: { match: 'Succeeded', retry: { while: 'Running|Pending', attempts: 3, intervalSeconds: 1 } } };
+    const sequence = (answers: string[]): { calls: () => number; runner: DeployRunner } => {
+      let index = 0; return { calls: () => index, runner: async step => ({ exitCode: 0, ...(step.output ? { output: answers[Math.min(index++, answers.length - 1)]! } : {}) }) };
+    };
+    const run = async (answers: string[], signal?: AbortSignal) => {
+      const plan = await planDeploy(capturing([poll]), root, { tag: 'v1' }); const fake = sequence(answers);
+      const result = await runDeployPlan(plan, { confirmation: plan.digest, runner: fake.runner, ...(signal ? { signal } : {}) }); return { status: result.status, calls: fake.calls() };
+    };
+    expect(await run(['Pending', 'Running', 'Succeeded'])).toEqual({ status: 'succeeded', calls: 3 });
+    expect(await run(['Running', 'Failed'])).toEqual({ status: 'failed', calls: 2 });
+    expect(await run(['Running'])).toEqual({ status: 'failed', calls: 3 });
+    const controller = new AbortController(); setTimeout(() => controller.abort(), 300); const started = Date.now();
+    expect(await run(['Running'], controller.signal)).toEqual({ status: 'cancelled', calls: 1 }); expect(Date.now() - started).toBeLessThan(900);
+    for (const retry of [{ while: '(', attempts: 3, intervalSeconds: 1 }, { while: 'Running', attempts: 1, intervalSeconds: 1 }, { while: 'Running', attempts: 720, intervalSeconds: 60 }]) {
+      await expect(planDeploy(capturing([{ ...poll, output: { match: 'Succeeded', retry } }]), root, { tag: 'v1' })).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    }
+  });
+
   it('refuses a placeholder before its capture, a malformed check, and a name captured twice', async () => {
     const root = await project();
     for (const steps of [[wait, start], [{ ...start, output: { match: '(', as: 'task' } }], [{ ...start, output: { match: '', as: 'task' } }], [{ ...start, output: { match: 'x', as: 'Bad Name' } }],

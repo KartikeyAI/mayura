@@ -644,7 +644,7 @@
       },
       "DeployStep": {
         "kind": "interface",
-        "declaration": "78d0f5ce9d68dae4"
+        "declaration": "bc52ab23a086a28d"
       },
       "DeployStepResult": {
         "kind": "interface",
@@ -7983,6 +7983,20 @@
       "awsLambdaTarget": {
         "kind": "const",
         "declaration": "fcb2bc36f75c8ec7"
+      }
+    },
+    "@mayurajs/deploy-azure": {
+      "AzureBuild": {
+        "kind": "type",
+        "declaration": "38843ac8fbf9136f"
+      },
+      "AzureContainerAppsSettings": {
+        "kind": "interface",
+        "declaration": "d8da9433b661895a"
+      },
+      "azureContainerAppsTarget": {
+        "kind": "const",
+        "declaration": "8bd2052ce485da74"
       }
     },
     "@mayurajs/deploy-cloudrun": {

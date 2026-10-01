@@ -35,6 +35,7 @@ project's own dependencies.
 |---|---|---|
 | `@mayurajs/deploy-aws-ecs` | `aws-ecs` | [Amazon ECS on Fargate](https://aws.amazon.com/ecs/): task definitions at the release's image, a one-off migration task whose exit code is checked, then both services rolled out and awaited |
 | `@mayurajs/deploy-aws-lambda` | `aws-lambda` | [AWS Lambda](https://aws.amazon.com/lambda/) (experimental): one container image for the API, workflows and migration functions; the migration runs and is checked before the others update |
+| `@mayurajs/deploy-azure` | `azure` | [Azure Container Apps](https://azure.microsoft.com/products/container-apps): a migration job run to success, then the server and worker apps, each new revision awaited |
 | `@mayurajs/deploy-cloudrun` | `cloudrun` | [Google Cloud Run](https://cloud.google.com/run): a migration job run to completion, then the server and an always-on internal worker as services, secrets from Secret Manager |
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
 | `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |
@@ -129,6 +130,11 @@ match the regular expression `match`, or the step fails. Use it for a result the
 task's exit code. With `as`, later steps' arguments can use the output as `{{name}}`, such as the id of a task an
 earlier step started. A step may use only names captured before it, and only output that matched its pattern is
 passed on.
+
+To wait for something its tool cannot wait for, a step adds `retry: { while, attempts, intervalSeconds }` to its
+output check. While the output matches `while`, a status still in progress such as `Running`, the step runs again
+after the interval, up to `attempts` times and at most an hour. Any answer that matches neither pattern fails the
+step at once.
 
 ## Good to know
 

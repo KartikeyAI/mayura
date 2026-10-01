@@ -89,6 +89,9 @@ importers:
       '@mayurajs/deploy-aws-lambda':
         specifier: workspace:*
         version: link:extensions/deploy-aws-lambda
+      '@mayurajs/deploy-azure':
+        specifier: workspace:*
+        version: link:extensions/deploy-azure
       '@mayurajs/deploy-cloudrun':
         specifier: workspace:*
         version: link:extensions/deploy-cloudrun
@@ -289,6 +292,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/deploy-aws-lambda:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/deploy-azure:
     devDependencies:
       mayura:
         specifier: workspace:*
