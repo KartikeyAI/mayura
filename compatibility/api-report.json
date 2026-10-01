@@ -8593,6 +8593,20 @@
         "declaration": "e9e03dc6d7906c90"
       }
     },
+    "@mayurajs/sandbox-e2b-desktop": {
+      "E2bDesktopOptions": {
+        "kind": "interface",
+        "declaration": "686347db2fb20e54"
+      },
+      "e2bDesktopSandboxes": {
+        "kind": "function",
+        "declaration": "91620dd498964c70"
+      },
+      "xdotoolKeys": {
+        "kind": "function",
+        "declaration": "c0055ea58de94535"
+      }
+    },
     "@mayurajs/storage-d1": {
       "createD1Store": {
         "kind": "function",

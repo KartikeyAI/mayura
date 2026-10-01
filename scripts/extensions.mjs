@@ -34,6 +34,7 @@ export const reviewedDependencies = {
   'deploy-azure': [],
   'deploy-cloudflare': [],
   'sandbox-e2b': [],
+  'sandbox-e2b-desktop': ['@mayurajs/sandbox-e2b'],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

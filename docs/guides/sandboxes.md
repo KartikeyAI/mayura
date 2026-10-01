@@ -188,6 +188,7 @@ the container's configuration or on the host's command lines.
 | --- | --- | --- | --- | --- |
 | `mayura/sandbox/docker` | Docker containers on your machine | none, all | on 127.0.0.1 | no |
 | `@mayurajs/sandbox-e2b` | [E2B](https://e2b.dev) Firecracker microVMs from a template | none, all, domains (ports 80 and 443) | public URL | no |
+| `@mayurajs/sandbox-e2b-desktop` | E2B sandboxes with an Xfce desktop, and a live view in the browser | none, all, domains (ports 80 and 443) | public URL | yes |
 
 ## Writing a provider
 

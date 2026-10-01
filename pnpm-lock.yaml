@@ -188,6 +188,9 @@ importers:
       '@mayurajs/sandbox-e2b':
         specifier: workspace:*
         version: link:extensions/sandbox-e2b
+      '@mayurajs/sandbox-e2b-desktop':
+        specifier: workspace:*
+        version: link:extensions/sandbox-e2b-desktop
       '@mayurajs/storage-d1':
         specifier: workspace:*
         version: link:extensions/storage-d1
@@ -534,6 +537,16 @@ importers:
         version: link:../../packages/mayura
 
   extensions/sandbox-e2b:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/sandbox-e2b-desktop:
+    dependencies:
+      '@mayurajs/sandbox-e2b':
+        specifier: workspace:*
+        version: link:../sandbox-e2b
     devDependencies:
       mayura:
         specifier: workspace:*
