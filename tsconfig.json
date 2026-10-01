@@ -11,6 +11,7 @@
     { "path": "extensions/storage-mongodb" },
     { "path": "extensions/storage-mysql" },
     { "path": "extensions/deploy-aws-ecs" },
+    { "path": "extensions/deploy-aws-lambda" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-fly" },
     { "path": "extensions/deploy-railway" },

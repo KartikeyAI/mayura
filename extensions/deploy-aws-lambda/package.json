@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/deploy-aws-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS Lambda as a mayura deploy target: one container image, the migration function first, then the API and workflows functions.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

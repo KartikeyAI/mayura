@@ -34,6 +34,7 @@ project's own dependencies.
 | Package | Target | Platform |
 |---|---|---|
 | `@mayurajs/deploy-aws-ecs` | `aws-ecs` | [Amazon ECS on Fargate](https://aws.amazon.com/ecs/): task definitions at the release's image, a one-off migration task whose exit code is checked, then both services rolled out and awaited |
+| `@mayurajs/deploy-aws-lambda` | `aws-lambda` | [AWS Lambda](https://aws.amazon.com/lambda/) (experimental): one container image for the API, workflows and migration functions; the migration runs and is checked before the others update |
 | `@mayurajs/deploy-cloudrun` | `cloudrun` | [Google Cloud Run](https://cloud.google.com/run): a migration job run to completion, then the server and an always-on internal worker as services, secrets from Secret Manager |
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
 | `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |

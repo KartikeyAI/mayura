@@ -7975,6 +7975,16 @@
         "declaration": "52203435ccd6a449"
       }
     },
+    "@mayurajs/deploy-aws-lambda": {
+      "AwsLambdaSettings": {
+        "kind": "interface",
+        "declaration": "c26546b1a3d0e59e"
+      },
+      "awsLambdaTarget": {
+        "kind": "const",
+        "declaration": "fcb2bc36f75c8ec7"
+      }
+    },
     "@mayurajs/deploy-cloudrun": {
       "CloudRunBuild": {
         "kind": "type",
