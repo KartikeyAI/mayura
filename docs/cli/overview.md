@@ -46,6 +46,7 @@ The CLI needs Node.js 22 (22.12 or later) or 24 (24.14.1 or later). See [Support
 | Create | `init`, `starters`, `templates`, `validate`, `inspect` | [Create a project](init.md) |
 | Run an application | `dev` | [Develop with mayura dev](dev.md) |
 | Run an application | `serve`, `worker`, `migrate` | [Serve, worker and migrate](run.md) |
+| Deploy | `deploy targets`, `deploy init`, `deploy` | [Deploy with mayura deploy](deploy.md) |
 | Operate a server | `server-health`, `server-tools`, `run-get`, `run-wait`, `run-cancel`, `human-list`, `human-get`, `human-respond`, `workflow-list`, `workflow-get`, `workflow-approve`, `workflow-cancel`, `workflow-pause`, `workflow-resume`, `workflow-signal`, `fleet-get`, `fleet-hold`, `fleet-release`, `fleet-sweep` | [Operate a server](operations.md) |
 
 Options take the form `--name value`, or just `--name` for switches such as `--apply`. An unknown option, or the

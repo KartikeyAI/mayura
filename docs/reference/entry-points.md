@@ -122,6 +122,7 @@ validator works too.
 | `mayura/client-react` | React hooks over the client. | `useMayuraRun`, `useMayuraRunActions`, `useMayuraHumanRequest`, `useMayuraWorkflowGraph`, `useMayuraWorkflowCommand` | `react` |
 | `mayura/client-react/components` | Ready-made React components. | `MayuraRunSummary`, `MayuraHumanResponseForm`, `MayuraWorkflowGraph`, `MayuraWorkflowPauseControl`, `MayuraFleetHoldControl` | `react` |
 | `mayura/cli` | The CLI as functions: project creation, the application contract and server operations. | `defineMayuraApplication`, `planProject`, `applyProjectPlan`, `inspectWorkflows`, `approveWorkflow` | |
+| `mayura/cli/deploy` | Deployment targets and plans behind `mayura deploy`, for platform packages. | `defineDeployTarget`, `planDeploy`, `runDeployPlan`, `planDeployFiles`, `kubernetesTarget` | |
 
 ## Observability
 

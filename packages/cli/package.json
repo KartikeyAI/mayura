@@ -6,7 +6,10 @@
   "sideEffects": false,
   "files": ["dist", "src/**/*.ts", "templates", "starters/*/*.json", "starters/*/*.md", "starters/*/*.yaml", "starters/*/Dockerfile", "starters/*/dot-*", "starters/*/src/**", "starters/*/test/**", "starters/*/dot-*/**", "starters/*/web/*.html", "starters/*/web/*.json", "starters/*/web/*.ts", "starters/*/web/src/**", "README.md"],
   "bin": { "mayura": "./dist/bin.js" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./deploy": { "types": "./dist/deploy-index.d.ts", "import": "./dist/deploy-index.js" }
+  },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
   "dependencies": { "@clack/prompts": "1.8.1", "@mayura/core": "workspace:*" }
 }

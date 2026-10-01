@@ -77,6 +77,7 @@ Rules that matter when writing Mayura code:
 - [Create a project](docs/cli/init.md): Create a Mayura project from a starter or a template with mayura init, interactively or with flags, then validate and inspect it.
 - [Develop with mayura dev](docs/cli/dev.md): Build and run your project with mayura dev, load .env, and rebuild and restart on every saved change.
 - [Serve, worker and migrate](docs/cli/run.md): Run your application in production with mayura serve, mayura worker and mayura migrate, and write the module they load.
+- [Deploy with mayura deploy](docs/cli/deploy.md): Write a target's deployment files, plan a release and run it with the tools you already use: Docker, Docker Compose, Kubernetes, or a platform package.
 - [Operate a server](docs/cli/operations.md): Inspect and control a running Mayura server from the CLI: health, tools, runs, human requests, workflows and the fleet.
 
 ## Reference

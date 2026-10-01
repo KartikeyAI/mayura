@@ -71,6 +71,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [mayura init](cli/init.md): starters and templates.
 - [mayura dev](cli/dev.md): develop with rebuild and restart.
 - [serve, worker and migrate](cli/run.md): run an application.
+- [mayura deploy](cli/deploy.md): deploy with Docker, Compose, Kubernetes or a platform package.
 - [Operator commands](cli/operations.md): manage a running server.
 
 ## Reference

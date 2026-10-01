@@ -9,6 +9,7 @@
     "@mayura/artifacts",
     "@mayura/artifacts/files",
     "@mayura/cli",
+    "@mayura/cli/deploy",
     "@mayura/client",
     "@mayura/client-react",
     "@mayura/client-react/components",

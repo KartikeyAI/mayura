@@ -37,6 +37,10 @@
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
     },
+    "./cli/deploy": {
+      "types": "./dist/cli__deploy.d.ts",
+      "import": "./dist/cli__deploy.js"
+    },
     "./client": {
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js"

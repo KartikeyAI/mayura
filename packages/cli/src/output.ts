@@ -76,6 +76,45 @@ function plan(p: Paint, result: Result, relative: (path: string) => string): str
   return out;
 }
 
+function deploy(p: Paint, result: Result, relative: (path: string) => string): string[] {
+  const kind = text(result['deploy']);
+  if (kind === 'targets') {
+    const out = [p.bold('Deploy targets'), ''];
+    for (const target of list(result['targets'])) out.push(`  ${p.cyan(text(target['id']).padEnd(14))} ${p.dim(text(target['source']))}${target['description'] ? `  ${text(target['description'])}` : ''}`);
+    out.push('', `Write a target's files with ${p.bold('mayura deploy init --target <id>')}, then plan a release with ${p.bold('mayura deploy --target <id>')}.`);
+    return out;
+  }
+  if (kind === 'files') {
+    const value = record(result['plan']); const changes = list(value['changes']); const applied = result['status'] === 'succeeded';
+    const out = [`${p.bold(applied ? 'Wrote' : 'Plan for')} the ${p.cyan(text(value['target']))} deployment files in ${p.bold(relative(text(value['directory'])))}`, ''];
+    for (const change of changes) {
+      const operation = text(change['operation']);
+      out.push(`  ${operation === 'replace' ? p.yellow('~ replace') : operation === 'create' ? p.green('+ create ') : p.dim('  keep   ')} ${text(change['path'])}`);
+    }
+    const replaced = changes.filter(change => change['operation'] === 'replace').length;
+    if (!applied) {
+      out.push('', `Nothing is written yet. To write these files, run the same command with ${p.bold('--apply')}${replaced ? ` ${p.bold(`--confirm ${text(value['digest'])}`)}` : ''}.`);
+      if (replaced) out.push(p.yellow(`Replacing existing files needs --confirm with this plan's digest, so review them first (--json shows each diff).`));
+    } else out.push('', `Review and commit them, then plan a release with ${p.bold(`mayura deploy --target ${text(value['target'])}`)}.`);
+    return out;
+  }
+  if (kind === 'plan') {
+    const value = record(result['plan']); const release = record(value['release']); const steps = list(value['steps']);
+    const out = [`${p.bold('Deployment plan')} for ${p.cyan(text(value['target']))}, release ${p.bold(text(release['tag']))}${release['image'] ? p.dim(` (${text(release['image'])})`) : ''}`, ''];
+    steps.forEach((step, index) => {
+      const args = Array.isArray(step['args']) ? (step['args'] as unknown[]).map(arg => { const value = String(arg); return /^[A-Za-z0-9_./:=@-]+$/u.test(value) ? value : JSON.stringify(value); }).join(' ') : '';
+      out.push(`  ${String(index + 1).padStart(2)}. ${text(step['description'])}`, p.dim(`      ${text(step['tool'])} ${args}${typeof step['stdin'] === 'string' ? '  < rendered input (--json shows it)' : ''}`));
+    });
+    out.push('', `Nothing has run. Your tools' own logins and settings are used; Mayura reads no credentials.`,
+      `To run this plan: ${p.bold(`mayura deploy --target ${text(value['target'])} --tag ${text(release['tag'])} --apply --confirm ${text(value['digest'])}`)}`);
+    return out;
+  }
+  const value = record(result['result']); const steps = list(value['steps']); const status = text(value['status']);
+  const out = [status === 'succeeded' ? p.green(`✔ Deployed ${text(record(value['release'])['tag'])} with ${text(value['target'])}`) : p.red(`✖ Deployment ${status}`)];
+  for (const step of steps) out.push(`  ${text(step['status']).padEnd(10)} ${text(step['id'])}${step['exitCode'] !== undefined && step['exitCode'] !== 0 ? p.dim(` (exit ${text(step['exitCode'])})`) : ''}`);
+  return out;
+}
+
 function workflow(p: Paint, value: Result): string[] {
   const out = [`${p.bold(`${text(value['definitionId'])}@${text(value['definitionVersion'])}`)}  ${status(p, text(value['status']))}  ${p.dim(`revision ${text(value['revision'])}`)}`,
     p.dim(`  ${text(value['runId'])}`), ''];
@@ -96,6 +135,7 @@ export function render(command: string, result: unknown, p: Paint, relative: (pa
     for (const item of items) out.push(`  ${p.cyan(text(item['name']))}`, wrap(text(item['description']), width - 6, '    '), '');
     out.push(`Create one with ${p.bold(`mayura init --${command === 'starters' ? 'starter' : 'template'} <name> --directory <dir>`)}, or run ${p.bold('mayura init')} to choose interactively.`);
   } else if (command === 'init') out.push(...plan(p, value, relative));
+  else if (command === 'deploy') out.push(...deploy(p, value, relative));
   else if (command === 'validate') out.push(`${p.green('✔')} ${p.bold(text(value['project']))} is a valid Mayura project ${p.dim(`(${text(value['template'])})`)}`);
   else if (command === 'inspect') {
     const project = record(value['project']);
@@ -195,6 +235,10 @@ export function help(p: Paint): string {
     p.bold('Run an application'),
     row('dev', 'build, run and restart on changes; loads .env'),
     row('serve --app <module>', 'start its server'), row('worker --app <module>', 'start its worker'), row('migrate --app <module>', 'migrate its storage'), '',
+    p.bold('Deploy'),
+    row('deploy targets', 'built-in targets and installed @mayurajs/deploy-* packages'),
+    row('deploy init --target <id>', 'plan the files a target needs; add --apply to write them'),
+    row('deploy --target <id> [--tag <tag>]', 'plan a release; run it with --apply --confirm <digest>'), '',
     p.bold('Operate a server') + p.dim('  (pipe the token: … | mayura <command> --url <url> --token-stdin)'),
     row('server-health, server-tools', ''), row('run-get, run-wait, run-cancel', ''), row('human-list, human-get, human-respond', ''),
     row('workflow-list [--settled]', 'active runs, or finished and unresolved ones'),

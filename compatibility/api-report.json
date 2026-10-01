@@ -585,6 +585,136 @@
         "declaration": "a9493927d5d52bdb"
       }
     },
+    "@mayura/cli/deploy": {
+      "applyDeployFiles": {
+        "kind": "function",
+        "declaration": "3fdcae5046c45f5d"
+      },
+      "builtInDeployTargets": {
+        "kind": "const",
+        "declaration": "e6f1b8ec6efe96fa"
+      },
+      "composeTarget": {
+        "kind": "const",
+        "declaration": "d79316e4465fc158"
+      },
+      "defineDeployTarget": {
+        "kind": "function",
+        "declaration": "9c45a86d7ae547d0"
+      },
+      "DeployConfig": {
+        "kind": "interface",
+        "declaration": "efb8dca298903af3"
+      },
+      "DeployFileChange": {
+        "kind": "interface",
+        "declaration": "bba6eb69e2faa075"
+      },
+      "DeployFilesContext": {
+        "kind": "interface",
+        "declaration": "082aaff22959cf87"
+      },
+      "DeployFilesPlan": {
+        "kind": "interface",
+        "declaration": "ea609a60b087f448"
+      },
+      "DeployPlan": {
+        "kind": "interface",
+        "declaration": "65262f8749104c96"
+      },
+      "DeployPlanContext": {
+        "kind": "interface",
+        "declaration": "74d19b2ac9f5c67d"
+      },
+      "DeployProject": {
+        "kind": "interface",
+        "declaration": "0348fd133e3b3ae5"
+      },
+      "DeployRelease": {
+        "kind": "interface",
+        "declaration": "cff57e3a8db4ebd5"
+      },
+      "DeployResult": {
+        "kind": "interface",
+        "declaration": "ece771ede2c4dfde"
+      },
+      "DeployRunner": {
+        "kind": "type",
+        "declaration": "ffc5c7814ac42252"
+      },
+      "DeployStep": {
+        "kind": "interface",
+        "declaration": "a14153239c63471f"
+      },
+      "DeployStepResult": {
+        "kind": "interface",
+        "declaration": "08e189115f935b2a"
+      },
+      "DeployTarget": {
+        "kind": "interface",
+        "declaration": "1b7cc4ca217e1c26"
+      },
+      "dockerfile": {
+        "kind": "function",
+        "declaration": "06856d4a6c67a13f"
+      },
+      "dockerignore": {
+        "kind": "const",
+        "declaration": "df02986241c02673"
+      },
+      "dockerTarget": {
+        "kind": "const",
+        "declaration": "fe3e49f647587c5f"
+      },
+      "IMAGE_PLACEHOLDER": {
+        "kind": "const",
+        "declaration": "d7ad69726085926b"
+      },
+      "imageSteps": {
+        "kind": "function",
+        "declaration": "d2d0b19383a10b53"
+      },
+      "kubernetesTarget": {
+        "kind": "const",
+        "declaration": "75d0460b1f62a1a8"
+      },
+      "listDeployTargets": {
+        "kind": "function",
+        "declaration": "6d11ae5ee30aad99"
+      },
+      "planDeploy": {
+        "kind": "function",
+        "declaration": "4218c352f9858270"
+      },
+      "planDeployFiles": {
+        "kind": "function",
+        "declaration": "c47dfaf8c91ebd82"
+      },
+      "readDeployConfig": {
+        "kind": "function",
+        "declaration": "43322b44c30a1d22"
+      },
+      "RELEASE_PLACEHOLDER": {
+        "kind": "const",
+        "declaration": "29d9fdb733771a3a"
+      },
+      "releaseSlug": {
+        "kind": "function",
+        "declaration": "0f78cf4fff61bb04"
+      },
+      "resolveDeployTarget": {
+        "kind": "function",
+        "declaration": "5eb54c09337112a3"
+      },
+      "runDeployPlan": {
+        "kind": "function",
+        "declaration": "4404beee9f79a826"
+      },
+      "spawnDeployStep": {
+        "kind": "const",
+        "declaration": "d44d21270e8fe620"
+      }
+    },
     "@mayura/client": {
       "ClientError": {
         "kind": "class",

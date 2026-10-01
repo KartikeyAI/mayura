@@ -18,6 +18,7 @@ export const NODE_ONLY = new Map([
   ['./adapter-code-quickjs', 'runs QuickJS in a worker thread'],
   ['./artifacts', 'the local artifact store writes to the filesystem'],
   ['./cli', 'the command line'],
+  ['./cli/deploy', 'runs deployment tools as child processes'],
   ['./server-node', 'the Node HTTP server'],
   ['./skills', 'loads skills from the filesystem'],
   ['./storage', 'SQLite through a native module'],

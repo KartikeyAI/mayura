@@ -22,6 +22,9 @@ setup ready to run, with a `Dockerfile` and `compose.yaml`.
                                           mayura migrate (once per release)
 ```
 
+`mayura deploy` writes these files for Docker, Docker Compose and Kubernetes, then plans and runs each release
+with the tools you already use: see [Deploy with mayura deploy](../cli/deploy.md).
+
 ## Choose a target
 
 Every target runs the same three commands from the same build, against the same PostgreSQL database. They differ

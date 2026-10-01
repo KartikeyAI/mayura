@@ -156,6 +156,41 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const poll = option(arguments_, '--poll-ms'); const wait = option(arguments_, '--wait-ms');
     return { status: 'succeeded', run: await waitForRun(settings, id, { ...(poll === undefined ? {} : { pollIntervalMs: Number(poll) }), ...(wait === undefined ? {} : { maxWaitMs: Number(wait) }) }) };
   }
+  if (command === 'deploy') {
+    // `deploy init` and `deploy targets` are subcommands; the rest of the line is checked like any command's.
+    const sub = arguments_[1] === 'init' || arguments_[1] === 'targets' ? arguments_[1] : undefined;
+    const rest = sub === undefined ? arguments_ : [command, ...arguments_.slice(2)];
+    const { applyDeployFiles, builtInDeployTargets, listDeployTargets, planDeploy, planDeployFiles, resolveDeployTarget, runDeployPlan } = await import('./deploy-index.js');
+    if (sub === 'targets') {
+      assertArguments(rest, ['--directory']);
+      return { status: 'succeeded', deploy: 'targets', targets: await listDeployTargets(resolve(option(rest, '--directory') ?? '.'), builtInDeployTargets) };
+    }
+    assertArguments(rest, sub === 'init' ? ['--target', '--directory', '--confirm'] : ['--target', '--directory', '--tag', '--confirm'], ['--apply']);
+    const id = option(rest, '--target'); if (!id) throw usage('deploy requires --target; run mayura deploy targets to list them.');
+    if (!rest.includes('--apply') && rest.includes('--confirm')) throw usage('--confirm requires --apply.');
+    const directory = resolve(option(rest, '--directory') ?? '.');
+    const target = await resolveDeployTarget(id, directory, builtInDeployTargets);
+    if (sub === 'init') {
+      const plan = await planDeployFiles(target, directory);
+      if (rest.includes('--apply')) { const confirmation = option(rest, '--confirm'); await applyDeployFiles(plan, confirmation === undefined ? {} : { confirmation }); }
+      return { status: rest.includes('--apply') ? 'succeeded' : 'planned', deploy: 'files', plan };
+    }
+    const tag = option(rest, '--tag');
+    const plan = await planDeploy(target, directory, tag === undefined ? {} : { tag });
+    if (!rest.includes('--apply')) return { status: 'planned', deploy: 'plan', plan };
+    const confirmation = option(rest, '--confirm');
+    if (!confirmation) throw usage('Running a deployment requires --confirm with the plan digest that mayura deploy printed.');
+    // First Ctrl+C: stop the running tool and skip the rest. A second one forces exit.
+    const controller = new AbortController(); let signals = 0;
+    const stop = (): void => { signals += 1; if (signals > 1) process.exit(1); controller.abort(); };
+    process.on('SIGINT', stop); process.on('SIGTERM', stop);
+    try {
+      const result = await runDeployPlan(plan, { confirmation, signal: controller.signal,
+        onStep: event => { if (human) console.error(event.status === 'started' ? out.bold(`▶ ${event.description}`) : `${event.status === 'succeeded' ? out.green('✔') : out.yellow('●')} ${event.id} ${event.status}`); } });
+      if (result.status !== 'succeeded') process.exitCode = 1;
+      return { status: result.status, deploy: 'run', result };
+    } finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); }
+  }
   if (command === 'dev') {
     assertArguments(arguments_, ['--app', '--entry'], ['--no-watch']);
     const app = option(arguments_, '--app'); const entry = option(arguments_, '--entry');
