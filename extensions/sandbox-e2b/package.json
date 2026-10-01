@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/sandbox-e2b",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E2B sandboxes for mayura/sandbox, over E2B's HTTP APIs.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

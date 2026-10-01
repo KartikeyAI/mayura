@@ -8583,6 +8583,16 @@
         "declaration": "0c2baf80f6bc0ca2"
       }
     },
+    "@mayurajs/sandbox-e2b": {
+      "e2bSandboxes": {
+        "kind": "function",
+        "declaration": "7fbeaca4723f262c"
+      },
+      "E2bSandboxOptions": {
+        "kind": "interface",
+        "declaration": "e9e03dc6d7906c90"
+      }
+    },
     "@mayurajs/storage-d1": {
       "createD1Store": {
         "kind": "function",

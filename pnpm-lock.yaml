@@ -185,6 +185,9 @@ importers:
       '@mayurajs/provider-openai':
         specifier: workspace:*
         version: link:extensions/provider-openai
+      '@mayurajs/sandbox-e2b':
+        specifier: workspace:*
+        version: link:extensions/sandbox-e2b
       '@mayurajs/storage-d1':
         specifier: workspace:*
         version: link:extensions/storage-d1
@@ -525,6 +528,12 @@ importers:
       openai:
         specifier: 7.23.0
         version: 7.23.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@7.29.1)(ws@8.22.0)(zod@4.6.5)
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/sandbox-e2b:
     devDependencies:
       mayura:
         specifier: workspace:*

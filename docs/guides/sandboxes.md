@@ -182,6 +182,13 @@ the container's configuration or on the host's command lines.
 | `readOnlyRoot` | Keep the image's file system read-only; true by default. |
 | `maxLifetimeMs` | The longest lifetime; 24 hours by default. |
 
+## Providers
+
+| Package | Sandboxes | Network | Ports | Desktop |
+| --- | --- | --- | --- | --- |
+| `mayura/sandbox/docker` | Docker containers on your machine | none, all | on 127.0.0.1 | no |
+| `@mayurajs/sandbox-e2b` | [E2B](https://e2b.dev) Firecracker microVMs from a template | none, all, domains (ports 80 and 443) | public URL | no |
+
 ## Writing a provider
 
 A provider implements `SandboxProvider`: its `id`, `features`, `workdir` and `maxLifetimeMs`, and `create`, which

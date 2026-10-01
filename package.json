@@ -79,6 +79,7 @@
     "@mayurajs/deploy-aws-lambda": "workspace:*",
     "@mayurajs/deploy-azure": "workspace:*",
     "@mayurajs/deploy-cloudflare": "workspace:*",
+    "@mayurajs/sandbox-e2b": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",
