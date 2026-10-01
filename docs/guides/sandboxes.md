@@ -202,6 +202,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-northflank` | [Northflank](https://northflank.com/docs/v1/application/sandboxes) microVM services; Node | all only | no | no |
 | `@mayurajs/sandbox-codesandbox` | [CodeSandbox](https://codesandbox.io/docs/sdk) private microVMs from a template; Node | all only | host-token URL | no |
 | `@mayurajs/sandbox-cloudflare` | [Cloudflare Sandboxes](https://developers.cloudflare.com/sandbox/) through your sandbox bridge Worker; any runtime | all only | no | no |
+| `@mayurajs/sandbox-apple-container` | [Apple `container`](https://github.com/apple/container) VMs on this Mac (macOS 26, Apple silicon); Node | all; none as a host-only network you name | no | no |
 
 ## Writing a provider
 

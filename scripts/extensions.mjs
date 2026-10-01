@@ -39,6 +39,7 @@ export const reviewedDependencies = {
   'sandbox-vercel': [],
   'sandbox-daytona': [],
   'sandbox-agentcore': ['@aws-sdk/client-bedrock-agentcore'],
+  'sandbox-apple-container': [],
   'sandbox-cloudflare': [],
   'sandbox-codesandbox': ['@codesandbox/sdk'],
   'sandbox-modal': ['modal'],

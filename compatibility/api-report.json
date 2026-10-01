@@ -8617,6 +8617,16 @@
         "declaration": "473cfa8fab0acc79"
       }
     },
+    "@mayurajs/sandbox-apple-container": {
+      "appleContainerSandboxes": {
+        "kind": "function",
+        "declaration": "5c6e9db18f1916e9"
+      },
+      "AppleContainerSandboxOptions": {
+        "kind": "interface",
+        "declaration": "034f15b9cdf7b50b"
+      }
+    },
     "@mayurajs/sandbox-cloudflare": {
       "cloudflareSandboxes": {
         "kind": "function",
