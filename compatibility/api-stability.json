@@ -69,6 +69,7 @@
     "@mayurajs/filestorage-files-sdk",
     "@mayurajs/filestorage-gcs",
     "@mayurajs/filestorage-google-drive",
+    "@mayurajs/filestorage-mesa",
     "@mayurajs/filestorage-r2",
     "@mayurajs/filestorage-vercel-blob",
     "@mayurajs/provider-anthropic",

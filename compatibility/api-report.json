@@ -7859,6 +7859,20 @@
         "declaration": "35056f892cfae0b4"
       }
     },
+    "@mayurajs/filestorage-mesa": {
+      "mesaFiles": {
+        "kind": "function",
+        "declaration": "472afda705b5d9c3"
+      },
+      "MesaFilesOptions": {
+        "kind": "interface",
+        "declaration": "250ee7e657b663f5"
+      },
+      "mesaMaxFileBytes": {
+        "kind": "const",
+        "declaration": "22f5afdabb8aed6a"
+      }
+    },
     "@mayurajs/filestorage-r2": {
       "R2BucketLike": {
         "kind": "interface",

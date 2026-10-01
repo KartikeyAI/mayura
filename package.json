@@ -79,6 +79,7 @@
     "@mayurajs/filestorage-files-sdk": "workspace:*",
     "@mayurajs/filestorage-gcs": "workspace:*",
     "@mayurajs/filestorage-google-drive": "workspace:*",
+    "@mayurajs/filestorage-mesa": "workspace:*",
     "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",

@@ -33,6 +33,7 @@ export const reviewedDependencies = {
   'filestorage-files-sdk': [],
   'filestorage-gcs': [],
   'filestorage-google-drive': [],
+  'filestorage-mesa': [],
   'filestorage-r2': [],
   'filestorage-vercel-blob': [],
   'voice-assemblyai': [],

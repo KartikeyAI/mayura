@@ -15,6 +15,7 @@
     { "path": "extensions/filestorage-files-sdk" },
     { "path": "extensions/filestorage-gcs" },
     { "path": "extensions/filestorage-google-drive" },
+    { "path": "extensions/filestorage-mesa" },
     { "path": "extensions/filestorage-r2" },
     { "path": "extensions/filestorage-vercel-blob" },
     { "path": "extensions/voice-assemblyai" },

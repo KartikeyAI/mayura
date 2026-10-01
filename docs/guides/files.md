@@ -126,6 +126,7 @@ Provider packages give `createFileStore` a backend for other services:
 | `@mayurajs/filestorage-google-drive` | One Google Drive folder (or the app's hidden folder), files named by their keys, with an OAuth `token` source. Listings read the whole folder; deletes go to the trash by default. | none: `ifMatch` and `ifNoneMatch` are refused |
 | `@mayurajs/filestorage-agentfs` | An AgentFS filesystem (Turso's SQLite filesystem for agents), keys as paths under a root. A file's etag is the SHA-256 of its content. | with `singleWriter: true`, writes and deletes; otherwise none |
 | `@mayurajs/filestorage-files-sdk` | Any [Files SDK](https://files-sdk.dev) provider: Supabase, Netlify Blobs, Dropbox, OneDrive, Box, SFTP, WebDAV and its other adapters. | what the Files SDK adapter declares |
+| `@mayurajs/filestorage-mesa` | A [Mesa](https://mesa.dev) repository: each write a change committed on a bookmark, rebased when another writer moved it. Files up to 128 KB; no media type or metadata. | none: `ifMatch` and `ifNoneMatch` are refused |
 
 ```ts
 import { createFileStore } from 'mayura/files';
