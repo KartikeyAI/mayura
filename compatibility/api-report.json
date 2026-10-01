@@ -7939,6 +7939,24 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/observability-arize": {
+      "ArizeRegion": {
+        "kind": "type",
+        "declaration": "9bfad31c7d5c93ab"
+      },
+      "arizeTraceExporter": {
+        "kind": "function",
+        "declaration": "d1a0bd9fe2ed50d8"
+      },
+      "ArizeTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "d3883a3538cc8c79"
+      },
+      "openInferenceAttributes": {
+        "kind": "function",
+        "declaration": "ba5a5bf64656e92a"
+      }
+    },
     "@mayurajs/observability-datadog": {
       "DatadogSite": {
         "kind": "type",

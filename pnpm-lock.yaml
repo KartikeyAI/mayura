@@ -107,6 +107,9 @@ importers:
       '@mayurajs/filestorage-vercel-blob':
         specifier: workspace:*
         version: link:extensions/filestorage-vercel-blob
+      '@mayurajs/observability-arize':
+        specifier: workspace:*
+        version: link:extensions/observability-arize
       '@mayurajs/observability-datadog':
         specifier: workspace:*
         version: link:extensions/observability-datadog
@@ -289,6 +292,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/filestorage-vercel-blob:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/observability-arize:
     devDependencies:
       mayura:
         specifier: workspace:*

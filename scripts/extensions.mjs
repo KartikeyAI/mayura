@@ -38,6 +38,7 @@ export const reviewedDependencies = {
   'filestorage-vercel-blob': [],
   'observability-langfuse': [],
   'observability-datadog': [],
+  'observability-arize': [],
   'voice-assemblyai': [],
   'voice-azure': [],
   'voice-cartesia': [],

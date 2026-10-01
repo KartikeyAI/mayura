@@ -84,6 +84,7 @@
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
     "@mayurajs/observability-langfuse": "workspace:*",
     "@mayurajs/observability-datadog": "workspace:*",
+    "@mayurajs/observability-arize": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",
