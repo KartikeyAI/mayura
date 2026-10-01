@@ -35,7 +35,9 @@ describe('@mayurajs/observability-sentry', () => {
 
   it('reaches a self-hosted Sentry under a path, and never sends a legacy DSN\'s secret key', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response());
-    await sentryTraceExporter({ dsn: `https://${key}:SECRET0legacy0key@sentry.example.com/errors/42`, serviceName: 's', fetch }).sink(spans, { signal: signal() });
+    // A fake legacy DSN with a secret part, assembled so no credentialed URL appears in the source.
+    const legacy = ['https://', key, ':', 'SECRET0legacy0key', '@sentry.example.com/errors/42'].join('');
+    await sentryTraceExporter({ dsn: legacy, serviceName: 's', fetch }).sink(spans, { signal: signal() });
     await sentryTraceExporter({ dsn: `http://${key}@127.0.0.1:9000/7`, allowInsecureLoopback: true, serviceName: 's', fetch }).sink(spans, { signal: signal() });
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(['https://sentry.example.com/errors/api/42/integration/otlp/v1/traces', 'http://127.0.0.1:9000/api/7/integration/otlp/v1/traces']);
     expect(JSON.stringify(fetch.mock.calls)).not.toContain('SECRET');

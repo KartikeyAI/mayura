@@ -11,7 +11,7 @@ import {
 } from '../src/deploy-index.js';
 
 const directories: string[] = [];
-afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
+afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
 async function project(files: Record<string, string> = {}): Promise<string> {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'mayura-deploy-test-'))); directories.push(root);
   const all = { 'package.json': JSON.stringify({ name: '@acme/Support Agent', version: '1.4.0' }), ...files };
