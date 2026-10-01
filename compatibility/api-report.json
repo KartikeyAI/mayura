@@ -7965,6 +7965,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/deploy-agentcore": {
+      "AgentCoreSettings": {
+        "kind": "interface",
+        "declaration": "2b768376b8270338"
+      },
+      "agentCoreTarget": {
+        "kind": "const",
+        "declaration": "9fd8eba056b932eb"
+      }
+    },
     "@mayurajs/deploy-aws-ecs": {
       "AwsEcsSettings": {
         "kind": "interface",

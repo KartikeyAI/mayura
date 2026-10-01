@@ -33,6 +33,7 @@ project's own dependencies.
 
 | Package | Target | Platform |
 |---|---|---|
+| `@mayurajs/deploy-agentcore` | `agentcore` | [Amazon Bedrock AgentCore Runtime](https://aws.amazon.com/bedrock/agentcore/): an ARM64 image serving its HTTP contract (`/invocations` calls your `invoke`, `/ping` reports busy while it runs), then the runtime updated and awaited |
 | `@mayurajs/deploy-aws-ecs` | `aws-ecs` | [Amazon ECS on Fargate](https://aws.amazon.com/ecs/): task definitions at the release's image, a one-off migration task whose exit code is checked, then both services rolled out and awaited |
 | `@mayurajs/deploy-aws-lambda` | `aws-lambda` | [AWS Lambda](https://aws.amazon.com/lambda/) (experimental): one container image for the API, workflows and migration functions; the migration runs and is checked before the others update |
 | `@mayurajs/deploy-azure` | `azure` | [Azure Container Apps](https://azure.microsoft.com/products/container-apps): a migration job run to success, then the server and worker apps, each new revision awaited |

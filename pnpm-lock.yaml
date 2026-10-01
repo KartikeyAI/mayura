@@ -83,6 +83,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/deploy-agentcore':
+        specifier: workspace:*
+        version: link:extensions/deploy-agentcore
       '@mayurajs/deploy-aws-ecs':
         specifier: workspace:*
         version: link:extensions/deploy-aws-ecs
@@ -287,6 +290,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/deploy-agentcore:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/deploy-aws-ecs:
     devDependencies:

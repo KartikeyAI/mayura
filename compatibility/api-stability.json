@@ -66,6 +66,7 @@
   ],
   "experimentalEntryPoints": [],
   "extensionEntryPoints": [
+    "@mayurajs/deploy-agentcore",
     "@mayurajs/deploy-aws-ecs",
     "@mayurajs/deploy-aws-lambda",
     "@mayurajs/deploy-azure",
