@@ -66,6 +66,7 @@
   "extensionEntryPoints": [
     "@mayurajs/filestorage-azure-blob",
     "@mayurajs/filestorage-gcs",
+    "@mayurajs/filestorage-google-drive",
     "@mayurajs/filestorage-r2",
     "@mayurajs/filestorage-vercel-blob",
     "@mayurajs/provider-anthropic",

@@ -89,6 +89,9 @@ importers:
       '@mayurajs/filestorage-gcs':
         specifier: workspace:*
         version: link:extensions/filestorage-gcs
+      '@mayurajs/filestorage-google-drive':
+        specifier: workspace:*
+        version: link:extensions/filestorage-google-drive
       '@mayurajs/filestorage-r2':
         specifier: workspace:*
         version: link:extensions/filestorage-r2
@@ -229,6 +232,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/filestorage-gcs:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/filestorage-google-drive:
     devDependencies:
       mayura:
         specifier: workspace:*

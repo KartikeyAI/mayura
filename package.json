@@ -74,6 +74,7 @@
     "@vercel/blob": "2.8.0",
     "@mayurajs/filestorage-azure-blob": "workspace:*",
     "@mayurajs/filestorage-gcs": "workspace:*",
+    "@mayurajs/filestorage-google-drive": "workspace:*",
     "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",

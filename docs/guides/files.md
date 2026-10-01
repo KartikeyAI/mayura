@@ -123,6 +123,7 @@ Provider packages give `createFileStore` a backend for other services:
 | `@mayurajs/filestorage-azure-blob` | Azure Blob Storage, over its REST API with an account key (Shared Key), a Microsoft Entra ID `token` source or a SAS. | writes and deletes |
 | `@mayurajs/filestorage-r2` | Cloudflare R2 through a Workers binding (`env.FILES`): no keys or endpoints. Outside Workers, use `s3Files`. | writes (the binding cannot delete conditionally) |
 | `@mayurajs/filestorage-vercel-blob` | A private Vercel Blob store, with its read-write `token`. Reads bypass the CDN cache. No custom metadata. | writes and deletes |
+| `@mayurajs/filestorage-google-drive` | One Google Drive folder (or the app's hidden folder), files named by their keys, with an OAuth `token` source. Listings read the whole folder; deletes go to the trash by default. | none: `ifMatch` and `ifNoneMatch` are refused |
 
 ```ts
 import { createFileStore } from 'mayura/files';

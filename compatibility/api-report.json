@@ -7817,6 +7817,16 @@
         "declaration": "15d08b9f8241584b"
       }
     },
+    "@mayurajs/filestorage-google-drive": {
+      "googleDriveFiles": {
+        "kind": "function",
+        "declaration": "98ebdaf597348a70"
+      },
+      "GoogleDriveFilesOptions": {
+        "kind": "interface",
+        "declaration": "35056f892cfae0b4"
+      }
+    },
     "@mayurajs/filestorage-r2": {
       "R2BucketLike": {
         "kind": "interface",

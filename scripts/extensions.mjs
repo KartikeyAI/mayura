@@ -30,6 +30,7 @@ export const reviewedDependencies = {
   'storage-mysql': ['mysql2'],
   'filestorage-azure-blob': [],
   'filestorage-gcs': [],
+  'filestorage-google-drive': [],
   'filestorage-r2': [],
   'filestorage-vercel-blob': [],
   'voice-assemblyai': [],
