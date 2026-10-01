@@ -34,6 +34,7 @@ project's own dependencies.
 | Package | Target | Platform |
 |---|---|---|
 | `@mayurajs/deploy-fly` | `fly` | [Fly.io](https://fly.io): `serve` and `worker` process groups, the migration as the release command, built by Fly's builders, your Docker, or pushed to your registry |
+| `@mayurajs/deploy-railway` | `railway` | [Railway](https://railway.com): a server service and a worker service with config-as-code files, each migrating before it goes live |
 
 ## mayura.deploy.json
 

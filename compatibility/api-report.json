@@ -7979,6 +7979,16 @@
         "declaration": "303d990d50ae427d"
       }
     },
+    "@mayurajs/deploy-railway": {
+      "RailwaySettings": {
+        "kind": "interface",
+        "declaration": "dc86087a09a08c0c"
+      },
+      "railwayTarget": {
+        "kind": "const",
+        "declaration": "4732d64b4302c3b6"
+      }
+    },
     "@mayurajs/filestorage-agentfs": {
       "agentFsFiles": {
         "kind": "function",
