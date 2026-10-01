@@ -5,4 +5,5 @@ export {
 } from './sandboxes.js';
 export { sandboxPerRun, type SandboxPerRun } from './per-run.js';
 export { parseSandboxListing, sandboxScripts } from './scripts.js';
+export { commandSandboxBackend, type CommandTransport } from './command-backend.js';
 export { sandboxTools, type SandboxSource, type SandboxToolsOptions } from './tools.js';

@@ -185,6 +185,9 @@ importers:
       '@mayurajs/provider-openai':
         specifier: workspace:*
         version: link:extensions/provider-openai
+      '@mayurajs/sandbox-agentcore':
+        specifier: workspace:*
+        version: link:extensions/sandbox-agentcore
       '@mayurajs/sandbox-daytona':
         specifier: workspace:*
         version: link:extensions/sandbox-daytona
@@ -540,6 +543,16 @@ importers:
       openai:
         specifier: 7.23.0
         version: 7.23.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@7.29.1)(ws@8.22.0)(zod@4.6.5)
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/sandbox-agentcore:
+    dependencies:
+      '@aws-sdk/client-bedrock-agentcore':
+        specifier: 3.1141.0
+        version: 3.1141.0
     devDependencies:
       mayura:
         specifier: workspace:*
@@ -1393,6 +1406,10 @@ packages:
 
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
+
+  '@aws-sdk/client-bedrock-agentcore@3.1141.0':
+    resolution: {integrity: sha512-NqFLijSSTQBmM2HzEL8x2O8LFOGOuDXt9/8Mb7cXEPUEzSINUMsbgoZRdI3cQlOySn+WA9O2t+SuE8J7AliSTQ==}
+    engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-bedrock-runtime@3.1141.0':
     resolution: {integrity: sha512-AoA3qW7HcFDa2MoZu9hozh68mBYI5KyvhHxN8Cbi5UtSTDDfq0JXW2fXGg7UzVNKVPRyRq2lrOQRzKPB1UEDxQ==}
@@ -4745,6 +4762,17 @@ snapshots:
   '@asamuzakjp/generational-cache@1.0.1': {}
 
   '@asamuzakjp/nwsapi@2.3.9': {}
+
+  '@aws-sdk/client-bedrock-agentcore@3.1141.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.0
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
 
   '@aws-sdk/client-bedrock-runtime@3.1141.0':
     dependencies:

@@ -196,6 +196,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-vercel` | [Vercel Sandbox](https://vercel.com/docs/sandbox) Firecracker microVMs; no standard input | none, all, domains | public URL (1024 and up) | no |
 | `@mayurajs/sandbox-daytona` | [Daytona](https://www.daytona.io) sandboxes from a snapshot | none, all, domains | signed URL | with `desktop: true` |
 | `@mayurajs/sandbox-fly` | [Fly.io Machines](https://fly.io/docs/machines/) in one of your apps | all only | no | no |
+| `@mayurajs/sandbox-agentcore` | [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) Code Interpreter sessions | as the interpreter was made | no | no |
 
 ## Writing a provider
 
@@ -208,6 +209,13 @@ started when `exec`'s signal aborts.
 A provider whose API only runs commands can do the rest with `sandboxScripts` from `mayura/sandbox`: shell scripts that
 read, list and remove files, and stop every process of a command by a tag in its environment (`sandboxScripts.kill`),
 with `parseSandboxListing` for the listing.
+
+A provider whose API runs only short commands and answers with text can get the whole contract from
+`commandSandboxBackend(id, transport, release)`: give it a `transport` whose `run(command, { stdin, signal })` runs a
+short command and resolves with its exit code and stdout. Commands then start in the background and are polled to
+their end, output and files move as base64 in chunks (inside the command line when the transport takes no standard
+input), and a timeout or cancellation stops every process a command started. Fly Machines and AgentCore are built on
+it.
 
 `sandboxConformance` from `mayura/sandbox/testing` runs the contract against a real sandbox:
 

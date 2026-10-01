@@ -84,6 +84,7 @@
     "@mayurajs/sandbox-fly": "workspace:*",
     "@mayurajs/sandbox-vercel": "workspace:*",
     "@mayurajs/sandbox-daytona": "workspace:*",
+    "@mayurajs/sandbox-agentcore": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",
