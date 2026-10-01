@@ -12,6 +12,7 @@
     { "path": "extensions/storage-mysql" },
     { "path": "extensions/filestorage-agentfs" },
     { "path": "extensions/filestorage-azure-blob" },
+    { "path": "extensions/filestorage-files-sdk" },
     { "path": "extensions/filestorage-gcs" },
     { "path": "extensions/filestorage-google-drive" },
     { "path": "extensions/filestorage-r2" },

@@ -66,6 +66,7 @@
   "extensionEntryPoints": [
     "@mayurajs/filestorage-agentfs",
     "@mayurajs/filestorage-azure-blob",
+    "@mayurajs/filestorage-files-sdk",
     "@mayurajs/filestorage-gcs",
     "@mayurajs/filestorage-google-drive",
     "@mayurajs/filestorage-r2",

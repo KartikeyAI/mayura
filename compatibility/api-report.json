@@ -7821,6 +7821,24 @@
         "declaration": "dc4dcc39e20835c2"
       }
     },
+    "@mayurajs/filestorage-files-sdk": {
+      "FilesSdkFileLike": {
+        "kind": "interface",
+        "declaration": "311210ca84749db0"
+      },
+      "filesSdkFiles": {
+        "kind": "function",
+        "declaration": "cc70d43ee3a42ab4"
+      },
+      "FilesSdkFilesOptions": {
+        "kind": "interface",
+        "declaration": "b528ea255d5615a7"
+      },
+      "FilesSdkLike": {
+        "kind": "interface",
+        "declaration": "e2d1b1656e1ada56"
+      }
+    },
     "@mayurajs/filestorage-gcs": {
       "gcsFiles": {
         "kind": "function",
