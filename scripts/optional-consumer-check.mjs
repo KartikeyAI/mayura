@@ -14,13 +14,13 @@ import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote', 'files', 'voice'];
 const expectedDependencies = {
-  core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core', '@mayura/tools'],
+  core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core', '@mayura/files', '@mayura/tools', '@mayura/voice'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools', 'zod'], server: ['@mayura/core', '@mayura/runtime'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'client-react': ['@mayura/client'],
-  'exporter-otlp': ['@mayura/core', '@mayura/observability'],
+  'exporter-otlp': ['@mayura/core', '@mayura/observability', '@opentelemetry/api'],
   'storage-contracts': ['@mayura/core'], workflows: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/tools'],
   guardrails: ['@mayura/core'],
   workstream: ['@mayura/core', '@mayura/storage-contracts'],
@@ -28,11 +28,13 @@ const expectedDependencies = {
   'code-mode-workflows': ['@mayura/code-mode', '@mayura/core', '@mayura/storage-contracts', '@mayura/tools', '@mayura/workflows'],
   'adapter-code-quickjs': ['@jitl/quickjs-wasmfile-release-sync', '@mayura/code-mode', '@mayura/core', 'quickjs-emscripten-core'],
   'adapter-code-docker': ['@mayura/adapter-code-quickjs', '@mayura/code-mode', '@mayura/core'],
-  artifacts: ['@mayura/core'],
+  artifacts: ['@mayura/core', '@mayura/files'],
   'provider-openai': ['@mayura/core'],
   'provider-anthropic': ['@mayura/core'],
   memory: ['@mayura/core', '@mayura/storage-contracts'],
   'memory-remote': ['@mayura/core', '@mayura/memory'],
+  files: ['@mayura/core', '@mayura/tools'],
+  voice: ['@mayura/core', '@mayura/tools'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
@@ -248,6 +250,16 @@ async function main() {
     if (name === '@types/react') assert.deepEqual(Object.keys(manifest.dependencies ?? {}), ['csstype']); else assert.deepEqual(manifest.dependencies ?? {}, {});
     packages.set(name, { archive: pathToFileURL(destination).href, manifest }); reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
+  // The OpenTelemetry API, an optional peer of the exporter's bridge entry point: pure JavaScript, no dependencies.
+  const otelDirectory = await realpath(join(workspace, 'node_modules', '@opentelemetry', 'api'));
+  const otelOriginal = JSON.parse(await readFile(join(otelDirectory, 'package.json'), 'utf8'));
+  assert.equal(otelOriginal.version, '1.9.1'); assert.equal(otelOriginal.license, 'Apache-2.0');
+  for (const script of ['preinstall', 'install', 'postinstall']) assert.equal(otelOriginal.scripts?.[script], undefined, '@opentelemetry/api has an unreviewed installation script.');
+  const otelDestination = join(tarballs, 'opentelemetry-api.tgz'); await run([pnpm, 'pack', '--out', otelDestination], otelDirectory);
+  const otelBytes = await readFile(otelDestination); const otelFiles = archive(otelBytes); const otelManifest = JSON.parse(otelFiles.get('package.json').toString('utf8'));
+  assert.equal(otelManifest.name, '@opentelemetry/api'); assert.equal(otelManifest.version, '1.9.1'); assert.deepEqual(otelManifest.dependencies ?? {}, {});
+  packages.set('@opentelemetry/api', { archive: pathToFileURL(otelDestination).href, manifest: otelManifest });
+  reports.push({ name: '@opentelemetry/api', version: otelManifest.version, tarballBytes: otelBytes.length, files: otelFiles.size });
   const closure = roots => {
     const result = new Set(); const visit = name => {
       if (result.has(name)) return; result.add(name); const pkg = packages.get(name); assert(pkg, `Unqualified dependency: ${name}`);

@@ -1797,6 +1797,32 @@
         "declaration": "2b7d237834fe34fc"
       }
     },
+    "@mayura/exporter-otlp/opentelemetry": {
+      "createOpenTelemetryRunMetrics": {
+        "kind": "function",
+        "declaration": "2ba9a2d156e6c617"
+      },
+      "createOpenTelemetryTraceBridge": {
+        "kind": "function",
+        "declaration": "4e8edc7ea4ba480f"
+      },
+      "OpenTelemetryRunMetrics": {
+        "kind": "interface",
+        "declaration": "621bd0386242b3da"
+      },
+      "OpenTelemetryRunMetricsOptions": {
+        "kind": "interface",
+        "declaration": "c76bf734ce4ac53c"
+      },
+      "OpenTelemetryTraceBridge": {
+        "kind": "interface",
+        "declaration": "cd092cb70c680301"
+      },
+      "OpenTelemetryTraceBridgeOptions": {
+        "kind": "interface",
+        "declaration": "8d560be0d429c933"
+      }
+    },
     "@mayura/files": {
       "BackendGetOptions": {
         "kind": "interface",

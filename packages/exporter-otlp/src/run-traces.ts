@@ -27,7 +27,7 @@ function derivedId(parts: readonly string[], length: 16 | 32): string {
 const providerNames: Readonly<Record<string, string>> = { openai: 'openai', anthropic: 'anthropic', bedrock: 'aws.bedrock', azure: 'azure.ai.openai',
   google: 'gcp.gemini', vertex: 'gcp.vertex_ai', mistral: 'mistral_ai', groq: 'groq', cohere: 'cohere', deepseek: 'deepseek', xai: 'x_ai', perplexity: 'perplexity' };
 /** GenAI attributes for a model call, from a registry id such as `openai/gpt-5`; nothing for an id without a provider. */
-function modelAttributes(modelId: unknown): OtlpSpanAttributes {
+export function modelAttributes(modelId: unknown): OtlpSpanAttributes {
   if (typeof modelId !== 'string' || !stable.test(modelId)) return {};
   const slash = modelId.indexOf('/');
   if (slash <= 0) return { 'mayura.model.id': modelId };

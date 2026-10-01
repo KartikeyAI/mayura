@@ -27,6 +27,7 @@ points listed:
 | `pg` | `mayura/storage-postgres`, `mayura/storage` |
 | `quickjs-emscripten-core` and `@jitl/quickjs-wasmfile-release-sync` | `mayura/adapter-code-quickjs` |
 | `react` | `mayura/client-react`, `mayura/client-react/components` |
+| `@opentelemetry/api` | `mayura/exporter-otlp/opentelemetry` |
 
 ```bash
 npm install mayura better-sqlite3
@@ -128,6 +129,7 @@ validator works too.
 |---|---|---|---|
 | `mayura/observability` | Metadata-only observation of runs: status, counters and cost. | `createObserver`, `snapshotRunEventMetadata` | |
 | `mayura/exporter-otlp` | Exporting logs, traces and metrics over OTLP/HTTP JSON. | `createOtlpHttpJsonLogExporter`, `createOtlpHttpJsonTraceExporter`, `createOtlpHttpJsonMetricExporter`, `agentRunTraceSpans` | |
+| `mayura/exporter-otlp/opentelemetry` | Sending spans and metrics through your application's OpenTelemetry SDK. | `createOpenTelemetryTraceBridge`, `createOpenTelemetryRunMetrics` | `@opentelemetry/api` |
 
 ## For host and adapter authors
 

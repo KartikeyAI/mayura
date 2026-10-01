@@ -20,6 +20,7 @@
     "@mayura/context",
     "@mayura/core",
     "@mayura/exporter-otlp",
+    "@mayura/exporter-otlp/opentelemetry",
     "@mayura/files",
     "@mayura/guardrails",
     "@mayura/helpers",

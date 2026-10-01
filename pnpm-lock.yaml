@@ -724,6 +724,9 @@ importers:
       '@mayura/observability':
         specifier: workspace:*
         version: link:../observability
+      '@opentelemetry/api':
+        specifier: 1.9.1
+        version: 1.9.1
 
   packages/files:
     dependencies:

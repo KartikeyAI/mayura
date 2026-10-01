@@ -199,6 +199,45 @@ await metrics.sink([
 ], { signal: AbortSignal.timeout(10_000) });
 ```
 
+### Through your OpenTelemetry SDK
+
+If your application already runs an OpenTelemetry SDK, send Mayura's spans and metrics through it instead of a second
+exporter: they then share your resource, sampler, processors and exporters, and hang under your request spans.
+`mayura/exporter-otlp/opentelemetry` needs `@opentelemetry/api` 1.9.1 or a later 1.x, which your SDK already installs.
+
+```ts
+import { metrics, trace } from '@opentelemetry/api';
+import { agentRunTraceSpans } from 'mayura/exporter-otlp';
+import { createOpenTelemetryRunMetrics, createOpenTelemetryTraceBridge } from 'mayura/exporter-otlp/opentelemetry';
+import { createObserver } from 'mayura/observability';
+
+const traces = createOpenTelemetryTraceBridge({ tracer: trace.getTracer('orders-agent') });
+const runMetrics = createOpenTelemetryRunMetrics({ meter: metrics.getMeter('orders-agent') });
+const observer = createObserver({ sink: runMetrics.sink });
+
+// After a run settles:
+await traces.sink(agentRunTraceSpans(observer.inspect(handle.id)?.recent ?? []), { signal: AbortSignal.timeout(10_000) });
+```
+
+`createOpenTelemetryTraceBridge({ tracer, context?, maxRememberedSpans?, maxBatchSize? })` takes the same spans as the
+OTLP trace exporter, so `sink` also works as the `sink` of `createWorkflowTraceExport`. Your SDK assigns trace and
+span ids. A span's parent is linked when it is in the same batch or was exported through the bridge earlier (the last
+4,096 span ids are remembered); otherwise the span starts in `context()`, by default the active context. Model call
+spans are `CLIENT` spans, the rest `INTERNAL`. A batch with any span outside the attribute catalog is refused whole.
+
+`createOpenTelemetryRunMetrics({ meter, maxRuns? })` is an observer sink that records:
+
+| Metric | Kind | Attributes |
+| --- | --- | --- |
+| `gen_ai.client.operation.duration` | histogram, seconds | `gen_ai.operation.name: chat`, `gen_ai.provider.name`, `gen_ai.request.model`, `mayura.model.id` |
+| `gen_ai.client.token.usage` | histogram, tokens | the same, and `gen_ai.token.type` (`input` or `output`) |
+| `mayura.cost.micros` | counter | the same as the duration |
+| `mayura.tool.calls` | counter | `gen_ai.tool.name`, `mayura.tool.status` |
+| `mayura.runs` | counter | `mayura.run.status`, `gen_ai.agent.id` |
+
+A model call is recorded when it completes; one whose start the observer never delivered is skipped, and so is a
+failed call, which has no completion event. Token usage is recorded only when the provider reports it.
+
 ## Trace durable workflow runs
 
 For [durable workflows](durable-workflows.md), `createWorkflowTraceExport` in `mayura/workflows` exports each settled

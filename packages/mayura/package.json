@@ -85,6 +85,10 @@
       "types": "./dist/exporter-otlp.d.ts",
       "import": "./dist/exporter-otlp.js"
     },
+    "./exporter-otlp/opentelemetry": {
+      "types": "./dist/exporter-otlp__opentelemetry.d.ts",
+      "import": "./dist/exporter-otlp__opentelemetry.js"
+    },
     "./files": {
       "types": "./dist/files.d.ts",
       "import": "./dist/files.js"

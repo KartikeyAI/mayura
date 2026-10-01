@@ -2,7 +2,7 @@ import { assertPositiveInteger, jsonValue, MayuraError, type JsonObject, type Js
 import type {
   ExactCount, OtlpHttpJsonMetricExporter, OtlpHttpJsonMetricExporterOptions, OtlpHttpJsonSignalExporterOptions,
   OtlpHttpJsonTraceExporter, OtlpHttpJsonTraceExporterOptions, OtlpLogExporterMetrics, OtlpMetricPoint,
-  OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpTraceSpan,
+  OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpSpanAttributes, OtlpTraceSpan,
 } from './contracts.js';
 
 const defaults = Object.freeze({ timeoutMs: 5_000, maxBatchSize: 256, maxRequestBytes: 1_048_576, maxResponseBytes: 65_536 });
@@ -73,7 +73,8 @@ function spanAttributes(value: JsonValue | undefined): JsonObject[] {
     return { key, value: typeof item === 'string' ? { stringValue: item } : { intValue: String(item) } };
   });
 }
-function span(value: unknown): JsonObject {
+/** A span checked against the bounds and the attribute catalog, as a plain copy: what the OTLP encoder and the OpenTelemetry bridge accept. */
+export function checkedSpan(value: unknown): OtlpTraceSpan {
   const raw = object(jsonValue(value, { maxBytes: 8_192, maxDepth: 4, maxNodes: 96 }));
   if (Object.keys(raw).some(key => !['traceId', 'spanId', 'parentSpanId', 'name', 'startTimeUnixNano', 'endTimeUnixNano', 'status', 'runId', 'attributes'].includes(key))
     || typeof raw['traceId'] !== 'string' || !traceId.test(raw['traceId']) || typeof raw['spanId'] !== 'string' || !spanId.test(raw['spanId'])
@@ -82,10 +83,17 @@ function span(value: unknown): JsonObject {
     || (raw['runId'] !== undefined && (typeof raw['runId'] !== 'string' || !stablePattern.test(raw['runId'])))) throw new MayuraError('INVALID_INPUT', 'Trace span metadata is invalid.');
   const start = nano(raw['startTimeUnixNano'], 'Span start'); const end = nano(raw['endTimeUnixNano'], 'Span end');
   if (BigInt(end) < BigInt(start)) throw new MayuraError('INVALID_INPUT', 'Span end must not precede its start.');
-  const status = raw['status'] === 'ok' ? 1 : raw['status'] === 'error' ? 2 : 0;
-  return { traceId: raw['traceId'], spanId: raw['spanId'], ...(raw['parentSpanId'] === undefined ? {} : { parentSpanId: raw['parentSpanId'] }), name: raw['name'], kind: 1,
-    startTimeUnixNano: start, endTimeUnixNano: end, status: { code: status },
-    attributes: [...attributes({ 'mayura.run.id': raw['runId'] as string | undefined }), ...spanAttributes(raw['attributes'])] };
+  spanAttributes(raw['attributes']);
+  return { traceId: raw['traceId'], spanId: raw['spanId'], ...(raw['parentSpanId'] === undefined ? {} : { parentSpanId: raw['parentSpanId'] as string }), name: raw['name'],
+    startTimeUnixNano: start, endTimeUnixNano: end, status: raw['status'] as OtlpTraceSpan['status'], ...(raw['runId'] === undefined ? {} : { runId: raw['runId'] as string }),
+    ...(raw['attributes'] === undefined ? {} : { attributes: raw['attributes'] as OtlpSpanAttributes }) };
+}
+function span(value: unknown): JsonObject {
+  const checked = checkedSpan(value);
+  const status = checked.status === 'ok' ? 1 : checked.status === 'error' ? 2 : 0;
+  return { traceId: checked.traceId, spanId: checked.spanId, ...(checked.parentSpanId === undefined ? {} : { parentSpanId: checked.parentSpanId }), name: checked.name, kind: 1,
+    startTimeUnixNano: checked.startTimeUnixNano, endTimeUnixNano: checked.endTimeUnixNano, status: { code: status },
+    attributes: [...attributes({ 'mayura.run.id': checked.runId }), ...spanAttributes(checked.attributes as JsonValue | undefined)] };
 }
 function point(value: unknown): { readonly name: string; readonly kind: 'gauge'; readonly data: JsonObject }
   | { readonly name: string; readonly kind: 'sum'; readonly data: JsonObject; readonly monotonic: boolean } {

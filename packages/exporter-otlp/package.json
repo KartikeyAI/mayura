@@ -1,7 +1,10 @@
 {
   "name": "@mayura/exporter-otlp", "version": "1.0.0", "private": true,
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./opentelemetry": { "types": "./dist/opentelemetry.d.ts", "import": "./dist/opentelemetry.js" }
+  },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
-  "dependencies": { "@mayura/core": "workspace:*", "@mayura/observability": "workspace:*" }
+  "dependencies": { "@mayura/core": "workspace:*", "@mayura/observability": "workspace:*", "@opentelemetry/api": "1.9.1" }
 }
