@@ -136,6 +136,9 @@ export interface OtlpHttpJsonTraceExporter {
   inspect(): OtlpSignalExporterSnapshot;
   close(): void;
 }
+/** The protobuf trace exporter takes the same options and has the same shape as the JSON one. */
+export type OtlpHttpProtobufTraceExporterOptions = OtlpHttpJsonTraceExporterOptions;
+export type OtlpHttpProtobufTraceExporter = OtlpHttpJsonTraceExporter;
 export interface OtlpHttpJsonMetricExporter {
   readonly sink: (points: readonly OtlpMetricPoint[], context: { readonly signal: AbortSignal }) => Promise<void>;
   inspect(): OtlpSignalExporterSnapshot;

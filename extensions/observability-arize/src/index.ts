@@ -1,5 +1,8 @@
 import { MayuraError } from 'mayura';
-import { createOtlpHttpJsonTraceExporter, type OtlpExtraAttributes, type OtlpHttpJsonTraceExporter, type OtlpHttpJsonTraceExporterOptions, type OtlpTraceSpan } from 'mayura/exporter-otlp';
+import {
+  createOtlpHttpJsonTraceExporter, createOtlpHttpProtobufTraceExporter, type OtlpExtraAttributes, type OtlpHttpJsonTraceExporter, type OtlpHttpJsonTraceExporterOptions,
+  type OtlpHttpProtobufTraceExporter, type OtlpHttpProtobufTraceExporterOptions, type OtlpTraceSpan,
+} from 'mayura/exporter-otlp';
 
 /** Arize AX's data regions. */
 export type ArizeRegion = 'us' | 'eu' | 'ca';
@@ -58,6 +61,41 @@ export function arizeTraceExporter(options: ArizeTraceExporterOptions): OtlpHttp
   const { spaceId, apiKey, projectName, region: _region, ...exporter } = options;
   return createOtlpHttpJsonTraceExporter({
     ...exporter, endpoint: regions[region], headers: { space_id: spaceId, api_key: apiKey },
+    resourceAttributes: { ...options.resourceAttributes, 'openinference.project.name': projectName }, spanAttributes: openInferenceAttributes,
+  });
+}
+
+export interface PhoenixTraceExporterOptions extends Omit<OtlpHttpProtobufTraceExporterOptions, 'endpoint' | 'headers' | 'spanAttributes' | 'standardPath'> {
+  /**
+   * Phoenix's address: a self-hosted Phoenix, such as `https://phoenix.example.com` or `http://127.0.0.1:6006` with
+   * `allowInsecureLoopback`, or a Phoenix Cloud space, `https://app.phoenix.arize.com/s/<space>`.
+   */
+  readonly baseUrl: string;
+  /** A Phoenix API key, when authentication is on (always on Phoenix Cloud). Copied once; never shown by `inspect()` or in errors. */
+  readonly apiKey?: string;
+  /** The project the traces belong to: a stable identifier such as `support-agent`. */
+  readonly projectName: string;
+}
+
+/**
+ * An OTLP trace exporter for Arize Phoenix, which takes only protobuf: give its `sink` the spans of
+ * `agentRunTraceSpans` or of `createWorkflowTraceExport`. Spans carry the same OpenInference attributes as for Arize AX.
+ */
+export function phoenixTraceExporter(options: PhoenixTraceExporterOptions): OtlpHttpProtobufTraceExporter {
+  if (!options || typeof options !== 'object') throw new MayuraError('INVALID_CONFIG', 'Phoenix needs its options.');
+  let endpoint: string;
+  try {
+    if (typeof options.baseUrl !== 'string' || options.baseUrl.length > 2_000) throw new Error();
+    const url = new URL(options.baseUrl);
+    if (url.username || url.password || url.search || url.hash) throw new Error();
+    // The exporter decides whether the scheme and host are allowed; this only places OTLP's trace path.
+    endpoint = `${url.origin}${url.pathname.replace(/\/+$/u, '')}/v1/traces`;
+  } catch { throw new MayuraError('INVALID_CONFIG', 'The Phoenix baseUrl must be an explicit URL without credentials, query or fragment.'); }
+  if (options.apiKey !== undefined && (typeof options.apiKey !== 'string' || !/^[A-Za-z0-9+/=._-]{8,2048}$/u.test(options.apiKey))) throw new MayuraError('INVALID_CONFIG', 'The Phoenix API key is malformed.');
+  if (typeof options.projectName !== 'string' || !stable.test(options.projectName)) throw new MayuraError('INVALID_CONFIG', 'The Phoenix project name must be a stable identifier, such as support-agent.');
+  const { baseUrl: _baseUrl, apiKey, projectName, ...exporter } = options;
+  return createOtlpHttpProtobufTraceExporter({
+    ...exporter, endpoint, ...(apiKey === undefined ? {} : { headers: { Authorization: `Bearer ${apiKey}` } }),
     resourceAttributes: { ...options.resourceAttributes, 'openinference.project.name': projectName }, spanAttributes: openInferenceAttributes,
   });
 }

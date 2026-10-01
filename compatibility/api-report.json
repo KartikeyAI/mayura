@@ -1724,6 +1724,10 @@
         "kind": "function",
         "declaration": "f71d7cb4c220dab8"
       },
+      "createOtlpHttpProtobufTraceExporter": {
+        "kind": "function",
+        "declaration": "d8d97e7ebbdc95c0"
+      },
       "ExactCount": {
         "kind": "type",
         "declaration": "fc1f203aa74386ee"
@@ -1759,6 +1763,14 @@
       "OtlpHttpJsonTraceExporterOptions": {
         "kind": "interface",
         "declaration": "dba8ff6c2617b7f0"
+      },
+      "OtlpHttpProtobufTraceExporter": {
+        "kind": "type",
+        "declaration": "8e41c088340c4798"
+      },
+      "OtlpHttpProtobufTraceExporterOptions": {
+        "kind": "type",
+        "declaration": "63b43659128c0426"
       },
       "OtlpLogExporterMetrics": {
         "kind": "interface",
@@ -7955,6 +7967,14 @@
       "openInferenceAttributes": {
         "kind": "function",
         "declaration": "ba5a5bf64656e92a"
+      },
+      "phoenixTraceExporter": {
+        "kind": "function",
+        "declaration": "c3f5b3a5a37f2d44"
+      },
+      "PhoenixTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "054576449b06336d"
       }
     },
     "@mayurajs/observability-betterstack": {

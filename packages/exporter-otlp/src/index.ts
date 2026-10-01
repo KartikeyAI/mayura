@@ -1,5 +1,5 @@
 export { createOtlpHttpJsonLogExporter } from './otlp-http-json.js';
-export { createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter } from './signals.js';
+export { createOtlpHttpJsonMetricExporter, createOtlpHttpJsonTraceExporter, createOtlpHttpProtobufTraceExporter } from './signals.js';
 export { agentRunTraceSpans, type AgentRunTraceOptions } from './run-traces.js';
 export type {
   OtlpSpanAttributeName,
@@ -16,6 +16,8 @@ export type {
   OtlpHttpJsonSignalExporterOptions,
   OtlpHttpJsonTraceExporter,
   OtlpHttpJsonTraceExporterOptions,
+  OtlpHttpProtobufTraceExporter,
+  OtlpHttpProtobufTraceExporterOptions,
   OtlpMetricName,
   OtlpMetricPoint,
   OtlpSignalExporterMetrics,

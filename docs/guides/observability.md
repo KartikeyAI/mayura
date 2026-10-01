@@ -157,6 +157,10 @@ Attributes from `resourceAttributes` and `spanAttributes` follow the catalog's r
 keys outside the catalog, `mayura.*` and `service.*`, and values that are stable identifiers or non-negative integers,
 so they cannot carry free text. A `spanAttributes` result outside these rules refuses the batch, like an invalid span.
 
+For a collector or provider that takes only protobuf, `createOtlpHttpProtobufTraceExporter` takes the same options
+and sends OTLP's protobuf encoding (`application/x-protobuf`), checked exactly as the JSON is; it needs no protobuf
+library.
+
 Each exporter sends one request at a time (a second concurrent call is refused), follows no redirects and never
 retries. `inspect()` reports attempted, accepted and dropped records, partial rejections, failures and timeouts.
 `close()` aborts the request in flight.
@@ -215,7 +219,7 @@ show Mayura's spans as AI traces. Each returns the exporter, so `sink`, `inspect
 | --- | --- | --- |
 | `@mayurajs/observability-langfuse` | [Langfuse](https://langfuse.com) Cloud (EU, US, JP, HIPAA) or self-hosted: `langfuseTraceExporter({ publicKey, secretKey, region })` | traces |
 | `@mayurajs/observability-datadog` | [Datadog](https://www.datadoghq.com) APM or LLM Observability, on any Datadog site: `datadogTraceExporter({ apiKey, site, llmObservability })` | traces |
-| `@mayurajs/observability-arize` | [Arize AX](https://arize.com) (US, EU, Canada), with OpenInference attributes: `arizeTraceExporter({ spaceId, apiKey, projectName, region })` | traces |
+| `@mayurajs/observability-arize` | [Arize AX](https://arize.com) (US, EU, Canada), with OpenInference attributes: `arizeTraceExporter({ spaceId, apiKey, projectName, region })`; [Phoenix](https://phoenix.arize.com), self-hosted or Cloud, over protobuf: `phoenixTraceExporter({ baseUrl, apiKey, projectName })` | traces |
 | `@mayurajs/observability-sentry` | [Sentry](https://sentry.io), any region or self-hosted, with Sentry's `gen_ai.*` span ops: `sentryTraceExporter({ dsn })` | traces (Sentry's OTLP ingestion is in beta) |
 | `@mayurajs/observability-betterstack` | A [Better Stack](https://betterstack.com) OpenTelemetry source: `betterStackTraceExporter({ sourceToken, ingestingHost })` | traces |
 | `@mayurajs/observability-posthog` | [PostHog](https://posthog.com) LLM analytics (US, EU): model calls as `$ai_generation` events: `posthogTraceExporter({ projectToken, region, distinctId })` | traces |

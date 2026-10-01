@@ -1,9 +1,10 @@
 import { assertPositiveInteger, jsonValue, MayuraError, type JsonObject, type JsonValue } from '@mayura/core';
 import type {
   ExactCount, OtlpHttpJsonMetricExporter, OtlpHttpJsonMetricExporterOptions, OtlpHttpJsonSignalExporterOptions,
-  OtlpHttpJsonTraceExporter, OtlpHttpJsonTraceExporterOptions, OtlpLogExporterMetrics, OtlpMetricPoint,
+  OtlpHttpJsonTraceExporter, OtlpHttpJsonTraceExporterOptions, OtlpHttpProtobufTraceExporter, OtlpHttpProtobufTraceExporterOptions, OtlpLogExporterMetrics, OtlpMetricPoint,
   OtlpExtraAttributes, OtlpSignalExporterSnapshot, OtlpSpanAttributeName, OtlpSpanAttributes, OtlpTraceSpan,
 } from './contracts.js';
+import { otlpPartialSuccess, otlpTraceProtobuf } from './protobuf.js';
 
 const defaults = Object.freeze({ timeoutMs: 5_000, maxBatchSize: 256, maxRequestBytes: 1_048_576, maxResponseBytes: 65_536 });
 const metrics = ['batchesAttempted', 'recordsAttempted', 'recordsAccepted', 'recordsDropped', 'partialResponses', 'failedRequests', 'timedOutRequests', 'cancelledRequests', 'requestBytes', 'responseBytes'] as const;
@@ -158,15 +159,19 @@ async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise
   try { return await Promise.race([operation, new Promise<never>((_, reject) => { listener = () => reject(signal.reason); signal.addEventListener('abort', listener, { once: true }); if (signal.aborted) listener(); })]); }
   finally { if (listener) signal.removeEventListener('abort', listener); }
 }
-async function responsePayload(response: Response, limit: number, signal: AbortSignal, charge: (bytes: number) => void): Promise<JsonObject> {
+async function responsePayload(response: Response, limit: number, signal: AbortSignal, charge: (bytes: number) => void,
+  protobuf?: 'rejectedSpans' | 'rejectedDataPoints'): Promise<JsonObject> {
   if (response.status !== 200 || response.redirected) { void response.body?.cancel().catch(() => undefined); return failed(); }
   if (!response.body) return {}; const length = response.headers.get('content-length');
   if (length !== null && (!/^\d+$/.test(length) || Number(length) > limit)) { void response.body.cancel().catch(() => undefined); return failed(); }
   const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
   try {
     for (;;) { const item = await abortable(reader.read(), signal); if (item.done) break; size += item.value.byteLength; charge(item.value.byteLength); if (size > limit) return failed(); chunks.push(item.value); }
-    if (!size) return {}; if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) return failed();
+    if (!size) return {}; const type = response.headers.get('content-type') ?? '';
     const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    // A protobuf request is answered in protobuf, though a collector may answer in JSON.
+    if (protobuf && /^application\/x-protobuf(?:\s*;|$)/iu.test(type)) return otlpPartialSuccess(bytes, protobuf);
+    if (!/^application\/json(?:\s*;|$)/iu.test(type)) return failed();
     return object(jsonValue(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), { maxBytes: limit, maxDepth: 8, maxNodes: 1_024 }));
   } finally { void reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
@@ -177,7 +182,7 @@ function rejected(payload: JsonObject, field: 'rejectedSpans' | 'rejectedDataPoi
 }
 
 function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: OtlpHttpJsonSignalExporterOptions,
-  encode: (records: readonly T[], setup: EncodeSetup) => JsonObject, rejectedField: 'rejectedSpans' | 'rejectedDataPoints') {
+  encode: (records: readonly T[], setup: EncodeSetup) => JsonObject, rejectedField: 'rejectedSpans' | 'rejectedDataPoints', format: 'json' | 'protobuf' = 'json') {
   let config: typeof defaults; let endpoint: string; let setup: EncodeSetup; let headers: Readonly<Record<string, string>>; let transport: typeof globalThis.fetch;
   try {
     const allow = options.allowInsecureLoopback ?? false; if (typeof allow !== 'boolean') throw new Error();
@@ -190,7 +195,7 @@ function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: Otlp
     if (hook !== undefined && (signalName !== 'traces' || typeof hook !== 'function')) throw new Error();
     setup = Object.freeze({ serviceName: stable(options.serviceName), serviceVersion: options.serviceVersion === undefined ? undefined : stable(options.serviceVersion),
       resource: Object.freeze(extraAttributes(options.resourceAttributes, new Set(), () => { throw new Error(); })), spanAttributes: hook });
-    headers = fixedHeaders(options.headers); transport = options.fetch ?? globalThis.fetch; if (typeof transport !== 'function') throw new Error();
+    headers = fixedHeaders(options.headers); if (format === 'protobuf') headers = Object.freeze({ ...headers, 'Content-Type': 'application/x-protobuf' }); transport = options.fetch ?? globalThis.fetch; if (typeof transport !== 'function') throw new Error();
   } catch (error) { if (error instanceof MayuraError) throw error; throw new MayuraError('INVALID_CONFIG', 'OTLP exporter configuration must contain supported explicit bounds and transport.'); }
   const counts = Object.fromEntries(metrics.map(key => [key, 0n])) as Record<Metric, bigint>; const count = (key: Metric, amount = 1): void => { counts[key] += BigInt(amount); };
   let closed = false; let inFlight = false; let active: AbortController | undefined;
@@ -199,15 +204,20 @@ function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: Otlp
   const sink = async (records: readonly T[], context: { readonly signal: AbortSignal }): Promise<void> => {
     if (closed || inFlight) throw new MayuraError('CONFLICT', closed ? 'The telemetry exporter is closed.' : 'The telemetry exporter already has an active request.');
     if (!Array.isArray(records) || !records.length || records.length > config.maxBatchSize || !(context.signal instanceof AbortSignal)) { if (Array.isArray(records)) count('recordsDropped', records.length); throw new MayuraError('INVALID_INPUT', 'Telemetry batches require admitted records, a signal and supported bounds.'); }
-    count('batchesAttempted'); count('recordsAttempted', records.length); let body: string;
-    try { body = JSON.stringify(jsonValue(encode(records, setup), { maxBytes: config.maxRequestBytes, maxDepth: 16, maxNodes: 32_768 })); const bytes = new TextEncoder().encode(body).byteLength; if (bytes > config.maxRequestBytes) throw new Error(); count('requestBytes', bytes); }
+    count('batchesAttempted'); count('recordsAttempted', records.length); let body: string | Uint8Array<ArrayBuffer>;
+    try {
+      // The OTLP/JSON request is built and checked first; protobuf is smaller, so its JSON may be up to four times the bound.
+      const request = jsonValue(encode(records, setup), { maxBytes: config.maxRequestBytes * (format === 'protobuf' ? 4 : 1), maxDepth: 16, maxNodes: 32_768 });
+      body = format === 'protobuf' ? otlpTraceProtobuf(object(request)) : JSON.stringify(request);
+      const bytes = typeof body === 'string' ? new TextEncoder().encode(body).byteLength : body.byteLength; if (bytes > config.maxRequestBytes) throw new Error(); count('requestBytes', bytes);
+    }
     catch (error) { count('recordsDropped', records.length); if (error instanceof MayuraError && error.code === 'INVALID_INPUT') throw error; throw new MayuraError('INVALID_INPUT', 'Telemetry batches require admitted records within the configured request bound.'); }
     const controller = new AbortController(); active = controller; inFlight = true; let timedOut = false; const timer = setTimeout(() => { timedOut = true; controller.abort(); }, config.timeoutMs);
     const relay = (): void => controller.abort(); context.signal.addEventListener('abort', relay, { once: true }); if (context.signal.aborted) relay();
     try {
       if (controller.signal.aborted) throw controller.signal.reason;
       const response = await abortable(Promise.resolve(transport(endpoint, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error', credentials: 'omit', cache: 'no-store' })), controller.signal);
-      const payload = await responsePayload(response, config.maxResponseBytes, controller.signal, bytes => count('responseBytes', bytes)); const dropped = rejected(payload, rejectedField, records.length);
+      const payload = await responsePayload(response, config.maxResponseBytes, controller.signal, bytes => count('responseBytes', bytes), format === 'protobuf' ? rejectedField : undefined); const dropped = rejected(payload, rejectedField, records.length);
       count('recordsAccepted', records.length - dropped); if (dropped) { count('recordsDropped', dropped); count('partialResponses'); }
     } catch { count('recordsDropped', records.length); if (timedOut) { count('timedOutRequests'); throw new MayuraError('TIMEOUT', 'The telemetry export timed out.'); } if (context.signal.aborted || closed) { count('cancelledRequests'); throw new MayuraError('CANCELLED', 'The telemetry export was cancelled.'); } count('failedRequests'); return failed(); }
     finally { clearTimeout(timer); context.signal.removeEventListener('abort', relay); active = undefined; inFlight = false; }
@@ -217,6 +227,13 @@ function createSignalExporter<T>(signalName: 'traces' | 'metrics', options: Otlp
 
 export function createOtlpHttpJsonTraceExporter(options: OtlpHttpJsonTraceExporterOptions): OtlpHttpJsonTraceExporter {
   return createSignalExporter<OtlpTraceSpan>('traces', options, traceRequest, 'rejectedSpans');
+}
+/**
+ * The same trace exporter, sending OTLP's protobuf encoding (`application/x-protobuf`) for collectors and providers
+ * that take only protobuf, such as Arize Phoenix. Spans are checked exactly as for JSON.
+ */
+export function createOtlpHttpProtobufTraceExporter(options: OtlpHttpProtobufTraceExporterOptions): OtlpHttpProtobufTraceExporter {
+  return createSignalExporter<OtlpTraceSpan>('traces', options, traceRequest, 'rejectedSpans', 'protobuf');
 }
 export function createOtlpHttpJsonMetricExporter(options: OtlpHttpJsonMetricExporterOptions): OtlpHttpJsonMetricExporter {
   return createSignalExporter<OtlpMetricPoint>('metrics', options, metricRequest, 'rejectedDataPoints');
