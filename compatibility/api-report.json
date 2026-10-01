@@ -7957,6 +7957,16 @@
         "declaration": "ba5a5bf64656e92a"
       }
     },
+    "@mayurajs/observability-betterstack": {
+      "betterStackTraceExporter": {
+        "kind": "function",
+        "declaration": "a8f9bf2baa38d3b8"
+      },
+      "BetterStackTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "8efa58cb9ed54f45"
+      }
+    },
     "@mayurajs/observability-datadog": {
       "DatadogSite": {
         "kind": "type",

@@ -86,6 +86,7 @@
     "@mayurajs/observability-sentry": "workspace:*",
     "@mayurajs/observability-datadog": "workspace:*",
     "@mayurajs/observability-arize": "workspace:*",
+    "@mayurajs/observability-betterstack": "workspace:*",
     "@mayurajs/provider-anthropic": "workspace:*",
     "@mayurajs/provider-azure": "workspace:*",
     "@mayurajs/provider-bedrock": "workspace:*",

@@ -40,6 +40,7 @@ export const reviewedDependencies = {
   'observability-sentry': [],
   'observability-datadog': [],
   'observability-arize': [],
+  'observability-betterstack': [],
   'voice-assemblyai': [],
   'voice-azure': [],
   'voice-cartesia': [],

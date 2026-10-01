@@ -22,6 +22,7 @@
     { "path": "extensions/observability-sentry" },
     { "path": "extensions/observability-datadog" },
     { "path": "extensions/observability-arize" },
+    { "path": "extensions/observability-betterstack" },
     { "path": "extensions/voice-assemblyai" },
     { "path": "extensions/voice-azure" },
     { "path": "extensions/voice-cartesia" },

@@ -110,6 +110,9 @@ importers:
       '@mayurajs/observability-arize':
         specifier: workspace:*
         version: link:extensions/observability-arize
+      '@mayurajs/observability-betterstack':
+        specifier: workspace:*
+        version: link:extensions/observability-betterstack
       '@mayurajs/observability-datadog':
         specifier: workspace:*
         version: link:extensions/observability-datadog
@@ -301,6 +304,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/observability-arize:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/observability-betterstack:
     devDependencies:
       mayura:
         specifier: workspace:*
