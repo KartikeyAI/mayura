@@ -213,6 +213,7 @@ show Mayura's spans as AI traces. Each returns the exporter, so `sink`, `inspect
 | Package | Provider | Signals |
 | --- | --- | --- |
 | `@mayurajs/observability-langfuse` | [Langfuse](https://langfuse.com) Cloud (EU, US, JP, HIPAA) or self-hosted: `langfuseTraceExporter({ publicKey, secretKey, region })` | traces |
+| `@mayurajs/observability-datadog` | [Datadog](https://www.datadoghq.com) APM or LLM Observability, on any Datadog site: `datadogTraceExporter({ apiKey, site, llmObservability })` | traces |
 
 ### Through your OpenTelemetry SDK
 

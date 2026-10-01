@@ -74,6 +74,7 @@
     "@mayurajs/filestorage-r2",
     "@mayurajs/filestorage-vercel-blob",
     "@mayurajs/observability-langfuse",
+    "@mayurajs/observability-datadog",
     "@mayurajs/provider-anthropic",
     "@mayurajs/provider-azure",
     "@mayurajs/provider-bedrock",

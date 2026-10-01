@@ -7939,6 +7939,20 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/observability-datadog": {
+      "DatadogSite": {
+        "kind": "type",
+        "declaration": "fe6e1fe554d857e8"
+      },
+      "datadogTraceExporter": {
+        "kind": "function",
+        "declaration": "58ce6b475e7a3d2b"
+      },
+      "DatadogTraceExporterOptions": {
+        "kind": "interface",
+        "declaration": "91f505cda0319b09"
+      }
+    },
     "@mayurajs/observability-langfuse": {
       "LangfuseRegion": {
         "kind": "type",
