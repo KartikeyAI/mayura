@@ -70,6 +70,7 @@
     "@mayurajs/deploy-aws-ecs",
     "@mayurajs/deploy-aws-lambda",
     "@mayurajs/deploy-azure",
+    "@mayurajs/deploy-cloudflare",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/deploy-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare as a mayura deploy target: the app in Containers, or the serverless module on Workers, with wrangler.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

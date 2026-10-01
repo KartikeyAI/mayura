@@ -95,6 +95,9 @@ importers:
       '@mayurajs/deploy-azure':
         specifier: workspace:*
         version: link:extensions/deploy-azure
+      '@mayurajs/deploy-cloudflare':
+        specifier: workspace:*
+        version: link:extensions/deploy-cloudflare
       '@mayurajs/deploy-cloudrun':
         specifier: workspace:*
         version: link:extensions/deploy-cloudrun
@@ -310,6 +313,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/deploy-azure:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/deploy-cloudflare:
     devDependencies:
       mayura:
         specifier: workspace:*

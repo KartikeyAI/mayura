@@ -8009,6 +8009,20 @@
         "declaration": "8bd2052ce485da74"
       }
     },
+    "@mayurajs/deploy-cloudflare": {
+      "CloudflareRuntime": {
+        "kind": "type",
+        "declaration": "e6aa5f01255f91ca"
+      },
+      "CloudflareSettings": {
+        "kind": "interface",
+        "declaration": "286fd033fdbd5769"
+      },
+      "cloudflareTarget": {
+        "kind": "const",
+        "declaration": "889301a28ef51513"
+      }
+    },
     "@mayurajs/deploy-cloudrun": {
       "CloudRunBuild": {
         "kind": "type",
