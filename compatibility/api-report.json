@@ -8671,6 +8671,24 @@
         "declaration": "829b544379f9ea6d"
       }
     },
+    "@mayurajs/sandbox-northflank": {
+      "NorthflankClientLike": {
+        "kind": "interface",
+        "declaration": "9015023745f68eca"
+      },
+      "NorthflankExecLike": {
+        "kind": "interface",
+        "declaration": "179e336cbe3f32eb"
+      },
+      "northflankSandboxes": {
+        "kind": "function",
+        "declaration": "6e2ee68f0dc460e3"
+      },
+      "NorthflankSandboxOptions": {
+        "kind": "interface",
+        "declaration": "143394ecc03d6b0e"
+      }
+    },
     "@mayurajs/sandbox-railway": {
       "railwaySandboxes": {
         "kind": "function",

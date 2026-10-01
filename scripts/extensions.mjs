@@ -41,6 +41,7 @@ export const reviewedDependencies = {
   'sandbox-agentcore': ['@aws-sdk/client-bedrock-agentcore'],
   'sandbox-modal': ['modal'],
   'sandbox-railway': ['railway'],
+  'sandbox-northflank': ['@northflank/js-client'],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

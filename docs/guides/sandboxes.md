@@ -199,6 +199,7 @@ the container's configuration or on the host's command lines.
 | `@mayurajs/sandbox-agentcore` | [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) Code Interpreter sessions | as the interpreter was made | no | no |
 | `@mayurajs/sandbox-modal` | [Modal](https://modal.com/docs/guide/sandboxes) gVisor or VM sandboxes; Node, Deno and Bun | none, all, domains | tunnel URL | no |
 | `@mayurajs/sandbox-railway` | [Railway](https://docs.railway.com/sandboxes) Linux VMs from Railway's default image | all only | Railway domain | no |
+| `@mayurajs/sandbox-northflank` | [Northflank](https://northflank.com/docs/v1/application/sandboxes) microVM services; Node | all only | no | no |
 
 ## Writing a provider
 

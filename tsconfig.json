@@ -23,6 +23,7 @@
     { "path": "extensions/sandbox-agentcore" },
     { "path": "extensions/sandbox-modal" },
     { "path": "extensions/sandbox-railway" },
+    { "path": "extensions/sandbox-northflank" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
