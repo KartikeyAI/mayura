@@ -1,0 +1,16 @@
+{
+  "name": "@mayurajs/sandbox-codesandbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CodeSandbox (Together) sandboxes for mayura/sandbox, through the CodeSandbox SDK.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "dependencies": { "@codesandbox/sdk": "2.4.2" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

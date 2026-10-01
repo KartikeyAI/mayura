@@ -86,6 +86,7 @@
     "@mayurajs/sandbox-vercel": "workspace:*",
     "@mayurajs/sandbox-daytona": "workspace:*",
     "@mayurajs/sandbox-agentcore": "workspace:*",
+    "@mayurajs/sandbox-codesandbox": "workspace:*",
     "@mayurajs/sandbox-modal": "workspace:*",
     "@mayurajs/sandbox-railway": "workspace:*",
     "@mayurajs/sandbox-northflank": "workspace:*",

@@ -8617,6 +8617,24 @@
         "declaration": "473cfa8fab0acc79"
       }
     },
+    "@mayurajs/sandbox-codesandbox": {
+      "CodeSandboxClientLike": {
+        "kind": "interface",
+        "declaration": "a20879170b3ff496"
+      },
+      "codeSandboxSandboxes": {
+        "kind": "function",
+        "declaration": "64d43ec3744273c0"
+      },
+      "CodeSandboxSandboxOptions": {
+        "kind": "interface",
+        "declaration": "48114871d624488b"
+      },
+      "CodeSandboxSdkLike": {
+        "kind": "interface",
+        "declaration": "efe837c524913b77"
+      }
+    },
     "@mayurajs/sandbox-daytona": {
       "daytonaSandboxes": {
         "kind": "function",
