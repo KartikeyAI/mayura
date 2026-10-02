@@ -8311,6 +8311,16 @@
         "declaration": "57472ca688602a19"
       }
     },
+    "@mayurajs/browser-browserless": {
+      "BrowserlessBrowserOptions": {
+        "kind": "interface",
+        "declaration": "3d085432b09559d7"
+      },
+      "browserlessBrowsers": {
+        "kind": "function",
+        "declaration": "ef9d56487abf91c6"
+      }
+    },
     "@mayurajs/browser-hyperbrowser": {
       "HyperbrowserBrowserOptions": {
         "kind": "interface",

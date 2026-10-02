@@ -132,6 +132,7 @@ new browser context, closed on release; the browser's other tabs are left alone.
 | `@mayurajs/browser-browserbase` | [Browserbase](https://docs.browserbase.com) sessions; captchas, recording and logs off | debugger view |
 | `@mayurajs/browser-steel` | [Steel](https://docs.steel.dev) sessions, which outlive their connection: release them | session viewer, view-only by default |
 | `@mayurajs/browser-hyperbrowser` | [Hyperbrowser](https://hyperbrowser.ai/docs) sessions; proxies, stealth, captchas and recording off | live view, view-only by default |
+| `@mayurajs/browser-browserless` | [Browserless](https://docs.browserless.io), hosted or your own: a fresh browser per connection | no |
 
 `localBrowsers({ channel, executablePath, headless, args })` finds Chrome (`channel: 'chrome'`, the default) or Edge
 (`'edge'`) in the usual install places, or runs `executablePath`. Nothing is downloaded. Each browser runs headless with

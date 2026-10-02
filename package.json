@@ -97,6 +97,7 @@
     "@mayurajs/browser-browserbase": "workspace:*",
     "@mayurajs/browser-steel": "workspace:*",
     "@mayurajs/browser-hyperbrowser": "workspace:*",
+    "@mayurajs/browser-browserless": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",
