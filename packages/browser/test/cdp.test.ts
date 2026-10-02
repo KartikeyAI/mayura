@@ -123,6 +123,9 @@ describe('resolveCdpUrl', () => {
     const fetch = (async (url: string | URL) => { seen.push(String(url)); return Response.json({ webSocketDebuggerUrl: 'ws://127.0.0.1:9222/devtools/browser/abc' }); }) as typeof globalThis.fetch;
     expect(await resolveCdpUrl('http://chrome.internal:9222', { fetch })).toBe('ws://chrome.internal:9222/devtools/browser/abc');
     expect(seen).toEqual(['http://chrome.internal:9222/json/version']);
+    // An endpoint under a path is asked under that path.
+    expect(await resolveCdpUrl('https://browsers.example/sessions/s1/cdp', { fetch })).toBe('wss://browsers.example/devtools/browser/abc');
+    expect(seen.at(-1)).toBe('https://browsers.example/sessions/s1/cdp/json/version');
   });
 
   it('refuses other schemes, and endpoints that do not describe a browser', async () => {

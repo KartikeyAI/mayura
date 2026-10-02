@@ -67,19 +67,23 @@ const defaultSocket: CdpSocketFactory = (url, headers) => {
 
 /**
  * Finds a browser's WebSocket URL: `ws(s)://` URLs are used as they are, and `http(s)://host:port` asks the browser's
- * `/json/version`.
+ * `/json/version` under its path (`http://host:9222` asks `http://host:9222/json/version`; `https://host/s/1/cdp` asks
+ * `https://host/s/1/cdp/json/version`).
  */
 export async function resolveCdpUrl(endpoint: string, options: { readonly headers?: Readonly<Record<string, string>>; readonly fetch?: typeof fetch; readonly signal?: AbortSignal } = {}): Promise<string> {
   let url: URL;
   try { url = new URL(endpoint); } catch { throw new MayuraError('INVALID_CONFIG', 'The browser endpoint must be a ws(s):// or http(s):// URL.'); }
   if (url.protocol === 'ws:' || url.protocol === 'wss:') return url.href;
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new MayuraError('INVALID_CONFIG', 'The browser endpoint must be a ws(s):// or http(s):// URL.');
-  const reply = await (options.fetch ?? fetch)(new URL('/json/version', url), { headers: options.headers ?? {}, signal: options.signal ?? AbortSignal.timeout(30_000) });
+  const version = new URL(`${url.pathname.replace(/\/?$/u, '/')}json/version`, url);
+  const reply = await (options.fetch ?? fetch)(version, { headers: options.headers ?? {}, signal: options.signal ?? AbortSignal.timeout(30_000) });
   if (!reply.ok) { void reply.body?.cancel().catch(() => undefined); throw new BrowserError('unavailable'); }
   const found = (await reply.json().catch(() => undefined) as { webSocketDebuggerUrl?: unknown } | undefined)?.webSocketDebuggerUrl;
   if (typeof found !== 'string' || !/^wss?:\/\//u.test(found)) throw new BrowserError('unavailable');
   // A browser reports its own idea of its host, such as 127.0.0.1 inside a container: keep the host asked for.
-  const socket = new URL(found); socket.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'; socket.host = url.host;
+  const socket = new URL(found); socket.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  // Host and port both: setting host alone keeps the browser's port when the one asked has none.
+  socket.hostname = url.hostname; socket.port = url.port;
   return socket.href;
 }
 
