@@ -96,6 +96,7 @@
     "@mayurajs/browser-kernel",
     "@mayurajs/browser-browser-use",
     "@mayurajs/browser-anchor",
+    "@mayurajs/browser-browserview",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

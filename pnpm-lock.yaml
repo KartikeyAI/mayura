@@ -101,6 +101,9 @@ importers:
       '@mayurajs/browser-browserless':
         specifier: workspace:*
         version: link:extensions/browser-browserless
+      '@mayurajs/browser-browserview':
+        specifier: workspace:*
+        version: link:extensions/browser-browserview
       '@mayurajs/browser-hyperbrowser':
         specifier: workspace:*
         version: link:extensions/browser-hyperbrowser
@@ -379,6 +382,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-browserless:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/browser-browserview:
     devDependencies:
       mayura:
         specifier: workspace:*

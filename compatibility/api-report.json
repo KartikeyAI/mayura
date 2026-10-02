@@ -8341,6 +8341,16 @@
         "declaration": "ef9d56487abf91c6"
       }
     },
+    "@mayurajs/browser-browserview": {
+      "BrowserViewBrowserOptions": {
+        "kind": "interface",
+        "declaration": "def7234898384aad"
+      },
+      "browserViewBrowsers": {
+        "kind": "function",
+        "declaration": "111bf206c33a48d3"
+      }
+    },
     "@mayurajs/browser-hyperbrowser": {
       "HyperbrowserBrowserOptions": {
         "kind": "interface",
