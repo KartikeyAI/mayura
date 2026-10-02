@@ -416,6 +416,14 @@
         "kind": "interface",
         "declaration": "8aa3e43e7e7663b8"
       },
+      "originPolicy": {
+        "kind": "function",
+        "declaration": "4b6567cf72f6a47d"
+      },
+      "OriginPolicy": {
+        "kind": "interface",
+        "declaration": "bda5d0c537e18823"
+      },
       "PageState": {
         "kind": "interface",
         "declaration": "e6398f0883fb572d"
@@ -8359,6 +8367,24 @@
       "cloudflareBrowsers": {
         "kind": "function",
         "declaration": "5b036994d6c83aef"
+      }
+    },
+    "@mayurajs/browser-firecrawl": {
+      "FirecrawlBrowserOptions": {
+        "kind": "interface",
+        "declaration": "20ef68f8d025199f"
+      },
+      "firecrawlBrowsers": {
+        "kind": "function",
+        "declaration": "4bbe8cbe8e6dc3da"
+      },
+      "firecrawlTools": {
+        "kind": "function",
+        "declaration": "31d1fa72dd690df6"
+      },
+      "FirecrawlToolsOptions": {
+        "kind": "interface",
+        "declaration": "700a72bcc1a65bf4"
       }
     },
     "@mayurajs/browser-hyperbrowser": {

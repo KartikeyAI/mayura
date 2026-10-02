@@ -1,6 +1,8 @@
 export * from './contracts.js';
 export { CdpError, connectCdp, resolveCdpUrl } from './cdp.js';
 export type { CdpConnectOptions, CdpConnection, CdpEventHandler, CdpSendOptions, CdpSocket, CdpSocketFactory } from './cdp.js';
+export { originPolicy } from './origins.js';
+export type { OriginPolicy } from './origins.js';
 export { cdpBrowsers } from './connect.js';
 export type { CdpBrowsersOptions } from './connect.js';
 export { createBrowsers } from './browsers.js';

@@ -56,7 +56,7 @@ try {
 
 Nothing is allowed by default: `origins` lists what pages may load from, as `https://example.com` (scheme, host and
 port), `https://*.example.com` (its subdomains, not `example.com` itself) or `http://127.0.0.1:8080`. `'all'` allows
-every http(s) URL.
+every http(s) URL. `originPolicy(origins)` checks a URL against such a list, for tools of your own that fetch pages.
 
 The list is enforced in the browser, not only at `goto`. Every request is checked before it leaves — navigations,
 redirects, frames, scripts, images, `fetch`, and requests from dedicated, shared and service workers — and one to
@@ -138,6 +138,7 @@ new browser context, closed on release; the browser's other tabs are left alone.
 | `@mayurajs/browser-anchor` | [Anchor Browser](https://docs.anchorbrowser.io) sessions; recording and ad blocking off | live view, view-only by default |
 | `@mayurajs/browser-browserview` | [BrowserView](https://browserview.io/docs) sessions, not kept alive; stealth off; its CDP connection needs a header (give `webSocket` on Workers or Deno) | watch link by default |
 | `@mayurajs/browser-cloudflare` | [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) from outside a Worker: a browser per connection, ended `keepAliveMs` after it closes | no |
+| `@mayurajs/browser-firecrawl` | [Firecrawl](https://docs.firecrawl.dev) Interact sessions; the package also has `firecrawlTools`, Firecrawl's scrape, map, search, crawl and extract as permission-gated tools kept to `origins` | live view, view-only by default |
 
 `localBrowsers({ channel, executablePath, headless, args })` finds Chrome (`channel: 'chrome'`, the default) or Edge
 (`'edge'`) in the usual install places, or runs `executablePath`. Nothing is downloaded. Each browser runs headless with

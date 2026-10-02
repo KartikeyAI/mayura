@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/browser-firecrawl",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firecrawl browsers for mayura/browser, and Firecrawl's scrape, map, search, crawl and extract as tools.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

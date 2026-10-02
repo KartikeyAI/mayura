@@ -98,6 +98,7 @@
     "@mayurajs/browser-anchor",
     "@mayurajs/browser-browserview",
     "@mayurajs/browser-cloudflare",
+    "@mayurajs/browser-firecrawl",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

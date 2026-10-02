@@ -107,6 +107,9 @@ importers:
       '@mayurajs/browser-cloudflare':
         specifier: workspace:*
         version: link:extensions/browser-cloudflare
+      '@mayurajs/browser-firecrawl':
+        specifier: workspace:*
+        version: link:extensions/browser-firecrawl
       '@mayurajs/browser-hyperbrowser':
         specifier: workspace:*
         version: link:extensions/browser-hyperbrowser
@@ -397,6 +400,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-cloudflare:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/browser-firecrawl:
     devDependencies:
       mayura:
         specifier: workspace:*

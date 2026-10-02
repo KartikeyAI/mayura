@@ -23,6 +23,10 @@ export interface OriginPolicy {
   allows(url: string): boolean;
 }
 
+/**
+ * The origins a browser may load, as `createBrowsers` takes them (`['https://example.com', 'https://*.example.com']` or
+ * `'all'`), checked. Use it for tools of your own that fetch pages, to keep them to the same list.
+ */
 export function originPolicy(value: unknown): OriginPolicy {
   if (value === 'all') return Object.freeze({ all: true, allows: (url: string) => /^(?:https?|wss?|about|data|blob):/iu.test(url) });
   if (!Array.isArray(value) || value.length === 0 || value.length > 256) throw new MayuraError('INVALID_CONFIG', 'origins lists 1 to 256 origins, or is \'all\'; nothing is allowed by default.');
