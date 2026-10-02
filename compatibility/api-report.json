@@ -8407,6 +8407,28 @@
         "declaration": "ae8b64c78625b0d8"
       }
     },
+    "@mayurajs/browser-stagehand": {
+      "StagehandConstructor": {
+        "kind": "type",
+        "declaration": "46deee7a6dd7a366"
+      },
+      "StagehandLike": {
+        "kind": "interface",
+        "declaration": "0053b75aff28fd14"
+      },
+      "StagehandPageLike": {
+        "kind": "interface",
+        "declaration": "df0bbfcccafe4222"
+      },
+      "stagehandTools": {
+        "kind": "function",
+        "declaration": "165c6423581fb1a0"
+      },
+      "StagehandToolsOptions": {
+        "kind": "interface",
+        "declaration": "4bbd80f0f31cf57e"
+      }
+    },
     "@mayurajs/browser-steel": {
       "SteelBrowserOptions": {
         "kind": "interface",

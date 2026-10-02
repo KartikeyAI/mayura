@@ -151,6 +151,12 @@ new browser context, closed on release; the browser's other tabs are left alone.
 its own profile in a temporary directory, removed on release. `args` adds switches; ones that would open the browser
 to others (remote debugging, profiles, extensions, proxies, the sandbox) are refused.
 
+## Stagehand
+
+`stagehandTools(browser, { model })` in `@mayurajs/browser-stagehand` adds Stagehand 3's natural-language tools —
+`extract`, `observe` and, when enabled, `act` — on a Mayura browser, driving it alongside over `browser.cdp`. The
+browser's origins, lifetime and limits still hold, including for pages Stagehand opens.
+
 ## Web data without a browser
 
 When a page only needs reading, not driving, two packages fetch it in the provider's own browser and give back

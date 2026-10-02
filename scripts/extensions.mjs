@@ -18,6 +18,7 @@ export const extensionsRoot = join(workspace, 'extensions');
 export const reviewedPeers = {
   'sandbox-codesandbox': { '@codesandbox/sdk': '^2.4.2' },
   'sandbox-railway': { railway: '^3.12.0' },
+  'browser-stagehand': { '@browserbasehq/stagehand': '>=3.7.3 <4' },
 };
 
 /**
@@ -66,6 +67,7 @@ export const reviewedDependencies = {
   'browser-cloudflare': [],
   'browser-firecrawl': [],
   'cloudflare-quick-action': [],
+  'browser-stagehand': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
