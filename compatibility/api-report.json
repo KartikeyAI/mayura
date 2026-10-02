@@ -8311,6 +8311,16 @@
         "declaration": "57472ca688602a19"
       }
     },
+    "@mayurajs/browser-hyperbrowser": {
+      "HyperbrowserBrowserOptions": {
+        "kind": "interface",
+        "declaration": "0b33a46886a0efad"
+      },
+      "hyperbrowserBrowsers": {
+        "kind": "function",
+        "declaration": "0a2b7fa78e733bd1"
+      }
+    },
     "@mayurajs/browser-steel": {
       "SteelBrowserOptions": {
         "kind": "interface",

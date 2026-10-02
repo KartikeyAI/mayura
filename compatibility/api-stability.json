@@ -91,6 +91,7 @@
     "@mayurajs/sandbox-northflank",
     "@mayurajs/browser-browserbase",
     "@mayurajs/browser-steel",
+    "@mayurajs/browser-hyperbrowser",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

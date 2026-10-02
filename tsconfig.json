@@ -29,6 +29,7 @@
     { "path": "extensions/sandbox-northflank" },
     { "path": "extensions/browser-browserbase" },
     { "path": "extensions/browser-steel" },
+    { "path": "extensions/browser-hyperbrowser" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
