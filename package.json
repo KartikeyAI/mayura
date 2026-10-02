@@ -104,6 +104,7 @@
     "@mayurajs/browser-browserview": "workspace:*",
     "@mayurajs/browser-cloudflare": "workspace:*",
     "@mayurajs/browser-firecrawl": "workspace:*",
+    "@mayurajs/cloudflare-quick-action": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",

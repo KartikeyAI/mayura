@@ -145,6 +145,15 @@ new browser context, closed on release; the browser's other tabs are left alone.
 its own profile in a temporary directory, removed on release. `args` adds switches; ones that would open the browser
 to others (remote debugging, profiles, extensions, proxies, the sandbox) are refused.
 
+## Web data without a browser
+
+When a page only needs reading, not driving, two packages fetch it in the provider's own browser and give back
+markdown, links, structured data or whole crawls, as permission-gated tools kept to `origins` like browsers are:
+
+- `firecrawlTools` in `@mayurajs/browser-firecrawl`: Firecrawl's scrape, map, search, crawl and extract.
+- `quickActionTools` in `@mayurajs/cloudflare-quick-action`: Cloudflare Browser Run's markdown, links, scrape,
+  screenshot, JSON and crawl, the rendered page also kept to `origins`.
+
 ## Writing a provider
 
 A provider is `{ id, features: { liveView }, maxLifetimeMs, create(spec, { signal }) }`. `create` starts a browser and

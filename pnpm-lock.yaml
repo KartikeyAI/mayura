@@ -119,6 +119,9 @@ importers:
       '@mayurajs/browser-steel':
         specifier: workspace:*
         version: link:extensions/browser-steel
+      '@mayurajs/cloudflare-quick-action':
+        specifier: workspace:*
+        version: link:extensions/cloudflare-quick-action
       '@mayurajs/deploy-agentcore':
         specifier: workspace:*
         version: link:extensions/deploy-agentcore
@@ -424,6 +427,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-steel:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/cloudflare-quick-action:
     devDependencies:
       mayura:
         specifier: workspace:*

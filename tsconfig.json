@@ -37,6 +37,7 @@
     { "path": "extensions/browser-browserview" },
     { "path": "extensions/browser-cloudflare" },
     { "path": "extensions/browser-firecrawl" },
+    { "path": "extensions/cloudflare-quick-action" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

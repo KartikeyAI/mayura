@@ -8417,6 +8417,60 @@
         "declaration": "065f4ecbad5291f8"
       }
     },
+    "@mayurajs/cloudflare-quick-action": {
+      "CallOptions": {
+        "kind": "interface",
+        "declaration": "2a019d45d69076b4"
+      },
+      "cloudflareQuickActions": {
+        "kind": "function",
+        "declaration": "f9360ca9bb9fe663"
+      },
+      "CrawlRecord": {
+        "kind": "interface",
+        "declaration": "8e78c0088d9b4ae6"
+      },
+      "CrawlResult": {
+        "kind": "interface",
+        "declaration": "012656bc845abfa9"
+      },
+      "CrawlStart": {
+        "kind": "interface",
+        "declaration": "04861f7b2fd94631"
+      },
+      "CrawlStatus": {
+        "kind": "type",
+        "declaration": "254168e54135586c"
+      },
+      "originPatterns": {
+        "kind": "function",
+        "declaration": "cc405a5248ba3480"
+      },
+      "PageRequest": {
+        "kind": "interface",
+        "declaration": "ce201d8287e6bf4d"
+      },
+      "QuickActions": {
+        "kind": "interface",
+        "declaration": "0aaca48c17f86e41"
+      },
+      "QuickActionsOptions": {
+        "kind": "interface",
+        "declaration": "a69af0d6efeacc5f"
+      },
+      "quickActionTools": {
+        "kind": "function",
+        "declaration": "334cd03d20168955"
+      },
+      "QuickActionToolsOptions": {
+        "kind": "interface",
+        "declaration": "ada0bb6391ca14ce"
+      },
+      "ScrapedElement": {
+        "kind": "interface",
+        "declaration": "d285268eccd48199"
+      }
+    },
     "@mayurajs/deploy-agentcore": {
       "AgentCoreSettings": {
         "kind": "interface",

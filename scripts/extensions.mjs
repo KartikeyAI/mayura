@@ -65,6 +65,7 @@ export const reviewedDependencies = {
   'browser-browserview': [],
   'browser-cloudflare': [],
   'browser-firecrawl': [],
+  'cloudflare-quick-action': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
