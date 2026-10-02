@@ -6,6 +6,8 @@ const limits = (fake: ReturnType<typeof fakeBrowser>, extra: Partial<BrowsersOpt
   maxBrowsers: 2, maxLifetimeMs: 600_000, origins: ['https://example.com'], webSocket: fake.factory, ...extra,
 });
 const settle = () => new Promise(resolve => setTimeout(resolve, 10));
+/** A browser that cannot be checked as a whole, only target by target. */
+const perTargetOnly = { error: { code: -32601, message: "'Fetch.enable' wasn't found" } };
 
 describe('createBrowsers', () => {
   it('refuses configuration it cannot use, and allows no origin by default', () => {
@@ -23,11 +25,26 @@ describe('createBrowsers', () => {
     expect(methods).toContain('browser Browser.setDownloadBehavior');
     expect(fake.sent.find(item => item.method === 'Browser.setDownloadBehavior')!.params).toEqual({ behavior: 'deny' });
     expect(fake.sent.find(item => item.method === 'Page.setInterceptFileChooserDialog' && item.sessionId === 'S-T1')!.params).toEqual({ enabled: true });
-    // Requests are checked from the moment the page is attached, before it is let run.
+    // Requests are checked for the whole browser before any target is attached, and so from every page's first request.
+    expect(methods.indexOf('browser Fetch.enable')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('browser Fetch.enable')).toBeLessThan(methods.indexOf('browser Target.setAutoAttach'));
+    expect(methods).not.toContain('S-T1 Fetch.enable');
+    expect(fake.sent.find(item => item.method === 'Target.setAutoAttach' && !item.sessionId)!.params).toMatchObject({ autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+    expect(browser.cdp).toEqual({ url: 'ws://fake.test/devtools/browser/1', headers: {}, isolated: false });
+    await browser.release();
+  });
+
+  it('checks each target as it is attached, before it runs, where the browser cannot be checked as a whole', async () => {
+    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && !sent.sessionId ? perTargetOnly : undefined) });
+    const browser = await createBrowsers(fake.provider(), limits(fake)).open();
+    const methods = fake.sent.map(item => `${item.sessionId ?? 'browser'} ${item.method}`);
     expect(methods.indexOf('S-T1 Fetch.enable')).toBeGreaterThanOrEqual(0);
     expect(methods.indexOf('S-T1 Fetch.enable')).toBeLessThan(methods.indexOf('S-T1 Runtime.runIfWaitingForDebugger'));
-    expect(fake.sent.find(item => item.method === 'Target.setAutoAttach' && !item.sessionId)!.params).toMatchObject({ autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
     await browser.release();
+    // A browser shared with others is never checked as a whole: their pages are theirs.
+    const shared = fakeBrowser();
+    await (await createBrowsers(shared.provider({ isolate: true }), limits(shared)).open()).release();
+    expect(shared.sent.some(item => item.method === 'Fetch.enable' && !item.sessionId)).toBe(false);
   });
 
   it('lets through requests to allowed origins and fails the rest, in any target', async () => {
@@ -44,7 +61,7 @@ describe('createBrowsers', () => {
   });
 
   it('closes a target whose requests cannot be checked', async () => {
-    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && sent.sessionId === 'S-W9' ? { error: { code: -32601, message: 'no Fetch here' } } : undefined) });
+    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && !sent.sessionId ? perTargetOnly : sent.method === 'Fetch.enable' && sent.sessionId === 'S-W9' ? { error: { code: -32601, message: 'no Fetch here' } } : undefined) });
     const browser = await createBrowsers(fake.provider(), limits(fake)).open();
     fake.event('Target.attachedToTarget', { sessionId: 'S-W9', targetInfo: { targetId: 'W9', type: 'service_worker' }, waitingForDebugger: true }, 'S-T1');
     await settle(); await settle();
@@ -55,7 +72,7 @@ describe('createBrowsers', () => {
 
   it('lets a dedicated worker run, whose requests its page checks, and other targets only once checked', async () => {
     const noFetch = { error: { code: -32601, message: "'Fetch.enable' wasn't found" } };
-    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && (sent.sessionId === 'S-W1' || sent.sessionId === 'S-X1') ? noFetch : undefined) });
+    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && !sent.sessionId ? perTargetOnly : sent.method === 'Fetch.enable' && (sent.sessionId === 'S-W1' || sent.sessionId === 'S-X1') ? noFetch : undefined) });
     const browser = await createBrowsers(fake.provider(), limits(fake)).open();
     fake.event('Target.attachedToTarget', { sessionId: 'S-W1', targetInfo: { targetId: 'W1', type: 'worker' }, waitingForDebugger: true }, 'S-T1');
     fake.event('Target.attachedToTarget', { sessionId: 'S-X1', targetInfo: { targetId: 'X1', type: 'shared_worker' }, waitingForDebugger: true });
@@ -69,7 +86,7 @@ describe('createBrowsers', () => {
   });
 
   it('lets a target reported twice run through its second session only after the first checks its requests', async () => {
-    const fake = fakeBrowser();
+    const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && !sent.sessionId ? perTargetOnly : undefined) });
     const browser = await createBrowsers(fake.provider(), limits(fake)).open();
     const original = fake.sent.length;
     fake.event('Target.attachedToTarget', { sessionId: 'S-Y1', targetInfo: { targetId: 'Y1', type: 'service_worker' }, waitingForDebugger: true });
@@ -77,6 +94,7 @@ describe('createBrowsers', () => {
     await settle(); await settle();
     const order = fake.sent.slice(original).filter(item => item.sessionId === 'S-Y1' || item.sessionId === 'S-Y2' || item.params['sessionId'] === 'S-Y2')
       .map(item => `${item.sessionId ?? item.params['sessionId']} ${item.method}`);
+    expect(order.indexOf('S-Y1 Fetch.enable')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('S-Y1 Fetch.enable')).toBeLessThan(order.indexOf('S-Y2 Runtime.runIfWaitingForDebugger'));
     expect(order).toContain('S-Y2 Target.detachFromTarget');
     expect(order.filter(item => item.startsWith('S-Y2') && !/runIfWaiting|detach/u.test(item))).toEqual([]);

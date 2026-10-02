@@ -32,6 +32,7 @@ setTimeout(() => { for (const id of ['shared', 'service']) { const item = docume
   '/shared.js': `onconnect = event => { const port = event.ports[0]; fetch('{{blocked}}/target', { mode: 'no-cors' }).then(() => port.postMessage('reached'), () => port.postMessage('blocked')); };`,
   '/sw.js': `self.addEventListener('install', event => { event.waitUntil(fetch('{{blocked}}/target', { mode: 'no-cors' }).then(() => undefined, () => undefined)); });`,
   '/popup': `<!doctype html><title>Popup</title><button onclick="window.open('/next')">Open a window</button>`,
+  '/popup-out': `<!doctype html><title>Popup out</title><button onclick="window.open('{{blocked}}/target?from=popup')">Open elsewhere</button>`,
   '/target': '<!doctype html><title>Target</title><p>reached</p>',
   '/slow': '<!doctype html><title>Slow</title><p>slow page</p>',
 });
@@ -122,6 +123,14 @@ const cases: [string, (context: BrowserConformanceContext) => Promise<void>][] =
     const text = (await browser.text()).text;
     check(!text.includes('reached'), `A page or worker reached another origin: ${text}`);
     check(reachedBlocked(context).length === 0, `The blocked origin was reached: ${JSON.stringify(reachedBlocked(context))}.`);
+  }],
+  ['keeps windows a page opens to the origins, from their first request', async context => {
+    const { browser, allowed } = context;
+    await browser.goto(`${allowed}/popup-out`);
+    await browser.click(refFor((await browser.snapshot()).text, /button "Open elsewhere"/u));
+    await new Promise(resolve => setTimeout(resolve, 1_500));
+    check(reachedBlocked(context).length === 0, `A window the page opened reached another origin: ${JSON.stringify(reachedBlocked(context))}.`);
+    for (const tab of (await browser.tabs()).filter(item => !item.active)) await browser.closeTab(tab.tab);
   }],
   ['opens, lists, switches and closes tabs, including windows a page opens', async ({ browser, allowed }) => {
     await browser.goto(`${allowed}/popup`);

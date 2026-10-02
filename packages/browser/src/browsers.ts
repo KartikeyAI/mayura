@@ -64,6 +64,12 @@ export interface Browser {
   readonly liveViewUrl?: string;
   /** True once the browser was released, reached its lifetime, or its connection closed. */
   readonly ended: boolean;
+  /**
+   * The browser's CDP endpoint, for another client to drive it alongside (such as Stagehand), and whether this browser
+   * is a context of its own in a browser shared with others. It may carry a credential: treat it as a secret. Origins
+   * stay enforced for every page, whoever opens it, while this browser is open.
+   */
+  readonly cdp: { readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly isolated: boolean };
   goto(url: string, options?: CallOptions): Promise<NavigationResult>;
   back(options?: CallOptions): Promise<NavigationResult>;
   forward(options?: CallOptions): Promise<NavigationResult>;
@@ -173,6 +179,9 @@ export function createBrowsers(provider: BrowserProvider, options: BrowsersOptio
     const cdp: CdpConnection = await connectCdp(backend.cdp.url, { ...(backend.cdp.headers ? { headers: backend.cdp.headers } : {}), ...(options.webSocket ? { webSocket: options.webSocket } : {}), signal, timeoutMs: callTimeoutMs });
     const tabs = new Map<string, Tab>(); // by targetId
     let context: string | undefined; // the browser context, when isolated
+    // Requests checked for the whole browser at once, when it is this one's alone and allows it: that covers a page
+    // from its very first request, whoever opened it. Otherwise each target is checked as it is attached.
+    let browserWide = false;
     let active: string | undefined; let refs = new Map<string, { readonly sessionId: string; readonly backendNodeId: number }>();
     const send = <T = Record<string, unknown>>(method: string, params: Record<string, unknown>, sessionId: string | undefined, callSignal: AbortSignal, timeoutMs = callTimeoutMs) =>
       cdp.send<T>(method, params, { ...(sessionId ? { sessionId } : {}), signal: callSignal, timeoutMs });
@@ -197,7 +206,7 @@ export function createBrowsers(provider: BrowserProvider, options: BrowsersOptio
     /** Prepares a target the moment it is attached, while it waits: nothing runs in it before the origins are enforced. */
     const prepare = async (sessionId: string, type: string, targetId: string, checked: (ok: boolean) => void) => {
       try {
-        if (!policy.all) {
+        if (!policy.all && !browserWide) {
           try { await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, sessionId, background); }
           catch (error) {
             // A dedicated worker has no Fetch of its own: its requests are checked in its page. Any other target that
@@ -258,6 +267,9 @@ export function createBrowsers(provider: BrowserProvider, options: BrowsersOptio
     const setupSignal = AbortSignal.any([signal, AbortSignal.timeout(callTimeoutMs)]);
     try {
       await send('Browser.setDownloadBehavior', { behavior: 'deny' }, undefined, setupSignal).catch(() => undefined);
+      if (!policy.all && !backend.isolate) {
+        browserWide = await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, undefined, setupSignal).then(() => true, () => false);
+      }
       await send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, undefined, setupSignal);
       if (backend.isolate) {
         context = (await send<{ browserContextId: string }>('Target.createBrowserContext', { disposeOnDetach: true }, undefined, setupSignal)).browserContextId;
@@ -391,6 +403,7 @@ export function createBrowsers(provider: BrowserProvider, options: BrowsersOptio
     const browser: Browser = Object.freeze({
       id: backend.id, provider: id, features,
       get ended() { return ended || Date.now() >= expiresAt; },
+      cdp: Object.freeze({ url: backend.cdp.url, headers: Object.freeze({ ...backend.cdp.headers }), isolated: backend.isolate === true }),
       ...(features.liveView && typeof backend.liveViewUrl === 'string' && /^https:\/\//u.test(backend.liveViewUrl) ? { liveViewUrl: backend.liveViewUrl } : {}),
       goto: async (url: string, callOptions: CallOptions = {}) => { const href = checkUrl(url); return run(callOptions.signal, callSignal => {
         const tab = current();

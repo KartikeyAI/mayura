@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cdpBrowsers, createBrowsers, type Browser, type Browsers } from '../src/index.js';
+import { cdpBrowsers, connectCdp, createBrowsers, type Browser, type Browsers } from '../src/index.js';
 import { findLocalBrowser, localBrowsers, serveBrowserFixtures, type BrowserFixtureServer } from '../src/local/index.js';
 import { browserConformance } from '../src/testing.js';
 
@@ -20,6 +20,20 @@ describe.skipIf(channel === undefined)('browsers on the local browser', { timeou
   for (const test of browserConformance) {
     it(test.name, async () => { expect(await test.run({ browser, allowed: fixtures.allowed, blocked: fixtures.blocked, requests: fixtures.requests })).toBe('passed'); });
   }
+
+  it('keeps pages another client opens to the origins too', async () => {
+    const other = await connectCdp(browser.cdp.url, { headers: browser.cdp.headers });
+    try {
+      const before = fixtures.requests().length;
+      await other.send('Target.createTarget', { url: `${fixtures.blocked}/target?from=other` });
+      await other.send('Target.createTarget', { url: `${fixtures.allowed}/next?from=other` });
+      await new Promise(resolve => setTimeout(resolve, 2_000));
+      const seen = fixtures.requests().slice(before);
+      expect(seen.some(request => request.path === '/next')).toBe(true);
+      expect(seen.filter(request => request.host === new URL(fixtures.blocked).host)).toEqual([]);
+    } finally { other.close(); }
+    for (const tab of (await browser.tabs()).filter(item => !item.active)) await browser.closeTab(tab.tab);
+  });
 
   it('finds the installed browser', () => { expect(findLocalBrowser(channel)).toMatch(/chrome|msedge|chromium|edge/iu); });
 

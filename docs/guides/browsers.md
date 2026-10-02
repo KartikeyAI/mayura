@@ -62,7 +62,10 @@ The list is enforced in the browser, not only at `goto`. Every request is checke
 redirects, frames, scripts, images, `fetch`, and requests from dedicated, shared and service workers — and one to
 another origin fails as blocked. Each new page, frame or worker is held until its requests are checked; one that
 cannot be checked never runs. `goto` to another origin, or a navigation redirected to one, fails with
-`PERMISSION_DENIED`.
+`PERMISSION_DENIED`. When the browser is this one's alone, requests are checked for the whole browser, so a page
+another client opens (such as Stagehand, over `browser.cdp`) is covered from its first request. In a browser shared
+with others (`cdpBrowsers`), each page is checked as it is attached, as others' pages must be left alone: a page
+another CDP client opens there with a URL may make that first request unchecked.
 
 Downloads are refused, file pickers stay closed, and dialogs (`alert`, `confirm`, `prompt`) are dismissed and reported
 in the next snapshot.
@@ -90,6 +93,9 @@ one browser run one at a time, in order.
 | `release()` | Ends the browser. |
 
 `liveViewUrl` is where a person can watch, on providers with a live view. It may carry a token: treat it as a secret.
+
+`cdp` is the browser's CDP endpoint (`url`, `headers`, and whether it is `isolated`), for another client to drive it
+alongside, such as Stagehand. It may carry a credential. Origins stay enforced for every page while the browser is open.
 
 ## Tools
 

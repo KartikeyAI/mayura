@@ -302,7 +302,7 @@
     "@mayura/browser": {
       "Browser": {
         "kind": "interface",
-        "declaration": "b42b4667e97c7fd8"
+        "declaration": "2e9a6121fbe923ab"
       },
       "BrowserBackend": {
         "kind": "interface",
