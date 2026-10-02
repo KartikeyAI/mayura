@@ -8331,6 +8331,16 @@
         "declaration": "0a2b7fa78e733bd1"
       }
     },
+    "@mayurajs/browser-kernel": {
+      "KernelBrowserOptions": {
+        "kind": "interface",
+        "declaration": "b192c9d4b82aaf03"
+      },
+      "kernelBrowsers": {
+        "kind": "function",
+        "declaration": "ae8b64c78625b0d8"
+      }
+    },
     "@mayurajs/browser-steel": {
       "SteelBrowserOptions": {
         "kind": "interface",

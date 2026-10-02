@@ -93,6 +93,7 @@
     "@mayurajs/browser-steel",
     "@mayurajs/browser-hyperbrowser",
     "@mayurajs/browser-browserless",
+    "@mayurajs/browser-kernel",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

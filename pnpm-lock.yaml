@@ -98,6 +98,9 @@ importers:
       '@mayurajs/browser-hyperbrowser':
         specifier: workspace:*
         version: link:extensions/browser-hyperbrowser
+      '@mayurajs/browser-kernel':
+        specifier: workspace:*
+        version: link:extensions/browser-kernel
       '@mayurajs/browser-steel':
         specifier: workspace:*
         version: link:extensions/browser-steel
@@ -364,6 +367,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-hyperbrowser:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/browser-kernel:
     devDependencies:
       mayura:
         specifier: workspace:*
