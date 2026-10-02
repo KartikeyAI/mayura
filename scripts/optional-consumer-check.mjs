@@ -14,7 +14,7 @@ import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote', 'files', 'voice', 'sandbox'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote', 'files', 'voice', 'sandbox', 'browser'];
 const expectedDependencies = {
   core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core', '@mayura/files', '@mayura/tools', '@mayura/voice'],
   sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools', 'zod'], server: ['@mayura/core', '@mayura/runtime'],
@@ -36,6 +36,7 @@ const expectedDependencies = {
   files: ['@mayura/core', '@mayura/tools'],
   voice: ['@mayura/core', '@mayura/tools'],
   sandbox: ['@mayura/core', '@mayura/tools'],
+  browser: ['@mayura/core', '@mayura/tools'],
 };
 
 function inside(parent, child) { const path = relative(parent, child); return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); }

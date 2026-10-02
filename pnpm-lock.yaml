@@ -808,6 +808,15 @@ importers:
         specifier: workspace:*
         version: link:../files
 
+  packages/browser:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
+
   packages/cli:
     dependencies:
       '@clack/prompts':
@@ -1109,6 +1118,9 @@ importers:
       '@mayura/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@mayura/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@mayura/cli':
         specifier: workspace:*
         version: link:../cli

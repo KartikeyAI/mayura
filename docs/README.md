@@ -55,6 +55,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Artifacts](guides/artifacts.md): store files that runs produce.
 - [Files](guides/files.md): files in S3, R2 and other object stores, with versions, tenant views and file tools.
 - [Sandboxes](guides/sandboxes.md): isolated Linux machines for agents to run commands and handle files in, on Docker or a hosted provider.
+- [Browsers](guides/browsers.md): real browsers for agents to read and use web pages in, on the Chrome or Edge installed here or a hosted service, kept to allowed origins.
 - [Code Mode](guides/code-mode.md): run model-written code in a sandbox.
 - [Helpers](guides/helpers.md): configuration, secrets, retries and other utilities.
 

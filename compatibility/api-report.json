@@ -299,6 +299,184 @@
         "declaration": "cef1904c59688076"
       }
     },
+    "@mayura/browser": {
+      "Browser": {
+        "kind": "interface",
+        "declaration": "b42b4667e97c7fd8"
+      },
+      "BrowserBackend": {
+        "kind": "interface",
+        "declaration": "054cbd160824d20d"
+      },
+      "BrowserCdpEndpoint": {
+        "kind": "interface",
+        "declaration": "92bfab7756fa63cb"
+      },
+      "BrowserError": {
+        "kind": "class",
+        "declaration": "7ede2446bbce0385"
+      },
+      "BrowserFailureReason": {
+        "kind": "type",
+        "declaration": "1ea7318566e45bb3"
+      },
+      "BrowserFeatures": {
+        "kind": "interface",
+        "declaration": "d5d8cb6bd92d53f9"
+      },
+      "browserHttpFailure": {
+        "kind": "function",
+        "declaration": "c9240c4cb6ffa3f5"
+      },
+      "browserPerRun": {
+        "kind": "function",
+        "declaration": "ce39a9953ccffbc2"
+      },
+      "BrowserPerRun": {
+        "kind": "interface",
+        "declaration": "b19f156237abb406"
+      },
+      "BrowserProvider": {
+        "kind": "interface",
+        "declaration": "30a99ab6eebad5c2"
+      },
+      "browserResponseFailure": {
+        "kind": "function",
+        "declaration": "c9231aff09ba9c93"
+      },
+      "Browsers": {
+        "kind": "interface",
+        "declaration": "f972b610b13be786"
+      },
+      "BrowsersOptions": {
+        "kind": "interface",
+        "declaration": "dff2398341f1fd22"
+      },
+      "BrowserSource": {
+        "kind": "type",
+        "declaration": "6dcba19c747884df"
+      },
+      "browserTools": {
+        "kind": "function",
+        "declaration": "5752681f568ead94"
+      },
+      "BrowserToolsOptions": {
+        "kind": "interface",
+        "declaration": "2b0f171fc2d71a92"
+      },
+      "CallOptions": {
+        "kind": "interface",
+        "declaration": "2a019d45d69076b4"
+      },
+      "cdpBrowsers": {
+        "kind": "function",
+        "declaration": "ecd948a40e068665"
+      },
+      "CdpBrowsersOptions": {
+        "kind": "interface",
+        "declaration": "8ed83f366ce79c1b"
+      },
+      "CdpConnection": {
+        "kind": "interface",
+        "declaration": "9a2f9c6d051f1f8f"
+      },
+      "CdpConnectOptions": {
+        "kind": "interface",
+        "declaration": "2a9b991c4f4b45e8"
+      },
+      "CdpError": {
+        "kind": "class",
+        "declaration": "9ef7110720ea6e50"
+      },
+      "CdpEventHandler": {
+        "kind": "type",
+        "declaration": "10ef104d539787da"
+      },
+      "CdpSendOptions": {
+        "kind": "interface",
+        "declaration": "b54bc9ab4a3cb868"
+      },
+      "CdpSocket": {
+        "kind": "interface",
+        "declaration": "21ff91add8726eb6"
+      },
+      "CdpSocketFactory": {
+        "kind": "type",
+        "declaration": "db9c252c4d21413c"
+      },
+      "connectCdp": {
+        "kind": "function",
+        "declaration": "9946934d816479f6"
+      },
+      "createBrowsers": {
+        "kind": "function",
+        "declaration": "5ced37079d6851b0"
+      },
+      "NavigationResult": {
+        "kind": "interface",
+        "declaration": "8aa3e43e7e7663b8"
+      },
+      "PageState": {
+        "kind": "interface",
+        "declaration": "e6398f0883fb572d"
+      },
+      "ProviderBrowserSpec": {
+        "kind": "interface",
+        "declaration": "165eea354aa135b7"
+      },
+      "resolveCdpUrl": {
+        "kind": "function",
+        "declaration": "7553d3cbee66e5f2"
+      },
+      "Snapshot": {
+        "kind": "interface",
+        "declaration": "744b1c6b5c5b7640"
+      }
+    },
+    "@mayura/browser/local": {
+      "BrowserFixtureServer": {
+        "kind": "interface",
+        "declaration": "e5a671c693617b0a"
+      },
+      "findLocalBrowser": {
+        "kind": "function",
+        "declaration": "888f3d3b9133021c"
+      },
+      "localBrowsers": {
+        "kind": "function",
+        "declaration": "71f2b81ad8ad51fb"
+      },
+      "LocalBrowsersOptions": {
+        "kind": "interface",
+        "declaration": "92166f224e313aed"
+      },
+      "serveBrowserFixtures": {
+        "kind": "function",
+        "declaration": "fbd6924c9ce36aac"
+      }
+    },
+    "@mayura/browser/testing": {
+      "browserConformance": {
+        "kind": "const",
+        "declaration": "e7717f16cd065c87"
+      },
+      "BrowserConformanceCase": {
+        "kind": "interface",
+        "declaration": "85855eb4ee400071"
+      },
+      "BrowserConformanceContext": {
+        "kind": "interface",
+        "declaration": "dcd81beb9c02e3f9"
+      },
+      "BrowserConformanceResult": {
+        "kind": "type",
+        "declaration": "9d2a7f526a979bed"
+      },
+      "browserFixturePages": {
+        "kind": "const",
+        "declaration": "f3417d30c5c64e18"
+      }
+    },
     "@mayura/cli": {
       "ApplyInitOptions": {
         "kind": "interface",

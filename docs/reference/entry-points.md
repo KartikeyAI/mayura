@@ -71,6 +71,9 @@ validator works too.
 | `mayura/sandbox` | Isolated Linux machines for agents: commands, files, ports and desktops, with lifetimes and no network by default. | `createSandboxes`, `sandboxTools`, `sandboxPerRun` | a sandbox provider |
 | `mayura/sandbox/testing` | The sandbox contract as test cases, to test a sandbox provider against a real sandbox. | `sandboxConformance` | |
 | `mayura/sandbox/docker` | Sandboxes as locked-down Docker containers on this machine, through the CLI or the Engine API. Node only. | `dockerSandboxes` | Docker |
+| `mayura/browser` | Real browsers for agents over the Chrome DevTools Protocol: snapshots with refs, actions, tabs, kept to allowed origins. Any runtime. | `createBrowsers`, `browserTools`, `browserPerRun`, `cdpBrowsers` | a browser provider |
+| `mayura/browser/testing` | The browser contract as test cases and fixture pages, to test a browser provider against a real browser. | `browserConformance`, `browserFixturePages` | |
+| `mayura/browser/local` | Browsers launched from the Chrome, Chromium or Edge installed here, nothing downloaded; and a fixture server for tests. Node only. | `localBrowsers`, `findLocalBrowser`, `serveBrowserFixtures` | Chrome or Edge |
 | `mayura/adapter-mcp` | Using a tool from an MCP server as a Mayura tool. | `defineMcpTool` | |
 | `mayura/helpers` | Small utilities: retries, deadlines, validated configuration, redacted logging. | `retry`, `withDeadline`, `pollUntil`, `validatedEnvironment`, `createRedactedLogger` | |
 

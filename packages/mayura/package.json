@@ -33,6 +33,18 @@
       "types": "./dist/artifacts__files.d.ts",
       "import": "./dist/artifacts__files.js"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./browser/local": {
+      "types": "./dist/browser__local.d.ts",
+      "import": "./dist/browser__local.js"
+    },
+    "./browser/testing": {
+      "types": "./dist/browser__testing.d.ts",
+      "import": "./dist/browser__testing.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
@@ -263,6 +275,7 @@
     "@mayura/adapter-code-quickjs": "workspace:*",
     "@mayura/adapter-mcp": "workspace:*",
     "@mayura/artifacts": "workspace:*",
+    "@mayura/browser": "workspace:*",
     "@mayura/cli": "workspace:*",
     "@mayura/client": "workspace:*",
     "@mayura/client-react": "workspace:*",

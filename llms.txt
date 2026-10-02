@@ -61,6 +61,7 @@ Rules that matter when writing Mayura code:
 - [Artifacts](docs/guides/artifacts.md): Store files your agents produce on local disk or in S3, R2 and other file stores, with verified content, per-tenant isolation, safe downloads, audits and backups.
 - [Files](docs/guides/files.md): Store and read files in S3, Cloudflare R2 and other object stores, with versions for safe concurrent writes, per-tenant views and permission-gated file tools for agents.
 - [Sandboxes](docs/guides/sandboxes.md): Isolated Linux machines for agents to run commands and handle files in, on Docker or a hosted provider, with no network unless allowed and permission-gated tools.
+- [Browsers](docs/guides/browsers.md): Real browsers for agents to read and use web pages in, on the Chrome or Edge installed here or a hosted browser service, kept to the origins you allow, with permission-gated tools.
 - [Code Mode](docs/guides/code-mode.md): Run small JavaScript programs, including model-written ones, in a sandbox that can call only the tools you allow.
 - [Helpers](docs/guides/helpers.md): Small utilities for configuration, secrets, retries, cancellation, pagination, redacted logging and budgeted concurrency.
 

@@ -20,6 +20,7 @@ export const NODE_ONLY = new Map([
   ['./cli', 'the command line'],
   ['./cli/deploy', 'runs deployment tools as child processes'],
   ['./sandbox/docker', 'runs Docker as a child process or over its local socket'],
+  ['./browser/local', 'launches the installed Chrome or Edge, and serves test pages over HTTP'],
   ['./server-node', 'the Node HTTP server'],
   ['./skills', 'loads skills from the filesystem'],
   ['./storage', 'SQLite through a native module'],

@@ -1,0 +1,11 @@
+{
+  "name": "@mayura/browser", "version": "1.0.0", "private": true,
+  "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./local": { "types": "./dist/local/index.d.ts", "import": "./dist/local/index.js" },
+    "./testing": { "types": "./dist/testing.d.ts", "import": "./dist/testing.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "dependencies": { "@mayura/core": "workspace:*", "@mayura/tools": "workspace:*" }
+}
