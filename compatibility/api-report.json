@@ -8351,6 +8351,16 @@
         "declaration": "111bf206c33a48d3"
       }
     },
+    "@mayurajs/browser-cloudflare": {
+      "CloudflareBrowserOptions": {
+        "kind": "interface",
+        "declaration": "7e6982a8bda41a54"
+      },
+      "cloudflareBrowsers": {
+        "kind": "function",
+        "declaration": "5b036994d6c83aef"
+      }
+    },
     "@mayurajs/browser-hyperbrowser": {
       "HyperbrowserBrowserOptions": {
         "kind": "interface",

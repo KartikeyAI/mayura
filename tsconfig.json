@@ -35,6 +35,7 @@
     { "path": "extensions/browser-browser-use" },
     { "path": "extensions/browser-anchor" },
     { "path": "extensions/browser-browserview" },
+    { "path": "extensions/browser-cloudflare" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

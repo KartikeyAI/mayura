@@ -104,6 +104,9 @@ importers:
       '@mayurajs/browser-browserview':
         specifier: workspace:*
         version: link:extensions/browser-browserview
+      '@mayurajs/browser-cloudflare':
+        specifier: workspace:*
+        version: link:extensions/browser-cloudflare
       '@mayurajs/browser-hyperbrowser':
         specifier: workspace:*
         version: link:extensions/browser-hyperbrowser
@@ -388,6 +391,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-browserview:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/browser-cloudflare:
     devDependencies:
       mayura:
         specifier: workspace:*

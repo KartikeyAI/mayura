@@ -137,6 +137,7 @@ new browser context, closed on release; the browser's other tabs are left alone.
 | `@mayurajs/browser-browser-use` | [Browser Use Cloud](https://docs.browser-use.com/cloud/browser/quickstart) browsers, which outlive their connection; no proxy, no captcha solving | only with `liveView: true` |
 | `@mayurajs/browser-anchor` | [Anchor Browser](https://docs.anchorbrowser.io) sessions; recording and ad blocking off | live view, view-only by default |
 | `@mayurajs/browser-browserview` | [BrowserView](https://browserview.io/docs) sessions, not kept alive; stealth off; its CDP connection needs a header (give `webSocket` on Workers or Deno) | watch link by default |
+| `@mayurajs/browser-cloudflare` | [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) from outside a Worker: a browser per connection, ended `keepAliveMs` after it closes | no |
 
 `localBrowsers({ channel, executablePath, headless, args })` finds Chrome (`channel: 'chrome'`, the default) or Edge
 (`'edge'`) in the usual install places, or runs `executablePath`. Nothing is downloaded. Each browser runs headless with
