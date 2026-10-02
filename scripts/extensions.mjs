@@ -56,6 +56,7 @@ export const reviewedDependencies = {
   'sandbox-railway': [],
   'sandbox-northflank': ['@northflank/js-client'],
   'browser-browserbase': [],
+  'browser-steel': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

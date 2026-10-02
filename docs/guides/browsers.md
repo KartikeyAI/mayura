@@ -130,6 +130,7 @@ new browser context, closed on release; the browser's other tabs are left alone.
 | `mayura/browser/local` | The Chrome, Chromium or Edge installed here, one process with a new profile per browser; Node | no |
 | `cdpBrowsers` (in `mayura/browser`) | Any browser with a CDP endpoint, in a context of its own | no |
 | `@mayurajs/browser-browserbase` | [Browserbase](https://docs.browserbase.com) sessions; captchas, recording and logs off | debugger view |
+| `@mayurajs/browser-steel` | [Steel](https://docs.steel.dev) sessions, which outlive their connection: release them | session viewer, view-only by default |
 
 `localBrowsers({ channel, executablePath, headless, args })` finds Chrome (`channel: 'chrome'`, the default) or Edge
 (`'edge'`) in the usual install places, or runs `executablePath`. Nothing is downloaded. Each browser runs headless with

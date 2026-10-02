@@ -8311,6 +8311,16 @@
         "declaration": "57472ca688602a19"
       }
     },
+    "@mayurajs/browser-steel": {
+      "SteelBrowserOptions": {
+        "kind": "interface",
+        "declaration": "a36174a86771b931"
+      },
+      "steelBrowsers": {
+        "kind": "function",
+        "declaration": "065f4ecbad5291f8"
+      }
+    },
     "@mayurajs/deploy-agentcore": {
       "AgentCoreSettings": {
         "kind": "interface",
