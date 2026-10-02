@@ -126,7 +126,8 @@ async function boot(starter, directory) {
   if (manifest.bin && !existsSync(join(directory, 'dist', 'src', 'app.js'))) return bootCommand(starter, directory, manifest);
   const bin = join(directory, 'node_modules', 'mayura', 'lib', 'cli', 'dist', 'bin.js'); const app = join(directory, 'dist', 'src', 'app.js');
   const token = randomBytes(32).toString('hex'); const port = await freePort(); const probe = await freePort();
-  const env = { MAYURA_ENV: 'development', PORT: String(port), MAYURA_SQLITE_PATH: join(directory, '.data', 'boot.sqlite'),
+  // Starters with a listener of their own (event-automation's webhooks) get a free port too, not their default.
+  const env = { MAYURA_ENV: 'development', PORT: String(port), WEBHOOK_PORT: String(await freePort()), MAYURA_SQLITE_PATH: join(directory, '.data', 'boot.sqlite'),
     MAYURA_OPERATOR_TOKEN_SHA256: createHash('sha256').update(token).digest('hex') };
   const migrated = JSON.parse((await run([bin, 'migrate', '--app', app], directory, { env })).stdout);
   const processes = [];
