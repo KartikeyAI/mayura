@@ -128,6 +128,9 @@ importers:
       '@mayurajs/browser-steel':
         specifier: workspace:*
         version: link:extensions/browser-steel
+      '@mayurajs/browser-viewer':
+        specifier: workspace:*
+        version: link:extensions/browser-viewer
       '@mayurajs/cloudflare-quick-action':
         specifier: workspace:*
         version: link:extensions/cloudflare-quick-action
@@ -452,6 +455,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/browser-steel:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/browser-viewer:
     devDependencies:
       mayura:
         specifier: workspace:*

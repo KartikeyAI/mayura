@@ -69,6 +69,7 @@ export const reviewedDependencies = {
   'cloudflare-quick-action': [],
   'browser-stagehand': [],
   'browser-agent-browser': [],
+  'browser-viewer': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

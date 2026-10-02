@@ -94,6 +94,11 @@ one browser run one at a time, in order.
 
 `liveViewUrl` is where a person can watch, on providers with a live view. It may carry a token: treat it as a secret.
 
+For a live view of any browser other clients can join, local ones included, `@mayurajs/browser-viewer` streams the
+active tab to a page: `serveBrowserViewer()` then `share(browser)` gives a link that expires, view only unless
+`interact: true` lets a person use the page (within the same origins). `browserViewer()` is the same as request
+handling to mount in your own server.
+
 `cdp` is the browser's CDP endpoint (`url`, `headers`, and whether it is `isolated`), for another client to drive it
 alongside, such as Stagehand. It may carry a credential. Origins stay enforced for every page while the browser is open.
 It is absent where another connection would not reach this browser: a provider whose every connection starts a

@@ -8449,6 +8449,60 @@
         "declaration": "065f4ecbad5291f8"
       }
     },
+    "@mayurajs/browser-viewer": {
+      "browserScreencast": {
+        "kind": "function",
+        "declaration": "6cb5c02cb8e915d4"
+      },
+      "browserViewer": {
+        "kind": "function",
+        "declaration": "0db7e2ba7665c400"
+      },
+      "BrowserViewer": {
+        "kind": "interface",
+        "declaration": "e342cc23a4211f31"
+      },
+      "BrowserViewerOptions": {
+        "kind": "interface",
+        "declaration": "443cd4ad6517872d"
+      },
+      "Screencast": {
+        "kind": "interface",
+        "declaration": "b281dfaf7495f503"
+      },
+      "ScreencastFrame": {
+        "kind": "interface",
+        "declaration": "24f70b36f716ea74"
+      },
+      "ScreencastOptions": {
+        "kind": "interface",
+        "declaration": "ef7905e2644a3ae0"
+      },
+      "serveBrowserViewer": {
+        "kind": "function",
+        "declaration": "9fad2f7636ed439f"
+      },
+      "ServeBrowserViewerOptions": {
+        "kind": "interface",
+        "declaration": "6f6c4916fb90e7ae"
+      },
+      "ServedBrowserViewer": {
+        "kind": "interface",
+        "declaration": "b32b5fa9e2d24ebd"
+      },
+      "ViewerInput": {
+        "kind": "type",
+        "declaration": "48caaa5f7e2d6fce"
+      },
+      "ViewerShare": {
+        "kind": "interface",
+        "declaration": "0de23ba9c7c2ceb8"
+      },
+      "ViewerShareOptions": {
+        "kind": "interface",
+        "declaration": "91d5fd92f831f74f"
+      }
+    },
     "@mayurajs/cloudflare-quick-action": {
       "CallOptions": {
         "kind": "interface",
