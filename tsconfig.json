@@ -32,6 +32,7 @@
     { "path": "extensions/browser-hyperbrowser" },
     { "path": "extensions/browser-browserless" },
     { "path": "extensions/browser-kernel" },
+    { "path": "extensions/browser-browser-use" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

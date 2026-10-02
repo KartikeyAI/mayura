@@ -8301,6 +8301,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/browser-browser-use": {
+      "BrowserUseBrowserOptions": {
+        "kind": "interface",
+        "declaration": "6829ff6a585c0614"
+      },
+      "browserUseBrowsers": {
+        "kind": "function",
+        "declaration": "b9afe661da73e616"
+      }
+    },
     "@mayurajs/browser-browserbase": {
       "BrowserbaseBrowserOptions": {
         "kind": "interface",

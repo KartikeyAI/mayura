@@ -60,6 +60,7 @@ export const reviewedDependencies = {
   'browser-hyperbrowser': [],
   'browser-browserless': [],
   'browser-kernel': [],
+  'browser-browser-use': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

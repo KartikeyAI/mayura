@@ -89,6 +89,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/browser-browser-use':
+        specifier: workspace:*
+        version: link:extensions/browser-browser-use
       '@mayurajs/browser-browserbase':
         specifier: workspace:*
         version: link:extensions/browser-browserbase
@@ -353,6 +356,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/browser-browser-use:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/browser-browserbase:
     devDependencies:

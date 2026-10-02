@@ -94,6 +94,7 @@
     "@mayurajs/browser-hyperbrowser",
     "@mayurajs/browser-browserless",
     "@mayurajs/browser-kernel",
+    "@mayurajs/browser-browser-use",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",
