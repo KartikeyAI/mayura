@@ -34,6 +34,13 @@ describe('createBrowsers', () => {
     await browser.release();
   });
 
+  it('gives no CDP endpoint to other clients where a connection would start a browser of its own', async () => {
+    const fake = fakeBrowser();
+    const browser = await createBrowsers(fake.provider({ cdp: { url: 'ws://fake.test/devtools/browser/1', joinable: false } }), limits(fake)).open();
+    expect(browser.cdp).toBeUndefined(); expect('cdp' in browser).toBe(false);
+    await browser.release();
+  });
+
   it('checks each target as it is attached, before it runs, where the browser cannot be checked as a whole', async () => {
     const fake = fakeBrowser({ answer: sent => (sent.method === 'Fetch.enable' && !sent.sessionId ? perTargetOnly : undefined) });
     const browser = await createBrowsers(fake.provider(), limits(fake)).open();

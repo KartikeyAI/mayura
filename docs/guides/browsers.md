@@ -96,6 +96,8 @@ one browser run one at a time, in order.
 
 `cdp` is the browser's CDP endpoint (`url`, `headers`, and whether it is `isolated`), for another client to drive it
 alongside, such as Stagehand. It may carry a credential. Origins stay enforced for every page while the browser is open.
+It is absent where another connection would not reach this browser: a provider whose every connection starts a
+browser of its own (such as Browserless) marks its endpoint `joinable: false`.
 
 ## Tools
 
@@ -143,7 +145,7 @@ new browser context, closed on release; the browser's other tabs are left alone.
 | `@mayurajs/browser-browser-use` | [Browser Use Cloud](https://docs.browser-use.com/cloud/browser/quickstart) browsers, which outlive their connection; no proxy, no captcha solving | only with `liveView: true` |
 | `@mayurajs/browser-anchor` | [Anchor Browser](https://docs.anchorbrowser.io) sessions; recording and ad blocking off | live view, view-only by default |
 | `@mayurajs/browser-browserview` | [BrowserView](https://browserview.io/docs) sessions, not kept alive; stealth off; its CDP connection needs a header (give `webSocket` on Workers or Deno) | watch link by default |
-| `@mayurajs/browser-cloudflare` | [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) from outside a Worker: a browser per connection, ended `keepAliveMs` after it closes | no |
+| `@mayurajs/browser-cloudflare` | [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) from outside a Worker: a session per browser, closed on release | yes (read only by default) |
 | `@mayurajs/browser-firecrawl` | [Firecrawl](https://docs.firecrawl.dev) Interact sessions; the package also has `firecrawlTools`, Firecrawl's scrape, map, search, crawl and extract as permission-gated tools kept to `origins` | live view, view-only by default |
 
 `localBrowsers({ channel, executablePath, headless, args })` finds Chrome (`channel: 'chrome'`, the default) or Edge

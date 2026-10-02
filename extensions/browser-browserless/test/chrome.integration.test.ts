@@ -31,7 +31,8 @@ describe.skipIf(channel === undefined)('Browserless browsers, each connection a 
     it(test.name, async () => { expect(await test.run({ browser, allowed: fixtures.allowed, blocked: fixtures.blocked, requests: fixtures.requests })).toBe('passed'); });
   }
 
-  it('connected to Browserless with the token and the lifetime', () => {
+  it('connected to Browserless with the token and the lifetime, and gives no endpoint to other clients', () => {
     expect(asked).toEqual(['wss://production-sfo.browserless.io/?token=bl_test_token_1&timeout=300000']);
+    expect(browser.cdp).toBeUndefined();
   });
 });

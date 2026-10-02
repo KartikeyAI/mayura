@@ -62,7 +62,7 @@ async function loadStagehand(): Promise<StagehandConstructor> {
  * endpoint, so the browser's origins, lifetime and limits still hold. Node only (Stagehand's own requirement).
  */
 export function stagehandTools(source: BrowserSource, options: StagehandToolsOptions): AnyTool[] {
-  if (typeof source !== 'function' && (!source || typeof source.goto !== 'function' || !source.cdp)) throw new MayuraError('INVALID_CONFIG', 'stagehandTools() needs a browser, or a function giving one.');
+  if (typeof source !== 'function' && (!source || typeof source.goto !== 'function')) throw new MayuraError('INVALID_CONFIG', 'stagehandTools() needs a browser, or a function giving one.');
   const name = options?.name ?? 'stagehand';
   if (typeof name !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/u.test(name)) throw new MayuraError('INVALID_CONFIG', 'stagehandTools(): name is lowercase letters, digits, _ and -, starting with a letter.');
   const model = options.model;
@@ -82,7 +82,7 @@ export function stagehandTools(source: BrowserSource, options: StagehandToolsOpt
   const instances = new WeakMap<Browser, Promise<StagehandLike>>();
   const browserOf = async (context: { readonly runId: string; readonly scope: Scope; readonly signal: AbortSignal }): Promise<Browser> => {
     const browser = typeof source === 'function' ? await source(context) : source;
-    if (!browser || typeof browser.goto !== 'function' || !browser.cdp) throw new MayuraError('INVALID_CONFIG', 'The browser source gave no browser.');
+    if (!browser || typeof browser.goto !== 'function') throw new MayuraError('INVALID_CONFIG', 'The browser source gave no browser.');
     if (browser.ended) throw new MayuraError('INVALID_INPUT', 'The browser has ended.');
     return browser;
   };
@@ -90,12 +90,15 @@ export function stagehandTools(source: BrowserSource, options: StagehandToolsOpt
     let instance = instances.get(browser);
     if (!instance) {
       instance = (async () => {
-        // Stagehand would act on other pages of a shared browser, and its CDP connection sends no headers.
-        if (browser.cdp.isolated) throw new MayuraError('INVALID_CONFIG', 'Stagehand cannot be kept to a browser context of its own: use a browser that is this one\'s alone.');
-        if (Object.keys(browser.cdp.headers).length > 0) throw new MayuraError('INVALID_CONFIG', `Stagehand cannot connect to the ${browser.provider} provider's browsers, which need headers on their CDP connection.`);
+        // Stagehand needs to reach this very browser; it would act on other pages of a shared one; its CDP connection
+        // sends no headers.
+        const cdp = browser.cdp;
+        if (!cdp) throw new MayuraError('INVALID_CONFIG', `Stagehand cannot join the ${browser.provider} provider's browsers: each connection starts a browser of its own.`);
+        if (cdp.isolated) throw new MayuraError('INVALID_CONFIG', 'Stagehand cannot be kept to a browser context of its own: use a browser that is this one\'s alone.');
+        if (Object.keys(cdp.headers).length > 0) throw new MayuraError('INVALID_CONFIG', `Stagehand cannot connect to the ${browser.provider} provider's browsers, which need headers on their CDP connection.`);
         const Stagehand = options.stagehand ?? await loadStagehand();
         const stagehand = new Stagehand({
-          env: 'LOCAL', localBrowserLaunchOptions: { cdpUrl: browser.cdp.url },
+          env: 'LOCAL', localBrowserLaunchOptions: { cdpUrl: cdp.url },
           model: typeof model === 'string' ? model : { ...model },
           // Disconnect on close, never end the browser: its lifetime is Mayura's to keep.
           keepAlive: true, verbose: 0, disablePino: true, logger: () => undefined,

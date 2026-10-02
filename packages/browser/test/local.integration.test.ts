@@ -22,7 +22,7 @@ describe.skipIf(channel === undefined)('browsers on the local browser', { timeou
   }
 
   it('keeps pages another client opens to the origins too', async () => {
-    const other = await connectCdp(browser.cdp.url, { headers: browser.cdp.headers });
+    const other = await connectCdp(browser.cdp!.url, { headers: browser.cdp!.headers });
     try {
       const before = fixtures.requests().length;
       await other.send('Target.createTarget', { url: `${fixtures.blocked}/target?from=other` });

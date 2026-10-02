@@ -67,9 +67,10 @@ export interface Browser {
   /**
    * The browser's CDP endpoint, for another client to drive it alongside (such as Stagehand), and whether this browser
    * is a context of its own in a browser shared with others. It may carry a credential: treat it as a secret. Origins
-   * stay enforced for every page, whoever opens it, while this browser is open.
+   * stay enforced for every page, whoever opens it, while this browser is open. Absent where another connection would
+   * not reach this browser, as with a provider that starts a browser for each connection.
    */
-  readonly cdp: { readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly isolated: boolean };
+  readonly cdp?: { readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly isolated: boolean };
   goto(url: string, options?: CallOptions): Promise<NavigationResult>;
   back(options?: CallOptions): Promise<NavigationResult>;
   forward(options?: CallOptions): Promise<NavigationResult>;
@@ -403,7 +404,7 @@ export function createBrowsers(provider: BrowserProvider, options: BrowsersOptio
     const browser: Browser = Object.freeze({
       id: backend.id, provider: id, features,
       get ended() { return ended || Date.now() >= expiresAt; },
-      cdp: Object.freeze({ url: backend.cdp.url, headers: Object.freeze({ ...backend.cdp.headers }), isolated: backend.isolate === true }),
+      ...(backend.cdp.joinable === false ? {} : { cdp: Object.freeze({ url: backend.cdp.url, headers: Object.freeze({ ...backend.cdp.headers }), isolated: backend.isolate === true }) }),
       ...(features.liveView && typeof backend.liveViewUrl === 'string' && /^https:\/\//u.test(backend.liveViewUrl) ? { liveViewUrl: backend.liveViewUrl } : {}),
       goto: async (url: string, callOptions: CallOptions = {}) => { const href = checkUrl(url); return run(callOptions.signal, callSignal => {
         const tab = current();

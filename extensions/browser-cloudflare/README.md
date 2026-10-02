@@ -1,7 +1,7 @@
 # @mayurajs/browser-cloudflare
 
 [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) (formerly Browser Rendering) browsers for
-`mayura/browser`, reached from outside a Worker over Browser Run's CDP endpoint, with no dependency.
+`mayura/browser`, reached from outside a Worker over Browser Run's session API and CDP, with no dependency.
 
 ```bash
 npm install mayura @mayurajs/browser-cloudflare
@@ -23,17 +23,21 @@ await browser.release();
 - `apiToken` needs the **Browser Rendering - Edit** permission. It travels as `Authorization: Bearer` on the
   WebSocket: Node and Bun send it; on runtimes whose WebSocket cannot send headers, give `createBrowsers` a
   `webSocket` that can.
-- Each browser is one connection: Cloudflare launches a browser when it opens. Releasing the browser closes the
-  connection, and Cloudflare ends the browser `keepAliveMs` later (60 s by default; 10 s to 10 minutes, as
-  Cloudflare's pages give 10 or 20 minutes as the most). A browser whose process stopped ends the same way.
-  `createBrowsers` keeps its lifetime.
+- Each browser is a Browser Run session: acquired when opened, driven over CDP at the session's own address, and
+  closed when released. Should the release never come, such as when this process stopped, Cloudflare ends the session
+  `keepAliveMs` after its last connection closes (60 s by default; 10 s to 10 minutes, as Cloudflare's pages give 10
+  or 20 minutes as the most). `createBrowsers` keeps its lifetime.
+- A second client over `browser.cdp` (such as Stagehand or `@mayurajs/browser-viewer`) joins the same browser, with
+  the same origins enforced.
+- `liveView`: each browser's `liveViewUrl` is a Browser Run live view of its page, read only by default (`'view'`);
+  `'interact'` lets whoever has the link use the browser; `false` gives none. The link carries a signed token and
+  lasts for the browser's lifetime, up to an hour.
 - Cloudflare's limits apply: on its free plan, 10 browser-minutes a day, 3 browsers at once, and a new browser every
   20 seconds.
-- There is no live view yet: Browser Run's needs a session id this way of connecting does not give.
 - Inside a Worker, Cloudflare's Browser binding is the way to a browser; this package is for everywhere else. For
   Browser Run's REST actions (markdown, screenshots, crawls), see `@mayurajs/cloudflare-quick-action`.
 - Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
   Browser Run itself: should its connection not allow that, opening a browser fails rather than running unchecked.
-- Options: `accountId`, `apiToken`, `keepAliveMs`, `maxLifetimeMs` (1 hour), `endpoint`.
+- Options: `accountId`, `apiToken`, `keepAliveMs`, `liveView`, `maxLifetimeMs` (1 hour), `fetch`, `baseUrl`.
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.

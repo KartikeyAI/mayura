@@ -9,10 +9,10 @@ import { testTool, toolGrants } from 'mayura/testing';
 import { agentBrowserTools } from '../src/index.js';
 
 const cli = [process.execPath, fileURLToPath(new URL('./fake-cli.mjs', import.meta.url))];
-function stubBrowser(extra: Partial<{ headers: Record<string, string>; isolated: boolean; ended: boolean }> = {}) {
+function stubBrowser(extra: Partial<{ headers: Record<string, string>; isolated: boolean; ended: boolean; unjoinable: boolean }> = {}) {
   const state = { ended: extra.ended ?? false };
   const browser = { id: 'b1', provider: 'local', get ended() { return state.ended; }, goto: async () => undefined,
-    cdp: { url: 'ws://127.0.0.1:9222/devtools/browser/1', headers: extra.headers ?? {}, isolated: extra.isolated ?? false } } as unknown as Browser;
+    ...(extra.unjoinable ? {} : { cdp: { url: 'ws://127.0.0.1:9222/devtools/browser/1', headers: extra.headers ?? {}, isolated: extra.isolated ?? false } }) } as unknown as Browser;
   return { browser, end: () => { state.ended = true; } };
 }
 const find = (tools: AnyTool[], id: string) => tools.find(tool => tool.id === id)!;
@@ -90,7 +90,7 @@ describe('agentBrowserTools', () => {
   }, 20_000);
 
   it('refuses browsers it cannot be kept to, and closes the session of a browser that ended', async () => {
-    for (const browser of [stubBrowser({ isolated: true }).browser, stubBrowser({ headers: { 'x-session-token': 't' } }).browser, stubBrowser({ ended: true }).browser]) {
+    for (const browser of [stubBrowser({ isolated: true }).browser, stubBrowser({ headers: { 'x-session-token': 't' } }).browser, stubBrowser({ ended: true }).browser, stubBrowser({ unjoinable: true }).browser]) {
       expect((await run(agentBrowserTools(browser, { cli }), 'agent.read', { command: 'snapshot' })).output?.['ok']).not.toBe(true);
     }
     expect(() => readFileSync(log)).toThrow();

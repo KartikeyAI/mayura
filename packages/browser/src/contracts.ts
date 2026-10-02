@@ -22,6 +22,11 @@ export interface BrowserCdpEndpoint {
   readonly url: string;
   /** Headers the WebSocket upgrade needs, such as a token. Never logged. */
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * False when each connection to `url` starts a browser of its own, so another client would not reach this one. The
+   * browser then gives no `cdp` to other clients.
+   */
+  readonly joinable?: boolean;
 }
 
 /** One browser, as a provider implements it. */

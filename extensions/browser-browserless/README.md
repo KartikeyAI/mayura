@@ -25,6 +25,8 @@ await browser.release();
   persistent Session API). Releasing the browser closes the connection, which ends it; Browserless ends it at its
   lifetime, given as the connection's `timeout`, should that never happen. Browserless's plans cap a browser at 2
   minutes to an hour.
+- Since every connection is a browser of its own, a browser gives no `cdp` endpoint to other clients: Stagehand and
+  `@mayurajs/browser-agent-browser` cannot join it.
 - Hosted regions are `production-sfo` (the default), `production-lon` and `production-ams`. For your own Browserless,
   give `endpoint`, such as `wss://browserless.internal`; plain `ws://` only on this machine.
 - Ad blocking and stealth are off unless asked for; no proxy is used. There is no live view.

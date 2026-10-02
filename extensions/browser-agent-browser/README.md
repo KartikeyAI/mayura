@@ -37,7 +37,8 @@ const tools = agentBrowserTools(browser, { act: true });
   ended (on the next call). Results leave out agent-browser's bookkeeping and are bounded (`maxResultBytes`); what
   agent-browser could not do comes back as `{ ok: false, error }`.
 - It works with browsers that are Mayura's alone and whose CDP connection needs no headers (not BrowserView or
-  Cloudflare, nor a browser shared through `cdpBrowsers`).
+  Cloudflare, nor Browserless, whose every connection is a browser of its own, nor a browser shared through
+  `cdpBrowsers`).
 - Options: `name` (`agent`), `cli` (`['agent-browser']`), `act`, `evaluate`, `timeoutMs` (60 s), `maxResultBytes`.
 
 Verified with agent-browser 0.38.2 against the Chrome installed here. See the

@@ -5,9 +5,9 @@ import { testTool, toolGrants } from 'mayura/testing';
 import { stagehandTools, type StagehandLike } from '../src/index.js';
 
 /** A Mayura browser as the tools see it. */
-function stubBrowser(extra: Partial<{ headers: Record<string, string>; isolated: boolean; ended: boolean; url: string }> = {}) {
+function stubBrowser(extra: Partial<{ headers: Record<string, string>; isolated: boolean; ended: boolean; url: string; unjoinable: boolean }> = {}) {
   return { id: 'b1', provider: 'local', ended: extra.ended ?? false, goto: async () => undefined,
-    cdp: { url: 'ws://127.0.0.1:9222/devtools/browser/1', headers: extra.headers ?? {}, isolated: extra.isolated ?? false },
+    ...(extra.unjoinable ? {} : { cdp: { url: 'ws://127.0.0.1:9222/devtools/browser/1', headers: extra.headers ?? {}, isolated: extra.isolated ?? false } }),
     tabs: async () => [{ tab: 'T1', url: extra.url ?? 'https://example.com/', title: 'Example', active: true }] } as unknown as Browser;
 }
 /** Stagehand as a recording stand-in. */
@@ -74,7 +74,7 @@ describe('stagehandTools', () => {
   });
 
   it('refuses browsers Stagehand cannot be kept to, and ended ones', async () => {
-    for (const browser of [stubBrowser({ isolated: true }), stubBrowser({ headers: { 'x-session-token': 't' } }), stubBrowser({ ended: true })]) {
+    for (const browser of [stubBrowser({ isolated: true }), stubBrowser({ headers: { 'x-session-token': 't' } }), stubBrowser({ ended: true }), stubBrowser({ unjoinable: true })]) {
       const { Fake, made } = fakeStagehand();
       expect((await run(stagehandTools(browser, { model: 'openai/x', stagehand: Fake }), 'stagehand.extract', { instruction: 'x' })).status).not.toBe('succeeded');
       expect(made).toEqual([]);

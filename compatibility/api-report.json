@@ -302,7 +302,7 @@
     "@mayura/browser": {
       "Browser": {
         "kind": "interface",
-        "declaration": "2e9a6121fbe923ab"
+        "declaration": "ee3cffc627ab782b"
       },
       "BrowserBackend": {
         "kind": "interface",
@@ -310,7 +310,7 @@
       },
       "BrowserCdpEndpoint": {
         "kind": "interface",
-        "declaration": "92bfab7756fa63cb"
+        "declaration": "7f06c9e6bca51b2a"
       },
       "BrowserError": {
         "kind": "class",
@@ -8372,7 +8372,7 @@
     "@mayurajs/browser-cloudflare": {
       "CloudflareBrowserOptions": {
         "kind": "interface",
-        "declaration": "7e6982a8bda41a54"
+        "declaration": "b501fb00ebe8e53a"
       },
       "cloudflareBrowsers": {
         "kind": "function",

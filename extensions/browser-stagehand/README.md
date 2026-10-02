@@ -32,8 +32,9 @@ const tools = stagehandTools(browser, { model: { modelName: 'openai/gpt-5-mini',
 - Stagehand calls its own model, outside Mayura: give `model` with its key (nothing is read from the environment), and
   `costMicros` to charge each call to the run's budget. Results are bounded (`maxResultBytes`, 64 KiB).
 - It works with browsers that are Mayura's alone and whose CDP connection needs no headers: local, Browserbase, Steel,
-  Hyperbrowser, Browserless, Kernel, Browser Use, Anchor and Firecrawl browsers; not BrowserView or Cloudflare
-  (headers), nor a browser shared through `cdpBrowsers`, where Stagehand could act on others' pages.
+  Hyperbrowser, Kernel, Browser Use, Anchor and Firecrawl browsers; not BrowserView or Cloudflare (headers), nor
+  Browserless, whose every connection is a browser of its own, nor a browser shared through `cdpBrowsers`, where
+  Stagehand could act on others' pages.
 - `source` may be a browser, or a function giving the run's browser, as `browserPerRun(...).source`.
 - Options: `name` (`stagehand`), `model`, `act`, `timeoutMs` (120 s), `maxResultBytes`, `costMicros`, `stagehand` (the
   class, to give your own import).

@@ -104,7 +104,7 @@ const correctable = new Set(['INVALID_INPUT']);
  * stay valid for the next command. Node only; the agent-browser command line must be installed.
  */
 export function agentBrowserTools(source: BrowserSource, options: AgentBrowserToolsOptions = {}): AnyTool[] {
-  if (typeof source !== 'function' && (!source || typeof source.goto !== 'function' || !source.cdp)) throw new MayuraError('INVALID_CONFIG', 'agentBrowserTools() needs a browser, or a function giving one.');
+  if (typeof source !== 'function' && (!source || typeof source.goto !== 'function')) throw new MayuraError('INVALID_CONFIG', 'agentBrowserTools() needs a browser, or a function giving one.');
   const name = options.name ?? 'agent';
   if (typeof name !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/u.test(name)) throw new MayuraError('INVALID_CONFIG', 'agentBrowserTools(): name is lowercase letters, digits, _ and -, starting with a letter.');
   const cli = options.cli ?? ['agent-browser'];
@@ -129,15 +129,18 @@ export function agentBrowserTools(source: BrowserSource, options: AgentBrowserTo
   const run = async (args: readonly string[], context: { readonly runId: string; readonly scope: Scope; readonly signal: AbortSignal }): Promise<JsonObject> => {
     closeEnded();
     const browser = typeof source === 'function' ? await source(context) : source;
-    if (!browser || typeof browser.goto !== 'function' || !browser.cdp) throw new MayuraError('INVALID_CONFIG', 'The browser source gave no browser.');
+    if (!browser || typeof browser.goto !== 'function') throw new MayuraError('INVALID_CONFIG', 'The browser source gave no browser.');
     if (browser.ended) throw new MayuraError('INVALID_INPUT', 'The browser has ended.');
-    // agent-browser would act on other pages of a shared browser, and sends no headers on its CDP connection.
-    if (browser.cdp.isolated) throw new MayuraError('INVALID_CONFIG', 'agent-browser cannot be kept to a browser context of its own: use a browser that is this one\'s alone.');
-    if (Object.keys(browser.cdp.headers).length > 0) throw new MayuraError('INVALID_CONFIG', `agent-browser cannot connect to the ${browser.provider} provider's browsers, which need headers on their CDP connection.`);
+    // agent-browser needs to reach this very browser; it would act on other pages of a shared one; it sends no headers
+    // on its CDP connection.
+    const cdp = browser.cdp;
+    if (!cdp) throw new MayuraError('INVALID_CONFIG', `agent-browser cannot join the ${browser.provider} provider's browsers: each connection starts a browser of its own.`);
+    if (cdp.isolated) throw new MayuraError('INVALID_CONFIG', 'agent-browser cannot be kept to a browser context of its own: use a browser that is this one\'s alone.');
+    if (Object.keys(cdp.headers).length > 0) throw new MayuraError('INVALID_CONFIG', `agent-browser cannot connect to the ${browser.provider} provider's browsers, which need headers on their CDP connection.`);
     let session = sessions.get(browser);
     if (!session) { session = `mayura-${crypto.randomUUID()}`; sessions.set(browser, session); }
     // What agent-browser prints is read whole (up to 16 MiB) so its JSON parses; the result is bounded after.
-    const ran = await runCli(cli, ['--cdp', browser.cdp.url, '--session', session, '--json', ...args], timeoutMs, context.signal, 16 * 1_048_576);
+    const ran = await runCli(cli, ['--cdp', cdp.url, '--session', session, '--json', ...args], timeoutMs, context.signal, 16 * 1_048_576);
     let reply: { success?: unknown; data?: unknown; error?: unknown };
     try { reply = JSON.parse(ran.stdout) as typeof reply; }
     catch { throw new MayuraError(ran.code === null ? 'TIMEOUT' : 'TOOL_FAILED', ran.code === null ? 'agent-browser did not answer in time.' : 'agent-browser did not answer in JSON.'); }

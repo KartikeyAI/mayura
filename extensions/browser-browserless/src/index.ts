@@ -55,7 +55,8 @@ export function browserlessBrowsers(options: BrowserlessBrowserOptions): Browser
     if (options.blockAds) url.searchParams.set('blockAds', 'true');
     if (options.stealth) url.searchParams.set('stealth', 'true');
     return {
-      id: `browserless-${++count}`, cdp: { url: url.href },
+      // Each connection is a browser of its own: another client would not reach this one.
+      id: `browserless-${++count}`, cdp: { url: url.href, joinable: false },
       // The browser ends when its connection does, which releasing the browser closes.
       release: async () => undefined,
     };

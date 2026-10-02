@@ -20,7 +20,10 @@ describe('browserlessBrowsers', () => {
   });
 
   it('connects to the hosted region with the token and the lifetime as its timeout, nothing else unless asked', async () => {
-    const url = new URL((await create(base)).cdp.url);
+    const backend = await create(base);
+    // Each connection is a browser of its own, so no other client is given it.
+    expect(backend.cdp.joinable).toBe(false);
+    const url = new URL(backend.cdp.url);
     expect([url.origin.replace(/^https?/u, 'wss'), url.protocol, url.host]).toEqual(['wss://production-sfo.browserless.io', 'wss:', 'production-sfo.browserless.io']);
     expect(Object.fromEntries(url.searchParams)).toEqual({ token: 'bl_test_token_1', timeout: '600000' });
     const lon = new URL((await create({ ...base, region: 'production-lon', blockAds: true, stealth: true })).cdp.url);
