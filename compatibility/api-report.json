@@ -8309,6 +8309,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/browser-agent-browser": {
+      "agentBrowserTools": {
+        "kind": "function",
+        "declaration": "db6cd2c26cf6dcf7"
+      },
+      "AgentBrowserToolsOptions": {
+        "kind": "interface",
+        "declaration": "497c8730d023a14e"
+      }
+    },
     "@mayurajs/browser-anchor": {
       "AnchorBrowserOptions": {
         "kind": "interface",

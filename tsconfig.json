@@ -39,6 +39,7 @@
     { "path": "extensions/browser-firecrawl" },
     { "path": "extensions/cloudflare-quick-action" },
     { "path": "extensions/browser-stagehand" },
+    { "path": "extensions/browser-agent-browser" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

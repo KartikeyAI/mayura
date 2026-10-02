@@ -101,6 +101,7 @@
     "@mayurajs/browser-firecrawl",
     "@mayurajs/cloudflare-quick-action",
     "@mayurajs/browser-stagehand",
+    "@mayurajs/browser-agent-browser",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",
