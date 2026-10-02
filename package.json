@@ -94,6 +94,7 @@
     "@mayurajs/sandbox-modal": "workspace:*",
     "@mayurajs/sandbox-railway": "workspace:*",
     "@mayurajs/sandbox-northflank": "workspace:*",
+    "@mayurajs/browser-browserbase": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",

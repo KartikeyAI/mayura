@@ -8301,6 +8301,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/browser-browserbase": {
+      "BrowserbaseBrowserOptions": {
+        "kind": "interface",
+        "declaration": "f0671fefe0d35671"
+      },
+      "browserbaseBrowsers": {
+        "kind": "function",
+        "declaration": "57472ca688602a19"
+      }
+    },
     "@mayurajs/deploy-agentcore": {
       "AgentCoreSettings": {
         "kind": "interface",

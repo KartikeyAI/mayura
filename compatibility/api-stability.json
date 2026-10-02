@@ -89,6 +89,7 @@
     "@mayurajs/sandbox-modal",
     "@mayurajs/sandbox-railway",
     "@mayurajs/sandbox-northflank",
+    "@mayurajs/browser-browserbase",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",
