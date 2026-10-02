@@ -33,6 +33,7 @@
     { "path": "extensions/browser-browserless" },
     { "path": "extensions/browser-kernel" },
     { "path": "extensions/browser-browser-use" },
+    { "path": "extensions/browser-anchor" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

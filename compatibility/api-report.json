@@ -8301,6 +8301,16 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/browser-anchor": {
+      "AnchorBrowserOptions": {
+        "kind": "interface",
+        "declaration": "15b0b4999067acb4"
+      },
+      "anchorBrowsers": {
+        "kind": "function",
+        "declaration": "00ada856343437a9"
+      }
+    },
     "@mayurajs/browser-browser-use": {
       "BrowserUseBrowserOptions": {
         "kind": "interface",

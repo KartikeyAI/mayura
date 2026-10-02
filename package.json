@@ -100,6 +100,7 @@
     "@mayurajs/browser-browserless": "workspace:*",
     "@mayurajs/browser-kernel": "workspace:*",
     "@mayurajs/browser-browser-use": "workspace:*",
+    "@mayurajs/browser-anchor": "workspace:*",
     "@mayurajs/deploy-cloudrun": "workspace:*",
     "@mayurajs/deploy-digitalocean": "workspace:*",
     "@mayurajs/deploy-fly": "workspace:*",
