@@ -10,7 +10,7 @@
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
-  "peerDependencies": { "mayura": "workspace:^" },
-  "dependencies": { "railway": "3.12.0" },
+  "peerDependencies": { "mayura": "workspace:^", "railway": "^3.12.0" },
+  "peerDependenciesMeta": { "railway": { "optional": true } },
   "devDependencies": { "mayura": "workspace:*" }
 }

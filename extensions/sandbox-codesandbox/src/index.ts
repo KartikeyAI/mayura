@@ -53,7 +53,8 @@ export interface CodeSandboxSandboxOptions {
  */
 async function loadSdk(): Promise<{ readonly CodeSandbox: new (apiKey: string) => CodeSandboxSdkLike; readonly VMTier: Readonly<Record<string, unknown>> }> {
   const specifier = '@codesandbox/sdk';
-  return import(specifier) as Promise<{ readonly CodeSandbox: new (apiKey: string) => CodeSandboxSdkLike; readonly VMTier: Readonly<Record<string, unknown>> }>;
+  try { return await import(specifier) as { readonly CodeSandbox: new (apiKey: string) => CodeSandboxSdkLike; readonly VMTier: Readonly<Record<string, unknown>> }; }
+  catch { throw new MayuraError('INVALID_CONFIG', 'codeSandboxSandboxes() with an apiKey needs the CodeSandbox SDK: npm install @codesandbox/sdk'); }
 }
 const tierNames = ['Pico', 'Nano', 'Micro', 'Small', 'Medium', 'Large', 'XLarge'] as const;
 const randomHex = (bytes: number) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), byte => byte.toString(16).padStart(2, '0')).join('');

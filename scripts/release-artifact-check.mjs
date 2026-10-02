@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { bundle } from './bundle-package.mjs';
-import { extensions, reviewedDependencies, stageExtension } from './extensions.mjs';
+import { extensions, reviewedDependencies, reviewedPeers, stageExtension } from './extensions.mjs';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -128,7 +128,8 @@ for (const extension of extensions()) {
   assert(published.repository?.url === root.repository.url && published.repository?.directory === `extensions/${extension.name}`, `${name} must name its repository directory for provenance.`);
   assert.deepEqual(published.author, root.author, `${name} must name its author.`);
   assert(!published.scripts && !published.devDependencies, `${name} gained lifecycle scripts or development dependencies.`);
-  assert.deepEqual(published.peerDependencies, { mayura: `^${version}` }, `${name} must have exactly mayura as its peer, at this release.`);
+  assert.deepEqual(published.peerDependencies, { mayura: `^${version}`, ...reviewedPeers[extension.name] }, `${name} must have mayura as its peer, at this release, and only reviewed vendor SDKs besides.`);
+  for (const peer of Object.keys(reviewedPeers[extension.name] ?? {})) assert.equal(published.peerDependenciesMeta?.[peer]?.optional, true, `${name} must take ${peer} as an optional peer.`);
   assert.deepEqual(Object.keys(published.dependencies).sort(), [...(reviewedDependencies[extension.name] ?? [])].sort(), `${name} gained an unreviewed dependency.`);
   for (const [dependency, range] of Object.entries(published.dependencies)) {
     if (dependency.startsWith('@mayurajs/')) assert.equal(range, version, `${name} must depend on ${dependency} at exactly this release.`);

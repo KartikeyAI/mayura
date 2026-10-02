@@ -4,7 +4,7 @@
 from a template, through the CodeSandbox SDK (`@codesandbox/sdk`).
 
 ```bash
-npm install mayura @mayurajs/sandbox-codesandbox
+npm install mayura @mayurajs/sandbox-codesandbox @codesandbox/sdk
 ```
 
 ```ts
@@ -32,8 +32,10 @@ await sandbox.release();
   files, of which only as much as is kept is read back; standard input travels as a file. A timeout or cancellation
   kills the command's shell and every process carrying its tag. Files use the SDK's file system.
 - `url(port)` gives a URL with a host token that lasts as long as the sandbox; anyone with it can open the port.
-- The SDK is loaded when first needed and typed here by its shape: its own type files do not resolve under NodeNext,
-  and it brings its command line's dependencies with it. Node only. Options: `apiKey` (or `sdk`), `template`,
+- **The SDK is a peer you install yourself** (`@codesandbox/sdk` 2.4.2 or a later 2.x): it brings its command line's
+  dependencies with it, some of which declare no licence (such as `buffers`), so Mayura does not install it for you.
+  It is loaded when first needed and typed here by its shape, since its own type files do not resolve under NodeNext.
+  With `sdk` you pass a client you made instead. Node only. Options: `apiKey` (or `sdk`), `template`,
   `vmTier`, `workdir` (`/project/sandbox`), `maxLifetimeMs` (24 hours).
 
 See the [sandbox guide](https://mayurajs.com/docs/guides/sandboxes/). Apache-2.0.

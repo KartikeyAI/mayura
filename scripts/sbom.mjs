@@ -8,6 +8,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reviewedPeers } from './extensions.mjs';
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Global installs live in <bin>/node_modules on Windows but <prefix>/lib/node_modules on Linux and macOS; a PATH
@@ -35,6 +36,9 @@ const license = path => {
 const reviewedLicences = new Map([
   ...['darwin-arm64', 'darwin-x64', 'linux-arm-gnueabihf', 'linux-arm-musleabihf', 'linux-arm64-gnu', 'linux-arm64-musl', 'linux-x64-gnu', 'linux-x64-musl', 'win32-x64-msvc']
     .map(platform => [`@libsql/${platform}@0.5.29`, 'MIT']),
+  // From modal (@mayurajs/sandbox-modal) through cbor-x.
+  ...['darwin-arm64', 'darwin-x64', 'linux-arm', 'linux-arm64', 'linux-x64', 'win32-x64']
+    .map(platform => [`@cbor-extract/cbor-extract-${platform}@2.2.2`, 'MIT']),
 ]);
 const visit = (name, node, parentRef) => {
   const ref = purl(name, node.version); if (parentRef) edges.get(parentRef).add(ref);
@@ -55,7 +59,10 @@ for (const project of projects) {
   const ref = purl(project.name, project.version);
   components.set(ref, { type: 'library', 'bom-ref': ref, name: project.name, version: project.version, purl: ref, licenses: [{ expression: 'Apache-2.0' }] });
   edges.set(ref, new Set());
+  // An extension's reviewed optional peers are the project's to install, not part of what the extension ships.
+  const peers = project.name.startsWith('@mayurajs/') ? Object.keys(reviewedPeers[project.name.slice('@mayurajs/'.length)] ?? {}) : [];
   for (const [child, value] of Object.entries(project.dependencies ?? {})) {
+    if (peers.includes(child)) continue;
     if (child.startsWith('@mayura/') || child.startsWith('@mayurajs/') || child === 'mayura') edges.get(ref).add(purl(child, value.version)); else visit(child, value, ref);
   }
 }

@@ -70,20 +70,33 @@ export function installedDirectory(name, parent) {
  */
 /**
  * Installation scripts reviewed as harmless, by package and hook: each is allowed only while its text is exactly this,
- * and while every file it runs (`files`, by path in the package) has exactly the reviewed SHA-256.
+ * and while every file it runs (`files`, by path in the package, and `dependencyFiles`, by path in a dependency it
+ * runs) has exactly the reviewed SHA-256.
  * - @google/genai (for @mayurajs/provider-google): a preinstall that only prints a line.
  * - protobufjs (a dependency of @google/genai): a postinstall that reads package.json files and may print a warning.
+ * - cbor-extract (an optional dependency of cbor-x, under modal for @mayurajs/sandbox-modal): an install that loads the
+ *   prebuilt binary from its platform package and, only when none loads, compiles it with node-gyp. No network.
+ *   cbor-x works without it.
  */
 const reviewedScripts = {
   '@google/genai': { preinstall: "echo 'preinstall: no-op'" },
   protobufjs: { postinstall: 'node scripts/postinstall', files: { 'scripts/postinstall.js': '5af8463b97ee8e309b4a2111f9479bacdf0c180de0ca0155527679b1fc6d9e6c' } },
+  'cbor-extract': { install: 'node-gyp-build-optional-packages', dependencyFiles: { 'node-gyp-build-optional-packages': {
+    'bin.js': '51e8db53fe3d4f27907ec1865f42d1cb7f6ba280dd7029a477c6642fdb405128',
+    'build-test.js': '34c19ff8b6675d6d27c63a7df44d77a442805eeea8756d1c89e0264f4a3028f6',
+    'index.js': 'a48e6f1121b85aca01f2eed5b4af4b691e33ce33235a6901efb8b13a0111db7c',
+  } } },
 };
 /** Whether a package's install script is the reviewed one, files included. */
 function reviewedScript(name, script, manifest, directory) {
   const reviewed = reviewedScripts[name];
   if (reviewed?.[script] === undefined || manifest.scripts?.[script] !== reviewed[script]) return false;
-  return Object.entries(reviewed.files ?? {}).every(([path, digest]) => existsSync(join(directory, path))
-    && createHash('sha256').update(readFileSync(join(directory, path))).digest('hex') === digest);
+  const same = (folder, files) => Object.entries(files).every(([path, digest]) => existsSync(join(folder, path))
+    && createHash('sha256').update(readFileSync(join(folder, path))).digest('hex') === digest);
+  return same(directory, reviewed.files ?? {}) && Object.entries(reviewed.dependencyFiles ?? {}).every(([dependency, files]) => {
+    const folder = findInstalled(dependency, directory);
+    return folder !== undefined && same(folder, files);
+  });
 }
 
 export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3'] }) {

@@ -4,7 +4,7 @@
 TypeScript SDK (`railway`).
 
 ```bash
-npm install mayura @mayurajs/sandbox-railway
+npm install mayura @mayurajs/sandbox-railway railway
 ```
 
 ```ts
@@ -32,6 +32,9 @@ await sandbox.release();
 - Commands run with Railway's exec; their output goes to files, of which only as much as is kept is read back, and
   standard input travels as a file. A timeout or cancellation kills the command's process group through Railway, and
   every process carrying its tag. Files use Railway's file API.
+- **Railway's SDK is a peer you install yourself** (`railway` 3.12.0 or a later 3.x), loaded when first needed: it
+  brings its infrastructure-as-code command line's dependencies (tsx and esbuild, which downloads its binary when it
+  installs), so Mayura does not install it for you.
 - Sandboxes start from Railway's default image; `image`, `cpus` and `memoryMiB` are refused (use a Railway template
   for a custom image). Options: `token`, `authType`, `environmentId`, `region`, `workdir` (`/workspace`),
   `maxLifetimeMs` (24 hours), `fetch`. Railway's SDK brings `graphql` and, for its infrastructure-as-code command

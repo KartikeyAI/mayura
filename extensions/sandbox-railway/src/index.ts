@@ -3,7 +3,6 @@ import {
   SandboxError, sandboxScripts,
   type BackendExecResult, type ProviderSandboxSpec, type SandboxBackend, type SandboxEntry, type SandboxFailureReason, type SandboxProvider,
 } from 'mayura/sandbox';
-import { Sandbox } from 'railway';
 
 /** The part of a Railway sandbox this provider uses; one from `Sandbox.create` in `railway` is one. */
 export interface RailwaySandboxLike {
@@ -85,11 +84,17 @@ export function railwaySandboxes(options: RailwaySandboxOptions): SandboxProvide
   const maxLifetimeMs = options.maxLifetimeMs ?? 86_400_000;
   if (!Number.isSafeInteger(maxLifetimeMs) || maxLifetimeMs < 60_000 || maxLifetimeMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'railwaySandboxes(): maxLifetimeMs is 1 minute to about 24 days.');
   if (options.fetch !== undefined && typeof options.fetch !== 'function') throw new MayuraError('INVALID_CONFIG', 'railwaySandboxes(): fetch must be a function.');
-  const api = options.sandboxApi ?? (Sandbox as unknown as { create(options: Record<string, unknown>): Promise<RailwaySandboxLike> });
+  type SandboxApi = { create(options: Record<string, unknown>): Promise<RailwaySandboxLike> };
+  // The SDK is an optional peer, loaded when first needed.
+  let loaded: Promise<SandboxApi> | undefined;
+  const sandboxApi = (): Promise<SandboxApi> => options.sandboxApi ? Promise.resolve(options.sandboxApi) : (loaded ??= import('railway').then(
+    module => module.Sandbox as unknown as SandboxApi,
+    () => { loaded = undefined; throw new MayuraError('INVALID_CONFIG', "railwaySandboxes() needs Railway's SDK: npm install railway"); }));
 
   const create = async (spec: ProviderSandboxSpec, { signal }: { readonly signal: AbortSignal }): Promise<SandboxBackend> => {
     // railwaySandboxes declares only 'all', so createSandboxes asks for nothing else.
     if (spec.image !== undefined || spec.cpus !== undefined || spec.memoryMiB !== undefined) throw new MayuraError('INVALID_INPUT', 'Railway sandboxes take no image or resources here: use a Railway template.');
+    const api = await sandboxApi();
     let sandbox: RailwaySandboxLike;
     try {
       sandbox = await api.create({
