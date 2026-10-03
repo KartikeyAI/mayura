@@ -9267,6 +9267,20 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/km-reqkey": {
+      "ReqkeyKey": {
+        "kind": "interface",
+        "declaration": "976dda6c34cbdf5f"
+      },
+      "reqkeyVerifier": {
+        "kind": "function",
+        "declaration": "81c35e71d654914f"
+      },
+      "ReqkeyVerifierOptions": {
+        "kind": "interface",
+        "declaration": "4ce3ed4ea2c0b620"
+      }
+    },
     "@mayurajs/km-unkey": {
       "UnkeyKey": {
         "kind": "interface",

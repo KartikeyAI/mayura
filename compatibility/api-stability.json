@@ -120,6 +120,7 @@
     "@mayurajs/auth-okta",
     "@mayurajs/auth-cognito",
     "@mayurajs/km-unkey",
+    "@mayurajs/km-reqkey",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

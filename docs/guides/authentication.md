@@ -240,6 +240,7 @@ knows about the key. When the service cannot answer, the server answers that aut
 | Package | Service | What `identity` receives |
 | --- | --- | --- |
 | `@mayurajs/km-unkey` | [Unkey](https://www.unkey.com/docs/api-management/keys/verifying-keys) `keys.verifyKey`, limited to your keyspaces, with an optional permission query checked before rate limits and credits; self-hosted Unkey too | key id, keyspace, name, metadata, permissions, roles, linked identity, expiry, credits left |
+| `@mayurajs/km-reqkey` | [ReqKey](https://reqkey.com/docs/api/keys) validation for your API, with the key's details read alongside | key id, consumer, allowed APIs, tag, metadata, expiry, consumer's credits |
 
 `mayura/keys/testing` has `keyManagerConformance`, the manager's behaviour that depends on its store, which Mayura runs
 over every store it ships; run it over a store of your own the same way.

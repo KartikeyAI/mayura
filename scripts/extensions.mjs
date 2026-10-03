@@ -82,6 +82,7 @@ export const reviewedDependencies = {
   'auth-okta': [],
   'auth-cognito': [],
   'km-unkey': [],
+  'km-reqkey': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
