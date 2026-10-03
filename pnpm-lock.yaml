@@ -104,6 +104,9 @@ importers:
       '@mayurajs/auth-clerk':
         specifier: workspace:*
         version: link:extensions/auth-clerk
+      '@mayurajs/auth-facebook':
+        specifier: workspace:*
+        version: link:extensions/auth-facebook
       '@mayurajs/auth-firebase':
         specifier: workspace:*
         version: link:extensions/auth-firebase
@@ -427,6 +430,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-clerk:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-facebook:
     devDependencies:
       mayura:
         specifier: workspace:*

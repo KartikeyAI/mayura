@@ -102,6 +102,7 @@
     "@mayurajs/auth-firebase": "workspace:*",
     "@mayurajs/auth-workos": "workspace:*",
     "@mayurajs/auth-google": "workspace:*",
+    "@mayurajs/auth-facebook": "workspace:*",
     "@mayurajs/cloudflare-quick-action": "workspace:*",
     "@mayurajs/deploy-agentcore": "workspace:*",
     "@mayurajs/deploy-aws-ecs": "workspace:*",

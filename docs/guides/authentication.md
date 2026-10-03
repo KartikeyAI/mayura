@@ -108,6 +108,7 @@ uses the provider's SDK, and none grants anything your mapping does not.
 | `@mayurajs/auth-firebase` | [Firebase Authentication](https://firebase.google.com/docs/auth/admin/verify-id-tokens) ID tokens, checked as Firebase specifies with Google's keys; anonymous users and unlisted tenants refused | uid, email and whether verified, phone, name, sign-in provider, tenant, sign-in time, custom claims |
 | `@mayurajs/auth-workos` | [WorkOS](https://workos.com/docs/authkit/sessions) AuthKit session tokens, and with `connect` Connect access tokens from your AuthKit domain; machine tokens only with `allowMachines` | kind, user or machine, session, application, organization, role and roles, permissions, scopes |
 | `@mayurajs/auth-google` | [Google](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) ID tokens for your client IDs, optionally one Workspace domain; and `googleSignIn` for better-auth's Google login | account id, email and whether verified, Workspace domain, name, picture |
+| `@mayurajs/auth-facebook` | [Facebook Login](https://developers.facebook.com/docs/graph-api/reference/debug_token/) access tokens, checked with Facebook per request (opaque; `cacheTtlMs` to keep answers), and iOS Limited Login tokens with Facebook's keys; and `facebookSignIn` for better-auth | kind, app-scoped user id, granted permissions, email and name (Limited Login), expiry |
 
 ## Sign-in with better-auth
 

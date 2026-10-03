@@ -8583,6 +8583,28 @@
         "declaration": "4bacc1360f380696"
       }
     },
+    "@mayurajs/auth-facebook": {
+      "facebookAuthenticator": {
+        "kind": "function",
+        "declaration": "4e1247b6cc22778d"
+      },
+      "FacebookAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "41a102a97b22f626"
+      },
+      "FacebookSession": {
+        "kind": "interface",
+        "declaration": "8a40b8a9aad77edc"
+      },
+      "facebookSignIn": {
+        "kind": "function",
+        "declaration": "374a8df142c8a977"
+      },
+      "FacebookSignInOptions": {
+        "kind": "interface",
+        "declaration": "18196ed733720cc9"
+      }
+    },
     "@mayurajs/auth-firebase": {
       "firebaseAuthenticator": {
         "kind": "function",
