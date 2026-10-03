@@ -104,6 +104,9 @@ importers:
       '@mayurajs/auth-clerk':
         specifier: workspace:*
         version: link:extensions/auth-clerk
+      '@mayurajs/auth-cognito':
+        specifier: workspace:*
+        version: link:extensions/auth-cognito
       '@mayurajs/auth-entra':
         specifier: workspace:*
         version: link:extensions/auth-entra
@@ -436,6 +439,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-clerk:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-cognito:
     devDependencies:
       mayura:
         specifier: workspace:*

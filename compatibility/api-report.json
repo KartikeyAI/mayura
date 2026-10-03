@@ -8587,6 +8587,24 @@
         "declaration": "4bacc1360f380696"
       }
     },
+    "@mayurajs/auth-cognito": {
+      "cognitoAuthenticator": {
+        "kind": "function",
+        "declaration": "9bceea25a646d12a"
+      },
+      "CognitoAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "7181ac51b8e27ec0"
+      },
+      "cognitoSession": {
+        "kind": "function",
+        "declaration": "6aed92b5babd36fa"
+      },
+      "CognitoSession": {
+        "kind": "interface",
+        "declaration": "98327d388143ce76"
+      }
+    },
     "@mayurajs/auth-entra": {
       "entraAuthenticator": {
         "kind": "function",

@@ -118,6 +118,7 @@
     "@mayurajs/auth-facebook",
     "@mayurajs/auth-entra",
     "@mayurajs/auth-okta",
+    "@mayurajs/auth-cognito",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

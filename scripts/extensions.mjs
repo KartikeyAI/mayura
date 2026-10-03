@@ -80,6 +80,7 @@ export const reviewedDependencies = {
   'auth-facebook': [],
   'auth-entra': [],
   'auth-okta': [],
+  'auth-cognito': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
