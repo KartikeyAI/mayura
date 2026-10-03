@@ -33,6 +33,14 @@
       "types": "./dist/artifacts__files.d.ts",
       "import": "./dist/artifacts__files.js"
     },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js"
+    },
+    "./auth/testing": {
+      "types": "./dist/auth__testing.d.ts",
+      "import": "./dist/auth__testing.js"
+    },
     "./browser": {
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js"
@@ -116,6 +124,14 @@
     "./helpers": {
       "types": "./dist/helpers.d.ts",
       "import": "./dist/helpers.js"
+    },
+    "./keys": {
+      "types": "./dist/keys.d.ts",
+      "import": "./dist/keys.js"
+    },
+    "./keys/testing": {
+      "types": "./dist/keys__testing.d.ts",
+      "import": "./dist/keys__testing.js"
     },
     "./memory": {
       "types": "./dist/memory.d.ts",
@@ -275,6 +291,7 @@
     "@mayura/adapter-code-quickjs": "workspace:*",
     "@mayura/adapter-mcp": "workspace:*",
     "@mayura/artifacts": "workspace:*",
+    "@mayura/auth": "workspace:*",
     "@mayura/browser": "workspace:*",
     "@mayura/cli": "workspace:*",
     "@mayura/client": "workspace:*",
@@ -287,6 +304,7 @@
     "@mayura/files": "workspace:*",
     "@mayura/guardrails": "workspace:*",
     "@mayura/helpers": "workspace:*",
+    "@mayura/keys": "workspace:*",
     "@mayura/memory": "workspace:*",
     "@mayura/memory-remote": "workspace:*",
     "@mayura/observability": "workspace:*",

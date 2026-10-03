@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { DeleteItemCommand, DeleteTableCommand, PutItemCommand, ScanCommand, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { describe, expect, it } from 'vitest';
 import { createDynamoStore, dynamoBackend, dynamoClient } from '../src/index.js';
+import { keyManagerConformance } from 'mayura/keys/testing';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { executionWaitConformance } from '../../../packages/storage/test/execution-waits-conformance.js';
@@ -59,6 +60,14 @@ const fixtures = documentFixtures(async () => {
 
 describe.skipIf(!endpoint)('DynamoDB', () => {
   aggregateConformance('DynamoDB', fixtures.simple);
+  describe('DynamoDB key manager conformance', () => {
+    for (const test of keyManagerConformance) {
+      it(test.name, async () => {
+        const fixture = await fixtures.simple(); await fixture.store.initialize();
+        try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
+      });
+    }
+  });
   identityIntegrityConformance('DynamoDB', fixtures.simple);
   scheduledBounds('DynamoDB', fixtures.simple);
   memoryConformance('DynamoDB', fixtures.simple as never);

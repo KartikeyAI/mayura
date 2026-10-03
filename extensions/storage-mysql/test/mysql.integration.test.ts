@@ -8,6 +8,7 @@ import { createPool } from 'mysql2/promise';
 import { describe, expect, it } from 'vitest';
 import type { JsonObject } from 'mayura';
 import { createMysqlStore } from '../src/index.js';
+import { keyManagerConformance } from 'mayura/keys/testing';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { executionWaitConformance } from '../../../packages/storage/test/execution-waits-conformance.js';
@@ -70,6 +71,14 @@ const workflowFixture = async () => {
 
 describe.skipIf(!server)('MySQL', () => {
   aggregateConformance('MySQL', simple);
+  describe('MySQL key manager conformance', () => {
+    for (const test of keyManagerConformance) {
+      it(test.name, async () => {
+        const fixture = await simple(); await fixture.store.initialize();
+        try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
+      });
+    }
+  });
   identityIntegrityConformance('MySQL', simple);
   scheduledBounds('MySQL', simple);
   memoryConformance('MySQL', simple as never);

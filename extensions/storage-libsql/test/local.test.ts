@@ -8,9 +8,10 @@ import { join, resolve, sep } from 'node:path';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { createClient } from '@libsql/client';
-import { expect, it } from 'vitest';
+import { expect, it, describe } from 'vitest';
 import type { JsonObject } from 'mayura';
 import { createLibsqlStore, type LibsqlStore } from '../src/index.js';
+import { keyManagerConformance } from 'mayura/keys/testing';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { durableBudgetSqliteFixture } from '../../../packages/storage/test/durable-budget-fixtures.js';
@@ -59,6 +60,14 @@ const simple = (prefix: string) => async () => {
 };
 
 aggregateConformance('libSQL', simple('aggregate'));
+describe('libSQL key manager conformance', () => {
+  for (const test of keyManagerConformance) {
+    it(test.name, async () => {
+      const fixture = await simple('keys')(); await fixture.store.initialize();
+      try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
+    });
+  }
+});
 identityIntegrityConformance('libSQL', simple('identity'));
 scheduledBounds('libSQL', simple('bounds'));
 memoryConformance('libSQL', simple('memory') as never);

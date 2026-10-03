@@ -68,6 +68,7 @@ Rules that matter when writing Mayura code:
 ## Serve, observe and deploy
 
 - [Server and client](docs/guides/server-and-client.md): Serve agents over authenticated HTTP with mayura/server and mayura/server-node, and call them from browsers or Node with mayura/client.
+- [Authentication and API keys](docs/guides/authentication.md): Who may call Mayura's server: tokens from identity providers verified with their published keys, and API keys issued and checked on your own storage, each mapped explicitly to what the caller may do.
 - [React and UI bindings](docs/guides/react.md): Show live agent runs, workflow progress and human response forms in React, or in any UI framework through headless stores.
 - [Observability](docs/guides/observability.md): Watch agent runs through their metadata events, keep run summaries, and export logs, traces and metrics to OpenTelemetry.
 - [Operator console](docs/guides/operator-console.md): A built-in web console for operators: health, agents and tools, workflow runs, approvals, human requests, fleet control and migrations.

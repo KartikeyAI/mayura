@@ -299,6 +299,122 @@
         "declaration": "cef1904c59688076"
       }
     },
+    "@mayura/auth": {
+      "Authenticator": {
+        "kind": "interface",
+        "declaration": "6c63035dbcec9790"
+      },
+      "chainAuthenticators": {
+        "kind": "function",
+        "declaration": "96b0b72a96ea970a"
+      },
+      "hmacSecret": {
+        "kind": "function",
+        "declaration": "b3c4fc18e3ee1786"
+      },
+      "IdentityGrant": {
+        "kind": "interface",
+        "declaration": "beece207a017941e"
+      },
+      "Jwk": {
+        "kind": "interface",
+        "declaration": "068f6d3c692fd73e"
+      },
+      "JwtAlgorithm": {
+        "kind": "type",
+        "declaration": "e87b2cb81f0091e3"
+      },
+      "jwtAlgorithms": {
+        "kind": "const",
+        "declaration": "aae00117572c4c4c"
+      },
+      "jwtAuthenticator": {
+        "kind": "function",
+        "declaration": "08baf35495bd5816"
+      },
+      "JwtAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "a7d8d60af3229ede"
+      },
+      "JwtClaims": {
+        "kind": "interface",
+        "declaration": "5004b8c13ed2b169"
+      },
+      "JwtHeader": {
+        "kind": "interface",
+        "declaration": "d2b7ad73be858436"
+      },
+      "JwtKeySource": {
+        "kind": "interface",
+        "declaration": "3ab130b0e4456398"
+      },
+      "JwtRefusal": {
+        "kind": "type",
+        "declaration": "15cd2a00aacb25d9"
+      },
+      "JwtResult": {
+        "kind": "type",
+        "declaration": "5f0cb9de14e59c86"
+      },
+      "jwtVerifier": {
+        "kind": "function",
+        "declaration": "ce8ad2c45d77be2c"
+      },
+      "JwtVerifier": {
+        "kind": "interface",
+        "declaration": "74f2ee0cb3deb084"
+      },
+      "JwtVerifierOptions": {
+        "kind": "interface",
+        "declaration": "dee21f80c28d9327"
+      },
+      "mapCapabilities": {
+        "kind": "function",
+        "declaration": "6fb26da1d49e006b"
+      },
+      "peekIssuer": {
+        "kind": "function",
+        "declaration": "ede6d4b91ad3392e"
+      },
+      "principalId": {
+        "kind": "function",
+        "declaration": "83365c2e2e2c1249"
+      },
+      "remoteJwks": {
+        "kind": "function",
+        "declaration": "a59eabcade2e94a9"
+      },
+      "RemoteJwksOptions": {
+        "kind": "interface",
+        "declaration": "61fd9d36fd4a3d24"
+      },
+      "serverCapabilities": {
+        "kind": "const",
+        "declaration": "f45cdb5a34c6b011"
+      },
+      "ServerCapability": {
+        "kind": "type",
+        "declaration": "112ca1b169de1600"
+      },
+      "serverIdentity": {
+        "kind": "function",
+        "declaration": "b355c13a45e301f2"
+      },
+      "staticKeys": {
+        "kind": "function",
+        "declaration": "f57939aeb35a1a6e"
+      }
+    },
+    "@mayura/auth/testing": {
+      "testIssuer": {
+        "kind": "function",
+        "declaration": "2ee383d87f5a56ad"
+      },
+      "TestIssuer": {
+        "kind": "interface",
+        "declaration": "fc69d337a2807ebf"
+      }
+    },
     "@mayura/browser": {
       "Browser": {
         "kind": "interface",
@@ -2595,6 +2711,78 @@
       "withDeadline": {
         "kind": "function",
         "declaration": "43f86bb6539a18e6"
+      }
+    },
+    "@mayura/keys": {
+      "CreateKeyInput": {
+        "kind": "interface",
+        "declaration": "d31410f07a52c291"
+      },
+      "createKeyManager": {
+        "kind": "function",
+        "declaration": "f07d03ffaf2f0e25"
+      },
+      "keyAuthenticator": {
+        "kind": "function",
+        "declaration": "bb77092cb54f86a1"
+      },
+      "KeyAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "df97eac7177d932c"
+      },
+      "KeyCredits": {
+        "kind": "interface",
+        "declaration": "a897413d534b52ad"
+      },
+      "keyHash": {
+        "kind": "function",
+        "declaration": "62b675bddd257187"
+      },
+      "KeyManager": {
+        "kind": "interface",
+        "declaration": "65aa695eb1c7df9f"
+      },
+      "KeyManagerOptions": {
+        "kind": "interface",
+        "declaration": "10db23b0cd84a7aa"
+      },
+      "KeyRateLimit": {
+        "kind": "interface",
+        "declaration": "8f9648ed4958f46b"
+      },
+      "KeyRecord": {
+        "kind": "interface",
+        "declaration": "bbbe1ac1e121b3a6"
+      },
+      "KeyRefusal": {
+        "kind": "type",
+        "declaration": "15bc9d88aecacd65"
+      },
+      "KeyUsage": {
+        "kind": "interface",
+        "declaration": "a080c1b1da55abe8"
+      },
+      "KeyVerification": {
+        "kind": "type",
+        "declaration": "fed0d19c9fa92892"
+      },
+      "KeyVerifier": {
+        "kind": "interface",
+        "declaration": "f213a26a5d432ba6"
+      }
+    },
+    "@mayura/keys/testing": {
+      "keyManagerConformance": {
+        "kind": "const",
+        "declaration": "161037968f448f54"
+      },
+      "KeyManagerConformanceCase": {
+        "kind": "interface",
+        "declaration": "ca270ee6630eeae9"
+      },
+      "memoryAggregateStore": {
+        "kind": "function",
+        "declaration": "4f9185385cbe2cd3"
       }
     },
     "@mayura/memory": {

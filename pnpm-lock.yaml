@@ -941,6 +941,19 @@ importers:
         specifier: workspace:*
         version: link:../files
 
+  packages/auth:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/server':
+        specifier: workspace:*
+        version: link:../server
+    devDependencies:
+      '@mayura/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
   packages/browser:
     dependencies:
       '@mayura/core':
@@ -1237,6 +1250,28 @@ importers:
         specifier: 8.3.0
         version: 8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
+  packages/keys:
+    dependencies:
+      '@mayura/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/server':
+        specifier: workspace:*
+        version: link:../server
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+    devDependencies:
+      '@mayura/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@mayura/storage':
+        specifier: workspace:*
+        version: link:../storage
+
   packages/mayura:
     dependencies:
       '@mayura/adapter-code-docker':
@@ -1251,6 +1286,9 @@ importers:
       '@mayura/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@mayura/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@mayura/browser':
         specifier: workspace:*
         version: link:../browser
@@ -1287,6 +1325,9 @@ importers:
       '@mayura/helpers':
         specifier: workspace:*
         version: link:../helpers
+      '@mayura/keys':
+        specifier: workspace:*
+        version: link:../keys
       '@mayura/memory':
         specifier: workspace:*
         version: link:../memory

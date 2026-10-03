@@ -9,6 +9,7 @@ import { MongoClient } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 import type { JsonObject } from 'mayura';
 import { createMongoStore } from '../src/index.js';
+import { keyManagerConformance } from 'mayura/keys/testing';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { executionWaitConformance } from '../../../packages/storage/test/execution-waits-conformance.js';
@@ -60,6 +61,14 @@ async function fixture() {
 describe.skipIf(!server)('MongoDB', () => {
   const simple = async () => { const { open, cleanup } = await fixture(); return { store: open(), reopen: open, cleanup }; };
   aggregateConformance('MongoDB', simple);
+  describe('MongoDB key manager conformance', () => {
+    for (const test of keyManagerConformance) {
+      it(test.name, async () => {
+        const fixture = await simple(); await fixture.store.initialize();
+        try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
+      });
+    }
+  });
   identityIntegrityConformance('MongoDB', simple);
   memoryConformance('MongoDB', simple as never);
   nativeMemoryConformance('MongoDB', simple);

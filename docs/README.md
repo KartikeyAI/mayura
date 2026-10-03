@@ -62,6 +62,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 ## Serve, observe and deploy
 
 - [Server and client](guides/server-and-client.md): serve agents and workflows over HTTP.
+- [Authentication and API keys](guides/authentication.md): tokens from identity providers and API keys on your own storage, mapped to what callers may do.
 - [React](guides/react.md): hooks, components and forms.
 - [Observability](guides/observability.md): events, tracing and OpenTelemetry.
 - [Operator console](guides/operator-console.md): a UI for runs, workflows and approvals.

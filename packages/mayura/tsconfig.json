@@ -24,6 +24,9 @@
       "path": "../artifacts"
     },
     {
+      "path": "../auth"
+    },
+    {
       "path": "../browser"
     },
     {
@@ -58,6 +61,9 @@
     },
     {
       "path": "../helpers"
+    },
+    {
+      "path": "../keys"
     },
     {
       "path": "../memory"

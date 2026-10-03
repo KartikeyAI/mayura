@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createD1Store, d1Backend, type D1Database } from '../src/index.js';
 import { sqliteD1 } from '../../../packages/storage/test/fixtures/document.mjs';
+import { keyManagerConformance } from 'mayura/keys/testing';
 import { aggregateConformance } from '../../../packages/storage/test/conformance.js';
 import { durableBudgetConformance } from '../../../packages/storage/test/durable-budget-conformance.js';
 import { executionWaitConformance } from '../../../packages/storage/test/execution-waits-conformance.js';
@@ -63,6 +64,14 @@ const fixtures = documentFixtures(async () => {
 
 describe('D1 engine', () => {
   aggregateConformance('D1', fixtures.simple);
+  describe('D1 key manager conformance', () => {
+    for (const test of keyManagerConformance) {
+      it(test.name, async () => {
+        const fixture = await fixtures.simple(); await fixture.store.initialize();
+        try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
+      });
+    }
+  });
   identityIntegrityConformance('D1', fixtures.simple);
   scheduledBounds('D1', fixtures.simple);
   memoryConformance('D1', fixtures.simple as never);

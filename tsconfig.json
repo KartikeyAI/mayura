@@ -97,6 +97,8 @@
     { "path": "packages/voice" },
     { "path": "packages/files" },
     { "path": "packages/sandbox" },
+    { "path": "packages/auth" },
+    { "path": "packages/keys" },
     { "path": "packages/browser" },
     { "path": "packages/memory" },
     { "path": "packages/memory-remote" },
