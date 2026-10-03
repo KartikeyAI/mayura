@@ -232,5 +232,14 @@ await keys.revoke(record.keyId);
 spends `cost` credits, and makes the key's grant the identity, for no longer than the key or `maxIdentityMs`. It works
 with any `KeyVerifier`, such as a key service's.
 
+Keys issued by a key service are checked with these packages, each a `KeyVerifier` for `keyAuthenticator`. Each sends
+only tokens with your keys' prefix to the service, never caches its answers (so a key revoked there is refused at
+once), spends the request's cost there, and grants only what your `identity` callback returns from what the service
+knows about the key. When the service cannot answer, the server answers that authentication is unavailable.
+
+| Package | Service | What `identity` receives |
+| --- | --- | --- |
+| `@mayurajs/km-unkey` | [Unkey](https://www.unkey.com/docs/api-management/keys/verifying-keys) `keys.verifyKey`, limited to your keyspaces, with an optional permission query checked before rate limits and credits; self-hosted Unkey too | key id, keyspace, name, metadata, permissions, roles, linked identity, expiry, credits left |
+
 `mayura/keys/testing` has `keyManagerConformance`, the manager's behaviour that depends on its store, which Mayura runs
 over every store it ships; run it over a store of your own the same way.

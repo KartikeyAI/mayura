@@ -230,6 +230,9 @@ importers:
       '@mayurajs/filestorage-vercel-blob':
         specifier: workspace:*
         version: link:extensions/filestorage-vercel-blob
+      '@mayurajs/km-unkey':
+        specifier: workspace:*
+        version: link:extensions/km-unkey
       '@mayurajs/observability-arize':
         specifier: workspace:*
         version: link:extensions/observability-arize
@@ -695,6 +698,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/filestorage-vercel-blob:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/km-unkey:
     devDependencies:
       mayura:
         specifier: workspace:*

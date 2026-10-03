@@ -9267,6 +9267,20 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/km-unkey": {
+      "UnkeyKey": {
+        "kind": "interface",
+        "declaration": "55cada2f2480628d"
+      },
+      "unkeyVerifier": {
+        "kind": "function",
+        "declaration": "13fc550332ec6c1c"
+      },
+      "UnkeyVerifierOptions": {
+        "kind": "interface",
+        "declaration": "af836d2fbc9abda9"
+      }
+    },
     "@mayurajs/observability-arize": {
       "ArizeRegion": {
         "kind": "type",

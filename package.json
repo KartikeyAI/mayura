@@ -106,6 +106,7 @@
     "@mayurajs/auth-entra": "workspace:*",
     "@mayurajs/auth-okta": "workspace:*",
     "@mayurajs/auth-cognito": "workspace:*",
+    "@mayurajs/km-unkey": "workspace:*",
     "@mayurajs/cloudflare-quick-action": "workspace:*",
     "@mayurajs/deploy-agentcore": "workspace:*",
     "@mayurajs/deploy-aws-ecs": "workspace:*",

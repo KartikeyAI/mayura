@@ -52,6 +52,7 @@
     { "path": "extensions/auth-entra" },
     { "path": "extensions/auth-okta" },
     { "path": "extensions/auth-cognito" },
+    { "path": "extensions/km-unkey" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
