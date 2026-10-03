@@ -98,6 +98,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/auth-clerk':
+        specifier: workspace:*
+        version: link:extensions/auth-clerk
       '@mayurajs/browser-agent-browser':
         specifier: workspace:*
         version: link:extensions/browser-agent-browser
@@ -399,6 +402,12 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
+  extensions/auth-clerk:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
   extensions/browser-agent-browser:
     devDependencies:
       mayura:
@@ -697,7 +706,7 @@ importers:
     dependencies:
       '@mistralai/mistralai':
         specifier: 2.7.0
-        version: 2.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/resources@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        version: 2.7.0(@opentelemetry/api@1.9.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     devDependencies:
       mayura:
         specifier: workspace:*
@@ -7983,7 +7992,7 @@ snapshots:
 
   '@lukeed/ms@2.0.2': {}
 
-  '@mistralai/mistralai@2.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/resources@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
+  '@mistralai/mistralai@2.7.0(@opentelemetry/api@1.9.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
     dependencies:
       '@opentelemetry/semantic-conventions': 1.43.0
       ws: 8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -7991,8 +8000,6 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.6.5)
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/resources': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate

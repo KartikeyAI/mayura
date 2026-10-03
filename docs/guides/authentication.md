@@ -93,6 +93,16 @@ identity for authenticators of your own.
 its JWKS through `fetch` (give it to `remoteJwks`), and can `rotate()`. Use it to test your mapping with real signatures
 and no network.
 
+## Identity provider packages
+
+Each `@mayurajs/auth-*` package is a `jwtAuthenticator` already set up for one provider: its issuer, keys and
+algorithms, the checks it advises, and its claims read into a session object your `identity` mapping receives. None
+uses the provider's SDK, and none grants anything your mapping does not.
+
+| Package | Provider | What `identity` receives |
+| --- | --- | --- |
+| `@mayurajs/auth-clerk` | [Clerk](https://clerk.com/docs) session tokens: RS256 from your Frontend API, `azp` checked against your origins, `pending` sessions refused; PEM key for no network | user, session, active organization, role and permissions (decoded from version 2 feature bitmasks), impersonator |
+
 ## Sign-in with better-auth
 
 To have users sign in to your own application, with their accounts in your own database, use

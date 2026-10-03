@@ -8539,6 +8539,32 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/auth-clerk": {
+      "clerkAuthenticator": {
+        "kind": "function",
+        "declaration": "a92c3bd08f90cd3b"
+      },
+      "ClerkAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "83f76ff8d5f55f8f"
+      },
+      "clerkFrontendApi": {
+        "kind": "function",
+        "declaration": "0de31bdd0aa28e68"
+      },
+      "clerkPermissions": {
+        "kind": "function",
+        "declaration": "820964da4cb4731c"
+      },
+      "clerkSession": {
+        "kind": "function",
+        "declaration": "1b73df095bf9933f"
+      },
+      "ClerkSession": {
+        "kind": "interface",
+        "declaration": "4bacc1360f380696"
+      }
+    },
     "@mayurajs/browser-agent-browser": {
       "agentBrowserTools": {
         "kind": "function",

@@ -70,6 +70,7 @@ export const reviewedDependencies = {
   'browser-stagehand': [],
   'browser-agent-browser': [],
   'browser-viewer': [],
+  'auth-clerk': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
