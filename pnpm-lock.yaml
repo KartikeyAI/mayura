@@ -119,6 +119,9 @@ importers:
       '@mayurajs/auth-neon':
         specifier: workspace:*
         version: link:extensions/auth-neon
+      '@mayurajs/auth-okta':
+        specifier: workspace:*
+        version: link:extensions/auth-okta
       '@mayurajs/auth-supabase':
         specifier: workspace:*
         version: link:extensions/auth-supabase
@@ -463,6 +466,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-neon:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-okta:
     devDependencies:
       mayura:
         specifier: workspace:*

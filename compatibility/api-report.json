@@ -8701,6 +8701,24 @@
         "declaration": "e03eb751321efe0b"
       }
     },
+    "@mayurajs/auth-okta": {
+      "oktaAuthenticator": {
+        "kind": "function",
+        "declaration": "827da268b9868b71"
+      },
+      "OktaAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "ea270dcf266dcd98"
+      },
+      "oktaSession": {
+        "kind": "function",
+        "declaration": "3d9e8d76604c983e"
+      },
+      "OktaSession": {
+        "kind": "interface",
+        "declaration": "48058a1d0dce200a"
+      }
+    },
     "@mayurajs/auth-supabase": {
       "supabaseAuthenticator": {
         "kind": "function",

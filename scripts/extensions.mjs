@@ -79,6 +79,7 @@ export const reviewedDependencies = {
   'auth-google': [],
   'auth-facebook': [],
   'auth-entra': [],
+  'auth-okta': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

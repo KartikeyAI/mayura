@@ -50,6 +50,7 @@
     { "path": "extensions/auth-google" },
     { "path": "extensions/auth-facebook" },
     { "path": "extensions/auth-entra" },
+    { "path": "extensions/auth-okta" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
