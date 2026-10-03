@@ -141,6 +141,12 @@ describe('jwtVerifier', () => {
     expect(() => staticKeys([{ nope: true } as never])).toThrow(/kty/u);
   });
 
+  it('test issuers may be named without a URL, with their keys on a stand-in host', async () => {
+    const bare = await testIssuer({ issuer: 'accounts.example.com' });
+    expect(bare.jwksUrl).toBe('https://issuer.test/.well-known/jwks.json');
+    expect(await jwtVerifier({ issuer: 'accounts.example.com', audience: 'api', algorithms: ['ES256'], keys: staticKeys(bare.jwks) }).verify(await bare.sign({ aud: 'api' }))).toMatchObject({ ok: true });
+  });
+
   it('peeks at the issuer only to route a token, without trusting it', async () => {
     const issuer = await testIssuer();
     expect(peekIssuer(await issuer.sign({}))).toBe(issuer.issuer);

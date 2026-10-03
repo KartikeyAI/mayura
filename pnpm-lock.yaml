@@ -107,6 +107,9 @@ importers:
       '@mayurajs/auth-firebase':
         specifier: workspace:*
         version: link:extensions/auth-firebase
+      '@mayurajs/auth-google':
+        specifier: workspace:*
+        version: link:extensions/auth-google
       '@mayurajs/auth-neon':
         specifier: workspace:*
         version: link:extensions/auth-neon
@@ -430,6 +433,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-firebase:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-google:
     devDependencies:
       mayura:
         specifier: workspace:*

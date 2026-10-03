@@ -8605,6 +8605,36 @@
         "declaration": "515adb1bc2fdaa6e"
       }
     },
+    "@mayurajs/auth-google": {
+      "googleAuthenticator": {
+        "kind": "function",
+        "declaration": "5966413f40e38d87"
+      },
+      "GoogleAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "f4806d07cea2a125"
+      },
+      "googleJwksUrl": {
+        "kind": "const",
+        "declaration": "f9cbbd25db905223"
+      },
+      "googleSession": {
+        "kind": "function",
+        "declaration": "86480eac27a94e89"
+      },
+      "GoogleSession": {
+        "kind": "interface",
+        "declaration": "4321dd6a04094c41"
+      },
+      "googleSignIn": {
+        "kind": "function",
+        "declaration": "304da284cda1a0bc"
+      },
+      "GoogleSignInOptions": {
+        "kind": "interface",
+        "declaration": "e7aa02f214a840c6"
+      }
+    },
     "@mayurajs/auth-neon": {
       "neonAuthAuthenticator": {
         "kind": "function",

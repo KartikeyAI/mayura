@@ -114,6 +114,7 @@
     "@mayurajs/auth-supabase",
     "@mayurajs/auth-firebase",
     "@mayurajs/auth-workos",
+    "@mayurajs/auth-google",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

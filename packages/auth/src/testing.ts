@@ -7,7 +7,7 @@ export interface TestIssuer {
   readonly algorithm: JwtAlgorithm;
   /** The public keys, as the issuer would publish them. */
   readonly jwks: { readonly keys: readonly Jwk[] };
-  /** Where the fetch below serves `jwks`. */
+  /** Where the fetch below serves `jwks`: under the issuer, or on `https://issuer.test` for an issuer that is not a URL. */
   readonly jwksUrl: string;
   /** A fetch serving `jwks` at `jwksUrl` (and nothing else), counting requests: give it to `remoteJwks`. */
   readonly fetch: typeof fetch & { readonly requests: number };
@@ -36,7 +36,9 @@ async function keyPair(alg: JwtAlgorithm): Promise<CryptoKeyPair> {
 export async function testIssuer(options: { readonly issuer?: string; readonly algorithm?: JwtAlgorithm; readonly jwksPath?: string } = {}): Promise<TestIssuer> {
   const issuer = options.issuer ?? 'https://issuer.test';
   const algorithm = options.algorithm ?? 'ES256';
-  const jwksUrl = new URL(options.jwksPath ?? '/.well-known/jwks.json', issuer.endsWith('/') ? issuer : `${issuer}/`).href;
+  // An issuer that is not a URL (Google also writes accounts.google.com) has its keys served on a stand-in host.
+  const base = URL.canParse(issuer) ? (issuer.endsWith('/') ? issuer : `${issuer}/`) : 'https://issuer.test/';
+  const jwksUrl = new URL(options.jwksPath ?? '/.well-known/jwks.json', base).href;
   const keys: Jwk[] = []; let signing: { readonly kid: string; readonly key: CryptoKey } | undefined; let count = 0;
   const rotate = async () => {
     const pair = await keyPair(algorithm);

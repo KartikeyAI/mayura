@@ -107,6 +107,7 @@ uses the provider's SDK, and none grants anything your mapping does not.
 | `@mayurajs/auth-supabase` | [Supabase Auth](https://supabase.com/docs/guides/auth/jwts) access tokens: ES256 or RS256 from your project (legacy HS256 only with its secret); only the `authenticated` role, no anonymous users unless allowed, `aal2` if required | user, email, phone, role, assurance level, session, app and user metadata |
 | `@mayurajs/auth-firebase` | [Firebase Authentication](https://firebase.google.com/docs/auth/admin/verify-id-tokens) ID tokens, checked as Firebase specifies with Google's keys; anonymous users and unlisted tenants refused | uid, email and whether verified, phone, name, sign-in provider, tenant, sign-in time, custom claims |
 | `@mayurajs/auth-workos` | [WorkOS](https://workos.com/docs/authkit/sessions) AuthKit session tokens, and with `connect` Connect access tokens from your AuthKit domain; machine tokens only with `allowMachines` | kind, user or machine, session, application, organization, role and roles, permissions, scopes |
+| `@mayurajs/auth-google` | [Google](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) ID tokens for your client IDs, optionally one Workspace domain; and `googleSignIn` for better-auth's Google login | account id, email and whether verified, Workspace domain, name, picture |
 
 ## Sign-in with better-auth
 
