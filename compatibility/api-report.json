@@ -8583,6 +8583,28 @@
         "declaration": "4bacc1360f380696"
       }
     },
+    "@mayurajs/auth-firebase": {
+      "firebaseAuthenticator": {
+        "kind": "function",
+        "declaration": "f3f74f185d7d6dbc"
+      },
+      "FirebaseAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "72e93e59ace4575e"
+      },
+      "firebaseJwksUrl": {
+        "kind": "const",
+        "declaration": "0521caa569892234"
+      },
+      "firebaseSession": {
+        "kind": "function",
+        "declaration": "706390aa402beec1"
+      },
+      "FirebaseSession": {
+        "kind": "interface",
+        "declaration": "515adb1bc2fdaa6e"
+      }
+    },
     "@mayurajs/auth-neon": {
       "neonAuthAuthenticator": {
         "kind": "function",

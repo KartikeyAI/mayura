@@ -112,6 +112,7 @@
     "@mayurajs/auth-auth0",
     "@mayurajs/auth-neon",
     "@mayurajs/auth-supabase",
+    "@mayurajs/auth-firebase",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

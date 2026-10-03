@@ -105,6 +105,7 @@ uses the provider's SDK, and none grants anything your mapping does not.
 | `@mayurajs/auth-auth0` | [Auth0](https://auth0.com/docs) access tokens: RS256 from your tenant for your API (or HS256 with its signing secret) | subject, application, user or machine, scopes, permissions, organization |
 | `@mayurajs/auth-neon` | [Neon Auth](https://neon.com/docs/auth/overview) (managed better-auth) JWTs: EdDSA, issuer and audience your auth URL's origin; banned users refused | user, email and whether verified, name, role |
 | `@mayurajs/auth-supabase` | [Supabase Auth](https://supabase.com/docs/guides/auth/jwts) access tokens: ES256 or RS256 from your project (legacy HS256 only with its secret); only the `authenticated` role, no anonymous users unless allowed, `aal2` if required | user, email, phone, role, assurance level, session, app and user metadata |
+| `@mayurajs/auth-firebase` | [Firebase Authentication](https://firebase.google.com/docs/auth/admin/verify-id-tokens) ID tokens, checked as Firebase specifies with Google's keys; anonymous users and unlisted tenants refused | uid, email and whether verified, phone, name, sign-in provider, tenant, sign-in time, custom claims |
 
 ## Sign-in with better-auth
 

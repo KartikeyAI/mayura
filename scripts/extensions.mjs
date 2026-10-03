@@ -74,6 +74,7 @@ export const reviewedDependencies = {
   'auth-auth0': [],
   'auth-neon': [],
   'auth-supabase': [],
+  'auth-firebase': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

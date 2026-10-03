@@ -45,6 +45,7 @@
     { "path": "extensions/auth-auth0" },
     { "path": "extensions/auth-neon" },
     { "path": "extensions/auth-supabase" },
+    { "path": "extensions/auth-firebase" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },
