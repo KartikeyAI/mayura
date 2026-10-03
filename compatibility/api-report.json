@@ -8605,6 +8605,24 @@
         "declaration": "e03eb751321efe0b"
       }
     },
+    "@mayurajs/auth-supabase": {
+      "supabaseAuthenticator": {
+        "kind": "function",
+        "declaration": "2a2d0e6a00056adb"
+      },
+      "SupabaseAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "043f8f2c1cd87749"
+      },
+      "supabaseSession": {
+        "kind": "function",
+        "declaration": "be052d9700f90ce4"
+      },
+      "SupabaseSession": {
+        "kind": "interface",
+        "declaration": "7cb453a08b6444e3"
+      }
+    },
     "@mayurajs/browser-agent-browser": {
       "agentBrowserTools": {
         "kind": "function",

@@ -111,6 +111,7 @@
     "@mayurajs/auth-clerk",
     "@mayurajs/auth-auth0",
     "@mayurajs/auth-neon",
+    "@mayurajs/auth-supabase",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

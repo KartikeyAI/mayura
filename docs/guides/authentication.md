@@ -104,6 +104,7 @@ uses the provider's SDK, and none grants anything your mapping does not.
 | `@mayurajs/auth-clerk` | [Clerk](https://clerk.com/docs) session tokens: RS256 from your Frontend API, `azp` checked against your origins, `pending` sessions refused; PEM key for no network | user, session, active organization, role and permissions (decoded from version 2 feature bitmasks), impersonator |
 | `@mayurajs/auth-auth0` | [Auth0](https://auth0.com/docs) access tokens: RS256 from your tenant for your API (or HS256 with its signing secret) | subject, application, user or machine, scopes, permissions, organization |
 | `@mayurajs/auth-neon` | [Neon Auth](https://neon.com/docs/auth/overview) (managed better-auth) JWTs: EdDSA, issuer and audience your auth URL's origin; banned users refused | user, email and whether verified, name, role |
+| `@mayurajs/auth-supabase` | [Supabase Auth](https://supabase.com/docs/guides/auth/jwts) access tokens: ES256 or RS256 from your project (legacy HS256 only with its secret); only the `authenticated` role, no anonymous users unless allowed, `aal2` if required | user, email, phone, role, assurance level, session, app and user metadata |
 
 ## Sign-in with better-auth
 
