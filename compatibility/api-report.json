@@ -8539,6 +8539,24 @@
         "declaration": "bbbab4ccb6c41af2"
       }
     },
+    "@mayurajs/auth-auth0": {
+      "auth0Authenticator": {
+        "kind": "function",
+        "declaration": "9ed903541df3d071"
+      },
+      "Auth0AuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "4d224ba590b07c30"
+      },
+      "auth0Session": {
+        "kind": "function",
+        "declaration": "f71a383494f0d9d5"
+      },
+      "Auth0Session": {
+        "kind": "interface",
+        "declaration": "2b8f92b29334a7d9"
+      }
+    },
     "@mayurajs/auth-clerk": {
       "clerkAuthenticator": {
         "kind": "function",

@@ -96,6 +96,7 @@
     "@mayurajs/browser-steel": "workspace:*",
     "@mayurajs/browser-viewer": "workspace:*",
     "@mayurajs/auth-clerk": "workspace:*",
+    "@mayurajs/auth-auth0": "workspace:*",
     "@mayurajs/cloudflare-quick-action": "workspace:*",
     "@mayurajs/deploy-agentcore": "workspace:*",
     "@mayurajs/deploy-aws-ecs": "workspace:*",

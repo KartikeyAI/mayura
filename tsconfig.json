@@ -42,6 +42,7 @@
     { "path": "extensions/browser-agent-browser" },
     { "path": "extensions/browser-viewer" },
     { "path": "extensions/auth-clerk" },
+    { "path": "extensions/auth-auth0" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

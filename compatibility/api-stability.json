@@ -109,6 +109,7 @@
     "@mayurajs/browser-agent-browser",
     "@mayurajs/browser-viewer",
     "@mayurajs/auth-clerk",
+    "@mayurajs/auth-auth0",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

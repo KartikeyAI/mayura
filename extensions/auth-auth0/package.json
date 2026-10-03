@@ -1,0 +1,15 @@
+{
+  "name": "@mayurajs/auth-auth0",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auth0 access tokens as Mayura server identities, verified with your tenant's published keys.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "src/**/*.ts", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "peerDependencies": { "mayura": "workspace:^" },
+  "devDependencies": { "mayura": "workspace:*" }
+}

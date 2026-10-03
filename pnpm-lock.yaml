@@ -98,6 +98,9 @@ importers:
       '@mayura/workstream':
         specifier: workspace:*
         version: link:packages/workstream
+      '@mayurajs/auth-auth0':
+        specifier: workspace:*
+        version: link:extensions/auth-auth0
       '@mayurajs/auth-clerk':
         specifier: workspace:*
         version: link:extensions/auth-clerk
@@ -401,6 +404,12 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  extensions/auth-auth0:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
 
   extensions/auth-clerk:
     devDependencies:

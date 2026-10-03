@@ -71,6 +71,7 @@ export const reviewedDependencies = {
   'browser-agent-browser': [],
   'browser-viewer': [],
   'auth-clerk': [],
+  'auth-auth0': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],
