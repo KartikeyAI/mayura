@@ -8645,6 +8645,24 @@
         "declaration": "7cb453a08b6444e3"
       }
     },
+    "@mayurajs/auth-workos": {
+      "workosAuthenticator": {
+        "kind": "function",
+        "declaration": "ef6aefcbb0c14c06"
+      },
+      "WorkOSAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "9b5b74c9db6f8598"
+      },
+      "workosSession": {
+        "kind": "function",
+        "declaration": "b682cd551f4986c9"
+      },
+      "WorkOSSession": {
+        "kind": "interface",
+        "declaration": "4551995bd8e23b18"
+      }
+    },
     "@mayurajs/browser-agent-browser": {
       "agentBrowserTools": {
         "kind": "function",

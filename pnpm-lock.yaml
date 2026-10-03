@@ -113,6 +113,9 @@ importers:
       '@mayurajs/auth-supabase':
         specifier: workspace:*
         version: link:extensions/auth-supabase
+      '@mayurajs/auth-workos':
+        specifier: workspace:*
+        version: link:extensions/auth-workos
       '@mayurajs/browser-agent-browser':
         specifier: workspace:*
         version: link:extensions/browser-agent-browser
@@ -439,6 +442,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-supabase:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-workos:
     devDependencies:
       mayura:
         specifier: workspace:*

@@ -100,6 +100,7 @@
     "@mayurajs/auth-neon": "workspace:*",
     "@mayurajs/auth-supabase": "workspace:*",
     "@mayurajs/auth-firebase": "workspace:*",
+    "@mayurajs/auth-workos": "workspace:*",
     "@mayurajs/cloudflare-quick-action": "workspace:*",
     "@mayurajs/deploy-agentcore": "workspace:*",
     "@mayurajs/deploy-aws-ecs": "workspace:*",

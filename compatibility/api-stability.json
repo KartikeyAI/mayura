@@ -113,6 +113,7 @@
     "@mayurajs/auth-neon",
     "@mayurajs/auth-supabase",
     "@mayurajs/auth-firebase",
+    "@mayurajs/auth-workos",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",
