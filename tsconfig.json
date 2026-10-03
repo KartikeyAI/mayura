@@ -43,6 +43,7 @@
     { "path": "extensions/browser-viewer" },
     { "path": "extensions/auth-clerk" },
     { "path": "extensions/auth-auth0" },
+    { "path": "extensions/auth-neon" },
     { "path": "extensions/deploy-cloudrun" },
     { "path": "extensions/deploy-digitalocean" },
     { "path": "extensions/deploy-fly" },

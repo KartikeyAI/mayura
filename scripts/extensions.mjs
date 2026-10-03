@@ -72,6 +72,7 @@ export const reviewedDependencies = {
   'browser-viewer': [],
   'auth-clerk': [],
   'auth-auth0': [],
+  'auth-neon': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

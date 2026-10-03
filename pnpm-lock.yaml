@@ -104,6 +104,9 @@ importers:
       '@mayurajs/auth-clerk':
         specifier: workspace:*
         version: link:extensions/auth-clerk
+      '@mayurajs/auth-neon':
+        specifier: workspace:*
+        version: link:extensions/auth-neon
       '@mayurajs/browser-agent-browser':
         specifier: workspace:*
         version: link:extensions/browser-agent-browser
@@ -412,6 +415,12 @@ importers:
         version: link:../../packages/mayura
 
   extensions/auth-clerk:
+    devDependencies:
+      mayura:
+        specifier: workspace:*
+        version: link:../../packages/mayura
+
+  extensions/auth-neon:
     devDependencies:
       mayura:
         specifier: workspace:*

@@ -8583,6 +8583,28 @@
         "declaration": "4bacc1360f380696"
       }
     },
+    "@mayurajs/auth-neon": {
+      "neonAuthAuthenticator": {
+        "kind": "function",
+        "declaration": "749f7e0aeb2b13aa"
+      },
+      "NeonAuthAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "d3ef6d9cce5f6716"
+      },
+      "neonAuthBanned": {
+        "kind": "function",
+        "declaration": "8f1d60c6074a8600"
+      },
+      "neonAuthSession": {
+        "kind": "function",
+        "declaration": "17dc4eb5b47482cf"
+      },
+      "NeonAuthSession": {
+        "kind": "interface",
+        "declaration": "e03eb751321efe0b"
+      }
+    },
     "@mayurajs/browser-agent-browser": {
       "agentBrowserTools": {
         "kind": "function",
