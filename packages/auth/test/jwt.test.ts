@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toBase64Url } from '@mayura/core/host';
-import { hmacSecret, jwtVerifier, peekIssuer, staticKeys, type JwtAlgorithm } from '../src/index.js';
+import { hmacSecret, jwtVerifier, peekIssuer, remoteJwks, staticKeys, type JwtAlgorithm } from '../src/index.js';
 import { testIssuer } from '../src/testing.js';
 
 const signAlgorithms: JwtAlgorithm[] = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512', 'EdDSA'];
@@ -145,6 +145,27 @@ describe('jwtVerifier', () => {
     const bare = await testIssuer({ issuer: 'accounts.example.com' });
     expect(bare.jwksUrl).toBe('https://issuer.test/.well-known/jwks.json');
     expect(await jwtVerifier({ issuer: 'accounts.example.com', audience: 'api', algorithms: ['ES256'], keys: staticKeys(bare.jwks) }).verify(await bare.sign({ aud: 'api' }))).toMatchObject({ ok: true });
+  });
+
+  it("narrows the keys a token may use by its claims, so a key bound to one issuer verifies only that issuer's tokens", async () => {
+    const tenantA = await testIssuer({ issuer: 'https://login.example/a' });
+    const tenantB = await testIssuer({ issuer: 'https://login.example/b' });
+    await tenantB.rotate();
+    // One key set, as a multi-tenant provider publishes it: each key says which issuer it is for.
+    const keys = [{ ...tenantA.jwks.keys[0]!, kid: 'a', issuer: 'https://login.example/a' }, { ...tenantB.jwks.keys[1]!, kid: 'b', issuer: 'https://login.example/b' }];
+    const bound = staticKeys(keys, { keyFilter: (key, claims) => key['issuer'] === claims['iss'] });
+    const verifier = jwtVerifier({ issuer: ['https://login.example/a', 'https://login.example/b'], audience: 'api', algorithms: ['ES256'], keys: bound });
+    expect(await verifier.verify(await tenantA.sign({ aud: 'api' }, { header: { kid: 'a' } }))).toMatchObject({ ok: true });
+    expect(await verifier.verify(await tenantB.sign({ aud: 'api' }, { header: { kid: 'b' } }))).toMatchObject({ ok: true });
+    // Tenant B's key never verifies a token claiming to be tenant A's, even one B signed itself.
+    expect(await verifier.verify(await tenantB.sign({ aud: 'api', iss: 'https://login.example/a' }, { header: { kid: 'b' } }))).toEqual({ ok: false, reason: 'key' });
+    // A filter given no claims passes no key.
+    expect(await bound.key({ alg: 'ES256', kid: 'a' }, { signal: new AbortController().signal })).toBeUndefined();
+    expect(await staticKeys(keys, { keyFilter: () => true }).key({ alg: 'ES256', kid: 'a' }, { signal: new AbortController().signal })).toBeUndefined();
+    const remote = remoteJwks({ url: tenantA.jwksUrl, fetch: tenantA.fetch, keyFilter: () => false });
+    expect(await jwtVerifier({ issuer: tenantA.issuer, audience: 'api', algorithms: ['ES256'], keys: remote }).verify(await tenantA.sign({ aud: 'api' }))).toEqual({ ok: false, reason: 'key' });
+    expect(() => staticKeys([], { keyFilter: 'x' as never })).toThrow(/keyFilter/u);
+    expect(() => remoteJwks({ url: tenantA.jwksUrl, keyFilter: 7 as never })).toThrow(/keyFilter/u);
   });
 
   it('peeks at the issuer only to route a token, without trusting it', async () => {

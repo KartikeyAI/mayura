@@ -9,12 +9,20 @@ export const jwtAlgorithms: readonly JwtAlgorithm[] = Object.freeze(['RS256', 'R
 export interface Jwk {
   readonly kty: string; readonly kid?: string; readonly alg?: string; readonly use?: string; readonly key_ops?: readonly string[];
   readonly n?: string; readonly e?: string; readonly crv?: string; readonly x?: string; readonly y?: string;
+  /** Other members a key set may give, such as the `issuer` a key is bound to (Microsoft Entra ID). */
+  readonly [member: string]: unknown;
 }
+
+/**
+ * Narrows the keys a token may be verified with, by its claims, which are not verified yet when keys are chosen: it can
+ * only refuse keys, and the signature and issuer are still checked afterwards. For example, a key bound to one issuer.
+ */
+export type JwtKeyFilter = (key: Jwk, claims: Readonly<Record<string, unknown>>) => boolean;
 
 /** Where a verifier finds the key for a token: by its header's `kid` and `alg`. */
 export interface JwtKeySource {
   /** The key to verify a token with this header; undefined when there is none. Throws when keys cannot be reached. */
-  key(header: { readonly alg: JwtAlgorithm; readonly kid?: string }, options: { readonly signal: AbortSignal }): Promise<CryptoKey | undefined>;
+  key(header: { readonly alg: JwtAlgorithm; readonly kid?: string }, options: { readonly signal: AbortSignal; readonly claims?: Readonly<Record<string, unknown>> }): Promise<CryptoKey | undefined>;
 }
 
 interface Family { readonly kty: 'RSA' | 'EC' | 'OKP' | 'oct'; readonly import: RsaHashedImportParams | EcKeyImportParams | Algorithm | HmacImportParams; readonly verify: AlgorithmIdentifier | RsaPssParams | EcdsaParams; readonly curve?: string }
@@ -57,8 +65,10 @@ async function importJwk(jwk: Jwk, alg: JwtAlgorithm): Promise<CryptoKey | undef
 }
 
 /** The one key of `keys` for this header: by `kid`, or the only one usable for `alg` when the token names none. */
-async function pick(keys: readonly Jwk[], header: { readonly alg: JwtAlgorithm; readonly kid?: string }, cache: Map<string, Promise<CryptoKey | undefined>>): Promise<CryptoKey | undefined> {
-  const candidates = header.kid === undefined ? keys : keys.filter(key => key.kid === header.kid);
+async function pick(keys: readonly Jwk[], header: { readonly alg: JwtAlgorithm; readonly kid?: string }, cache: Map<string, Promise<CryptoKey | undefined>>, filter?: JwtKeyFilter, claims?: Readonly<Record<string, unknown>>): Promise<CryptoKey | undefined> {
+  const named = header.kid === undefined ? keys : keys.filter(key => key.kid === header.kid);
+  // With a filter, keys the token's claims rule out are not candidates at all; without claims, no key passes it.
+  const candidates = filter ? named.filter(key => claims !== undefined && filter(key, claims)) : named;
   const usable: CryptoKey[] = [];
   for (const [index, key] of candidates.entries()) {
     const id = `${header.alg} ${key.kid ?? `#${index}`}`;
@@ -80,10 +90,16 @@ function checkJwks(value: unknown, maxKeys: number): readonly Jwk[] {
 }
 
 /** Keys known in advance, such as a provider's published PEM converted to a JWK, for verification without a network. */
-export function staticKeys(jwks: { readonly keys: readonly Jwk[] } | readonly Jwk[]): JwtKeySource {
+export function staticKeys(jwks: { readonly keys: readonly Jwk[] } | readonly Jwk[], options: { readonly keyFilter?: JwtKeyFilter } = {}): JwtKeySource {
   const keys = checkJwks(jwks, 100);
+  const filter = checkFilter(options?.keyFilter, 'staticKeys()');
   const cache = new Map<string, Promise<CryptoKey | undefined>>();
-  return Object.freeze({ key: async (header: { readonly alg: JwtAlgorithm; readonly kid?: string }) => pick(keys, header, cache) });
+  return Object.freeze({ key: async (header: { readonly alg: JwtAlgorithm; readonly kid?: string }, keyOptions?: { readonly claims?: Readonly<Record<string, unknown>> }) => pick(keys, header, cache, filter, keyOptions?.claims) });
+}
+
+function checkFilter(value: unknown, owner: string): JwtKeyFilter | undefined {
+  if (value !== undefined && typeof value !== 'function') throw new MayuraError('INVALID_CONFIG', `${owner}: keyFilter is a function of a key and the token's claims.`);
+  return value as JwtKeyFilter | undefined;
 }
 
 /** A shared secret for HS256, HS384 or HS512 tokens: at least 32 bytes. Only for issuers that sign with one. */
@@ -118,6 +134,8 @@ export interface RemoteJwksOptions {
   readonly maxBytes?: number;
   /** The most keys accepted; 100 by default. */
   readonly maxKeys?: number;
+  /** Narrows the keys each token may use, by its claims (see `JwtKeyFilter`). */
+  readonly keyFilter?: JwtKeyFilter;
 }
 
 function bounded(value: number | undefined, name: string, fallback: number, min: number, max: number): number {
@@ -146,6 +164,7 @@ export function remoteJwks(options: RemoteJwksOptions): JwtKeySource & { readonl
   const minRefreshMs = bounded(options.minRefreshMs, 'minRefreshMs', 30_000, 1_000, 600_000);
   const maxBytes = bounded(options.maxBytes, 'maxBytes', 262_144, 1_024, 4_194_304);
   const maxKeys = bounded(options.maxKeys, 'maxKeys', 100, 1, 1_000);
+  const filter = checkFilter(options.keyFilter, 'remoteJwks()');
   const fetcher = options.fetch ?? globalThis.fetch;
   let current: { readonly keys: readonly Jwk[]; readonly until: number; readonly cache: Map<string, Promise<CryptoKey | undefined>> } | undefined;
   let lastFetch = Number.NEGATIVE_INFINITY;
@@ -172,7 +191,7 @@ export function remoteJwks(options: RemoteJwksOptions): JwtKeySource & { readonl
 
   return Object.freeze({
     url: url.href,
-    key: async (header: { readonly alg: JwtAlgorithm; readonly kid?: string }, { signal }: { readonly signal: AbortSignal }) => {
+    key: async (header: { readonly alg: JwtAlgorithm; readonly kid?: string }, { signal, claims }: { readonly signal: AbortSignal; readonly claims?: Readonly<Record<string, unknown>> }) => {
       if (families[header.alg].kty === 'oct') return undefined;
       if (!current || Date.now() >= current.until) {
         try { await refresh(signal); }
@@ -183,11 +202,11 @@ export function remoteJwks(options: RemoteJwksOptions): JwtKeySource & { readonl
           }
         }
       }
-      const found = await pick(current!.keys, header, current!.cache);
+      const found = await pick(current!.keys, header, current!.cache, filter, claims);
       if (found || Date.now() - lastFetch < minRefreshMs) return found;
       // A key not seen yet: the issuer may have rotated.
       try { await refresh(signal); } catch { return undefined; }
-      return pick(current!.keys, header, current!.cache);
+      return pick(current!.keys, header, current!.cache, filter, claims);
     },
   });
 }

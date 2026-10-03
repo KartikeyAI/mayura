@@ -78,6 +78,7 @@ export const reviewedDependencies = {
   'auth-workos': [],
   'auth-google': [],
   'auth-facebook': [],
+  'auth-entra': [],
   'deploy-cloudrun': [],
   'deploy-digitalocean': [],
   'deploy-fly': [],

@@ -116,6 +116,7 @@
     "@mayurajs/auth-workos",
     "@mayurajs/auth-google",
     "@mayurajs/auth-facebook",
+    "@mayurajs/auth-entra",
     "@mayurajs/deploy-cloudrun",
     "@mayurajs/deploy-digitalocean",
     "@mayurajs/deploy-fly",

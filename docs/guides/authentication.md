@@ -69,7 +69,8 @@ rotated keys are found and made-up key ids cannot make it fetch on every request
 waiting for it, bounded by `timeoutMs` (5 s) and `maxBytes` (256 KiB). While the JWKS cannot be reached, keys past
 their age stay in use for one more `maxAgeMs`, then verification fails. Redirects are not followed, and only https
 URLs are accepted (http only on this machine). A key is never taken for an algorithm it does not fit: RSA keys under
-2048 bits, keys for encryption, keys for another algorithm, and symmetric keys in a JWKS are all refused.
+2048 bits, keys for encryption, keys for another algorithm, and symmetric keys in a JWKS are all refused. `keyFilter` (on `remoteJwks` and `staticKeys`) narrows the keys a token
+may use by its claims, for example to keys bound to its issuer; it can only refuse keys.
 
 `jwtAuthenticator({ verifier, identity })` is the server callback. It only looks at tokens naming its issuer (so it
 never fetches keys for anyone else's tokens), and turns what `identity` returns into the server's identity:
@@ -108,6 +109,7 @@ uses the provider's SDK, and none grants anything your mapping does not.
 | `@mayurajs/auth-firebase` | [Firebase Authentication](https://firebase.google.com/docs/auth/admin/verify-id-tokens) ID tokens, checked as Firebase specifies with Google's keys; anonymous users and unlisted tenants refused | uid, email and whether verified, phone, name, sign-in provider, tenant, sign-in time, custom claims |
 | `@mayurajs/auth-workos` | [WorkOS](https://workos.com/docs/authkit/sessions) AuthKit session tokens, and with `connect` Connect access tokens from your AuthKit domain; machine tokens only with `allowMachines` | kind, user or machine, session, application, organization, role and roles, permissions, scopes |
 | `@mayurajs/auth-google` | [Google](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) ID tokens for your client IDs, optionally one Workspace domain; and `googleSignIn` for better-auth's Google login | account id, email and whether verified, Workspace domain, name, picture |
+| `@mayurajs/auth-entra` | [Microsoft Entra ID](https://learn.microsoft.com/entra/identity-platform/access-tokens) access tokens for your API from the tenants you list (or any), with Microsoft's keys, tenant-bound keys kept to their tenant; app-only tokens only with `allowApps`, v1.0 tokens only when asked | object id, tenant, application, user or app, roles, scopes, name, username |
 | `@mayurajs/auth-facebook` | [Facebook Login](https://developers.facebook.com/docs/graph-api/reference/debug_token/) access tokens, checked with Facebook per request (opaque; `cacheTtlMs` to keep answers), and iOS Limited Login tokens with Facebook's keys; and `facebookSignIn` for better-auth | kind, app-scoped user id, granted permissions, email and name (Limited Login), expiry |
 
 ## Sign-in with better-auth

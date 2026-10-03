@@ -104,7 +104,7 @@ export function jwtVerifier(options: JwtVerifierOptions): JwtVerifier {
       if (header['kid'] !== undefined && (typeof header['kid'] !== 'string' || header['kid'].length > 256)) return refuse('malformed');
       if (types && (typeof header['typ'] !== 'string' || !types.has(header['typ'].toLowerCase()))) return refuse('type');
       const family = families[alg as JwtAlgorithm];
-      const key = await keys.key({ alg: alg as JwtAlgorithm, ...(typeof header['kid'] === 'string' ? { kid: header['kid'] } : {}) }, { signal: verifyOptions.signal ?? new AbortController().signal });
+      const key = await keys.key({ alg: alg as JwtAlgorithm, ...(typeof header['kid'] === 'string' ? { kid: header['kid'] } : {}) }, { signal: verifyOptions.signal ?? new AbortController().signal, claims });
       if (!key) return refuse('key');
       let valid = false;
       try { valid = await crypto.subtle.verify(family.verify, key, signature as Uint8Array<ArrayBuffer>, new TextEncoder().encode(`${parts[0]}.${parts[1]}`)); } catch { valid = false; }

@@ -318,7 +318,7 @@
       },
       "Jwk": {
         "kind": "interface",
-        "declaration": "068f6d3c692fd73e"
+        "declaration": "7a172520f8b540f7"
       },
       "JwtAlgorithm": {
         "kind": "type",
@@ -344,9 +344,13 @@
         "kind": "interface",
         "declaration": "d2b7ad73be858436"
       },
+      "JwtKeyFilter": {
+        "kind": "type",
+        "declaration": "93e9a3080f82b8c5"
+      },
       "JwtKeySource": {
         "kind": "interface",
-        "declaration": "3ab130b0e4456398"
+        "declaration": "68133020478fc7f1"
       },
       "JwtRefusal": {
         "kind": "type",
@@ -386,7 +390,7 @@
       },
       "RemoteJwksOptions": {
         "kind": "interface",
-        "declaration": "61fd9d36fd4a3d24"
+        "declaration": "da39755d4ff4905a"
       },
       "serverCapabilities": {
         "kind": "const",
@@ -402,7 +406,7 @@
       },
       "staticKeys": {
         "kind": "function",
-        "declaration": "f57939aeb35a1a6e"
+        "declaration": "f7a85af2007a3068"
       }
     },
     "@mayura/auth/better-auth": {
@@ -8581,6 +8585,24 @@
       "ClerkSession": {
         "kind": "interface",
         "declaration": "4bacc1360f380696"
+      }
+    },
+    "@mayurajs/auth-entra": {
+      "entraAuthenticator": {
+        "kind": "function",
+        "declaration": "363bb0e57b4b61aa"
+      },
+      "EntraAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "6cc51a18db134fa3"
+      },
+      "entraSession": {
+        "kind": "function",
+        "declaration": "7989e4eac9583fb8"
+      },
+      "EntraSession": {
+        "kind": "interface",
+        "declaration": "2c09d19a58a3e3dd"
       }
     },
     "@mayurajs/auth-facebook": {
