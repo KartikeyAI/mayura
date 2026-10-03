@@ -405,6 +405,48 @@
         "declaration": "f57939aeb35a1a6e"
       }
     },
+    "@mayura/auth/better-auth": {
+      "BetterAuthApiKey": {
+        "kind": "interface",
+        "declaration": "d055050e8e4a3ffc"
+      },
+      "betterAuthApiKeyAuthenticator": {
+        "kind": "function",
+        "declaration": "f82afdfee2d55b34"
+      },
+      "BetterAuthApiKeyAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "134bd15d0b9ea202"
+      },
+      "betterAuthAuthenticator": {
+        "kind": "function",
+        "declaration": "7ffa958c086b648d"
+      },
+      "BetterAuthAuthenticatorOptions": {
+        "kind": "interface",
+        "declaration": "601f0494441ab9ca"
+      },
+      "BetterAuthInstance": {
+        "kind": "interface",
+        "declaration": "ba5e4dacc0c9df3c"
+      },
+      "betterAuthJwtVerifier": {
+        "kind": "function",
+        "declaration": "7e632c8679ce0518"
+      },
+      "betterAuthPermissions": {
+        "kind": "function",
+        "declaration": "a027a65730a465a1"
+      },
+      "BetterAuthSession": {
+        "kind": "interface",
+        "declaration": "0335679be1bf67ca"
+      },
+      "withBetterAuth": {
+        "kind": "function",
+        "declaration": "55483d732ccc4f96"
+      }
+    },
     "@mayura/auth/testing": {
       "testIssuer": {
         "kind": "function",

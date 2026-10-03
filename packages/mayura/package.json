@@ -37,6 +37,10 @@
       "types": "./dist/auth.d.ts",
       "import": "./dist/auth.js"
     },
+    "./auth/better-auth": {
+      "types": "./dist/auth__better-auth.d.ts",
+      "import": "./dist/auth__better-auth.js"
+    },
     "./auth/testing": {
       "types": "./dist/auth__testing.d.ts",
       "import": "./dist/auth__testing.js"

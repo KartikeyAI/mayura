@@ -4,13 +4,14 @@ description: "Who may call Mayura's server: tokens from identity providers verif
 ---
 
 Mayura's server asks your `authenticate` callback who each request's bearer token belongs to and what it may do (see
-[Server and client](server-and-client.md)). `mayura/auth` and `mayura/keys` give you that callback for the two common
+[Server and client](server-and-client.md)). `mayura/auth` and `mayura/keys` give you that callback for the common
 kinds of caller:
 
-- people and services signed in with an identity provider, whose tokens are JWTs (`mayura/auth`), and
+- people and services signed in with an identity provider, whose tokens are JWTs (`mayura/auth`);
+- users who sign in to your own application with better-auth (`mayura/auth/better-auth`);
 - programs holding an API key you issued (`mayura/keys`), kept in any Mayura store.
 
-Both run on every runtime Mayura supports, with no dependency. Neither grants anything by default: a valid token
+They run on every runtime Mayura supports, with no dependency. None grants anything by default: a valid token
 proves who someone is, and your mapping decides what they may do here.
 
 ```ts
@@ -91,6 +92,73 @@ identity for authenticators of your own.
 `mayura/auth/testing` has `testIssuer({ issuer, algorithm })`: it makes keys, signs tokens with `sign(claims)`, serves
 its JWKS through `fetch` (give it to `remoteJwks`), and can `rotate()`. Use it to test your mapping with real signatures
 and no network.
+
+## Sign-in with better-auth
+
+To have users sign in to your own application, with their accounts in your own database, use
+[better-auth](https://www.better-auth.com) (1.7). `mayura/auth/better-auth` connects your better-auth instance to
+Mayura's server. It imports nothing from better-auth, so your instance, database and plugins are what run, on any
+runtime better-auth runs on.
+
+```ts
+import { DatabaseSync } from 'node:sqlite';
+import { betterAuth } from 'better-auth';
+import { bearer, jwt, organization } from 'better-auth/plugins';
+import { apiKey } from '@better-auth/api-key';
+import { createAgentServer } from 'mayura/server';
+import { chainAuthenticators, mapCapabilities } from 'mayura/auth';
+import { betterAuthApiKeyAuthenticator, betterAuthAuthenticator, betterAuthPermissions, withBetterAuth } from 'mayura/auth/better-auth';
+
+const auth = betterAuth({
+  database: new DatabaseSync('auth.sqlite'), // or a pg Pool, a mysql2 pool, mongodbAdapter(db), ...
+  emailAndPassword: { enabled: true },
+  plugins: [bearer(), jwt(), organization(), apiKey({ defaultPrefix: 'acme_' })],
+});
+
+const authenticate = chainAuthenticators(
+  betterAuthAuthenticator(auth, {
+    identity: ({ user, session }) => session.activeOrganizationId ? {
+      principalId: `user/${user.id}`,
+      projectId: session.activeOrganizationId,
+      agentIds: ['support'],
+      capabilities: ['runs:submit', 'runs:read'],
+    } : null,
+  }),
+  betterAuthApiKeyAuthenticator(auth, {
+    prefix: 'acme_',
+    identity: key => ({
+      principalId: `user/${key.referenceId}`,
+      projectId: 'acme',
+      agentIds: ['support'],
+      capabilities: mapCapabilities(betterAuthPermissions(key.permissions), { 'runs:submit': ['runs:submit'], 'runs:read': ['runs:read'] }),
+    }),
+  }),
+);
+
+declare const options: Omit<Parameters<typeof createAgentServer>[0], 'authenticate'>;
+const server = createAgentServer({ ...options, authenticate });
+export const fetchHandler = withBetterAuth(auth, request => server.fetch(request));
+```
+
+- **Sessions.** `betterAuthAuthenticator` takes better-auth session tokens as bearer tokens (its `bearer` plugin gives
+  clients one in the `set-auth-token` header). Each request asks better-auth for the session, so signing out or
+  revoking a session stops it at once, and an identity lasts no longer than the session. `identity` decides what the
+  user may do, for example from their role in the active organization.
+- **API keys.** `betterAuthApiKeyAuthenticator` checks keys from better-auth's apiKey plugin, which applies each key's
+  rate limit, remaining uses and expiry. Give the plugin a `defaultPrefix`, and the same `prefix` here, so only those
+  tokens are checked. `betterAuthPermissions` turns better-auth's `{ runs: ['read'] }` into `runs:read` for
+  `mapCapabilities`. Mayura's own keys (`mayura/keys`, below) do the same on any Mayura store without better-auth.
+- **JWTs.** `betterAuthJwtVerifier({ baseURL })` checks tokens from better-auth's `jwt` plugin against its JWKS, with no
+  call to better-auth per request; give it to `jwtAuthenticator`.
+- **One handler.** `withBetterAuth(auth, next)` sends requests under `/api/auth` (better-auth's own path) to
+  better-auth: sign-up, sign-in, sessions, organizations, keys and JWKS. Everything else goes to `next`, such as
+  Mayura's server.
+- What better-auth returns is checked when it arrives: a session or key in a shape Mayura does not know is refused, and
+  an error from better-auth (such as its database being down) makes the server answer that authentication is
+  unavailable.
+- With pnpm, if better-auth's types refuse its own apiKey plugin, two copies of `@better-auth/core` were installed:
+  `@better-auth/api-key` 1.7.7 asks for `@better-auth/utils` 0.4.2, which better-auth uses, while pnpm may install a
+  newer one for it. Adding `@better-auth/utils@0.4.2` to your dependencies leaves one copy.
 
 ## API keys
 

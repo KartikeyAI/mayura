@@ -8,5 +8,5 @@
     "types": ["node"]
   },
   "include": ["packages/*/test/**/*.ts", "extensions/*/test/**/*.ts", "vitest.config.ts"],
-  "exclude": ["extensions/provider-mistral/test/**/*.ts"]
+  "exclude": ["extensions/provider-mistral/test/**/*.ts", "packages/auth/test/types/**/*.ts"]
 }

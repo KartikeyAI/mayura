@@ -1,0 +1,6 @@
+// better-auth's own declarations, as an application compiles them (skipLibCheck): its instances fit Mayura's types.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "composite": false, "noEmit": true, "declaration": false, "declarationMap": false, "skipLibCheck": true, "types": ["node"] },
+  "include": ["test/types/better-auth-compat.ts"]
+}

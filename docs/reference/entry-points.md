@@ -121,6 +121,7 @@ validator works too.
 |---|---|---|---|
 | `mayura/server` | The authenticated HTTP API as a Fetch handler, with the operator console. | `createAgentServer` | |
 | `mayura/auth` | Verifying JWTs from identity providers with their published keys, and mapping them to the server's identity. Any runtime. | `jwtVerifier`, `remoteJwks`, `jwtAuthenticator`, `chainAuthenticators`, `mapCapabilities`, `principalId` | |
+| `mayura/auth/better-auth` | Your better-auth instance's sessions, API keys and JWTs as the server's identity, and one handler for both. Imports nothing from better-auth. | `betterAuthAuthenticator`, `betterAuthApiKeyAuthenticator`, `betterAuthJwtVerifier`, `withBetterAuth` | better-auth |
 | `mayura/auth/testing` | A test identity provider: keys, signed tokens and a JWKS served without a network. | `testIssuer` | |
 | `mayura/keys` | API keys issued, checked, rotated and revoked in any Mayura store, with grants, limits and credits. Any runtime. | `createKeyManager`, `keyAuthenticator` | a storage adapter |
 | `mayura/keys/testing` | An in-memory store for trying keys out, and the key manager's behaviour as test cases for a store. | `memoryAggregateStore`, `keyManagerConformance` | |

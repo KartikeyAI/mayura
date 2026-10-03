@@ -9,6 +9,7 @@
     "@mayura/artifacts",
     "@mayura/artifacts/files",
     "@mayura/auth",
+    "@mayura/auth/better-auth",
     "@mayura/auth/testing",
     "@mayura/keys",
     "@mayura/keys/testing",
