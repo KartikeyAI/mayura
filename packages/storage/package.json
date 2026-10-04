@@ -23,5 +23,5 @@
     "@mayura/storage-sqlite": "workspace:*",
     "@mayura/storage-postgres": "workspace:*"
   },
-  "devDependencies": { "@mayura/storage-sql": "workspace:*", "better-sqlite3": "13.0.3", "pg": "8.23.0" }
+  "devDependencies": { "@mayura/storage-sql": "workspace:*", "better-sqlite3": "13.0.3", "pg": "8.23.1" }
 }
