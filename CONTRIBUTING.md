@@ -80,6 +80,15 @@ and for a compatible provider with `_MEDIA`; for others they are skipped with th
 
 The JSON report lists each provider and check with `status` (`passed`, `failed` or `skipped`), duration, charge and model calls. Exit code 0 means every selected check passed, 1 that one failed or the total exceeded the cap, and 2 that the run was refused before anything was sent. A pass qualifies that account, model and endpoint today, not prices, model quality or future behaviour; run it again when you change models or upgrade Mayura.
 
+## Checking other integrations against live accounts
+
+`scripts/live/` has a live check for each sign-in provider, sandbox, browser and API key service package, and for
+LangSmith. Each script is named after its package and run by hand with your own accounts, as
+[scripts/live/README.md](scripts/live/README.md) describes. `.env.example` lists the variables for every integrated
+platform, grouped by platform with where to get each one. Copy it to `.env.live`, which is git-ignored, and fill in
+what you have. Leave the rest empty: an empty variable counts as unset. Platforms that `.env.example` marks "no live
+check yet" are tested with fakes and local emulators only.
+
 ## Governance and support
 
 Governance and release ownership are defined in [GOVERNANCE.md](GOVERNANCE.md); support terms in [SUPPORT.md](SUPPORT.md); security reporting in [SECURITY.md](SECURITY.md). No external support SLA is promised for pre-releases.
