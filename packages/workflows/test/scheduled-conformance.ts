@@ -10,6 +10,8 @@ import { composeExternalEffectVerifiers, createScheduledWorkflowRuntime, createW
 import { digest } from '../src/definition.js';
 import type { ScheduledFixture } from './scheduled-fixtures.js';
 
+const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+
 type Runtime = ReturnType<typeof createScheduledWorkflowRuntime>;
 type Options = Parameters<typeof createScheduledWorkflowRuntime>[0];
 const scope = { principalId: 'scheduled-developer', projectId: 'scheduled-project' };
@@ -644,15 +646,16 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
     });
 
     it('asks for a fresh review when an approval expires before admission, instead of retrying a refused preparation', async () => {
-      const backing = store.workflows; let delayed = false;
+      const backing = store.workflows; let delayed = false; const approvalWindowMs = slowRunner ? 15_000 : 6_000;
       const fault = wrapped({ prepare: async command => {
         // The worker is slow to reach storage: the approval lapses before preparation is admitted. The window is
-        // generous (6 s) because the second approval must still be admitted within it on a slow hosted runner.
-        if (!delayed) { delayed = true; await new Promise(resolve => setTimeout(resolve, 6_100)); }
+        // generous because the second approval must still be admitted within it: 6 s, and 15 s on the hosted Windows
+        // runner, where D1 in Miniflare once took longer than 6 s to admit it.
+        if (!delayed) { delayed = true; await new Promise(resolve => setTimeout(resolve, approvalWindowMs + 100)); }
         return backing.prepare(command);
       } });
       let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }), true);
-      const engine = runtime({ store: fault, approvalTtlMs: 6_000 });
+      const engine = runtime({ store: fault, approvalTtlMs: approvalWindowMs });
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'expired-before-admission' });
       const first = (await engine.runUntilSettled(definition, run.id)).steps['write']!.approval!.digest;
       await engine.approve({ id: run.id, nodeId: 'write', digest: first, credential: 'verified-scheduled-human' });
