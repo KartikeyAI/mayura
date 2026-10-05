@@ -13,7 +13,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22.23.2, 24.14.1]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The hosted Windows runner takes about 17 minutes for the unit suite alone.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -58,8 +59,10 @@ jobs:
       fail-fast: false
       matrix:
         node: [22.23.2, 24.14.1]
+        # The integration suite runs every store's conformance against its service: over 20 minutes in one job.
+        shard: [1, 2]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
@@ -127,8 +130,9 @@ jobs:
           for attempt in $(seq 1 30); do [ "$(docker exec mongodb mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 2; done
       # fake-gcs-server needs command-line flags (plain HTTP), which service containers cannot take.
       - run: docker run -d -p 127.0.0.1:14443:4443 fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef -scheme http -port 4443 -public-host 127.0.0.1:14443 && for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:14443/storage/v1/b > /dev/null && break; sleep 1; done
-      - run: node scripts/ci-step.mjs --timeout-minutes 15 -- pnpm test:integration --reporter=verbose
-      - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
+      - run: node scripts/ci-step.mjs --timeout-minutes 30 -- pnpm test:integration --reporter=verbose --shard=${{ matrix.shard }}/2
+      - if: matrix.shard == 1
+        run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
   # Entry points outside the Node-only list bundle for edge runtimes, and the runtime probe (agents, the server handler,
   # workflows, memory, storage) passes on Bun, Deno, Cloudflare's workerd without nodejs_compat and Vercel's Edge VM,
   # with every result equal to Node's.
