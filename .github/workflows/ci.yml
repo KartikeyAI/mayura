@@ -127,7 +127,7 @@ jobs:
           for attempt in $(seq 1 30); do [ "$(docker exec mongodb mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 2; done
       # fake-gcs-server needs command-line flags (plain HTTP), which service containers cannot take.
       - run: docker run -d -p 127.0.0.1:14443:4443 fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef -scheme http -port 4443 -public-host 127.0.0.1:14443 && for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:14443/storage/v1/b > /dev/null && break; sleep 1; done
-      - run: node scripts/ci-step.mjs -- pnpm test:integration
+      - run: node scripts/ci-step.mjs --timeout-minutes 15 -- pnpm test:integration --reporter=verbose
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
   # Entry points outside the Node-only list bundle for edge runtimes, and the runtime probe (agents, the server handler,
   # workflows, memory, storage) passes on Bun, Deno, Cloudflare's workerd without nodejs_compat and Vercel's Edge VM,
