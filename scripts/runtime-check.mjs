@@ -49,7 +49,9 @@ const runtimes = {
     const deno = process.env['MAYURA_DENO'] ?? 'deno';
     const main = join(directory, 'deno.mjs');
     await writeFile(main, `import { probe } from ${JSON.stringify(probeUrl)};\nconsole.log(${JSON.stringify(marker)} + JSON.stringify(await probe()));\n`);
-    const result = run(deno, ['run', '--allow-read', '--allow-env', '--no-prompt', main]);
+    // The entry is outside the workspace, so Deno would not look for its package.json: resolve bare imports (the
+    // probe's mayura/...) through the workspace's node_modules, as Node does.
+    const result = run(deno, ['run', '--node-modules-dir=manual', '--allow-read', '--allow-env', '--no-prompt', main]);
     if (result.error?.code === 'ENOENT') return undefined;
     return parse(`${result.stdout}\n${result.stderr}`, 'Deno');
   },
