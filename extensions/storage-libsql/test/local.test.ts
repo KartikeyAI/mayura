@@ -47,11 +47,39 @@ async function database(prefix: string): Promise<{ filename: string; cleanup(): 
     collect(); await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   } };
 }
-/** A SQLite fixture with its store replaced by libSQL on the same file; its fault hooks are unchanged. */
+/**
+ * A SQLite fixture with its store replaced by libSQL on the same file. Its raw query and lock hooks use libSQL too:
+ * the SQLite fixtures' hooks use better-sqlite3, a second copy of SQLite, and on Linux and macOS two copies in one
+ * process undo each other's POSIX locks on a shared file (closing either releases the other's), so the store's next
+ * write fails with SQLITE_IOERR. Windows locks per handle, which is why it alone passed with the SQLite hooks.
+ */
 async function onLibsql<F extends { store: { close(): Promise<void> }; cleanup(): Promise<void> }>(base: F, filename: string): Promise<F & { store: LibsqlStore; reopen(): LibsqlStore }> {
   await base.store.close();
   const open = opener(filename);
-  return { ...base, store: open(), reopen: open, cleanup: async () => { collect(); await base.cleanup(); } };
+  const hooks: Record<string, unknown> = {};
+  if ('query' in base) {
+    hooks['query'] = async (sql: string, parameters: readonly unknown[] = []) => {
+      const client = createClient({ url: url(filename), intMode: 'number' });
+      try {
+        await client.execute('PRAGMA foreign_keys = ON');
+        const result = await client.execute({ sql, args: [...parameters] as never });
+        return result.rows.map(row => Object.fromEntries(result.columns.map((column, index) => [column, row[index]])));
+      } finally { client.close(); }
+    };
+  }
+  // The SQLite fixtures' lock: a write transaction held open until released.
+  const lock = async () => {
+    const client = createClient({ url: url(filename) });
+    let tx;
+    try { tx = await client.transaction('write'); } catch (error) { client.close(); throw error; }
+    let released = false;
+    return async () => {
+      if (released) return; released = true;
+      try { await tx.commit(); } finally { tx.close(); client.close(); }
+    };
+  };
+  for (const name of ['lockRoot', 'lockAggregate']) if (name in base) hooks[name] = lock;
+  return { ...base, ...hooks, store: open(), reopen: open, cleanup: async () => { collect(); await base.cleanup(); } };
 }
 const simple = (prefix: string) => async () => {
   const { filename, cleanup } = await database(prefix);
