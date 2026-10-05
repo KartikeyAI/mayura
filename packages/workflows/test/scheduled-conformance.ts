@@ -650,12 +650,13 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const fault = wrapped({ prepare: async command => {
         // The worker is slow to reach storage: the approval lapses before preparation is admitted. The window is
         // generous because the second approval must still be admitted within it: 6 s, and 15 s on the hosted Windows
-        // runner, where D1 in Miniflare once took longer than 6 s to admit it.
+        // runner, where D1 in Miniflare once took longer than 6 s to admit it. The delay is inside a storage call, so
+        // the storage timeout stays above it.
         if (!delayed) { delayed = true; await new Promise(resolve => setTimeout(resolve, approvalWindowMs + 100)); }
         return backing.prepare(command);
       } });
       let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }), true);
-      const engine = runtime({ store: fault, approvalTtlMs: approvalWindowMs });
+      const engine = runtime({ store: fault, approvalTtlMs: approvalWindowMs, storageTimeoutMs: approvalWindowMs + 10_000 });
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'expired-before-admission' });
       const first = (await engine.runUntilSettled(definition, run.id)).steps['write']!.approval!.digest;
       await engine.approve({ id: run.id, nodeId: 'write', digest: first, credential: 'verified-scheduled-human' });

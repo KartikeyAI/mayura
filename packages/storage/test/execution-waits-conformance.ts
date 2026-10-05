@@ -11,6 +11,9 @@ import {
 } from '@mayura/storage-contracts';
 import type { ExecutionWaitFixture } from './execution-waits-fixtures.js';
 
+/** The hosted Windows runner, where 127 sequential durable writes can outlast a 15 s budget. */
+const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+
 const digest = (domain: string, value: unknown) => createHash('sha256').update(workflowHashMaterial(domain, value)).digest('hex');
 const policy: WorkflowPolicyManifest = {
   scope: { principalId: 'completion-principal', projectId: 'completion-project' },
@@ -372,7 +375,7 @@ export function executionWaitConformance(name: string, factory: () => Promise<Ex
       const journal = await waits.events({ ...stream, after: 0 });
       expect(journal).toHaveLength(257);
       expect(await waits.events({ ...stream, after: 256 })).toEqual(journal.slice(256));
-    }, 15_000);
+    }, slowRunner ? 45_000 : 15_000);
 
     it.each(['digest', 'column', 'extra-data'] as const)('rejects a corrupt completion %s before exposing or resolving its observation', async corruption => {
       const target = await submit(); await register('corrupt-fact', [target]); await finish(target, 'succeeded');
