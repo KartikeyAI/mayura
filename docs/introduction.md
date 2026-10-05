@@ -4,13 +4,16 @@ description: "What Mayura is, the ideas behind it, and how its parts fit togethe
 ---
 
 Mayura is a TypeScript framework for building AI agents, typed tools and durable workflows. You describe an agent
-with schemas for what goes in and what comes out, give it tools, and run it on OpenAI, Anthropic or any
-OpenAI-compatible provider. When one run isn't enough, the same agents and tools become steps in workflows that wait
+with schemas for what goes in and what comes out, give it tools, and run it on OpenAI, Anthropic, any
+OpenAI-compatible provider, or the models of Google, Amazon Bedrock, Azure, Mistral, Groq and Ollama. When one run isn't
+enough, the same agents and tools become steps in workflows that wait
 for people, timers and events, and carry on after a restart.
 
 Mayura is one npm package, `mayura`, with a CLI of the same name. The core has no infrastructure dependencies: no
 database, server or hosted account is needed to run an agent. Storage, servers, UI and sandboxes are separate entry
-points you import only when you need them.
+points you import only when you need them, and other services (more model providers and databases, voice, file stores,
+hosted sandboxes and browsers, identity providers, observability services and deploy targets) come as optional
+[`@mayurajs/*` packages](reference/integrations.md).
 
 ## The building blocks
 
@@ -21,7 +24,7 @@ points you import only when you need them.
 | **Model adapter** | The connection to a model provider, with its prices and a cost cap per call. | [Model providers](guides/model-providers.md) |
 | **Runtime** | Runs agents under an allow-list of permissions and limits on cost, steps, tool calls and time. | [Runtime](concepts/runtime.md) |
 | **Outcome** | How a run ended: `succeeded`, `failed`, `blocked`, `cancelled` or `outcome_unknown`. | [Outcomes](concepts/outcomes.md) |
-| **Workflow** | Steps (tools, agents, people, timers, signals) that run in order or in parallel, in memory or durably in SQLite or PostgreSQL. | [Workflows](concepts/workflows.md) |
+| **Workflow** | Steps (tools, agents, people, timers, signals) that run in order or in parallel, in memory or durably in SQLite, PostgreSQL or another [supported database](guides/storage.md). | [Workflows](concepts/workflows.md) |
 | **Application** | Your agents and workflows packaged for `mayura serve` and `mayura worker`: an HTTP server with authentication, and a worker that runs durable workflows. | [Server and client](guides/server-and-client.md) |
 
 ## Ideas behind Mayura
@@ -63,12 +66,14 @@ native dependency (SQLite, PostgreSQL, QuickJS, React) is installed only by proj
 
    mayura/workflows/*   run agents and tools as durable steps (mayura/storage-sqlite or -postgres)
    mayura/server        serves agents and workflows over HTTP; mayura/client and mayura/client-react call them
-   mayura (CLI)         init, dev, serve, worker, migrate, and operator commands
+   mayura (CLI)         init, dev, serve, worker, migrate, deploy, and operator commands
 ```
 
 ## Where to go next
 
 - [Quickstart](quickstart.md): a working agent in a few minutes.
+- [What's new in 1.1](project/whats-new.md): what the latest release adds.
 - [Installation](installation.md): requirements, optional peers and TypeScript settings.
 - [Entry points](reference/entry-points.md): every `mayura/...` import and what it's for.
+- [Integration packages](reference/integrations.md): every `@mayurajs/*` package.
 - [Using Mayura with AI coding agents](ai-agents.md): documentation your assistant can read offline.

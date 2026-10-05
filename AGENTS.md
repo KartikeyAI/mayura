@@ -64,6 +64,8 @@ pnpm test:starters               # every starter generated, installed and tested
 - Docs pages start with `title` and `description` frontmatter, have no `# H1`, link only within `docs/`, and are
   listed in `docs/README.md`; then run `node scripts/docs-index.mjs` to regenerate `llms.txt`. Snippets must pass
   `pnpm docs:check`.
+- A new extension needs a `description` in its `package.json`; run `node scripts/integrations-index.mjs` to add it to
+  `docs/reference/integrations.md` (`pnpm docs:check` fails until it is there).
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`); releases are versioned
   from them (see [RELEASING.md](RELEASING.md)).
 - Never print, log or commit secrets. `.env` files are ignored.

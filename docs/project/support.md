@@ -21,7 +21,28 @@ Mayura is published as ES modules. Use it from an ES module project (`"type": "m
 files) with TypeScript's `NodeNext` module setting. CommonJS projects are not supported.
 
 The browser entry points (`mayura/client`, its `headless`, `forms` and `workflows` subpaths, and
-`mayura/client-react`) also run in browsers. Everything else needs Node.js.
+`mayura/client-react`) also run in browsers.
+
+## Edge and other JavaScript runtimes
+
+Since 1.1, every entry point except the Node-only ones below also runs on Bun, Deno, Cloudflare Workers and Vercel Edge
+Functions. CI runs the same checks on each of them (an agent run with a tool, the server's request handler, a durable
+workflow with a tool step, memory pages and embeddings, hashing, and the PostgreSQL driver store loading and failing
+safely without a database) and requires every result to equal Node's.
+
+| Runtime | Status |
+|---|---|
+| Bun 1.4 | Tested in CI. |
+| Deno 2.9 (`npm:` packages) | Tested in CI. |
+| Cloudflare Workers | Tested in CI on workerd, the Workers runtime, at an old compatibility date without `nodejs_compat`. Not yet run on a deployed Worker. |
+| Vercel Edge Functions | Tested in CI on the Edge runtime, and on a Vercel preview deployment with PostgreSQL through Neon's WebSocket pool. |
+
+The Node-only entry points need Node.js because they start processes, open native modules, use the filesystem or
+listen on a port: `mayura/cli` and `mayura/cli/deploy`, `mayura/server-node`, `mayura/terminal`, `mayura/skills`,
+`mayura/artifacts` (the local store), `mayura/storage` and `mayura/storage-sqlite` (SQLite), `mayura/storage-postgres`
+(use `mayura/storage-postgres/driver` at the edge), `mayura/sandbox/docker`, `mayura/browser/local`,
+`mayura/adapter-code-docker` and `mayura/adapter-code-quickjs`. See
+[Deployment](../guides/deployment.md#edge-runtimes) for how an application runs there.
 
 ## Platforms
 
@@ -34,11 +55,11 @@ The browser entry points (`mayura/client`, its `headless`, `forms` and `workflow
 Serverless functions on Vercel are supported on those Node.js versions, with runs that finish inside their request and
 workflows advanced on a schedule; see [Deployment](../guides/deployment.md#serverless-functions). AWS Lambda and Google
 Cloud Run functions, Vercel Cron and Next.js route handlers are experimental: they pass the same local tests but have
-not yet run on those platforms, and their setup may change in any release. Edge runtimes (Cloudflare Workers, Deno and Bun) are planned
-for 1.1.
+not yet run on those platforms, and their setup may change in any release. Edge runtimes are described
+[above](#edge-and-other-javascript-runtimes).
 
-Other environments may work but are not supported: Arm Linux and Windows, edge runtimes, and Node.js versions outside
-the table above.
+Other environments may work but are not supported: Arm Linux and Windows, and Node.js versions outside the table
+above.
 
 ## Package managers
 

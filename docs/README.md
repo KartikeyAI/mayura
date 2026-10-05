@@ -80,9 +80,11 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 ## Reference
 
 - [Entry points](reference/entry-points.md): every `mayura/...` import.
+- [Integration packages](reference/integrations.md): every `@mayurajs/*` package, by area.
 
 ## Project
 
+- [What's new in 1.1](project/whats-new.md): the capabilities and integration packages that 1.1 adds.
 - [Versioning and stability](project/versioning.md): what each release promises.
 - [Supported platforms](project/support.md): Node.js versions, operating systems and getting help.
 - [Security model](project/security.md): what Mayura protects against, and reporting vulnerabilities.

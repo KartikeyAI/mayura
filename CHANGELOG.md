@@ -130,6 +130,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- Documentation and the website describe Mayura 1.1: a [What's new](docs/project/whats-new.md) page, a generated catalog of every integration package (`docs/reference/integrations.md`, kept current by `pnpm docs:check`), edge runtimes in Deployment and Support, and the landing page's 1.1 features and answers.
 - Documentation and the website describe Mayura 1.0 as the stable release it is: the landing page and its production FAQ, Installation, Versioning (release candidates now precede new versions; the support window is the policy, no longer a proposal), Support, the Security model and `SECURITY.md`.
 
 ### Fixed

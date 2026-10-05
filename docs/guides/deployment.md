@@ -40,12 +40,14 @@ only in how the processes are started and kept running. Mayura needs Node.js 22 
 | [Virtual machines](#virtual-machines) | a systemd service | a systemd service | a step in your deploy script |
 | [Inside an existing app](#inside-an-existing-nodejs-app) | your framework's `/v1/*` route | `mayura worker` | `mayura migrate` |
 | [Serverless functions](#serverless-functions): Vercel; AWS Lambda and Cloud Run (experimental) | a request-bound function | a scheduled one-shot function or job | a step in your pipeline |
+| [Edge runtimes](#edge-runtimes): Vercel Edge; Cloudflare Workers and Deno Deploy (experimental) | a request-bound edge function | a scheduled invocation (Cron Trigger, Vercel Cron, `Deno.cron`) | a step in your pipeline |
 
 On every target except serverless functions, two rules hold. The worker keeps running: a platform that scales it to
 zero, or stops its CPU between requests, stops your workflows too. And the server keeps working after it responds,
 because agent runs continue in the process that accepted them, so it needs CPU between requests as well. Serverless
 functions work the other way: runs finish inside their request and workflows advance on a schedule; see
-[Serverless functions](#serverless-functions). Edge runtimes are planned for 1.1.
+[Serverless functions](#serverless-functions). [Edge runtimes](#edge-runtimes) work the same way as serverless
+functions.
 
 ## The application module
 
@@ -539,9 +541,45 @@ CPU is always allocated, the [managed container](#managed-container-platforms) s
 
 ## Edge runtimes
 
-Cloudflare Workers, Deno and Bun are not supported yet; support is planned for Mayura 1.1. The browser-safe
-`mayura/client` already works anywhere `fetch` does, so an app on an edge runtime can call a Mayura server that runs on
-one of the targets above.
+Since 1.1, Mayura runs on Cloudflare Workers, Vercel Edge Functions, Deno and Bun, except for the Node-only entry points
+(the CLI, the Node server, SQLite, the `pg` store, Docker, the local browser and filesystem features); see
+[Support](../project/support.md#edge-and-other-javascript-runtimes) for the list and for what is tested where.
+
+- **Tested:** every runtime in CI, with results equal to Node's; Vercel Edge also on a preview deployment, with
+  PostgreSQL through Neon's WebSocket pool.
+- **Experimental: deployed Cloudflare Workers and Deno Deploy.** They run the same code as CI's workerd and Deno but
+  have not yet run as deployments, and their setup may change in any release.
+
+An edge function is a serverless function with a tighter budget, so the [four settings above](#serverless-functions)
+hold: runs finish inside their request (`runExecution: 'request'`), workflows advance from a scheduled invocation of
+`worker.runOnce({ budgetMs })`, pools are small, and migrations run from your pipeline. Keep each run's
+`maxDurationMs` within the platform's limits: CPU time on Workers, the time to the first byte and the total duration on
+Vercel Edge. Two things change in the module:
+
+- **Storage over a connection the runtime allows.** `mayura/storage-postgres` opens TCP sockets through `pg`; use
+  [`mayura/storage-postgres/driver`](storage.md#a-pool-you-own) with a pool you create instead. On Vercel Edge, which
+  has no TCP sockets, that is a WebSocket pool such as Neon's `@neondatabase/serverless`. On Workers (with
+  `nodejs_compat`), Deno and Bun, a `pg` Pool works too. On Workers, [`@mayurajs/storage-d1`](storage.md#d1-and-dynamodb)
+  keeps everything in D1.
+- **Configuration from the platform.** Workers without `nodejs_compat` and Vercel Edge have no `process.env`: read the
+  database URL and keys from the platform's bindings or environment, and pass them in.
+
+On Workers, the default export answers requests and a Cron Trigger (`crons = ["* * * * *"]` in `wrangler.toml`)
+advances workflows:
+
+```ts
+// src/worker.ts
+export default {
+  fetch: (request: Request) => handle(request),
+  scheduled: (_controller: unknown, _env: unknown, context: { waitUntil(work: Promise<unknown>): void }) => {
+    context.waitUntil(advanceWorkflows());
+  },
+};
+```
+
+On Vercel Edge, the same two functions back an Edge route and a Vercel Cron route; on Deno Deploy, `Deno.serve` and
+`Deno.cron`. The browser-safe `mayura/client` works anywhere `fetch` does, so an app on any runtime can also call a
+Mayura server that runs on one of the targets above.
 
 ## Environment and secrets
 

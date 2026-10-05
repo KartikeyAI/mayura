@@ -62,6 +62,18 @@ in the same major line (for QuickJS, the same minor), so an existing compatible 
 Everything else, including the CLI, the HTTP server and the terminal chat, installs with `mayura` itself. The Docker
 Code Mode adapter (`mayura/adapter-code-docker`) needs a Docker engine at run time, not an npm package.
 
+## Integration packages
+
+Services beyond the core come as separate `@mayurajs/*` packages: model providers, voice, more databases and file
+stores, observability services, hosted sandboxes and browsers, identity providers, API key services and deploy
+targets. Each is released with `mayura` at the same version, so install the same version of both:
+
+```bash
+npm install mayura @mayurajs/provider-anthropic
+```
+
+See [Integration packages](reference/integrations.md) for all of them.
+
 ## The CLI
 
 The `mayura` command is included. Run it with `npx mayura` (or `pnpm exec mayura`), or from your `package.json`
