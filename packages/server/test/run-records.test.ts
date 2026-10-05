@@ -8,6 +8,8 @@ import { createAgentServer, type AgentServer, type AgentServerOptions, type RunR
 import { createAggregateRunRecords, createSqliteStore } from '../../storage/dist/index.js';
 
 const publicOrigin = 'https://agents.example.test';
+/** The hosted Windows runner, where a loaded replica can miss a 300 ms lease renewal before the run is even seen. */
+const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
 const schema: Schema<unknown> = { '~standard': { version: 1, vendor: 'test', validate: value => ({ value }) } };
 const identity = (overrides: Partial<ServerIdentity> = {}): ServerIdentity => ({ scope: { principalId: 'alice', projectId: 'project' }, agentIds: ['echo'],
   capabilities: ['runs:read', 'runs:submit', 'runs:cancel'], expiresAtMs: Date.now() + 60_000, ...overrides });
@@ -105,7 +107,7 @@ describe('agent runs shared by server replicas through durable run records', () 
 
   it('settles a run as outcome_unknown when its replica stops renewing the lease, and the old owner then stops it', async () => {
     const database = await sqlite(); const model = waiting(); const owner = severable(createAggregateRunRecords(await database.open()));
-    const limits = { runLeaseMs: 300, runRecordPollMs: 20 };
+    const limits = { runLeaseMs: slowRunner ? 3_000 : 300, runRecordPollMs: 20 };
     const a = replica({ runRecords: owner.records, limits }, model.generate);
     const b = replica({ runRecords: createAggregateRunRecords(await database.open()), limits }, model.generate);
     const { id } = await json(await submit(a)) as { id: string }; const signal = await model.started.promise;
@@ -113,7 +115,7 @@ describe('agent runs shared by server replicas through durable run records', () 
     // Replica A loses its database (as if it died); after the lease and the clock allowance, a reader settles the run.
     owner.sever();
     await vi.waitFor(async () => expect(await json(await call(b, `/v1/runs/${id}`))).toMatchObject({ status: 'outcome_unknown',
-      outcome: { status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN' } } }), { interval: 50, timeout: 5_000 });
+      outcome: { status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN' } } }), { interval: 50, timeout: slowRunner ? 20_000 : 5_000 });
     const seen = await frames(await call(b, `/v1/runs/${id}/events`));
     expect(seen.at(-1)).toMatchObject({ type: 'run.completed', data: { metadata: { status: 'outcome_unknown' } } });
     expect(seen.map(frame => frame.id)).toEqual(seen.map((_, index) => index + 1));
