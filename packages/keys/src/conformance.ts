@@ -93,12 +93,13 @@ export const keyManagerConformance: readonly KeyManagerConformanceCase[] = Objec
     async run({ store }) {
       const keys = createKeyManager({ store, prefix: 'acme' });
       const old = await keys.create({ ...owner(), credits: { remaining: 9 } });
-      const rotated = await keys.rotate(old.record.keyId, { overlapMs: 300 });
+      // An overlap long enough for two verifications on a slow store (D1 on a loaded runner took over 300 ms).
+      const rotatedAt = Date.now(); const rotated = await keys.rotate(old.record.keyId, { overlapMs: 2_000 });
       check(rotated.key !== old.key && rotated.record.keyId !== old.record.keyId, 'rotation makes a new key');
       check((await keys.verify(rotated.key)).ok && (await keys.verify(old.key)).ok, 'both work during the overlap');
       check((await keys.get(old.record.keyId))?.rotatedTo === rotated.record.keyId, 'the old key names its successor');
       check((await keys.get(rotated.record.keyId))?.remaining === 8, 'the new key starts with the old one\'s credits');
-      await pause(400);
+      await pause(Math.max(0, rotatedAt + 2_100 - Date.now()));
       check(!(await keys.verify(old.key)).ok && (await keys.verify(rotated.key)).ok, 'after the overlap only the new key works');
       const next = await keys.rotate(rotated.record.keyId);
       const stopped = await keys.verify(rotated.key);
