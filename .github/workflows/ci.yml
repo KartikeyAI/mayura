@@ -13,8 +13,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22.23.2, 24.14.1]
     runs-on: ${{ matrix.os }}
-    # The hosted Windows runner takes about 17 minutes for the unit suite alone.
-    timeout-minutes: 45
+    # The hosted Windows runner takes 20 to 24 minutes for the unit suite and over 16 for test:bundle.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 75 || 45 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
