@@ -29,6 +29,7 @@ function Home() {
       <WorksWith />
       <Tour />
       <Features />
+      <NewInRelease />
       <GetStarted />
       <Faq />
       <Closing />
@@ -83,10 +84,10 @@ function Hero() {
     <section className="relative overflow-hidden">
       <HeroBackdrop />
       <div className="relative mx-auto flex max-w-5xl flex-col items-center px-4 pt-20 pb-24 text-center sm:px-6 sm:pt-28 sm:pb-32">
-        <Link {...docs('project/versioning')}
+        <Link {...docs('project/whats-new')}
           className="inline-flex items-center gap-2 rounded-full border border-line bg-bg/70 py-1 pr-3 pl-1 text-xs text-muted backdrop-blur transition hover:text-fg">
           <span className="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">New</span>
-          Mayura 1.0 is here, with stable APIs
+          Mayura 1.1: voice, browsers, sandboxes and 85 integrations
           <Icon name="arrow" className="size-3.5" />
         </Link>
         <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
@@ -222,12 +223,12 @@ function Tour() {
 // ---- Features -------------------------------------------------------------------------------------------------------
 
 const features: { title: string; body: string; slug: string; art: ReactNode }[] = [
-  { title: 'Any model, with failover', body: 'OpenAI, Anthropic and OpenAI-compatible providers, routed with automatic failover.', slug: 'guides/model-routing', art: <ModelsArt /> },
+  { title: 'Any model, with failover', body: 'OpenAI, Anthropic, Gemini, Bedrock, Mistral, Groq, Ollama and more, routed with automatic failover.', slug: 'guides/model-routing', art: <ModelsArt /> },
   { title: 'Cost control', body: 'Prices, per-call caps and shared budgets, from the tokens providers report.', slug: 'concepts/costs-and-budgets', art: <CostArt /> },
   { title: 'Streaming', body: 'Show an answer as it is written, with guards on every batch.', slug: 'guides/streaming', art: <StreamingArt /> },
   { title: 'Vision', body: 'Agents that see images and PDFs, checked by their own bytes.', slug: 'guides/vision', art: <VisionArt /> },
   { title: 'Memory and context', body: 'Native memory with keyword, semantic and hybrid search.', slug: 'guides/memory-and-context', art: <MemoryArt /> },
-  { title: 'Observability', body: 'Run events, workflow tracing and OpenTelemetry export.', slug: 'guides/observability', art: <TraceArt /> },
+  { title: 'Observability', body: 'OpenTelemetry traces with GenAI attributes, for Langfuse, Datadog, Sentry and more.', slug: 'guides/observability', art: <TraceArt /> },
 ];
 
 function Features() {
@@ -257,9 +258,44 @@ function Features() {
           <Link {...docs('guides/code-mode')} className="text-fg hover:text-primary">Code Mode</Link>,{' '}
           <Link {...docs('guides/guardrails')} className="text-fg hover:text-primary">guardrails</Link>,{' '}
           <Link {...docs('guides/child-agents')} className="text-fg hover:text-primary">child agents</Link>,{' '}
-          <Link {...docs('guides/react')} className="text-fg hover:text-primary">React</Link> and the{' '}
+          <Link {...docs('guides/react')} className="text-fg hover:text-primary">React</Link>,{' '}
+          <Link {...docs('guides/storage')} className="text-fg hover:text-primary">seven databases</Link> and the{' '}
           <Link {...docs('guides/operator-console')} className="text-fg hover:text-primary">operator console</Link>.
         </p>
+      </div>
+    </section>
+  );
+}
+
+// ---- New in 1.1 -----------------------------------------------------------------------------------------------------
+
+const additions: { icon: IconName; title: string; body: string; slug: string }[] = [
+  { icon: 'mic', title: 'Voice', body: 'Transcribe speech and speak text with seven providers, priced and bounded per call.', slug: 'guides/voice' },
+  { icon: 'folder', title: 'Files', body: 'S3, R2, Google Cloud Storage, Azure, Vercel Blob and more, with versions and file tools.', slug: 'guides/files' },
+  { icon: 'box', title: 'Sandboxes', body: 'Isolated Linux machines for agents, on Docker or twelve hosted providers.', slug: 'guides/sandboxes' },
+  { icon: 'globe', title: 'Browsers', body: 'Real browsers for agents, local or hosted by ten services, kept to allowed origins.', slug: 'guides/browsers' },
+  { icon: 'key', title: 'Sign-in and API keys', body: 'Eleven identity providers, better-auth, and API keys in your own database.', slug: 'guides/authentication' },
+  { icon: 'upload', title: 'Deploy anywhere', body: 'mayura deploy to eleven platforms, and edge runtimes: Workers, Vercel Edge, Deno and Bun.', slug: 'cli/deploy' },
+];
+
+function NewInRelease() {
+  return (
+    <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
+      <div className="mx-auto max-w-7xl">
+        <Heading strong="New in Mayura 1.1." soft="85 integration packages, and more an agent can do." />
+        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+          {additions.map(item => (
+            <Link key={item.title} {...docs(item.slug)} className="group bg-raised p-7 transition hover:bg-soft">
+              <span className="grid size-10 place-items-center rounded-xl border border-line text-primary"><Icon name={item.icon} /></span>
+              <h3 className="mt-5 font-semibold">{item.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">{item.body}</p>
+            </Link>
+          ))}
+        </div>
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
+          <SecondaryButton slug="reference/integrations">All integration packages</SecondaryButton>
+          <SecondaryButton slug="project/whats-new">What’s new in 1.1</SecondaryButton>
+        </div>
       </div>
     </section>
   );
@@ -330,12 +366,12 @@ function GetStarted() {
 
 const questions: { q: string; a: ReactNode }[] = [
   { q: 'What is Mayura?', a: <>A TypeScript framework for AI agents, typed tools and durable workflows. You describe an agent with schemas, give it tools and a model, and run it under an allow-list of permissions and limits. It is one npm package, <code>mayura</code>, with a CLI of the same name.</> },
-  { q: 'Do I need to install anything else?', a: <>No. <code>npm install mayura</code> is enough to build agents: schemas use <code>z</code> from <code>mayura</code> (it is Zod). Optional parts such as SQLite or PostgreSQL storage, the QuickJS sandbox and React hooks each need one extra package, only if you use them.</> },
-  { q: 'Which models can I use?', a: <>OpenAI and Anthropic natively, and any OpenAI-compatible provider, such as Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together, Fireworks, Azure OpenAI and local servers. A router fails over between them.</> },
+  { q: 'Do I need to install anything else?', a: <>No. <code>npm install mayura</code> is enough to build agents: schemas use <code>z</code> from <code>mayura</code> (it is Zod). Optional parts such as SQLite or PostgreSQL storage, the QuickJS sandbox and React hooks each need one extra package, only if you use them. Other services, from more model providers and databases to hosted browsers and identity providers, come as <Link {...docs('reference/integrations')} className="text-primary hover:underline"><code>@mayurajs/*</code> packages</Link>.</> },
+  { q: 'Which models can I use?', a: <>OpenAI and Anthropic natively, and any OpenAI-compatible provider, such as DeepSeek, xAI, OpenRouter, Together, Fireworks and local servers. Provider packages add Google Gemini, Amazon Bedrock, Azure OpenAI, Mistral, Groq and Ollama, with their prices. A router fails over between them.</> },
   { q: 'How does Mayura keep agents in bounds?', a: <>A run can use a model, tool or effect only when you grant it, every run has cost, step, tool-call and time limits, and every input and output is validated. When a side effect may or may not have happened, the run ends <code>outcome_unknown</code> instead of retrying blindly.</> },
   { q: 'Can I test without an API key?', a: <>Yes. Scripted models from <code>mayura/testing</code> replay fixed responses, so agents, tools and workflows run offline in your tests.</> },
-  { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel, with AWS Lambda and Cloud Run functions experimental. Edge runtimes are planned for 1.1. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
-  { q: 'Is Mayura ready for production?', a: <>Yes. Mayura 1.0 is a stable release: every entry point follows semantic versioning, so upgrades within 1.x do not break documented APIs, storage changes only through explicit migrations, and every release is checked to resume the runs the previous one started. See <Link {...docs('project/versioning')} className="text-primary hover:underline">Versioning and stability</Link>.</> },
+  { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel (AWS Lambda and Cloud Run functions experimental). It also runs on edge runtimes: Vercel Edge, Cloudflare Workers, Deno and Bun. <code>mayura deploy</code> ships to Docker, Kubernetes and eleven platforms through their own tools. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
+  { q: 'Is Mayura ready for production?', a: <>Yes. Mayura 1.x is stable: every entry point follows semantic versioning, so upgrades within 1.x do not break documented APIs, storage changes only through explicit migrations, and every release is checked to resume the runs the previous one started. See <Link {...docs('project/versioning')} className="text-primary hover:underline">Versioning and stability</Link>.</> },
   { q: 'Is Mayura open source?', a: <>Yes, under the Apache-2.0 license, on <a href={site.repository} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">GitHub</a>.</> },
 ];
 
