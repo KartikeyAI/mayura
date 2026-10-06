@@ -164,6 +164,35 @@ describe('e2bSandboxes', () => {
     expect(atob((calls[1]![1]['input'] as { stdin: string }).stdin)).toBe('x'.repeat(10));
   });
 
+  it('lets a command stop reading early: the rest of its input is dropped once it has ended, never while it runs', async () => {
+    // A command that reads only part of its input (head -c 5) ends; E2B then answers 404 for its process.
+    const calls: string[] = [];
+    let end!: () => void;
+    const gone = () => Response.json({ code: 'not_found', message: 'process not found' }, { status: 404 });
+    const fake = fakeE2b({
+      start: () => {
+        let controller!: ReadableStreamDefaultController<Uint8Array>;
+        end = () => { controller.enqueue(envelope(0, { event: { end: { exited: true, exitCode: 3 } } })); controller.close(); };
+        return new ReadableStream({ start(stream) { controller = stream; stream.enqueue(envelope(0, { event: { start: { pid: 7 } } })); } });
+      },
+      unary: method => { calls.push(method); if (calls.length === 1) { end(); return Response.json({}); } return gone(); },
+    });
+    const box = await sandbox(fake);
+    const result = await box.exec(['head', '-c', '5'], { stdin: 'x'.repeat(3 * 1_048_576) });
+    expect(result.exitCode).toBe(3);
+    expect(calls).toEqual(['process.Process/SendInput', 'process.Process/SendInput']);
+
+    // The same 404 while the command still runs is an error, not dropped input.
+    const running = fakeE2b({
+      start: () => new ReadableStream({ start(stream) { stream.enqueue(envelope(0, { event: { start: { pid: 8 } } })); } }),
+      unary: () => gone(),
+    });
+    const other = await sandbox(running);
+    const controller = new AbortController();
+    const outcome = other.exec(['cat'], { stdin: 'abc', signal: controller.signal }).catch(caught => caught);
+    expect(await outcome).toMatchObject({ code: 'TOOL_FAILED' });
+  });
+
   it('stops a command at its timeout: SIGKILL to it, and to everything carrying its tag', async () => {
     const starts: { args: string[]; envs: Record<string, string> }[] = []; const signals: unknown[] = [];
     const fake = fakeE2b({

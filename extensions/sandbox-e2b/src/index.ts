@@ -216,10 +216,20 @@ export function e2bSandboxes(options: E2bSandboxOptions): SandboxProvider {
         try {
           if (stdin) {
             const pid = await run.pid;
-            for (let offset = 0; offset < stdin.byteLength; offset += 1_048_576) {
-              await unaryOk('process.Process/SendInput', { process: { pid }, input: { stdin: toBase64(stdin.subarray(offset, offset + 1_048_576)) } }, stop.signal);
+            // A command may stop reading and exit before all its input is sent (`head -c 5`); E2B then answers 404 for
+            // the process. That is the command's choice and its exit code says how it went, so the rest is dropped, but
+            // only once its end has arrived: a 404 for a process still running is an error.
+            const feed = async (method: string, body: unknown): Promise<boolean> => {
+              const result = await unary(method, body, stop.signal);
+              if (result.ok) return true;
+              if (result.status === 404 && await Promise.race([run.ended.then(() => true, () => true), new Promise<false>(resolve => setTimeout(resolve, 2_000, false))])) return false;
+              throw connectFailure(result.code, result.status);
+            };
+            let open = true;
+            for (let offset = 0; open && offset < stdin.byteLength; offset += 1_048_576) {
+              open = await feed('process.Process/SendInput', { process: { pid }, input: { stdin: toBase64(stdin.subarray(offset, offset + 1_048_576)) } });
             }
-            await unaryOk('process.Process/CloseStdin', { process: { pid } }, stop.signal);
+            if (open) await feed('process.Process/CloseStdin', { process: { pid } });
           }
           const end = await run.ended;
           if (execOptions.signal.aborted) return { stdout: run.stdout.bytes(), stderr: run.stderr.bytes(), truncated: run.stdout.truncated || run.stderr.truncated };
