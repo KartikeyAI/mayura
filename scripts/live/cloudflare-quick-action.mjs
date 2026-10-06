@@ -10,10 +10,10 @@ if (!accountId || !apiToken) { console.log('CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_
 const actions = cloudflareQuickActions({ accountId, apiToken });
 const results = []; const pause = () => new Promise(resolve => setTimeout(resolve, 11_000));
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } await pause(); };
-await check('markdown', async () => { const text = await actions.markdown({ url: 'https://example.com/' }); if (!/Example Domain/.test(text)) throw new Error(text.slice(0, 200)); });
-await check('content (envelope or HTML)', async () => { const html = await actions.content({ url: 'https://example.com/' }); if (!/<h1>/i.test(html)) throw new Error(html.slice(0, 200)); });
+await check('markdown', async () => { const text = await actions.markdown({ url: 'https://example.com/' }); if (!/documentation examples|illustrative examples/.test(text)) throw new Error(text.slice(0, 200)); });
+await check('content (envelope or HTML)', async () => { const html = await actions.content({ url: 'https://example.com/' }); if (!/<title>Example Domain<\/title>/i.test(html)) throw new Error(html.slice(0, 200)); });
 await check('links', async () => { const links = await actions.links({ url: 'https://example.com/' }); if (!Array.isArray(links) || links.length === 0) throw new Error(JSON.stringify(links)); });
-await check('scrape', async () => { const found = await actions.scrape({ url: 'https://example.com/', selectors: ['h1'] }); if (found[0]?.results[0]?.text !== 'Example Domain') throw new Error(JSON.stringify(found)); });
+await check('scrape', async () => { const found = await actions.scrape({ url: 'https://example.com/', selectors: ['p'] }); if (!found[0]?.results?.some(result => /documentation examples|illustrative examples/.test(result.text ?? ''))) throw new Error(JSON.stringify(found)); });
 await check('screenshot', async () => { const image = await actions.screenshot({ url: 'https://example.com/' }); if (image[0] !== 0x89) throw new Error('not a PNG'); });
 await check('allowRequestPattern accepted', async () => {
   const tools = quickActionTools(actions, { origins: ['https://example.com'] });
@@ -29,4 +29,4 @@ await check('crawl', async () => {
   await actions.crawl.cancel(id); throw new Error('the crawl did not finish');
 });
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

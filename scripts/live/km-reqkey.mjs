@@ -15,9 +15,11 @@ const reqkey = async (path, body) => {
 };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
-const created = await reqkey('/key/create', { consumerId, allowedApis: [apiId], prefix: 'mlive_', tag: 'mayura-live', metadata: { live: true } });
-console.log(`  created a key shaped ${created.key.replace(/[A-Za-z0-9]{6,}$/u, '…')}`);
-const prefix = created.key.match(/^[A-Za-z0-9]+[_-]/u)?.[0] ?? 'mlive_';
+const created = await reqkey('/key/create', { consumerId, allowedApis: [apiId], prefix: 'mlive', tag: 'mayura-live', metadata: { live: true } });
+// ReqKey adds an underscore after the prefix it is given.
+const prefix = 'mlive_';
+if (!created.key.startsWith(prefix)) throw new Error('ReqKey made a key that does not start with mlive_.');
+console.log(`  the key after its prefix: ${created.key.length - prefix.length} characters, ${/^[A-Za-z0-9]+$/u.test(created.key.slice(prefix.length)) ? 'letters and digits only' : 'with other characters'}`);
 const identity = key => ({ principalId: `reqkey/${key.consumerId}`, projectId: 'live', agentIds: [], capabilities: ['runs:read'] });
 try {
   const verifier = reqkeyVerifier({ rootKey, prefix, apiId, identity });
@@ -37,4 +39,4 @@ try {
   await reqkey('/key/delete', { keyId: created.keyId }).catch(error => console.log(`  could not delete the test key: ${error.message}`));
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

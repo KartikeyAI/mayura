@@ -1,7 +1,7 @@
 // Live check of @mayurajs/browser-stagehand: the real Stagehand 3 with a real model on a Mayura browser (local Chrome),
 // reading and acting on the conformance fixture pages. Run from the repository root, after pnpm build:
 //   node --env-file=.env.live scripts/live/browser-stagehand.mjs
-// Model: STAGEHAND_MODEL (default deepseek/deepseek-chat) with MAYURA_LIVE_COMPATIBLE_DEEPSEEK_KEY.
+// Model: STAGEHAND_MODEL (default deepseek/deepseek-flash) with MAYURA_LIVE_COMPATIBLE_DEEPSEEK_KEY.
 const root = new URL('../../', import.meta.url);
 const { createBrowsers } = await import(new URL('packages/mayura/dist/browser.js', root).href);
 const { localBrowsers, serveBrowserFixtures } = await import(new URL('packages/mayura/dist/browser__local.js', root).href);
@@ -9,7 +9,7 @@ const { testTool } = await import(new URL('packages/mayura/dist/testing.js', roo
 const { stagehandTools } = await import(new URL('extensions/browser-stagehand/dist/index.js', root).href);
 const apiKey = process.env.MAYURA_LIVE_COMPATIBLE_DEEPSEEK_KEY;
 if (!apiKey) { console.log('MAYURA_LIVE_COMPATIBLE_DEEPSEEK_KEY is not set; nothing run.'); process.exit(2); }
-const modelName = process.env.STAGEHAND_MODEL ?? 'deepseek/deepseek-chat';
+const modelName = process.env.STAGEHAND_MODEL ?? 'deepseek/deepseek-flash';
 const fixtures = await serveBrowserFixtures();
 const browsers = createBrowsers(localBrowsers({ channel: 'chrome' }), { maxBrowsers: 1, maxLifetimeMs: 600_000, origins: [fixtures.allowed] });
 const results = [];
@@ -38,4 +38,4 @@ try {
   await fixtures.close();
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

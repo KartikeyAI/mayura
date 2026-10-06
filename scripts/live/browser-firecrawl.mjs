@@ -16,7 +16,7 @@ try {
     const page = await browser.goto('https://example.com/');
     if (!page.loaded || page.status !== 200) throw new Error(JSON.stringify(page));
     const snapshot = await browser.snapshot();
-    if (!/heading "Example Domain"/.test(snapshot.text)) throw new Error(snapshot.text.slice(0, 500));
+    if (!/documentation examples|illustrative examples/.test(snapshot.text)) throw new Error(snapshot.text.slice(0, 500));
   });
   await check('origins enforced through the provider (Fetch works)', async () => {
     const error = await browser.goto('https://www.wikipedia.org/').then(() => undefined, caught => caught);
@@ -39,7 +39,7 @@ try {
   const tool = id => tools.find(item => item.id === id);
   await check('scrape', async () => {
     const { outcome } = await testTool(tool('web.scrape'), { url: 'https://example.com/' });
-    if (outcome.status !== 'succeeded' || !/Example Domain/.test(outcome.output.markdown ?? '')) throw new Error(JSON.stringify(outcome).slice(0, 500));
+    if (outcome.status !== 'succeeded' || !/documentation examples|illustrative examples/.test(outcome.output.markdown ?? '')) throw new Error(JSON.stringify(outcome).slice(0, 500));
   });
   await check('map', async () => {
     const { outcome } = await testTool(tool('web.map'), { url: 'https://example.com/', limit: 10 });
@@ -53,4 +53,4 @@ try {
   await browsers.close().catch(error => results.push(['close', `FAILED: ${error.message}`]));
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

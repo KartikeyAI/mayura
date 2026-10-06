@@ -8,6 +8,9 @@ const { supabaseAuthenticator } = await import(new URL('extensions/auth-supabase
 const projectUrl = process.env.SUPABASE_URL; const apiKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY;
 const email = process.env.SUPABASE_TEST_EMAIL; const password = process.env.SUPABASE_TEST_PASSWORD;
 if (!projectUrl || !apiKey) { console.log('SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY is not set; nothing run.'); process.exit(2); }
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 const grant = { principalId: 'supabase/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] };
@@ -24,7 +27,7 @@ await check('the publishable/anon key is never a user', async () => {
 if (email && password) {
   await check('a signed-in user\'s access token verifies and reads as the user', async () => {
     const response = await fetch(`${projectUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: apiKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
-    if (!response.ok) throw new Error(`sign-in HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`sign-in HTTP ${response.status}${await oauthError(response)}`);
     const { access_token: token } = await response.json();
     let seen;
     const authenticate = supabaseAuthenticator({ projectUrl, identity: session => { seen = session; return grant; } });
@@ -33,4 +36,4 @@ if (email && password) {
   });
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

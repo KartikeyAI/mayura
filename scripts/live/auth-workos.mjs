@@ -7,6 +7,9 @@ const { workosAuthenticator } = await import(new URL('extensions/auth-workos/dis
 
 const { WORKOS_CLIENT_ID: clientId, WORKOS_ACCESS_TOKEN: token, WORKOS_AUTHKIT_DOMAIN: domain, WORKOS_M2M_CLIENT_ID: m2mId, WORKOS_M2M_CLIENT_SECRET: m2mSecret } = process.env;
 if (!clientId) { console.log('WORKOS_CLIENT_ID is not set; nothing run.'); process.exit(2); }
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 const grant = { principalId: 'workos/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] };
@@ -27,7 +30,7 @@ if (domain && m2mId && m2mSecret) {
   await check('a real machine-to-machine token verifies, only with allowMachines', async () => {
     const response = await fetch(`${domain}/oauth2/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'client_credentials', client_id: m2mId, client_secret: m2mSecret }) });
-    if (!response.ok) throw new Error(`token endpoint HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`token endpoint HTTP ${response.status}${await oauthError(response)}`);
     const { access_token: machineToken } = await response.json();
     const strict = workosAuthenticator({ clientId, connect: { domain }, identity: () => grant });
     if (await strict({ token: machineToken, signal: AbortSignal.timeout(10_000) })) throw new Error('accepted without allowMachines');
@@ -38,4 +41,4 @@ if (domain && m2mId && m2mSecret) {
   });
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

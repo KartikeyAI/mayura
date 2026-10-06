@@ -5,6 +5,9 @@
 const root = new URL('../../', import.meta.url);
 const { firebaseAuthenticator, firebaseJwksUrl } = await import(new URL('extensions/auth-firebase/dist/index.js', root).href);
 
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 await check('the JWKS and the X.509 certificates Firebase documents hold the same keys', async () => {
@@ -17,7 +20,7 @@ const { FIREBASE_PROJECT_ID: projectId, FIREBASE_WEB_API_KEY: apiKey, FIREBASE_T
 if (projectId && apiKey && email && password) {
   await check('a real ID token verifies and reads as the user', async () => {
     const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password, returnSecureToken: true }) });
-    if (!response.ok) throw new Error(`sign-in HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`sign-in HTTP ${response.status}${await oauthError(response)}`);
     const { idToken } = await response.json();
     let seen;
     const authenticate = firebaseAuthenticator({ projectId, identity: session => { seen = session; return { principalId: 'firebase/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] }; } });
@@ -26,4 +29,4 @@ if (projectId && apiKey && email && password) {
   });
 } else console.log('Set FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY, FIREBASE_TEST_EMAIL and FIREBASE_TEST_PASSWORD to verify a real token.');
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

@@ -7,6 +7,9 @@ const { auth0Authenticator } = await import(new URL('extensions/auth-auth0/dist/
 
 const { AUTH0_DOMAIN: domain, AUTH0_AUDIENCE: audience, AUTH0_CLIENT_ID: clientId, AUTH0_CLIENT_SECRET: clientSecret } = process.env;
 if (!domain || !audience) { console.log('AUTH0_DOMAIN or AUTH0_AUDIENCE is not set; nothing run.'); process.exit(2); }
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 await check('the tenant publishes RS256 keys', async () => {
@@ -19,7 +22,7 @@ if (clientId && clientSecret) {
   await check('a client-credentials token verifies, read as a machine', async () => {
     const response = await fetch(`https://${domain}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, audience }) });
-    if (!response.ok) throw new Error(`token endpoint HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`token endpoint HTTP ${response.status}${await oauthError(response)}`);
     token = (await response.json()).access_token;
     let seen;
     const authenticate = auth0Authenticator({ domain, audience, identity: session => { seen = session; return { principalId: 'auth0/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] }; } });
@@ -33,4 +36,4 @@ if (clientId && clientSecret) {
   });
 }
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

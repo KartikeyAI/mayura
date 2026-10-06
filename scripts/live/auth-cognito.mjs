@@ -9,6 +9,9 @@ const { cognitoAuthenticator } = await import(new URL('extensions/auth-cognito/d
 const { COGNITO_USER_POOL_ID: userPoolId, COGNITO_DOMAIN: domain, COGNITO_CLIENT_ID: clientId, COGNITO_CLIENT_SECRET: secret, COGNITO_SCOPE: scope } = process.env;
 if (!userPoolId) { console.log('COGNITO_USER_POOL_ID is not set; nothing run.'); process.exit(2); }
 const issuer = `https://cognito-idp.${userPoolId.split('_')[0]}.amazonaws.com/${userPoolId}`;
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 await check('the pool names itself the issuer and publishes RS256 keys where the package looks', async () => {
@@ -22,7 +25,7 @@ await check('the pool names itself the issuer and publishes RS256 keys where the
 if (domain && clientId && secret && scope) {
   await check('a client-credentials access token is refused without allowMachines and verifies with it', async () => {
     const response = await fetch(`https://${domain}/oauth2/token`, { method: 'POST', headers: { authorization: `Basic ${btoa(`${clientId}:${secret}`)}`, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'client_credentials', scope }) });
-    if (!response.ok) throw new Error(`token HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`token HTTP ${response.status}${await oauthError(response)}`);
     const { access_token: token } = await response.json();
     let seen;
     const options = { userPoolId, clientIds: [clientId], identity: session => { seen = session; return { principalId: 'cognito/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] }; } };
@@ -33,4 +36,4 @@ if (domain && clientId && secret && scope) {
   });
 } else console.log('Set COGNITO_DOMAIN, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET and COGNITO_SCOPE to verify a real token.');
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;

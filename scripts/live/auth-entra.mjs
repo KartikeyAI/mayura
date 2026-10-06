@@ -6,6 +6,9 @@
 const root = new URL('../../', import.meta.url);
 const { entraAuthenticator } = await import(new URL('extensions/auth-entra/dist/index.js', root).href);
 
+/** A failed token request's standard OAuth error code (such as invalid_client), never its description. */
+const oauthError = async response => { const body = await response.json().catch(() => ({})); const code = body?.error?.message ?? body?.error;
+  return typeof code === 'string' && /^[A-Za-z_ ]{1,64}$/u.test(code) ? ` (${code})` : ''; };
 const results = [];
 const check = async (name, body) => { try { await body(); results.push([name, 'passed']); } catch (error) { results.push([name, `FAILED: ${error.message}`]); } };
 const json = async url => { const response = await fetch(url); if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`); return response.json(); };
@@ -32,7 +35,7 @@ const { ENTRA_TENANT_ID: tenant, ENTRA_CLIENT_ID: clientId, ENTRA_CLIENT_SECRET:
 if (tenant && clientId && secret) {
   await check('a real app-only token is refused without allowApps and verifies with it', async () => {
     const response = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: secret, scope: `api://${clientId}/.default` }) });
-    if (!response.ok) throw new Error(`token HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`token HTTP ${response.status}${await oauthError(response)}`);
     const { access_token: token } = await response.json();
     let seen;
     const options = { tenants: [tenant], audience: [clientId, `api://${clientId}`], versions: ['1.0', '2.0'], identity: session => { seen = session; return { principalId: 'entra/live', projectId: 'live', agentIds: [], capabilities: ['runs:read'] }; } };
@@ -42,4 +45,4 @@ if (tenant && clientId && secret) {
   });
 } else console.log('Set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET to verify a real token.');
 for (const [name, outcome] of results) console.log(`${outcome === 'passed' ? 'PASS' : 'FAIL'} ${name}${outcome === 'passed' ? '' : ` (${outcome})`}`);
-process.exit(results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0);
+process.exitCode = results.some(([, outcome]) => outcome !== 'passed') ? 1 : 0;
