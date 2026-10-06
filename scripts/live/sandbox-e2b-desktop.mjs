@@ -1,6 +1,8 @@
 // Live check of @mayurajs/sandbox-e2b-desktop: start the desktop, screenshot, type into a terminal, the live view.
 // Run after pnpm build: node --env-file=.env.live scripts/live/sandbox-e2b-desktop.mjs  (needs E2B_API_KEY)
 import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createSandboxes } from '../../packages/mayura/dist/sandbox.js';
 import { e2bDesktopSandboxes } from '../../extensions/sandbox-e2b-desktop/dist/index.js';
 
@@ -15,7 +17,8 @@ try {
   const size = await desktop.size();
   check('screen size', size.width === 1024 && size.height === 768, JSON.stringify(size));
   const shot = await desktop.screenshot();
-  writeFileSync(new URL('./e2b-desktop-shot.png', import.meta.url), shot.data);
+  // Outside the repository: the screenshot is for you to look at, never to commit.
+  const shotPath = join(tmpdir(), 'mayura-e2b-desktop-shot.png'); writeFileSync(shotPath, shot.data); console.log(`  screenshot: ${shotPath}`);
   check('screenshot', shot.data.byteLength > 1_000, `${shot.data.byteLength} bytes`);
   await computer.exec(['sh', '-c', 'setsid nohup xfce4-terminal >/dev/null 2>&1 &'], { env: { DISPLAY: ':0' } });
   await new Promise(resolve => setTimeout(resolve, 3_000));
