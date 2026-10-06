@@ -65,6 +65,15 @@ describe('modalSandboxes', () => {
       params: { mode: 'binary', env: { CI: '1', MAYURA_SANDBOX_EXEC: expect.stringMatching(/^[a-f0-9]{24}$/u) } } });
   });
 
+  it('lets a command stop reading its input early, but never drops input while it runs', async () => {
+    // `true` ignores its input and ends; Modal then refuses the rest of it. The command's exit code is the answer.
+    const ended = await createSandboxes(modalSandboxes({ client: fakeModal({ stdinFails: 'ended' }).client, image: 'alpine' }), limits).create({ lifetimeMs: 60_000 });
+    expect(await ended.exec(['true'], { stdin: new Uint8Array(1_048_576) })).toMatchObject({ exitCode: 0 });
+    // The same refusal while the command still runs is a failure.
+    const running = await createSandboxes(modalSandboxes({ client: fakeModal({ stdinFails: 'running' }).client, image: 'alpine' }), limits).create({ lifetimeMs: 60_000 });
+    expect(await running.exec(['cat'], { stdin: 'abc', timeoutMs: 10_000 }).catch(caught => caught)).toMatchObject({ code: 'TOOL_FAILED' });
+  });
+
   it('stops a command at its timeout by killing everything carrying its tag', async () => {
     const fake = fakeModal({ run: async command => (command[2] === 'mkdir -p -- "$1"' || command[2]!.includes('grep -qxF') ? { exitCode: 0 } : 'hang') });
     const box = await createSandboxes(modalSandboxes({ client: fake.client, image: 'alpine' }), limits).create({ lifetimeMs: 60_000 });

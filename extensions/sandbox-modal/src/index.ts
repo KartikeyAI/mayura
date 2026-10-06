@@ -120,8 +120,16 @@ export function modalSandboxes(options: ModalSandboxOptions): SandboxProvider {
       const process = await sandbox.exec([...command], { mode: 'binary', ...(runOptions.env ? { env: { ...runOptions.env } } : {}) });
       const out = collect(process.stdout as ReadableStream<Uint8Array>, runOptions.max, runOptions.stop);
       const err = collect(process.stderr as ReadableStream<Uint8Array>, runOptions.max, runOptions.stop);
-      if (runOptions.stdin?.byteLength) await process.stdin.writeBytes(runOptions.stdin);
-      await process.closeStdin();
+      // stdin.close() ends the input; the SDK's closeStdin() (0.11) never resolves, and the command never sees the end.
+      try {
+        if (runOptions.stdin?.byteLength) await process.stdin.writeBytes(runOptions.stdin);
+        await process.stdin.close();
+      } catch (error) {
+        // A command may stop reading and exit before its input is all sent (`true`, `head -c 5`): that is its choice,
+        // and its exit code says how it went. Writing to a command still running is a failure.
+        const ended = await Promise.race([process.wait().then(() => true, () => true), new Promise<false>(resolve => setTimeout(resolve, 2_000, false))]);
+        if (!ended) throw error;
+      }
       const exitCode = await Promise.race([process.wait(), new Promise<undefined>(resolve => {
         if (runOptions.stop.aborted) resolve(undefined); else runOptions.stop.addEventListener('abort', () => resolve(undefined), { once: true });
       })]);

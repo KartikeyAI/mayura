@@ -17,7 +17,9 @@ type Run = (command: string[], params: Record<string, unknown>, stdin: Uint8Arra
  * A ModalClient as the provider uses it. Commands run by `run`, or for real in a local container (`docker exec`) when
  * `container` is given.
  */
-export function fakeModal(options: { readonly run?: Run; readonly container?: string; readonly create?: () => Promise<void>; readonly terminate?: () => Promise<void> } = {}): FakeModal {
+export function fakeModal(options: { readonly run?: Run; readonly container?: string; readonly create?: () => Promise<void>; readonly terminate?: () => Promise<void>;
+  /** Writing input fails: after the command has ended (exit 0), or while it still runs. Not for the working directory. */
+  readonly stdinFails?: 'ended' | 'running' } = {}): FakeModal {
   const created: Created[] = []; const execs: FakeModal['execs'] = []; const terminated: string[] = [];
   const exec = async (command: string[], params: Record<string, unknown>) => {
     execs.push({ command, params });
@@ -27,9 +29,17 @@ export function fakeModal(options: { readonly run?: Run; readonly container?: st
       const exit = new Promise<number>(resolve => child.on('close', code => resolve(code ?? -1)));
       return {
         stdout: Readable.toWeb(child.stdout), stderr: Readable.toWeb(child.stderr),
-        stdin: { writeBytes: (bytes: Uint8Array) => new Promise<void>((resolve, reject) => child.stdin.write(bytes, error => (error ? reject(error) : resolve()))) },
-        closeStdin: async () => { child.stdin.end(); }, wait: () => exit,
+        stdin: { writeBytes: (bytes: Uint8Array) => new Promise<void>((resolve, reject) => child.stdin.write(bytes, error => (error ? reject(error) : resolve()))),
+          close: async () => { child.stdin.end(); } },
+        // As in Modal's SDK 0.11: closeStdin() never resolves.
+        closeStdin: () => new Promise<void>(() => undefined), wait: () => exit,
       };
+    }
+    if (options.stdinFails && command[2] !== 'mkdir -p -- "$1"') {
+      const empty = () => new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+      const refuse = async () => { throw new Error('stream closed'); };
+      return { stdout: empty(), stderr: empty(), stdin: { writeBytes: refuse, close: refuse }, closeStdin: () => new Promise<void>(() => undefined),
+        wait: () => options.stdinFails === 'ended' ? Promise.resolve(0) : new Promise<number>(() => undefined) };
     }
     const chunks: Uint8Array[] = []; let closed!: () => void; const stdinClosed = new Promise<void>(resolve => { closed = resolve; });
     const answer = (async () => { await stdinClosed; return options.run ? options.run(command, params, new Uint8Array(Buffer.concat(chunks))) : { exitCode: 0 } as { stdout?: string; stderr?: string; exitCode: number }; })();
@@ -40,7 +50,8 @@ export function fakeModal(options: { readonly run?: Run; readonly container?: st
       if (result === 'hang') return new Promise<number>(() => undefined);
       out(result.stdout); err(result.stderr); return result.exitCode;
     });
-    return { stdout, stderr, stdin: { writeBytes: async (bytes: Uint8Array) => { chunks.push(bytes); } }, closeStdin: async () => { closed(); }, wait: () => exit };
+    // As in Modal's SDK 0.11: stdin.close() ends the input, and closeStdin() never resolves.
+    return { stdout, stderr, stdin: { writeBytes: async (bytes: Uint8Array) => { chunks.push(bytes); }, close: async () => { closed(); } }, closeStdin: () => new Promise<void>(() => undefined), wait: () => exit };
   };
   const client = {
     apps: { fromName: async (name: string, params: Record<string, unknown>) => { expect(params['createIfMissing']).toBe(true); return { appId: 'ap-1', name }; } },
