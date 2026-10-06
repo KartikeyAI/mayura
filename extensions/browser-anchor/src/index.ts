@@ -71,6 +71,8 @@ export function anchorBrowsers(options: AnchorBrowserOptions): BrowserProvider {
       browser: {
         viewport: { width: spec.viewport.width, height: spec.viewport.height },
         adblock: { active: options.adblock ?? false },
+        // Anchor turns its popup blocker on by default, and refuses it without the ad blocker: it follows adblock.
+        popup_blocker: { active: options.adblock ?? false },
         captcha_solver: { active: false },
         // Anchor's live view needs a browser with a screen.
         headless: { active: liveView === false },

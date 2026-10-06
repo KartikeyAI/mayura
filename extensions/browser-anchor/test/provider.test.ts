@@ -26,7 +26,7 @@ describe('anchorBrowsers', () => {
     expect([created.method, created.path, created.headers.get('anchor-api-key')]).toEqual(['POST', '/v1/sessions', 'sk-anchor-test-1']);
     expect(created.body).toEqual({
       session: { timeout: { max_duration: 10, idle_timeout: 1 }, recording: { active: false }, proxy: { active: false }, live_view: { read_only: true }, tags: ['run=r1'] },
-      browser: { viewport: { width: 1_024, height: 700 }, adblock: { active: false }, captcha_solver: { active: false }, headless: { active: false } },
+      browser: { viewport: { width: 1_024, height: 700 }, adblock: { active: false }, popup_blocker: { active: false }, captcha_solver: { active: false }, headless: { active: false } },
     });
     expect(backend).toMatchObject({ id: 'anchor-1', cdp: { url: 'wss://connect.anchorbrowser.example?apiKey=secret&sessionId=anchor-1' }, liveViewUrl: 'https://live.anchorbrowser.example/inspector.html?sessionId=anchor-1' });
   });
@@ -36,10 +36,10 @@ describe('anchorBrowsers', () => {
     await anchorBrowsers({ ...base, fetch: fake.fetch, liveView: false, idleTimeoutMinutes: 10 }).create({ ...spec, lifetimeMs: 5_000, labels: {} }, { signal: signal() });
     expect(fake.seen.at(-1)!.body).toEqual({
       session: { timeout: { max_duration: 1, idle_timeout: 10 }, recording: { active: false }, proxy: { active: false } },
-      browser: { viewport: { width: 1_024, height: 700 }, adblock: { active: false }, captcha_solver: { active: false }, headless: { active: true } },
+      browser: { viewport: { width: 1_024, height: 700 }, adblock: { active: false }, popup_blocker: { active: false }, captcha_solver: { active: false }, headless: { active: true } },
     });
     await anchorBrowsers({ ...base, fetch: fake.fetch, liveView: 'interact', adblock: true, recording: true }).create(spec, { signal: signal() });
-    expect(fake.seen.at(-1)!.body).toMatchObject({ session: { recording: { active: true }, live_view: { read_only: false } }, browser: { adblock: { active: true } } });
+    expect(fake.seen.at(-1)!.body).toMatchObject({ session: { recording: { active: true }, live_view: { read_only: false } }, browser: { adblock: { active: true }, popup_blocker: { active: true } } });
   });
 
   it('refuses replies it cannot trust, and maps failures without what Anchor wrote', async () => {
