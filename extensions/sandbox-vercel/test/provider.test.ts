@@ -215,6 +215,8 @@ describe('vercelSandboxes', () => {
     await box.release();
     const [stop, del] = fake.seen.slice(-2);
     expect([stop!.method, stop!.url.pathname]).toEqual(['POST', '/v2/sandboxes/sessions/sbx_1/stop']);
+    // Vercel refuses (415) a stop that is not JSON.
+    expect([stop!.headers.get('content-type'), stop!.json]).toEqual(['application/json', {}]);
     expect([del!.method, del!.url.pathname, del!.url.searchParams.get('projectId'), del!.url.searchParams.get('deleteOrphanSnapshots'), del!.url.searchParams.get('teamId')])
       .toEqual(['DELETE', `/v2/sandboxes/${box.id}`, 'prj_1', 'true', 'team_1']);
     stopStatus = 410; deleteStatus = 404; await (await sandboxes.create({ lifetimeMs: 60_000 })).release();

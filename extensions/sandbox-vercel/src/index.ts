@@ -278,7 +278,8 @@ export function vercelSandboxes(options: VercelSandboxOptions): SandboxProvider 
         return route;
       },
       release: async ({ signal: callSignal }) => {
-        const stopped = await fetcher(url(`${sessionPath}/stop`), { method: 'POST', signal: callSignal, headers: headers() });
+        // Vercel answers 415 to a stop without a JSON body.
+        const stopped = await fetcher(url(`${sessionPath}/stop`), { method: 'POST', signal: callSignal, headers: headers({ 'content-type': 'application/json' }), body: '{}' });
         void stopped.body?.cancel().catch(() => undefined);
         if (stopped.status !== 200 && stopped.status !== 404 && stopped.status !== 410) throw sandboxHttpFailure(stopped.status);
         const deleted = await fetcher(url(`/v2/sandboxes/${name}`, { ...(options.projectId ? { projectId: options.projectId } : {}), deleteOrphanSnapshots: 'true' }),
