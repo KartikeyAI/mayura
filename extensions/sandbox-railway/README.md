@@ -35,6 +35,8 @@ await sandbox.release();
 - **Railway's SDK is a peer you install yourself** (`railway` 3.12.0 or a later 3.x), loaded when first needed: it
   brings its infrastructure-as-code command line's dependencies (tsx and esbuild, which downloads its binary when it
   installs), so Mayura does not install it for you.
+- Railway stops a sandbox left idle for 5 minutes (the most it allows), whatever its lifetime: a call after that
+  finds it gone. Keep a sandbox busy, or create another.
 - Sandboxes start from Railway's default image; `image`, `cpus` and `memoryMiB` are refused (use a Railway template
   for a custom image). Options: `token`, `authType`, `environmentId`, `region`, `workdir` (`/workspace`),
   `maxLifetimeMs` (24 hours), `fetch`. Railway's SDK brings `graphql` and, for its infrastructure-as-code command

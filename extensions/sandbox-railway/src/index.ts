@@ -101,7 +101,8 @@ export function railwaySandboxes(options: RailwaySandboxOptions): SandboxProvide
         token: options.token, authType, environmentId: options.environmentId, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.region ? { region: options.region } : {}),
         env: { ...spec.env },
         // Railway ends a sandbox idle this long, should a release never come; the lifetime itself is enforced by release.
-        idleTimeoutMinutes: Math.min(120, Math.max(1, Math.ceil(spec.lifetimeMs / 60_000))),
+        // A backstop if Mayura cannot release it; Railway takes 1 to 5 minutes (it refused more from 2026-10).
+        idleTimeoutMinutes: Math.min(5, Math.max(1, Math.ceil(spec.lifetimeMs / 60_000))),
         // Domains need the environment's private network; without ports a sandbox stays isolated from it.
         networkIsolation: spec.ports.length > 0 ? 'PRIVATE' : 'ISOLATED',
         ...(spec.ports.length > 0 ? { domains: spec.ports.map(port => ({ port })) } : {}),

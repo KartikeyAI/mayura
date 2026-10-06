@@ -43,7 +43,7 @@ describe('railwaySandboxes', () => {
       .create({ lifetimeMs: 600_000, network: 'all', env: { TOKEN: 'secret' } });
     expect(box.id).toBe('sbx-1');
     expect(fake.created[0]).toEqual({ token: 'railway_test_token', authType: 'project-token', environmentId: 'env-1234', region: 'us-west2', env: { TOKEN: 'secret' },
-      idleTimeoutMinutes: 10, networkIsolation: 'ISOLATED' });
+      idleTimeoutMinutes: 5, networkIsolation: 'ISOLATED' });
     expect(fake.commands[0]!.command).toBe("'mkdir' '-p' '/workspace'");
   });
 
