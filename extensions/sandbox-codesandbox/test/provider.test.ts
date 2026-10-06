@@ -57,6 +57,15 @@ describe('codeSandboxSandboxes', () => {
       const caught = await createSandboxes(codeSandboxSandboxes({ sdk: failing.sdk }), limits).create({ lifetimeMs: 60_000, network: 'all' }).then(() => undefined, (thrown: unknown) => thrown as MayuraError);
       expect(caught).toMatchObject({ reason }); expect(caught!.message).not.toContain('secret');
     }
+    // The SDK forks, then fails to start the VM with an error that has no status: the fork is deleted, and a missing
+    // scope is an authentication failure, never "unavailable".
+    const unstarted = fakeSdk(() => scripted().client, { create: async () => { throw new Error('Failed to start VM ab12cd: Unauthorized (missing scope)'); } });
+    const refused = await createSandboxes(codeSandboxSandboxes({ sdk: unstarted.sdk }), limits).create({ lifetimeMs: 60_000, network: 'all' }).then(() => undefined, (thrown: unknown) => thrown as MayuraError);
+    expect(refused).toMatchObject({ reason: 'authentication' }); expect(refused!.message).not.toContain('scope');
+    expect(unstarted.deleted).toEqual(['ab12cd']);
+    const down = fakeSdk(() => scripted().client, { create: async () => { throw new Error('Failed to start VM ef34gh: VM pool exhausted'); } });
+    expect(await createSandboxes(codeSandboxSandboxes({ sdk: down.sdk }), limits).create({ lifetimeMs: 60_000, network: 'all' }).catch(caught => caught)).toMatchObject({ reason: 'unavailable' });
+    expect(down.deleted).toEqual(['ef34gh']);
   });
 
   it('runs a command as a quoted shell line with its environment and a tag, reading the exit code from CommandError', async () => {

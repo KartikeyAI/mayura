@@ -87,6 +87,8 @@ function failure(error: unknown): SandboxError | MayuraError {
     if (status >= 500) return new SandboxError('unavailable', status);
     return new SandboxError('rejected', status);
   }
+  // The SDK's own errors carry no status, only text such as "Failed to start VM x: Unauthorized (missing scope)".
+  if (/\b(?:Unauthorized|Forbidden)\b|missing scope/iu.test(String((error as { message?: unknown } | null)?.message ?? ''))) return new SandboxError('authentication');
   return new SandboxError('unavailable');
 }
 
@@ -134,7 +136,13 @@ export function codeSandboxSandboxes(options: CodeSandboxSandboxOptions): Sandbo
         // CodeSandbox hibernates a sandbox idle this long, should a release never come; release deletes it at its lifetime.
         hibernationTimeoutSeconds: Math.min(86_400, Math.max(60, Math.ceil(spec.lifetimeMs / 1_000))),
       });
-    } catch (error) { throw failure(error); }
+    } catch (error) {
+      // The SDK forks, then starts the VM; a failed start throws without the new sandbox, naming it only in its text.
+      // Delete it, so a failed create leaves nothing behind; the original failure stands.
+      const orphan = /Failed to start VM ([A-Za-z0-9_-]{1,64})\b/u.exec(String((error as { message?: unknown } | null)?.message ?? ''))?.[1];
+      if (orphan) { try { await (await connect()).sandboxes.delete(orphan); } catch { /* best effort */ } }
+      throw failure(error);
+    }
     const release = async () => { client?.dispose(); try { await (await connect()).sandboxes.delete(sandbox.id); } catch (error) { throw failure(error); } };
     try {
       if (signal.aborted) throw new SandboxError('timeout');
