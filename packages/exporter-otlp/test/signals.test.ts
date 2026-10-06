@@ -101,6 +101,19 @@ describe('OTLP HTTP JSON trace and metric exporters', () => {
     expect(exporter.inspect().metrics.recordsAccepted).toBe(3);
   });
 
+  it('takes an empty {} answer labelled text/plain as success for traces and metrics, and nothing else without the JSON type', async () => {
+    // LangSmith answers a full success as `{}` with text/plain; a body that could report anything must be JSON.
+    const plain = (body: string, type = 'text/plain; charset=utf-8') => new Response(body, { status: 200, headers: { 'Content-Type': type } });
+    const traces = createOtlpHttpJsonTraceExporter(traceOptions(vi.fn<typeof globalThis.fetch>().mockResolvedValue(plain('{}'))));
+    const points = createOtlpHttpJsonMetricExporter(metricOptions(vi.fn<typeof globalThis.fetch>().mockResolvedValue(plain('{}\n'))));
+    await traces.sink([trace], { signal: new AbortController().signal }); await points.sink([gauge], { signal: new AbortController().signal });
+    for (const exporter of [traces, points]) expect(exporter.inspect().metrics).toMatchObject({ recordsAccepted: 1, failedRequests: 0 });
+    for (const [body, type] of [['{"partialSuccess":{"rejectedSpans":"1"}}', undefined], ['ok', undefined], ['{}', 'text/html']] as const) {
+      const exporter = createOtlpHttpJsonTraceExporter(traceOptions(vi.fn<typeof globalThis.fetch>().mockResolvedValue(plain(body, type))));
+      await expect(exporter.sink([trace], { signal: new AbortController().signal }), body).rejects.toMatchObject({ code: 'TOOL_FAILED' });
+    }
+  });
+
   it('accounts for trace and metric partial success without retrying', async () => {
     const traceFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response('{"partialSuccess":{"rejectedSpans":"1","errorMessage":"PRIVATE"}}'));
     const metricFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response('{"partialSuccess":{"rejectedDataPoints":"1"}}'));

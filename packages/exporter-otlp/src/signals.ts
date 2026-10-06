@@ -171,8 +171,14 @@ async function responsePayload(response: Response, limit: number, signal: AbortS
     const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     // A protobuf request is answered in protobuf, though a collector may answer in JSON.
     if (protobuf && /^application\/x-protobuf(?:\s*;|$)/iu.test(type)) return otlpPartialSuccess(bytes, protobuf);
-    if (!/^application\/json(?:\s*;|$)/iu.test(type)) return failed();
-    return object(jsonValue(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), { maxBytes: limit, maxDepth: 8, maxNodes: 1_024 }));
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (!/^application\/json(?:\s*;|$)/iu.test(type)) {
+      // Some services (LangSmith) answer full success as `{}` labelled text/plain. Only that empty answer is taken
+      // without the JSON type: anything that could report partial success must say it is JSON.
+      if (/^text\/plain(?:\s*;|$)/iu.test(type) && text.trim() === '{}') return {};
+      return failed();
+    }
+    return object(jsonValue(JSON.parse(text), { maxBytes: limit, maxDepth: 8, maxNodes: 1_024 }));
   } finally { void reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 function rejected(payload: JsonObject, field: 'rejectedSpans' | 'rejectedDataPoints', sent: number): number {

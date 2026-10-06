@@ -66,6 +66,19 @@ describe('OTLP HTTP JSON log exporter', () => {
     expect(JSON.stringify(exporter.inspect())).not.toContain('PRIVATE');
   });
 
+  it('takes an empty {} answer labelled as text as success, and nothing else without the JSON type', async () => {
+    // LangSmith answers a full success as `{}` with text/plain; a body that could report anything must be JSON.
+    const plain = (body: string, type = 'text/plain; charset=utf-8') => new Response(body, { status: 200, headers: { 'Content-Type': type } });
+    const accepted = createOtlpHttpJsonLogExporter(options(vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(plain('{}')).mockResolvedValueOnce(plain(' {}\n'))));
+    await accepted.sink([event()], { signal: new AbortController().signal });
+    await accepted.sink([event()], { signal: new AbortController().signal });
+    expect(accepted.inspect().metrics).toMatchObject({ recordsAccepted: 2, failedRequests: 0 });
+    for (const [body, type] of [['{"partialSuccess":{"rejectedLogRecords":"1"}}', undefined], ['ok', undefined], ['{}', 'text/html'], ['{ }x', undefined]] as const) {
+      const exporter = createOtlpHttpJsonLogExporter(options(vi.fn<typeof globalThis.fetch>().mockResolvedValue(plain(body, type))));
+      await expect(exporter.sink([event()], { signal: new AbortController().signal }), body).rejects.toMatchObject({ code: 'TOOL_FAILED' });
+    }
+  });
+
   it('rejects invalid or excessive partial-success counts as a whole-batch failure', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response('{"partialSuccess":{"rejectedLogRecords":"2"}}'));
     const exporter = createOtlpHttpJsonLogExporter(options(fetch));
