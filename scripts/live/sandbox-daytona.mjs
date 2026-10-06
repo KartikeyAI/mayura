@@ -19,7 +19,8 @@ try {
   results.push(['no internet by default', offline.stdout.trim() === 'blocked' ? 'passed' : `FAILED: ${offline.stdout}`]);
   const served = await sandboxes.create({ lifetimeMs: 300_000, network: 'all', ports: [8080] });
   await served.writeFile('index.html', 'hello from daytona');
-  await served.exec(['sh', '-c', 'nohup python3 -m http.server 8080 >/dev/null 2>&1 &']);
+  // Daytona ends a command's process group when it returns: the server leaves it with setsid.
+  await served.exec(['sh', '-c', 'setsid nohup python3 -m http.server 8080 >/dev/null 2>&1 < /dev/null &']);
   let body = '';
   for (let attempt = 0; attempt < 30 && body !== 'hello from daytona'; attempt++) {
     body = await fetch(new URL('index.html', await served.url(8080))).then(response => response.text(), () => '');

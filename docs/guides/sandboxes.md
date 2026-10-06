@@ -112,9 +112,12 @@ const sandboxes = createSandboxes(dockerSandboxes({ image: 'node:24-slim' }), {
   maxSandboxes: 2, maxLifetimeMs: 600_000, network: ['none', 'all'],
 });
 const server = await sandboxes.create({ lifetimeMs: 600_000, network: 'all', ports: [3000] });
-await server.exec(['sh', '-c', 'npx serve -l 3000 . >/dev/null 2>&1 &']);
+await server.exec(['sh', '-c', 'setsid nohup npx serve -l 3000 . >/dev/null 2>&1 < /dev/null &']);
 console.log(await server.url(3000));
 ```
+
+Start a process that must outlive its command, such as a server, with `setsid` as above: some providers (Daytona, for
+one) end everything in a command's process group when the command returns.
 
 ## Tools for agents
 
