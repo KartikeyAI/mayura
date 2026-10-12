@@ -23,7 +23,15 @@ const SNIPPET = 'virtual:mayura-snippet/';
 // scripts/docs-index.mjs is plain JavaScript; this is the shape its navigation() returns.
 const navigation = readNavigation as () => { title: string; pages: { path: string; title: string; description: string }[] }[];
 
-interface Page { slug: string; file: string; title: string; description: string; html: string; headings: Heading[] }
+/** What an integration page (docs/integrations/*.md) adds to its frontmatter: the package, the vendor and its logo. */
+interface Integration { package: string; vendor: string; logo: string; website: string; area: string }
+interface Page { slug: string; file: string; title: string; description: string; html: string; headings: Heading[]; integration?: Integration }
+
+/** A page's integration fields, when its frontmatter names a package. */
+function integrationOf(fields: Record<string, string>): Integration | undefined {
+  if (!fields['package']) return undefined;
+  return { package: fields['package'], vendor: fields['vendor'] ?? '', logo: fields['logo'] ?? '', website: fields['website'] ?? '', area: fields['area'] ?? '' };
+}
 
 /** `concepts/agent` for docs/concepts/agent.md, `README` for docs/README.md. */
 const slugOf = (path: string) => relative(docsRoot, path).split(sep).join('/').replace(/\.md$/u, '');
@@ -49,8 +57,10 @@ export function docs({ base }: { base: string }): Plugin {
     let rendered = cache.get(slug);
     if (!rendered) {
       const file = `${slug}.md`;
-      const { title, description, body } = readPage(join(docsRoot, file));
-      rendered = renderMarkdown(body, join(docsRoot, file), base).then(result => ({ slug, file: `docs/${file}`, title, description, ...result }));
+      const { title, description, body, ...fields } = readPage(join(docsRoot, file)) as ReturnType<typeof readPage> & Record<string, string>;
+      const integration = integrationOf(fields);
+      rendered = renderMarkdown(body, join(docsRoot, file), base)
+        .then(result => ({ slug, file: `docs/${file}`, title, description, ...result, ...(integration ? { integration } : {}) }));
       cache.set(slug, rendered);
     }
     return rendered;
@@ -59,7 +69,10 @@ export function docs({ base }: { base: string }): Plugin {
   const index = async () => {
     const sections = navigation().map(section => ({
       title: section.title,
-      pages: section.pages.map(entry => ({ slug: slugOf(entry.path), title: entry.title, description: entry.description })),
+      pages: section.pages.map(entry => {
+        const integration = integrationOf(entry as unknown as Record<string, string>);
+        return { slug: slugOf(entry.path), title: entry.title, description: entry.description, ...(integration ? { integration } : {}) };
+      }),
     }));
     const slugs = ['README', ...sections.flatMap(section => section.pages.map(entry => entry.slug))];
     const loaders = slugs.map(slug => `  ${JSON.stringify(slug)}: () => import(${JSON.stringify(PAGE + slug)}),`).join('\n');

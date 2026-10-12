@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { sections, type DocHeading, type DocPage } from 'virtual:mayura-docs';
 import { site } from '../lib/site';
+import { BrandLogo } from './BrandLogo';
 import { Html } from './Html';
 
 const order = sections.flatMap(section => section.pages.map(page => ({ ...page, section: section.title })));
@@ -15,9 +16,16 @@ export function DocView({ page }: { page: DocPage }) {
   return (
     <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_13.5rem] xl:gap-12">
       <article className="mx-auto w-full max-w-3xl min-w-0 py-10 lg:py-12">
-        <p className="mb-2 text-sm font-medium text-primary">{section}</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-[2.15rem]">{page.title}</h1>
+        <p className="mb-2 text-sm font-medium text-primary">
+          {page.integration ? <Link to="/integrations/" className="hover:underline">Integrations</Link> : section}
+          {page.integration && <><span aria-hidden="true" className="text-muted"> / </span><span className="text-muted">{section.replace(/^Integrations: /u, '')}</span></>}
+        </p>
+        <div className={page.integration ? 'flex items-center gap-4' : ''}>
+          {page.integration && <BrandLogo logo={page.integration.logo} size="lg" />}
+          <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-[2.15rem]">{page.title}</h1>
+        </div>
         {page.description && <p className="mt-3 text-lg leading-relaxed text-pretty text-muted">{page.description}</p>}
+        {page.integration && <IntegrationFacts integration={page.integration} />}
         <Html html={page.html} className="doc mt-8" />
 
         <div className="mt-14 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 text-sm">
@@ -34,6 +42,23 @@ export function DocView({ page }: { page: DocPage }) {
       </article>
       {page.headings.length > 1 && <OnThisPage headings={page.headings} />}
     </div>
+  );
+}
+
+/** The package to install and the vendor's site, above an integration page. */
+function IntegrationFacts({ integration }: { integration: NonNullable<DocPage['integration']> }) {
+  const npm = `https://www.npmjs.com/package/${integration.package}`;
+  return (
+    <dl className="mt-6 grid gap-x-8 gap-y-3 rounded-2xl border border-line bg-soft/50 p-5 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
+      <dt className="text-muted">Package</dt>
+      <dd className="min-w-0"><a href={npm} target="_blank" rel="noopener noreferrer" className="font-mono text-fg hover:text-primary">{integration.package}</a></dd>
+      <dt className="text-muted">Install</dt>
+      <dd className="min-w-0 truncate font-mono text-fg">npm install mayura {integration.package}</dd>
+      {integration.website && <>
+        <dt className="text-muted">Vendor</dt>
+        <dd><a href={integration.website} target="_blank" rel="noopener noreferrer" className="text-fg hover:text-primary">{integration.vendor} ↗</a></dd>
+      </>}
+    </dl>
   );
 }
 

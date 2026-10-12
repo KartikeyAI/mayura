@@ -43,7 +43,10 @@ export function Footer() {
         <div>
           <h2 className="mb-3 text-sm font-semibold text-fg">Resources</h2>
           <ul className="space-y-2 text-sm">
-            {sectionOrder.map(section => (
+            <li><Link to="/articles/" className="text-muted hover:text-fg">Articles</Link></li>
+            <li><Link to="/integrations/" className="text-muted hover:text-fg">Integrations</Link></li>
+            <li><Link to="/roadmap/" className="text-muted hover:text-fg">Roadmap</Link></li>
+            {sectionOrder.filter(section => section !== 'integrations').map(section => (
               <li key={section}>
                 <Link to={`/${section}/` as '/guides/'} className="text-muted hover:text-fg">{sections[section].title}</Link>
               </li>

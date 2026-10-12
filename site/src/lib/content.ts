@@ -10,17 +10,17 @@ export const sections: Record<Section, { title: string; heading: string; descrip
     description: 'End-to-end tutorials: from an empty folder to a deployed agent, with the permissions, budgets and tests a production app needs.',
   },
   integrations: {
-    title: 'Integrations', noun: 'integration',
+    title: 'Integration guides', noun: 'integration guide',
     heading: 'Use Mayura with the tools you already have',
     description: 'Frameworks, platforms, databases and model providers: how Mayura fits with each, and what to watch for.',
   },
   compare: {
-    title: 'Compare', noun: 'comparison',
+    title: 'Comparisons', noun: 'comparison',
     heading: 'How Mayura compares',
     description: 'Honest comparisons with other ways to build agents: what each is designed for, where they differ, and when to choose which.',
   },
   research: {
-    title: 'Research', noun: 'paper',
+    title: 'Research', noun: 'research',
     heading: 'How Mayura works, in depth',
     description: 'Long-form technical writing on the guarantees behind Mayura: durable execution, permissions and running everywhere.',
   },

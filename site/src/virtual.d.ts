@@ -1,10 +1,12 @@
 // Modules generated at build time by plugins/docs.ts.
 
 declare module 'virtual:mayura-docs' {
-  export interface NavPage { slug: string; title: string; description: string }
+  /** From an integration page's frontmatter (docs/integrations/*.md). */
+  export interface Integration { package: string; vendor: string; logo: string; website: string; area: string }
+  export interface NavPage { slug: string; title: string; description: string; integration?: Integration }
   export interface NavSection { title: string; pages: NavPage[] }
   export interface DocHeading { id: string; depth: 2 | 3; html: string; text: string }
-  export interface DocPage { slug: string; file: string; title: string; description: string; html: string; headings: DocHeading[] }
+  export interface DocPage { slug: string; file: string; title: string; description: string; html: string; headings: DocHeading[]; integration?: Integration }
   export const sections: NavSection[];
   export const loaders: Record<string, () => Promise<{ default: DocPage }>>;
 }
