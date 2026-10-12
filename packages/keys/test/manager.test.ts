@@ -50,7 +50,9 @@ describe('createKeyManager', () => {
     const { keys, reads } = await setup();
     const { key } = await keys.create(owner());
     const before = reads();
-    for (const bad of ['', 'nope', `other_${key.slice(5)}`, `${key.slice(0, -1)}0`, key.toUpperCase(), 7]) {
+    // The last character changed (to one it is not: a key ends in 0 one time in 62).
+    const changed = `${key.slice(0, -1)}${key.endsWith('0') ? '1' : '0'}`;
+    for (const bad of ['', 'nope', `other_${key.slice(5)}`, changed, key.toUpperCase(), 7]) {
       expect(await keys.verify(bad as string), String(bad)).toEqual({ ok: false, reason: 'malformed' });
     }
     expect(reads()).toBe(before);
