@@ -414,7 +414,7 @@ function Reading() {
             <div>
               <span className="rounded-full bg-fg px-2.5 py-0.5 text-xs font-medium text-bg">Roadmap</span>
               <h3 className="mt-4 font-semibold tracking-tight group-hover:text-primary">What comes next</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">Framework starters, a native UI library, agent UI protocols, AI gateways and retrieval.</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted">Conversations and approvals, authorization, framework starters, UI components, AI gateways and retrieval.</p>
             </div>
             <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary">See the roadmap <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" /></span>
           </Link>

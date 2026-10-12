@@ -36,10 +36,12 @@ const stages: Stage[] = [
     label: 'Next', title: 'From backend to product', status: 'next',
     summary: 'The themes of the next release. Details are still being decided.',
     items: [
-      { title: 'Framework starters', text: 'mayura init projects for popular web frameworks, ready to deploy.' },
-      { title: 'A native UI library', text: 'Mayura’s own components for chat, approvals, run progress and live views.' },
+      { title: 'Conversations', text: 'Threads that keep chat history in your own database, runs that pause for a person to approve a tool call, and handoffs between agents.' },
+      { title: 'Authorization', text: 'Who may run which agent, tool or workflow and see which data, with role-based access and external policy services.' },
+      { title: 'Framework starters', text: 'mayura init projects for Next.js, Hono, React Router, TanStack Start, SvelteKit and Nuxt.' },
+      { title: 'UI components', text: 'Chat, approvals, citations, run progress and live views, copied into your project for you to own and edit.' },
       { title: 'Agent UI protocols', text: 'AG-UI and similar protocols, so Mayura agents work with the clients built on them.' },
-      { title: 'AI gateways', text: 'Several model gateways, each an optional package.' },
+      { title: 'AI gateways', text: 'Vercel AI Gateway, Cloudflare AI Gateway, OpenRouter, Portkey, Helicone and LiteLLM, each an optional package.' },
       { title: 'Retrieval (RAG)', text: 'Document ingestion, embedders, vector stores, a retrieval tool with citations, reranking and retrieval metrics.' },
     ],
   },
@@ -49,7 +51,6 @@ const stages: Stage[] = [
     items: [
       { title: 'Realtime voice', text: 'Speech-to-speech conversations, with the same prices and bounds as the voice registry.' },
       { title: 'A workflow builder', text: 'A fluent way to write durable workflows, compiled to the same guarantees.' },
-      { title: 'Fine-grained authorization', text: 'Who may run which agent, tool or workflow, with role-based access and external policy services.' },
     ],
   },
 ];
