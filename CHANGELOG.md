@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-12
+
 ### Added
 
 - **A model registry.** `createModels({ providers, maxCallCostMicros, prices })` from `mayura` gives every model an id of the form `<provider>/<model>` (`openai/gpt-5.1`), granted as `model:<id>`. A model needs a price, from `prices` or, only with `prices: 'catalog'`, from its provider's dated catalog; and every call has a bound. `registry.model(id, { retry })` calls the same model again after a rate limit, an outage or a timeout (never after the caller cancels or once streamed text was released), charging every attempt. `registry.chain(id, models)` builds a `createModelRouter` over registry models under an id you choose. `registry.list()` shows each model with its price source and catalog date. Providers implement `ModelProvider`; the types `ModelPricing`, `ProviderModelSettings`, `ModelCatalog`, `CatalogModel`, `ModelsOptions`, `ModelOptions`, `ModelChainOptions`, `ModelRegistry` and `RegisteredModel` are exported.

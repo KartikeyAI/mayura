@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/auth-facebook",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Facebook Login access tokens (checked with Facebook) and Limited Login tokens as Mayura server identities, and a preset for better-auth's Facebook sign-in.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/observability-langsmith",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "LangSmith for Mayura's traces, with LangSmith's run types, over LangSmith's OpenTelemetry endpoint.",
   "type": "module",

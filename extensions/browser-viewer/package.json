@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/browser-viewer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "A live viewer for mayura/browser browsers: a screencast of the active tab, shared by link, optionally interactive.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-agentcore",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Amazon Bedrock AgentCore Runtime as a mayura deploy target: an ARM64 image serving its HTTP contract, then the runtime update.",
   "type": "module",

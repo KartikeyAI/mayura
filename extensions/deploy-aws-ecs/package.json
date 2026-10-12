@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-aws-ecs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Amazon ECS on Fargate as a mayura deploy target: task definitions, a checked migration task, then the services.",
   "type": "module",

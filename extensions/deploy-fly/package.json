@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-fly",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Fly.io as a mayura deploy target: server and worker processes, the migration as the release command.",
   "type": "module",

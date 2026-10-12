@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/filestorage-google-drive",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Google Drive for Mayura's file stores, over the Drive API v3.",
   "type": "module",
