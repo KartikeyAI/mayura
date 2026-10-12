@@ -1,6 +1,6 @@
 import {
   assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, publicError, validate,
-  type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelHistoryMessage, type ModelMessage, type ModelRequest,
+  type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelHistoryMessage, type ModelMessage, type ModelRequest, type ModelToolCall,
   type Outcome, type Permissions, type RunHandle, type Schema, type Scope, type Media, mediaSummary,
 } from '@mayura/core';
 import { admitMedia, readManagedGuardDefinition, sha256Hex } from '@mayura/core/host';
@@ -9,6 +9,7 @@ import { bindToolApproval, bindToolBudgetTicket, toolNeedsApproval, type ToolApp
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
 import { admitHistory } from './history.js';
+import { agentDigest, checkpointOptions, decodeBody, encodeBody, scopeKey, type CheckpointBody, type CheckpointOptions } from './checkpoint.js';
 import { modelCost, modelFailure as publicModelFailure, modelFailureCost, modelResponse } from './response.js';
 import { createBatcher, createFieldExtractor } from './stream.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
@@ -103,6 +104,11 @@ export interface RuntimeOptions {
   readonly limits?: RuntimeLimits;
   /** Calls that need a person's approval before they run, beyond the tools that declare it. */
   readonly approvals?: ApprovalOptions;
+  /**
+   * Save runs that wait for approval in a store, so they survive a restart and any runtime with the same store, scope
+   * and agent can approve and resume them. Without it, a waiting run lives in this process's memory.
+   */
+  readonly checkpoints?: CheckpointOptions;
 }
 export interface Runtime {
   readonly profile: 'ephemeral';
@@ -121,7 +127,13 @@ export interface Runtime {
    * Answer the approval a waiting run asks for, by its handle or id. The answer must name the pending call and its exact
    * digest, before the request expires. Approved, the call runs; rejected, the model is told and carries on.
    */
-  approve(run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<void>;
+  approve(run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<RunHandle<unknown>>;
+  /**
+   * With `checkpoints`: resume this scope's saved runs whose approval request expired, as their policy says (the model
+   * is told, or the run is cancelled). A runtime does this itself for runs it paused while it lives; call this
+   * periodically to handle the rest, for example after a restart. Returns how many runs it handled.
+   */
+  expireApprovals(options?: { readonly limit?: number }): Promise<number>;
   /**
    * Run isolated speculative child branches under the parent's shared budget and promote at most one. Branches may
    * not hold write, host, delegation or memory-mutation grants; losing and unverified branches are cancelled.
@@ -223,8 +235,16 @@ interface RunState {
   readonly receipts: Map<string, ExecutionReceipt>;
   accepting: boolean;
   status: RunStatus;
-  /** The pending approval while the run waits, with the function that answers it. */
+  /** The pending approval while the run waits in memory, with the function that answers it. */
   approval: (PendingApproval & { answer(answer: Answered): void }) | undefined;
+  /** The saved checkpoint while the run is paused to the store; its process state is let go. */
+  suspended: { readonly body: CheckpointBody; expiry?: ReturnType<typeof setTimeout> } | undefined;
+  /** Continue a paused run of this process, answered. */
+  resume(body: CheckpointBody, answer: Answered): void;
+  /** End a paused run of this process without continuing it. */
+  endSuspended(error: MayuraError): void;
+  /** The run's budget, counting what it spent before a resume in another process. */
+  budgetSnapshot(): ReturnType<Budget['snapshot']>;
   descendants: number;
   modelCalls: number;
   toolCalls: number;
@@ -328,6 +348,9 @@ function approvalOptions(supplied: ApprovalOptions | undefined): { readonly tool
 function approvalDigest(fields: { runId: string; callId: string; toolId: string; toolVersion: string; input: JsonValue; policy: { onExpired: string }; expiresAtMs: number }): string {
   return sha256Hex(`mayura:run-approval:v1\0${canonicalJson(fields as unknown as JsonValue)}`);
 }
+/** Thrown to unwind a run that paused to the store: not an outcome, the run continues later. */
+const SUSPENDED = Object.freeze({ suspended: true });
+interface Resumption { readonly runId: string; readonly body: CheckpointBody; readonly answer: Answered }
 function terminalView(stage: TerminalHookStage, outcome: Outcome<unknown>): HookEvent<TerminalHookStage> {
   return Object.freeze({ stage, status: outcome.status, ...(outcome.status === 'succeeded' ? {} : { error: Object.freeze({ code: outcome.error.code }) }) });
 }
@@ -343,6 +366,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   }
   const scope: Scope = Object.freeze({ principalId: suppliedScope.principalId, projectId: suppliedScope.projectId });
   const approvalPolicy = approvalOptions(options.approvals);
+  const checkpoints = checkpointOptions(options.checkpoints);
+  const scopeId = scopeKey(scope);
+  /** Runs this process paused to the store: no longer active, resumed in place when answered here. */
+  const suspendedRuns = new Map<string, RunState>();
   const active = new Map<string, RunHandle<unknown>>();
   const states = new WeakMap<object, RunState>();
   const operations = new OperationPermits(rootLimits.maxConcurrentOperations, Math.min(65536, rootLimits.maxConcurrentRuns * (rootLimits.maxDescendantRuns + 1)));
@@ -382,6 +409,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const start = <I extends Schema, O extends Schema>(
     agent: AgentDefinition<I, O>, suppliedInput: unknown, limits: Required<RuntimeLimits>, permissions: Permissions,
     parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false, suppliedMedia?: unknown, suppliedHistory?: unknown,
+    resumption?: Resumption,
   ): RunHandle<InferOutput<O>> => {
     if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot accept new runs.');
     assertAgent(agent);
@@ -389,26 +417,40 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     let input: JsonValue;
     try { input = freezeJson(jsonValue(suppliedInput, { maxBytes: limits.maxInputBytes })); }
     catch { throw new MayuraError('INVALID_INPUT', 'Submitted input must satisfy the JSON and size limits.'); }
+    const runInput = input;
     // Media is checked and copied now, before the run exists: a refusal names what to change.
     const inputMedia = admitMedia(suppliedMedia ?? [], agent.media, limits.maxMediaBytes, 'INVALID_INPUT', `Agent ${agent.id}`);
-    let mediaBytes = inputMedia.bytes;
+    let mediaBytes = resumption?.body.mediaBytes ?? inputMedia.bytes;
     // History is checked and copied now too, and only sent to an adapter that takes it.
     const history = suppliedHistory === undefined ? undefined : admitHistory(suppliedHistory, limits.maxContextBytes);
     if (history && agent.model.capabilities.history !== true) {
       throw new MayuraError('INVALID_CONFIG', `Agent ${agent.id}'s model adapter does not take a conversation history (capabilities.history). Use a provider that does, or submit without history.`);
     }
-    const id = crypto.randomUUID();
+    const id = resumption?.runId ?? crypto.randomUUID();
     const controller = new AbortController();
     const events = new EventBuffer(id, limits.maxEventRetention);
-    const budget = parent ? parent.budget.fork({ id, maxCostMicros: limits.maxCostMicros, maxCalls: limits.maxModelCalls + limits.maxToolCalls })
-      : new Budget(limits.maxCostMicros, limits.maxModelCalls + limits.maxToolCalls);
+    // A run resumed in another process gets a fresh account for what is left; reports add what it spent before.
+    const before = resumption ? { micros: BigInt(resumption.body.spent.micros), calls: resumption.body.spent.calls } : { micros: 0n, calls: 0 };
+    const maxCalls = limits.maxModelCalls + limits.maxToolCalls;
+    const budget = parent ? parent.budget.fork({ id, maxCostMicros: limits.maxCostMicros, maxCalls })
+      : resumption ? new Budget(Number(BigInt(limits.maxCostMicros) > before.micros ? BigInt(limits.maxCostMicros) - before.micros : 0n), Math.max(1, maxCalls - before.calls))
+      : new Budget(limits.maxCostMicros, maxCalls);
+    const budgetSnapshot = (): ReturnType<Budget['snapshot']> => {
+      const now = budget.snapshot(); if (!resumption) return now;
+      const micros = BigInt(now.spentMicros) + before.micros;
+      return Object.freeze({ spentMicros: micros <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(micros) : micros.toString(), reservedMicros: now.reservedMicros, calls: now.calls + before.calls });
+    };
     const grants = new Set(permissions.allow);
     const tools = new Map(agent.tools.map((tool) => [tool.id, tool]));
-    const callIds = new Set<string>();
+    const callIds = new Set<string>(resumption?.body.callIds ?? []);
+    // The conversation so far and the batch being run; module level so a pause can save them.
+    let messages: ModelMessage[] = [];
+    let continuation: JsonValue | undefined;
+    let batch: { readonly step: number; readonly calls: readonly ModelToolCall[] } | undefined;
     let terminal = false;
     let settle!: (result: Outcome<InferOutput<O>>) => void;
     const result = new Promise<Outcome<InferOutput<O>>>((resolve) => { settle = resolve; });
-    let deadline = Math.min(Date.now() + limits.maxDurationMs, parent?.deadline ?? Infinity);
+    let deadline = Math.min(Date.now() + Math.min(limits.maxDurationMs, resumption?.body.remainingMs ?? Infinity), parent?.deadline ?? Infinity);
     const armDeadline = (): ReturnType<typeof setTimeout> => setTimeout(() => {
       if (!terminal) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed; no new work will be dispatched.'));
     }, Math.max(0, deadline - Date.now()));
@@ -416,12 +458,21 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     const handle: RunHandle<InferOutput<O>> = Object.freeze({
       id, profile: 'ephemeral', result: () => result,
       observe: (observerOptions?: { readonly after?: number; readonly signal?: AbortSignal }) => events.observe(observerOptions),
-      cancel: () => { if (!terminal && !controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'Run cancellation was requested.')); },
+      cancel: () => {
+        if (state.suspended) { void cancelSuspended(state); return; }
+        if (!terminal && !controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'Run cancellation was requested.'));
+      },
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
     const state = { id, events, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
-      handle, children: [], speculative, receipts: new Map(), accepting: true, status: 'running', approval: undefined, descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
-      heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
+      handle, children: [], speculative, receipts: new Map(), accepting: true, status: 'running', approval: undefined, suspended: undefined,
+      descendants: resumption?.body.counts.descendants ?? 0, modelCalls: resumption?.body.counts.modelCalls ?? 0,
+      toolCalls: resumption?.body.counts.toolCalls ?? 0, hookCalls: resumption?.body.counts.hookCalls ?? 0,
+      heldModelCalls: 0, heldToolCalls: 0, bundles: new Set(), budgetSnapshot } as unknown as RunState;
+    for (const receipt of resumption?.body.receipts ?? []) {
+      const callId = (receipt as { callId?: unknown } | null)?.callId;
+      if (typeof callId === 'string') state.receipts.set(callId, receipt as unknown as ExecutionReceipt);
+    }
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
     const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
     const relayExternal = (): void => { if (!controller.signal.aborted) controller.abort(new MayuraError('CANCELLED', 'The composing invocation was cancelled.')); };
@@ -631,6 +682,28 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const policy = { onExpired: approvalPolicy.onExpired };
       const digest = approvalDigest({ runId: id, callId, toolId: tool.id, toolVersion: tool.version, input, policy, expiresAtMs });
       const pausedAt = Date.now();
+      // At a safe point, with a store: save the run and let go of it. It continues where an answer is given.
+      if (checkpoints && batch?.calls[0]?.id === callId && budget.snapshot().reservedMicros === 0 && state.bundles.size === 0
+        && state.children.every(child => child.status !== 'running' && child.status !== 'waiting')) {
+        const spent = budgetSnapshot();
+        const body: CheckpointBody = { agent: { id: agent.id, version: agent.version, digest: agentDigest(agent) }, scope,
+          permissions: [...permissions.allow], limits: { ...limits }, input: runInput, history: (history ?? null) as JsonValue, messages: [...messages],
+          continuation: continuation ?? null, step: batch.step, calls: batch.calls, callIds: [...callIds],
+          counts: { modelCalls: state.modelCalls, toolCalls: state.toolCalls, hookCalls: state.hookCalls, descendants: state.descendants },
+          spent: { micros: String(spent.spentMicros), calls: spent.calls }, receipts: [...state.receipts.values()] as unknown as JsonValue[],
+          mediaBytes, remainingMs: Math.max(0, Math.min(deadline, Number.MAX_SAFE_INTEGER) - pausedAt),
+          pending: { callId, toolId: tool.id, toolVersion: tool.version, input, digest, expiresAtMs, onExpired: approvalPolicy.onExpired } };
+        let saved = false;
+        try { await checkpoints.store.put({ runId: id, scope: scopeId, expiresAtMs, body: encodeBody(body) }); saved = true; }
+        catch { /* Too large or the store is unavailable: wait in memory instead. */ }
+        if (saved) {
+          if (signal.aborted) { await checkpoints.store.delete({ runId: id }).catch(() => false); throw signal.reason; }
+          state.suspended = { body };
+          events.emit('approval.requested', { callId, toolId: tool.id, digest, expiresAtMs });
+          events.emit('run.paused', { callId });
+          throw SUSPENDED;
+        }
+      }
       clearTimeout(timer);
       let answered: Answered;
       try {
@@ -668,8 +741,26 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     };
 
     /** Ordinary proposals and hook actions share the same broker, exact account and output barriers. */
+    /**
+     * The answer a paused run was resumed with, for its pending call: checked against the saved digest, then the
+     * checkpoint is deleted before anything runs, so a call is dispatched by one runtime at most.
+     */
+    const resumedAnswer = async (tool: AnyTool, input: JsonValue, callId: string, resumed: { readonly body: CheckpointBody; readonly answer: Answered }): Promise<Answered> => {
+      const pending = resumed.body.pending;
+      if (approvalDigest({ runId: id, callId, toolId: tool.id, toolVersion: tool.version, input, policy: { onExpired: pending.onExpired }, expiresAtMs: pending.expiresAtMs }) !== pending.digest) {
+        throw new MayuraError('CONFLICT', 'The resumed call no longer matches its approval.');
+      }
+      let deleted = false;
+      try { deleted = await checkpoints!.store.delete({ runId: id, holderId: checkpoints!.replicaId }); } catch { deleted = false; }
+      if (!deleted) throw new MayuraError('CONFLICT', 'Another runtime took over this run; this one stopped before the call.');
+      const answer = resumed.answer;
+      events.emit('approval.resolved', { callId, toolId: tool.id, decision: answer.decision, ...(answer.actorId === undefined ? {} : { actorId: answer.actorId }) });
+      return answer;
+    };
+
+    /** Ordinary proposals and hook actions share the same broker, exact account and output barriers. */
     const invokeRunTool = async (tool: AnyTool, rawInput: JsonValue, callId: string, step: number,
-      signal: AbortSignal = controller.signal, withHooks = true): Promise<Outcome<JsonValue>> => {
+      signal: AbortSignal = controller.signal, withHooks = true, resumed?: { readonly body: CheckpointBody; readonly answer: Answered }): Promise<Outcome<JsonValue>> => {
       checkCancelled(signal);
       // Model envelopes are validated JSON but not frozen. Do not expose their live history
       // objects to callbacks or let a proposal hook rewrite the later executor's arguments.
@@ -688,7 +779,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           if (!withHooks) throw new MayuraError('APPROVAL_UNAVAILABLE', `A hook action cannot call ${tool.id}, which needs a person's approval.`);
           // Nothing is held while the run waits; an approved call reserves again, under the limits as they are then.
           toolBundle.close();
-          const answer = await awaitApproval(tool, input, callId, signal);
+          const answer = resumed?.body.pending.callId === callId ? await resumedAnswer(tool, input, callId, resumed) : await awaitApproval(tool, input, callId, signal);
           checkCancelled(signal);
           if (answer.decision !== 'approved') {
             const refusal = answer.decision === 'rejected'
@@ -763,7 +854,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       } finally { toolBundle.close(); }
     };
 
-    const execute = async (): Promise<Outcome<InferOutput<O>>> => {
+    const execute = async (resume?: { readonly body: CheckpointBody; readonly answer: Answered }): Promise<Outcome<InferOutput<O>>> => {
+      if (resume) return await continueRun(resume);
       events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}),
         ...(inputMedia.media.length > 0 ? { media: inputMedia.media.length } : {}), ...(history ? { history: history.length } : {}) });
       checkCancelled();
@@ -779,8 +871,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       const inputFailure = await control(Object.freeze({ stage: 'beforeExecution', input: approvedInput,
         ...(inputMedia.media.length > 0 ? { media: Object.freeze(inputMedia.media.map(mediaSummary)) } : {}) }), null);
       if (inputFailure) return inputFailure;
-      const messages: ModelMessage[] = [{ role: 'user', content: approvedInput, ...(inputMedia.media.length > 0 ? { media: inputMedia.media } : {}) }];
-      let continuation: JsonValue | undefined;
+      messages = [{ role: 'user', content: approvedInput, ...(inputMedia.media.length > 0 ? { media: inputMedia.media } : {}) }];
+      return await steps(0);
+    };
       /**
        * Consume a streamed model call. Only the configured string field of the final output is released, in batches,
        * each after the batch guards allow it; the returned complete response is then handled exactly like `generate`.
@@ -924,43 +1017,67 @@ export function createRuntime(options: RuntimeOptions): Runtime {
             if (!Number.isSafeInteger(batchCost)) throw new MayuraError('BUDGET_EXCEEDED', 'Tool batch cost exceeds supported accounting bounds.');
           }
           const ledger = budget.snapshot();
-          if (typeof ledger.spentMicros !== 'number' || batchCost > limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) {
-            const left = typeof ledger.spentMicros === 'number' ? Math.max(0, limits.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) : 0;
+          if (typeof ledger.spentMicros !== 'number' || batchCost > budget.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) {
+            const left = typeof ledger.spentMicros === 'number' ? Math.max(0, budget.maxCostMicros - ledger.spentMicros - ledger.reservedMicros) : 0;
             throw new MayuraError('BUDGET_EXCEEDED', `The tool calls the model asked for may cost up to ${batchCost} micros, but only ${left} of the run's limits.maxCostMicros (${limits.maxCostMicros}) are left.`);
           }
           for (const call of response.calls) callIds.add(call.id);
           messages.push({ role: 'assistant', calls: response.calls });
-          for (const call of response.calls) {
-            const outcome = await invokeRunTool(tools.get(call.toolId)!, call.input, call.id, step);
-            if (outcome.status !== 'succeeded') return { done: true, outcome };
-            const toolMedia = (outcome as ToolOutcome<JsonValue>).media;
-            messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output, ...(toolMedia && toolMedia.length > 0 ? { media: toolMedia } : {}) });
-          }
-          return { done: false };
+          return await runCalls(response.calls, step);
         } finally { primaryBundle.close(); }
+      };
+      /** Run a batch's calls in order; `resumed` answers the first one, which a paused run was waiting on. */
+      const runCalls = async (calls: readonly ModelToolCall[], step: number, resumed?: { readonly body: CheckpointBody; readonly answer: Answered }): Promise<StepResult> => {
+        for (const [index, call] of calls.entries()) {
+          batch = { step, calls: calls.slice(index) };
+          const outcome = await invokeRunTool(tools.get(call.toolId)!, call.input, call.id, step, controller.signal, true, index === 0 ? resumed : undefined);
+          if (outcome.status !== 'succeeded') return { done: true, outcome };
+          const toolMedia = (outcome as ToolOutcome<JsonValue>).media;
+          messages.push({ role: 'tool', callId: call.id, toolId: call.toolId, result: outcome.output, ...(toolMedia && toolMedia.length > 0 ? { media: toolMedia } : {}) });
+        }
+        batch = undefined;
+        return { done: false };
       };
       const finishStep = async (step: number, result: 'tool_calls' | 'final' | 'stopped'): Promise<Failure | undefined> => {
         const failure = await observe(Object.freeze({ stage: 'afterStep', step, result }), step);
         events.emit('step.completed', { step, result });
         return failure;
       };
-      for (let step = 0; step < limits.maxSteps; step++) {
+    /** Settle a step: its observers and event. A mandatory afterStep failure stops a continuing step and withholds a final output. */
+    const settleStep = async (step: number, result: StepResult): Promise<Outcome<InferOutput<O>> | undefined> => {
+      const observed = await finishStep(step, !result.done ? 'tool_calls' : result.outcome.status === 'succeeded' ? 'final' : 'stopped');
+      if (observed && (!result.done || result.outcome.status === 'succeeded')) return observed;
+      return result.done ? result.outcome : undefined;
+    };
+    const steps = async (first: number): Promise<Outcome<InferOutput<O>>> => {
+      for (let step = first; step < limits.maxSteps; step++) {
         checkCancelled();
         events.emit('step.started', { step });
         let result: StepResult;
         try { result = await runStep(step); }
-        catch (error) { await finishStep(step, 'stopped'); throw error; }
-        const observed = await finishStep(step, !result.done ? 'tool_calls' : result.outcome.status === 'succeeded' ? 'final' : 'stopped');
-        // A mandatory afterStep failure stops a continuing step and withholds a final output; it never masks an earlier failure.
-        if (observed && (!result.done || result.outcome.status === 'succeeded')) return observed;
-        if (result.done) return result.outcome;
+        catch (error) { if (error !== SUSPENDED) await finishStep(step, 'stopped'); throw error; }
+        const ended = await settleStep(step, result);
+        if (ended) return ended;
       }
       throw new MayuraError('LIMIT_EXCEEDED', 'The agent step limit was reached.');
     };
+    /** Continue a paused run: restore its conversation, finish the paused batch from the answered call, then go on. */
+    const continueRun = async (resume: { readonly body: CheckpointBody; readonly answer: Answered }): Promise<Outcome<InferOutput<O>>> => {
+      const { body } = resume;
+      events.emit('run.resumed', { callId: body.pending.callId });
+      checkCancelled();
+      messages = [...body.messages];
+      continuation = body.continuation === null ? undefined : freezeJson(body.continuation);
+      for (const call of body.calls) if (!tools.has(call.toolId)) throw new MayuraError('DEFINITION_CHANGED', 'A tool of the paused batch is no longer registered.');
+      let result: StepResult;
+      try { result = await runCalls(body.calls, body.step, resume); }
+      catch (error) { if (error !== SUSPENDED) await finishStep(body.step, 'stopped'); throw error; }
+      return await settleStep(body.step, result) ?? await steps(body.step + 1);
+    };
 
 
-    queueMicrotask(() => {
-      void execute().catch(outcomeFor).then(async (candidate) => {
+    /** End the run with an outcome: children, terminal hooks, events, accounting, then settle the handle. */
+    const finish = async (candidate: Outcome<InferOutput<O>>): Promise<void> => {
         state.accepting = false;
         // Accepted descendants remain required even if the parent's model has already finished.
         if (candidate.status !== 'succeeded' && !controller.signal.aborted) {
@@ -994,15 +1111,112 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         clearTimeout(timer);
         parent?.controller.signal.removeEventListener('abort', relayParent);
         externalSignal?.removeEventListener('abort', relayExternal);
-        events.emit('run.completed', { status: outcome.status, ...budget.snapshot() });
+        events.emit('run.completed', { status: outcome.status, ...budgetSnapshot() });
         events.finish();
         parent?.events.emit('delegate.completed', { childRunId: id, status: outcome.status });
         active.delete(id);
         if (!parent) activeRoots--;
         settle(Object.freeze(outcome));
+    };
+    /** Let go of a run paused to the store: it holds no slot, timer or work; the handle stays for this process. */
+    const suspend = (): void => {
+      clearTimeout(timer);
+      state.status = 'waiting';
+      active.delete(id); if (!parent) activeRoots--;
+      suspendedRuns.set(id, state);
+      const pending = state.suspended!.body.pending;
+      // A timer may fire a little early; it waits out the rest rather than finding the request not yet expired.
+      const fire = (): void => {
+        const left = pending.expiresAtMs - Date.now();
+        if (left > 0) { if (state.suspended) state.suspended.expiry = setTimeout(fire, left); return; }
+        void expireRun(id).catch(() => undefined);
+      };
+      state.suspended!.expiry = setTimeout(fire, Math.max(0, pending.expiresAtMs - Date.now()));
+    };
+    const launch = (resume?: { readonly body: CheckpointBody; readonly answer: Answered }): void => {
+      queueMicrotask(() => {
+        void execute(resume).then(outcome => outcome, (error: unknown) => error === SUSPENDED ? SUSPENDED : outcomeFor(error)).then(async candidate => {
+          if (candidate === SUSPENDED) { suspend(); return; }
+          await finish(candidate as Outcome<InferOutput<O>>);
+        });
       });
-    });
+    };
+    /** Take a paused run of this process back: a slot and the status of a running run. */
+    const reactivate = (): void => {
+      clearTimeout(state.suspended?.expiry); state.suspended = undefined; suspendedRuns.delete(id);
+      active.set(id, handle); if (!parent) activeRoots++;
+      state.status = 'running';
+    };
+    state.resume = (body, answer) => {
+      reactivate();
+      // The deadline restarts with the active time the run had left: waiting did not count.
+      deadline = Date.now() + body.remainingMs; state.deadline = deadline; timer = armDeadline();
+      launch({ body, answer });
+    };
+    state.endSuspended = error => {
+      reactivate();
+      controller.abort(error);
+      void finish(outcomeFor(error) as Outcome<InferOutput<O>>);
+    };
+    launch(resumption ? { body: resumption.body, answer: resumption.answer } : undefined);
     return handle;
+  };
+  /** Claim a saved run for this runtime; a run another runtime holds, or one already gone, is refused. */
+  const claimCheckpoint = async (runId: string): Promise<void> => {
+    try { await checkpoints!.store.claim({ runId, holderId: checkpoints!.replicaId, leaseMs: checkpoints!.leaseMs }); }
+    catch { throw new MayuraError('CONFLICT', 'Another runtime is resuming this run, or it is no longer waiting.'); }
+  };
+  /** A saved run of this scope, read back, with the agent to continue it. */
+  const loadCheckpoint = async (runId: string): Promise<{ readonly body: CheckpointBody; readonly agent: AgentDefinition | undefined; readonly local: RunState | undefined }> => {
+    let stored;
+    try { stored = await checkpoints!.store.get({ runId }); }
+    catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'The run checkpoint store could not be read.'); }
+    if (!stored || stored.scope !== scopeId) throw new MayuraError('NOT_FOUND', 'No run of this scope is waiting for approval with that id.');
+    if (stored.status !== 'waiting') throw new MayuraError('CONFLICT', 'Another runtime is resuming this run.');
+    const body = decodeBody(stored.body);
+    if (body.scope.principalId !== scope.principalId || body.scope.projectId !== scope.projectId) throw new MayuraError('NOT_FOUND', 'No run of this scope is waiting for approval with that id.');
+    const local = suspendedRuns.get(runId);
+    return { body, agent: local?.agent ?? checkpoints!.agents.get(body.agent.id), local };
+  };
+  /** Continue a saved run, answered: in place when this process paused it, otherwise as a new handle here. */
+  const resumeSaved = (runId: string, body: CheckpointBody, agent: AgentDefinition, local: RunState | undefined, answer: Answered): RunHandle<unknown> => {
+    if (local?.suspended) { local.resume(body, answer); return local.handle; }
+    // The run keeps the permissions and limits it had; this runtime can only narrow them, never widen.
+    const allow = body.permissions.filter(grant => rootPermissions.allow.includes(grant));
+    const limits = limitsFor(Object.fromEntries(Object.keys(defaults).map(key => [key,
+      Math.min(Number.isSafeInteger(body.limits[key]) ? body.limits[key]! : Infinity, rootLimits[key as keyof RuntimeLimits])])) as RuntimeLimits);
+    return start(agent, body.input, limits, permissionsFor({ allow }), undefined, true, undefined, false, undefined,
+      body.history === null ? undefined : body.history, { runId, body, answer });
+  };
+  /** A changed agent cannot continue a saved run: the run ends, and its checkpoint is removed. */
+  const refuseChanged = async (runId: string, local: RunState | undefined): Promise<never> => {
+    await checkpoints!.store.delete({ runId, holderId: checkpoints!.replicaId }).catch(() => false);
+    const error = new MayuraError('DEFINITION_CHANGED', 'The agent changed while the run waited for approval, so the run cannot continue.');
+    local?.endSuspended(error);
+    throw error;
+  };
+  /** Handle one saved run whose approval request expired, as its policy says. */
+  const expireRun = async (runId: string): Promise<boolean> => {
+    if (closed) return false;
+    const { body, agent, local } = await loadCheckpoint(runId);
+    if (Date.now() < body.pending.expiresAtMs || !agent) return false;
+    if (activeRoots >= rootLimits.maxConcurrentRuns && body.pending.onExpired === 'reject') return false;
+    await claimCheckpoint(runId);
+    if (agentDigest(agent) !== body.agent.digest) await refuseChanged(runId, local);
+    if (body.pending.onExpired === 'cancel') {
+      await checkpoints!.store.delete({ runId, holderId: checkpoints!.replicaId }).catch(() => false);
+      local?.endSuspended(new MayuraError('CANCELLED', 'The approval request expired, and the run was cancelled.'));
+      return true;
+    }
+    resumeSaved(runId, body, agent, local, { decision: 'expired' });
+    return true;
+  };
+  /** Cancel a run this process paused: remove its checkpoint first, so no other runtime resumes it. */
+  const cancelSuspended = async (paused: RunState): Promise<void> => {
+    if (!checkpoints || !paused.suspended) return;
+    try { await claimCheckpoint(paused.id); } catch { return; }
+    await checkpoints.store.delete({ runId: paused.id, holderId: checkpoints.replicaId }).catch(() => false);
+    if (paused.suspended) paused.endSuspended(new MayuraError('CANCELLED', 'Run cancellation was requested.'));
   };
   return Object.freeze({
     profile: 'ephemeral',
@@ -1068,34 +1282,65 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     },
     inspect: (handle: RunHandle<unknown>): RunInspection => {
       const state = lookup(handle);
-      const pending = state.approval;
+      const pending = state.approval ?? state.suspended?.body.pending;
       return Object.freeze({ id: state.id, rootId: state.root.id, ...(state.parent ? { parentId: state.parent.id } : {}),
         agentId: state.agent.id, status: state.status,
         ...(pending ? { approval: Object.freeze({ callId: pending.callId, toolId: pending.toolId, toolVersion: pending.toolVersion, input: pending.input,
           digest: pending.digest, expiresAtMs: pending.expiresAtMs }) } : {}),
-        budget: state.budget.snapshot(),
+        budget: state.budgetSnapshot(),
         runs: Object.freeze(subtree(state).map((run) => Object.freeze({ id: run.id, ...(run.parent ? { parentId: run.parent.id } : {}), agentId: run.agent.id, status: run.status }))),
         evidence: evidenceFor(state),
       });
     },
-    approve: async (run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<void> => {
-      const target = typeof run === 'string' ? active.get(run) : run;
-      if (!target) throw new MayuraError('NOT_FOUND', 'No active run has that id.');
-      const state = lookup(target);
+    approve: async (run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<RunHandle<unknown>> => {
       const reason = answer?.reason;
       if (!answer || typeof answer !== 'object' || typeof answer.callId !== 'string' || typeof answer.digest !== 'string'
         || (answer.decision !== 'approved' && answer.decision !== 'rejected') || !isIdentifier(answer.actorId)
         || (reason !== undefined && (typeof reason !== 'string' || reason.length > 1_000))) {
         throw new MayuraError('INVALID_INPUT', 'An approval answer needs callId, digest, decision (approved or rejected), actorId, and at most a 1,000-character reason.');
       }
-      const pending = state.approval;
-      if (!pending || pending.callId !== answer.callId) throw new MayuraError('NOT_FOUND', 'This run is not waiting for an approval of that call.');
-      if (Date.now() >= pending.expiresAtMs) throw new MayuraError('CONFLICT', 'The approval request has expired.');
-      if (answer.digest !== pending.digest) throw new MayuraError('CONFLICT', 'The digest does not match the call waiting for approval.');
-      pending.answer(Object.freeze({ decision: answer.decision, actorId: answer.actorId, ...(reason === undefined ? {} : { reason }) }));
+      const decided: Answered = Object.freeze({ decision: answer.decision, actorId: answer.actorId, ...(reason === undefined ? {} : { reason }) });
+      const target = typeof run === 'string' ? active.get(run) ?? suspendedRuns.get(run)?.handle : run;
+      const state = target ? lookup(target) : undefined;
+      // Waiting in memory: answer it directly.
+      if (state && !state.suspended) {
+        const pending = state.approval;
+        if (!pending || pending.callId !== answer.callId) throw new MayuraError('NOT_FOUND', 'This run is not waiting for an approval of that call.');
+        if (Date.now() >= pending.expiresAtMs) throw new MayuraError('CONFLICT', 'The approval request has expired.');
+        if (answer.digest !== pending.digest) throw new MayuraError('CONFLICT', 'The digest does not match the call waiting for approval.');
+        pending.answer(decided);
+        return state.handle;
+      }
+      // Saved to the store, by this process or another one.
+      const runId = typeof run === 'string' ? run : state?.id;
+      if (!checkpoints || runId === undefined) throw new MayuraError('NOT_FOUND', 'No active run has that id.');
+      if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot resume runs.');
+      const { body, agent, local } = await loadCheckpoint(runId);
+      if (body.pending.callId !== answer.callId) throw new MayuraError('NOT_FOUND', 'This run is not waiting for an approval of that call.');
+      if (Date.now() >= body.pending.expiresAtMs) throw new MayuraError('CONFLICT', 'The approval request has expired.');
+      if (answer.digest !== body.pending.digest) throw new MayuraError('CONFLICT', 'The digest does not match the call waiting for approval.');
+      if (!agent) throw new MayuraError('NOT_FOUND', `This runtime cannot resume agent ${body.agent.id}: list it in checkpoints.agents.`);
+      if (activeRoots >= rootLimits.maxConcurrentRuns) throw new MayuraError('LIMIT_EXCEEDED', 'The runtime concurrent-root limit is reached.');
+      await claimCheckpoint(runId);
+      if (agentDigest(agent) !== body.agent.digest) await refuseChanged(runId, local);
+      return resumeSaved(runId, body, agent, local, decided);
+    },
+    expireApprovals: async (expiry?: { readonly limit?: number }): Promise<number> => {
+      const limit = expiry?.limit ?? 100;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new MayuraError('INVALID_INPUT', 'limit must be 1 to 100.');
+      if (!checkpoints || closed) return 0;
+      let due: readonly string[];
+      try { due = await checkpoints.store.due({ expiresBeforeMs: Date.now(), limit }); }
+      catch { throw new MayuraError('STORAGE_UNAVAILABLE', 'The run checkpoint store could not be read.'); }
+      let handled = 0;
+      // Other scopes' runs are listed too; loadCheckpoint skips them, as expireRun skips runs it cannot resume.
+      for (const runId of due) if (await expireRun(runId).catch(() => false)) handled++;
+      return handled;
     },
     close: async (): Promise<void> => {
       closed = true;
+      // Runs paused to the store stay there, for this or another runtime to resume; only their timers stop here.
+      for (const paused of suspendedRuns.values()) clearTimeout(paused.suspended?.expiry);
       const runs = [...active.values()];
       for (const run of runs) run.cancel();
       await Promise.all(runs.map((run) => run.result()));

@@ -460,7 +460,8 @@ async function main() {
     assert(!packedManifest.optionalDependencies && !packedManifest.peerDependencies, 'Base packages need explicit optional-dependency review.');
     assert(!packedManifest.scripts && !packedManifest.bin, 'Lifecycle scripts or executable binaries require distribution review.');
     // Raised from 150 KiB in 1.1, when @mayura/runtime gained the model registry (it packs to about 156 KiB).
-    assert(bytes.length <= 176 * 1024, `Base package compressed size budget exceeded: ${manifest.name}`);
+    // Raised for 1.2 from 176 KiB, when approvals and checkpoints took @mayura/runtime to about 200 KiB compressed.
+    assert(bytes.length <= 256 * 1024, `Base package compressed size budget exceeded: ${manifest.name}`);
     dependencies[manifest.name] = pathToFileURL(destination).href;
     reports.push({ name: manifest.name, version: manifest.version, tarballBytes: bytes.length, unpackedBytes: files.reduce((sum, file) => sum + file.bytes, 0), files: files.length, sourceMaps });
   }

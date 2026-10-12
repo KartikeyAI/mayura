@@ -104,6 +104,7 @@ your tool if you need them. The one exception is `ToolRefusal`, whose reason you
 | `STORAGE_UNAVAILABLE` | Storage could not be reached. |
 | `INTEGRITY_VIOLATION` | Stored or packaged data failed an integrity check. |
 | `APPROVAL_UNAVAILABLE` | A call needs a person's approval where none can be given: in a child run, a hook action, or outside an agent run. |
+| `DEFINITION_CHANGED` | The agent's definition changed while its run was saved, waiting for approval, so the run cannot continue. |
 
 Storage adapters report their own failures as `StorageError`, a `MayuraError` whose `code` is one of the codes above
 and whose `storageCode` names the exact storage condition, such as `STORE_CLOSED`. See

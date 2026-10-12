@@ -78,6 +78,7 @@ const followUp = runtime.submit(supportAgent, {
 | `scope` | `{ principalId: 'local', projectId: 'default' }` | Who runs act for. Tools, guards and hooks receive it. |
 | `limits` | see below | Ceilings for every run. |
 | `approvals` | none | `{ tools, expiresInMs, onExpired }`: tools whose calls need a person's approval, and how long a request waits. See [Approve a tool call](#approve-a-tool-call). |
+| `checkpoints` | none | `{ store, agents?, replicaId?, leaseMs? }`: save runs waiting for approval, so they survive a restart. See [Surviving a restart](#surviving-a-restart). |
 
 `ephemeral` means the runtime keeps everything in memory. Runs, events and costs are lost when the process exits, and
 a run interrupted by a crash is not resumed. For work that must survive restarts, use
@@ -149,6 +150,7 @@ object (ids, counts and statuses, never prompts or secrets).
 | `approval.resolved` | The request was answered (`approved` or `rejected`, with the `actorId`) or `expired`. |
 | `events.gap` | Older events were dropped before you read them. |
 | `run.completed` | The run ended, with its status and cost totals. |
+| `run.paused`, `run.resumed` | A run waiting for approval was saved to the checkpoint store, or continued from it. |
 
 Events are kept in a buffer of `maxEventRetention` entries. If you start observing late, or read slower than the run
 writes, the oldest events may be gone; you then get one `events.gap` event with the missing range instead of silence.
@@ -216,7 +218,58 @@ for await (const event of run.observe()) {
 - **Only root runs wait.** A child run, a speculative branch or a hook action that reaches a call needing approval
   fails with `APPROVAL_UNAVAILABLE`. So does calling the tool outside a run, for example from code mode or a workflow
   step: the tool checks for the runtime's proof that a person approved that exact call.
-- **In memory:** a waiting run lives in this process. If it exits, the run is lost, as any ephemeral run is.
+- **In memory:** without `checkpoints`, a waiting run lives in this process. If it exits, the run is lost, as any
+  ephemeral run is.
+
+### Surviving a restart
+
+Give the runtime a checkpoint store, and a waiting run is saved there instead of held in memory. Any runtime with the
+same store, scope and agent can then approve and continue it, after a restart or on another server:
+
+```ts
+import { createRuntime } from 'mayura';
+import { createSqliteStore } from 'mayura/storage-sqlite';
+
+const store = createSqliteStore({ filename: 'runs.sqlite' });
+await store.initialize();
+await store.threads.initialize(); // creates the thread and run-checkpoint tables
+
+const runtime = createRuntime({
+  profile: 'ephemeral',
+  permissions: { allow: ['model:openai.responses', 'tool:orders.refund', 'effect:write'] },
+  scope: { principalId: 'support-team', projectId: 'shop' },
+  checkpoints: { store: store.runCheckpoints, agents: [refundAgent] },
+});
+
+// Later, perhaps in another process: answer by run id. The run continues here.
+const run = await runtime.approve(runId, { callId, digest, decision: 'approved', actorId: 'manager-7' });
+console.log(await run.result());
+
+// Now and then, continue saved runs whose request expired.
+setInterval(() => void runtime.expireApprovals(), 60_000);
+```
+
+- **When a run is saved:** when it pauses at a safe point, with no child run still running and nothing reserved. It
+  emits `run.paused`, holds no concurrency slot and no timer, and its status is `waiting`. Otherwise, or if the store
+  cannot take it (it holds at most 3 MiB), it waits in memory.
+- **What is saved:** the conversation so far (with media), the paused batch's remaining calls, the provider
+  continuation, its call counts, what it spent, its receipts, its permissions and limits, and the active time it had
+  left. Waiting still does not count against `maxDurationMs`.
+- **Answering:** `approve` checks the call and digest against the saved run, then claims it. A run this process paused
+  continues on its own handle; otherwise `approve` returns a new handle, whose events start with `run.resumed`.
+- **At most once:** before the approved call runs, the runtime removes the checkpoint. If another runtime took the
+  run meanwhile, removing fails and nothing runs here: the run ends `failed` with `CONFLICT`.
+- **The same agent:** `checkpoints.agents` lists the agents this runtime may continue when it did not start the run.
+  If an agent's definition changed while the run waited (its instructions, model, tools, guards, hooks or schemas),
+  the run cannot continue: `approve` throws `DEFINITION_CHANGED` and the saved run is removed.
+- **Never wider:** a resumed run keeps its own permissions and limits, narrowed to this runtime's. Its budget counts
+  what it spent before the pause.
+- **Expiry:** a runtime continues the runs it paused when their request expires, while it lives.
+  `runtime.expireApprovals()` handles the rest of this scope's expired runs, as their policy says.
+- **Cancelling** a saved run removes its checkpoint first, so no other runtime continues it.
+- **Closing** the runtime leaves saved runs in the store. Their handles in this process settle only if this runtime
+  continues them.
+- **Not yet in this release:** the server and client do not show approvals.
 
 ## Inspect a run
 

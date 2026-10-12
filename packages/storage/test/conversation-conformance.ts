@@ -191,6 +191,16 @@ export function conversationConformance(name: string, factory: () => Promise<Con
       expect(await checkpoints.get({ runId: 'run-1' })).toBeUndefined();
     });
 
+    it('takes a new checkpoint for a run whose earlier one was deleted', async () => {
+      // A run that pauses twice saves under its id twice; deletion is real, so the id is free again.
+      await checkpoints.put({ runId: 'run-1', scope, expiresAtMs: Date.now() + 60_000, body: { pause: 1 } });
+      await checkpoints.claim({ runId: 'run-1', holderId: 'replica-a', leaseMs: 30_000 });
+      expect(await checkpoints.delete({ runId: 'run-1', holderId: 'replica-a' })).toBe(true);
+      const again = await checkpoints.put({ runId: 'run-1', scope, expiresAtMs: Date.now() + 60_000, body: { pause: 2 } });
+      expect(again).toMatchObject({ version: 1, status: 'waiting', holderId: null, body: { pause: 2 } });
+      expect((await checkpoints.get({ runId: 'run-1' }))?.body).toEqual({ pause: 2 });
+    });
+
     it('lets a new holder take a checkpoint whose claim expired', async () => {
       await checkpoints.put({ runId: 'run-1', scope, expiresAtMs: Date.now() + 60_000, body: {} });
       await checkpoints.claim({ runId: 'run-1', holderId: 'replica-a', leaseMs: 1_000 });

@@ -1788,7 +1788,7 @@
       },
       "ErrorCode": {
         "kind": "type",
-        "declaration": "0600ef8947a76854"
+        "declaration": "958af29fc2eb688b"
       },
       "ExecutionContext": {
         "kind": "interface",
@@ -2012,7 +2012,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "89a96b98bb854bae"
+        "declaration": "e07cb7aa5671dc8b"
       },
       "RunHandle": {
         "kind": "interface",
@@ -3206,6 +3206,10 @@
         "kind": "interface",
         "declaration": "62d878866b848d0f"
       },
+      "CheckpointOptions": {
+        "kind": "interface",
+        "declaration": "b6b1cceadb8b0a1c"
+      },
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
@@ -3318,6 +3322,10 @@
         "kind": "interface",
         "declaration": "91f2068267462312"
       },
+      "RunCheckpointPort": {
+        "kind": "interface",
+        "declaration": "379fff4b9385a3a2"
+      },
       "RunInspection": {
         "kind": "interface",
         "declaration": "7bd078937eb2d329"
@@ -3328,7 +3336,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "f4d8425b059c43fd"
+        "declaration": "d2eca5f45b925d93"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -3336,7 +3344,7 @@
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "2590bd24554d8a28"
+        "declaration": "0c0ef5666bf65aa9"
       },
       "SpeculationBranch": {
         "kind": "interface",
@@ -3349,6 +3357,10 @@
       "SpeculationResult": {
         "kind": "interface",
         "declaration": "4fe2c18361daf3a4"
+      },
+      "StoredRunCheckpoint": {
+        "kind": "interface",
+        "declaration": "17fe0a0eca023800"
       }
     },
     "@mayura/sandbox": {
@@ -3642,6 +3654,10 @@
         "kind": "interface",
         "declaration": "62d878866b848d0f"
       },
+      "CheckpointOptions": {
+        "kind": "interface",
+        "declaration": "b6b1cceadb8b0a1c"
+      },
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
@@ -3680,7 +3696,7 @@
       },
       "ErrorCode": {
         "kind": "type",
-        "declaration": "0600ef8947a76854"
+        "declaration": "958af29fc2eb688b"
       },
       "ExecutionContext": {
         "kind": "interface",
@@ -4006,9 +4022,13 @@
         "kind": "interface",
         "declaration": "a5f1603ca1e8b173"
       },
+      "RunCheckpointPort": {
+        "kind": "interface",
+        "declaration": "379fff4b9385a3a2"
+      },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "89a96b98bb854bae"
+        "declaration": "e07cb7aa5671dc8b"
       },
       "RunHandle": {
         "kind": "interface",
@@ -4024,7 +4044,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "f4d8425b059c43fd"
+        "declaration": "d2eca5f45b925d93"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -4032,7 +4052,7 @@
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "2590bd24554d8a28"
+        "declaration": "0c0ef5666bf65aa9"
       },
       "Schema": {
         "kind": "interface",
@@ -4061,6 +4081,10 @@
       "SpeculationResult": {
         "kind": "interface",
         "declaration": "4fe2c18361daf3a4"
+      },
+      "StoredRunCheckpoint": {
+        "kind": "interface",
+        "declaration": "17fe0a0eca023800"
       },
       "ToolApprovalBinding": {
         "kind": "interface",

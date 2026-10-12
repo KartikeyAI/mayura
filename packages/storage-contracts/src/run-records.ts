@@ -45,7 +45,7 @@ const replicaPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const statuses = new Set<RunRecordStatus>(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
   'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld',
-  'approval.requested', 'approval.resolved']);
+  'approval.requested', 'approval.resolved', 'run.paused', 'run.resumed']);
 /** Outcomes up to this size live in the run record; larger ones in chunk events of a companion aggregate. */
 const inlineOutcomeBytes = 262_144; const maxOutcomeBytes = 16_777_216; const chunkChars = 16_384; const chunksPerWrite = 16;
 /** One record write carries at most this much event data, well inside the store's one-MiB transaction bound. */

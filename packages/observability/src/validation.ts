@@ -133,6 +133,8 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
         keys(metadata, ['callId', 'toolId', 'decision'], ['actorId']); stableId(metadata['callId']); stableId(metadata['toolId']);
         if (!['approved', 'rejected', 'expired'].includes(metadata['decision'] as string)) throw new Error();
         if (Object.hasOwn(metadata, 'actorId')) stableId(metadata['actorId']); break;
+      case 'run.paused': case 'run.resumed':
+        keys(metadata, ['callId']); stableId(metadata['callId']); break;
       case 'events.gap':
         keys(metadata, ['from', 'to']);
         if (integer(metadata['from'], true) > integer(metadata['to'], true) || metadata['to'] !== sequence) throw new Error(); break;
