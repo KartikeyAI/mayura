@@ -1932,7 +1932,7 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "df4e97ee6268e166"
+        "declaration": "6b83b95e583f7405"
       },
       "ModelDefinitionCheck": {
         "kind": "interface",
@@ -1945,6 +1945,10 @@
       "ModelFailureReason": {
         "kind": "type",
         "declaration": "98685b0ded7b1871"
+      },
+      "ModelHistoryMessage": {
+        "kind": "type",
+        "declaration": "803b7ea3ac45fa13"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -1964,7 +1968,7 @@
       },
       "ModelRequest": {
         "kind": "interface",
-        "declaration": "82f94952a8231006"
+        "declaration": "dcb1767af2f2da9c"
       },
       "ModelResponse": {
         "kind": "type",
@@ -3308,7 +3312,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "4fc82571aa37c40c"
+        "declaration": "6d321894dad1e6a9"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -3844,7 +3848,7 @@
       },
       "ModelAdapter": {
         "kind": "interface",
-        "declaration": "df4e97ee6268e166"
+        "declaration": "6b83b95e583f7405"
       },
       "ModelCatalog": {
         "kind": "interface",
@@ -3865,6 +3869,10 @@
       "ModelFailureReason": {
         "kind": "type",
         "declaration": "98685b0ded7b1871"
+      },
+      "ModelHistoryMessage": {
+        "kind": "type",
+        "declaration": "803b7ea3ac45fa13"
       },
       "ModelInvocationError": {
         "kind": "class",
@@ -3900,7 +3908,7 @@
       },
       "ModelRequest": {
         "kind": "interface",
-        "declaration": "82f94952a8231006"
+        "declaration": "dcb1767af2f2da9c"
       },
       "ModelResponse": {
         "kind": "type",
@@ -3984,7 +3992,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "4fc82571aa37c40c"
+        "declaration": "6d321894dad1e6a9"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -7070,7 +7078,7 @@
       },
       "scriptedModel": {
         "kind": "function",
-        "declaration": "4359d4656cea6d0e"
+        "declaration": "fe4941aee91e0999"
       },
       "testImage": {
         "kind": "function",

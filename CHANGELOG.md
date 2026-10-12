@@ -6,6 +6,12 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Added
 
+- **Runs take a conversation history.**
+  - `runtime.submit(agent, { input, history })` sends the earlier turns, oldest first, before the run's own messages on every model call.
+  - History is whole turns: every tool call answered by its result, in order. An earlier final answer is `{ role: 'assistant', output }` (`ModelHistoryMessage`). It is checked before the run starts (`INVALID_INPUT`) and counts toward `limits.maxContextBytes`.
+  - Only adapters that declare `capabilities.history` receive `ModelRequest.history`. A history for any other adapter is refused with `INVALID_CONFIG`, never dropped.
+  - The model router declares it when every route does, and `scriptedModel` takes it unless given `history: false`.
+  - Hooks see the history in their view of a model call, and `run.started` reports how many messages it has. History carries no media yet.
 - **Thread and run-checkpoint storage on every store.** Two new storage contracts, the base that conversation threads and runs paused for approval will build on:
   - `store.threads` keeps a scope's conversations. It supports:
     - create, read, update with compare-and-set, and listing newest first, page by page;

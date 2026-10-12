@@ -60,7 +60,7 @@ describe('opaque control hook definitions', () => {
       expectTypeOf(event).toEqualTypeOf<HookEvent<'beforeModelCall'>>();
       expectTypeOf(event.purpose).toEqualTypeOf<'primary'>();
       expectTypeOf(event.modelId).toEqualTypeOf<string>();
-      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] }>();
+      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens' | 'history'>> & { readonly media?: readonly HookMessageMedia[] }>();
       expectTypeOf(ctx.step).toEqualTypeOf<number | null>();
       return { decision: 'continue' };
     } });

@@ -1,6 +1,6 @@
 import {
   assertPositiveInteger, Budget, freezeJson, jsonValue, MayuraError, publicError, validate,
-  type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelMessage, type ModelRequest,
+  type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelHistoryMessage, type ModelMessage, type ModelRequest,
   type Outcome, type Permissions, type RunHandle, type Schema, type Scope, type Media, mediaSummary,
 } from '@mayura/core';
 import { admitMedia, readManagedGuardDefinition } from '@mayura/core/host';
@@ -8,6 +8,7 @@ import { invokeTool, type AnyTool, type ToolOutcome } from '@mayura/tools';
 import { bindToolBudgetTicket } from '@mayura/tools/host';
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
+import { admitHistory } from './history.js';
 import { modelCost, modelFailure as publicModelFailure, modelFailureCost, modelResponse } from './response.js';
 import { createBatcher, createFieldExtractor } from './stream.js';
 import { childGateway, isAgentTool, type ChildOptions } from './composition.js';
@@ -76,9 +77,13 @@ export interface Runtime {
   readonly profile: 'ephemeral';
   /**
    * Start a run. `media` holds images or PDFs for the model to see with the input; the agent must accept them
-   * (`defineAgent({ media })`), and they are checked against its limits before the run starts.
+   * (`defineAgent({ media })`), and they are checked against its limits before the run starts. `history` is the
+   * conversation before this run, oldest first and in whole turns; it is sent before the input, counts toward
+   * `limits.maxContextBytes`, and needs a model adapter that declares `capabilities.history`.
    */
-  submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
+  submit<I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, options: {
+    readonly input: InferInput<I>; readonly media?: readonly Media[]; readonly history?: readonly ModelHistoryMessage[];
+  }): RunHandle<InferOutput<O>>;
   spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
   inspect(handle: RunHandle<unknown>): RunInspection;
   /**
@@ -315,7 +320,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 
   const start = <I extends Schema, O extends Schema>(
     agent: AgentDefinition<I, O>, suppliedInput: unknown, limits: Required<RuntimeLimits>, permissions: Permissions,
-    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false, suppliedMedia?: unknown,
+    parent?: RunState, inputAdmitted = false, externalSignal?: AbortSignal, speculative = false, suppliedMedia?: unknown, suppliedHistory?: unknown,
   ): RunHandle<InferOutput<O>> => {
     if (closed) throw new MayuraError('CONFLICT', 'Runtime is closed and cannot accept new runs.');
     assertAgent(agent);
@@ -326,6 +331,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Media is checked and copied now, before the run exists: a refusal names what to change.
     const inputMedia = admitMedia(suppliedMedia ?? [], agent.media, limits.maxMediaBytes, 'INVALID_INPUT', `Agent ${agent.id}`);
     let mediaBytes = inputMedia.bytes;
+    // History is checked and copied now too, and only sent to an adapter that takes it.
+    const history = suppliedHistory === undefined ? undefined : admitHistory(suppliedHistory, limits.maxContextBytes);
+    if (history && agent.model.capabilities.history !== true) {
+      throw new MayuraError('INVALID_CONFIG', `Agent ${agent.id}'s model adapter does not take a conversation history (capabilities.history). Use a provider that does, or submit without history.`);
+    }
     const id = crypto.randomUUID();
     const controller = new AbortController();
     const events = new EventBuffer(id, limits.maxEventRetention);
@@ -629,7 +639,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 
     const execute = async (): Promise<Outcome<InferOutput<O>>> => {
       events.emit('run.started', { profile: 'ephemeral', rootId: state.root.id, agentId: agent.id, ...(parent ? { parentId: parent.id } : {}),
-        ...(inputMedia.media.length > 0 ? { media: inputMedia.media.length } : {}) });
+        ...(inputMedia.media.length > 0 ? { media: inputMedia.media.length } : {}), ...(history ? { history: history.length } : {}) });
       checkCancelled();
       if (parent) {
         // The parent's own hooks decide delegation, in the parent's context and under its hook ceiling.
@@ -717,7 +727,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         const modelTools = agent.tools.map((tool) => Object.freeze({ id: tool.id, description: tool.description,
           ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: freezeJson(jsonValue(tool.inputJsonSchema)) as typeof tool.inputJsonSchema }),
         }));
-        const jsonRequest = freezeJson(jsonValue({ instructions: agent.instructions, messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }), ...(agent.outputJsonSchema === undefined ? {} : { outputJsonSchema: agent.outputJsonSchema }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
+        const jsonRequest = freezeJson(jsonValue({ instructions: agent.instructions, ...(history ? { history } : {}), messages: snapshot, tools: modelTools, ...(continuation === undefined ? {} : { continuation }), ...(agent.outputJsonSchema === undefined ? {} : { outputJsonSchema: agent.outputJsonSchema }) }, { maxBytes: limits.maxContextBytes })) as unknown as Omit<ModelRequest, 'signal' | 'maxOutputTokens'>;
         const withMedia = (message: ModelMessage, index: number): ModelMessage => mediaOf[index] ? Object.freeze({ ...message, media: mediaOf[index] }) : message;
         const requestData: Omit<ModelRequest, 'signal' | 'maxOutputTokens'> = mediaOf.some(Boolean)
           ? Object.freeze({ ...jsonRequest, messages: Object.freeze(jsonRequest.messages.map(withMedia)) }) : jsonRequest;
@@ -729,7 +739,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           // A content-only projection: private instructions and provider continuation never
           // enter hook context. These immutable fields are the same ones sent to the adapter.
           const modelFailure = await control(Object.freeze({ stage: 'beforeModelCall', purpose: 'primary', modelId: agent.model.id,
-            request: Object.freeze({ messages: jsonRequest.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens,
+            request: Object.freeze({ ...(jsonRequest.history ? { history: jsonRequest.history } : {}), messages: jsonRequest.messages, tools: requestData.tools, maxOutputTokens: limits.maxOutputTokens,
               ...(hookMedia.length > 0 ? { media: hookMedia } : {}) }) }), step);
           if (modelFailure) return { done: true, outcome: modelFailure };
           const rawResponse = await cancellable(() => runOperations.run(controller.signal, async () => {
@@ -870,8 +880,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   };
   return Object.freeze({
     profile: 'ephemeral',
-    submit: <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: { readonly input: InferInput<I>; readonly media?: readonly Media[] }) =>
-      start(agent, submission.input, rootLimits, rootPermissions, undefined, false, undefined, false, submission.media),
+    submit: <I extends Schema, O extends Schema>(agent: AgentDefinition<I, O>, submission: {
+      readonly input: InferInput<I>; readonly media?: readonly Media[]; readonly history?: readonly ModelHistoryMessage[];
+    }) => start(agent, submission.input, rootLimits, rootPermissions, undefined, false, undefined, false, submission.media, submission.history),
     spawn: <I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, submission: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }) =>
       admitChild(lookup(parent), agent, submission.input, submission, false, undefined, false, submission.media),
     speculate: async <I extends Schema, O extends Schema>(parentHandle: RunHandle<unknown>, speculation: SpeculationOptions<I, O>): Promise<SpeculationResult<InferOutput<O>>> => {

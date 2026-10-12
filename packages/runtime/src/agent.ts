@@ -161,6 +161,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   const model = options.model;
   if (!model || !isModelId(model.id) || typeof model.generate !== 'function'
     || typeof model.capabilities?.tools !== 'boolean' || typeof model.capabilities.structuredOutput !== 'boolean'
+    || (model.capabilities.history !== undefined && typeof model.capabilities.history !== 'boolean')
     || !Number.isSafeInteger(model.maxCostMicros) || model.maxCostMicros < 0) {
     throw new MayuraError('INVALID_CONFIG', 'A model adapter with explicit capabilities and bounded cost is required.');
   }
@@ -213,7 +214,8 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     instructions: options.instructions,
     model: Object.freeze({
       id: model.id,
-      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput, ...(canSee ? { media: canSee } : {}) }),
+      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput, ...(canSee ? { media: canSee } : {}),
+        ...(model.capabilities.history === true ? { history: true } : {}) }),
       maxCostMicros: model.maxCostMicros,
       generate: model.generate.bind(model),
       ...(typeof model.stream === 'function' ? { stream: model.stream.bind(model) } : {}),

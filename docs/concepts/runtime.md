@@ -37,6 +37,33 @@ try {
 }
 ```
 
+### A conversation history
+
+A run starts from its input. To continue a conversation, pass the turns before it as `history`, oldest first:
+
+```ts
+const followUp = runtime.submit(supportAgent, {
+  input: { message: 'And when will it arrive?' },
+  history: [
+    { role: 'user', content: { message: 'Where is order A-1001?' } },
+    { role: 'assistant', calls: [{ id: 'call-1', toolId: 'orders.lookup', input: { orderId: 'A-1001' } }] },
+    { role: 'tool', callId: 'call-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+    { role: 'assistant', output: { reply: 'Order A-1001 has shipped.' } },
+  ],
+});
+```
+
+- **Whole turns:** every tool call has its result, in the order called, before the next message. An earlier final
+  answer is `{ role: 'assistant', output }`. A history that breaks this is refused with `INVALID_INPUT` before the run
+  starts.
+- **Sent on every model call:** the history goes before the run's own messages on every model call of the run, and
+  counts toward `limits.maxContextBytes`.
+- **Adapter support:** only a model adapter that declares `capabilities.history` takes a history. With another
+  adapter, the submission is refused with `INVALID_CONFIG` rather than sent without it.
+- **No media yet:** history carries no media in this release.
+- **Hooks:** they see the history in their content view of a model call.
+- **Events:** `run.started` reports how many messages it has.
+
 ## Options
 
 | Option | Default | What it is |

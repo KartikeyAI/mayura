@@ -9,11 +9,12 @@ import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
  * (`streamChunk` characters each, 16 by default), then the complete response, exactly as a provider adapter streams.
  *
  * It can "see" every media type and URLs, so agents that accept images or PDFs can be tested; a scripted step receives
- * the request with its `media`. Pass `media: false` to test a model that cannot see.
+ * the request with its `media`. Pass `media: false` to test a model that cannot see. It takes a conversation history
+ * (`capabilities.history`), which a scripted step finds in `request.history`; pass `history: false` to test one that does not.
  */
 export function scriptedModel(
   responses: readonly (ModelResponse | ((request: ModelRequest) => ModelResponse | Promise<ModelResponse>))[],
-  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number; readonly media?: ModelMediaCapability | false } = {},
+  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number; readonly media?: ModelMediaCapability | false; readonly history?: boolean } = {},
 ): ModelAdapter {
   const steps = [...responses];
   let position = 0;
@@ -29,7 +30,7 @@ export function scriptedModel(
   };
   return Object.freeze({
     id: options.id ?? 'scripted',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true,
+    capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(options.history === false ? {} : { history: true }),
       ...(options.media === false ? {} : { media: options.media ?? Object.freeze({ types: MEDIA_TYPES, urls: true }) }) }),
     maxCostMicros: options.maxCostMicros ?? 0,
     generate: next,

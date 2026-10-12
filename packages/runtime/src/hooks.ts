@@ -22,7 +22,7 @@ export interface HookEvents {
      * Content projection only; private instructions, continuation and execution authority are absent. Messages carry no
      * media here: `media` summarizes it (type and size) by message index, and hooks never see its bytes.
      */
-    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] };
+    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens' | 'history'>> & { readonly media?: readonly HookMessageMedia[] };
   };
   /** Tool proposals are not final schema-transformed arguments. */
   readonly beforeToolCall: {

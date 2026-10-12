@@ -357,6 +357,10 @@ export const myModel: ModelAdapter = {
 - An optional `stream(request)` method yields `{ type: 'output.delta', text }` fragments of the final output's JSON
   text, then exactly one `{ type: 'response', response }`. See [Streaming](streaming.md).
 - `continuation` on a response is opaque state the runtime hands back on the next call of the same run.
+- `capabilities.history: true` says the adapter takes a conversation history.
+  - `request.history` then holds the earlier turns, oldest first, to send before `request.messages`.
+  - An earlier final answer in it is `{ role: 'assistant', output }`.
+  - Without the capability, an adapter is never sent a history.
 
 For tests, `scriptedModel` from `mayura/testing` is a ready-made adapter; see [Testing](testing.md).
 
