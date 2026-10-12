@@ -14,6 +14,8 @@ pnpm, Yarn and Bun work too. Schemas need nothing else: `mayura` exports `z`, wh
 ## Requirements
 
 - **Node.js 22** (22.12.0 or later) or **Node.js 24** (24.14.1 or later). See [Supported platforms](project/support.md).
+- **Other runtimes:** Bun, Deno, Cloudflare Workers and Vercel Edge run every entry point except the Node-only ones;
+  see [Edge runtimes](guides/deployment.md#edge-runtimes).
 - **ES modules.** Mayura is published as ES modules only: use `"type": "module"` in `package.json`, `.mjs`/`.mts`
   files, or a bundler.
 - **TypeScript** is optional but recommended. Mayura's types are tested with TypeScript 7 and these settings:

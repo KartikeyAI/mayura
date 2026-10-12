@@ -16,14 +16,15 @@ with a CLI that scaffolds, runs and operates your project.
 
 - **Typed agents and tools.** Schemas for inputs and outputs with the built-in `z` (Zod), or any Standard Schema
   validator, validated at runtime and inferred in TypeScript.
-- **Any model.** OpenAI, Anthropic, and OpenAI-compatible providers such as Groq, Gemini, Mistral, DeepSeek, xAI,
-  OpenRouter, Together, Fireworks, Azure OpenAI and local servers. Route between providers with automatic failover.
+- **Any model.** A model registry with `provider/model` names, dated prices, retries and fallback chains. Packages for
+  OpenAI, Anthropic, Google Gemini, Amazon Bedrock, Azure OpenAI, Mistral, Groq and Ollama, and any OpenAI-compatible
+  provider such as DeepSeek, xAI, OpenRouter, Together, Fireworks and local servers.
 - **Explicit permissions.** A run can use only the models, tools and effects you grant; nothing is implied by
   registering a tool.
 - **Cost control.** Model prices, per-call and per-run cost caps, and step, tool-call and time limits on every run;
   budgets shared across agents and workflows.
-- **Durable workflows.** Steps, approvals, timers, signals, fan-out, sagas and loops that survive restarts, on SQLite
-  or PostgreSQL.
+- **Durable workflows.** Steps, approvals, timers, signals, fan-out, sagas and loops that survive restarts, on SQLite,
+  PostgreSQL, libSQL (Turso), MySQL, MongoDB, Cloudflare D1 or DynamoDB.
 - **People in the loop.** Approvals and typed questions for people, answered from code, the CLI, a React form or the
   operator console.
 - **Streaming.** Stream an agent's answer as it is written, with guards on every batch.
@@ -36,15 +37,27 @@ with a CLI that scaffolds, runs and operates your project.
 - **Skills, MCP and Code Mode.** Load `SKILL.md` skills on demand, call MCP tools, and run model-written code in a
   QuickJS or Docker sandbox.
 - **Multi-agent.** Child agents, agents as tools and speculative branches under one shared budget.
+- **Sandboxes and browsers.** Isolated Linux machines (Docker built in, or E2B, Vercel, Daytona, Modal and eight more)
+  and real browsers kept to the origins you allow (local Chrome, or Browserbase, Steel, Kernel and seven more).
+- **Voice and files.** Speech to text and text to speech with seven providers, and file storage on S3, R2, GCS,
+  Azure Blob, Vercel Blob, Google Drive and more.
+- **Sign-in and API keys.** Verify tokens from Clerk, Auth0, Supabase, Firebase, WorkOS, Entra ID, Okta, Cognito and
+  others, and issue, rotate and revoke your own API keys with scopes, rate limits and credits.
 - **Serve it anywhere.** An authenticated HTTP server with live events, a browser client, React hooks and components,
   an operator console, and terminal chat or one-shot commands.
-- **Observability.** Run events, workflow tracing and OpenTelemetry (OTLP) export. Nothing is sent anywhere unless you
+- **Observability.** Run events, workflow tracing and OpenTelemetry (OTLP) export with GenAI attributes, and packages
+  for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog. Nothing is sent anywhere unless you
   configure it.
+- **Deploy anywhere.** `mayura deploy` to Docker, Compose, Kubernetes and eleven platforms, from Fly.io and Cloud Run
+  to AWS Lambda and Cloudflare. Runs on Node.js, Bun, Deno, Cloudflare Workers and Vercel Edge.
+- **85 integration packages.** Optional `@mayurajs/*` packages, released with `mayura`: see the
+  [list](docs/reference/integrations.md).
 - **Test offline.** Scripted models run agents, tools and workflows without a network or an API key.
 
 ## Quickstart
 
-Mayura runs on Node.js 22 (22.12 or later) or 24 (24.14.1 or later).
+Mayura runs on Node.js 22 (22.12 or later) or 24 (24.14.1 or later). Apart from the CLI and other Node-only entry
+points, it also runs on Bun, Deno, Cloudflare Workers and Vercel Edge.
 
 ```bash
 npm install mayura
