@@ -31,8 +31,9 @@ await browser.release();
   give `endpoint`, such as `wss://browserless.internal`; plain `ws://` only on this machine.
 - Ad blocking and stealth are off unless asked for; no proxy is used. There is no live view.
 - The token travels in the connection's query, as Browserless takes it: treat the URL as a secret; Mayura never logs it.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Browserless itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Browserless
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `token`, `region`, `endpoint`, `blockAds`, `stealth`, `maxLifetimeMs` (1 hour).
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.

@@ -36,8 +36,9 @@ await browser.release();
   20 seconds.
 - Inside a Worker, Cloudflare's Browser binding is the way to a browser; this package is for everywhere else. For
   Browser Run's REST actions (markdown, screenshots, crawls), see `@mayurajs/cloudflare-quick-action`.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Browser Run itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Browser Run
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `accountId`, `apiToken`, `keepAliveMs`, `liveView`, `maxLifetimeMs` (1 hour), `fetch`, `baseUrl`.
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.

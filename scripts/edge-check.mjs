@@ -15,7 +15,7 @@ const facade = join(workspace, 'packages', 'mayura');
 /** Entry points that need Node: the filesystem, child processes, native modules, TCP sockets or the terminal. */
 export const NODE_ONLY = new Map([
   ['./adapter-code-docker', 'runs Docker as a child process'],
-  ['./adapter-code-quickjs', 'runs QuickJS in a worker thread'],
+  ['./adapter-code-quickjs', 'runs QuickJS in a child process'],
   ['./artifacts', 'the local artifact store writes to the filesystem'],
   ['./cli', 'the command line'],
   ['./cli/deploy', 'runs deployment tools as child processes'],

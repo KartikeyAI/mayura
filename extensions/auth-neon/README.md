@@ -28,9 +28,8 @@ const authenticate = neonAuthAuthenticator({
   `banExpires` or one still ahead) is refused.
 - **What you get.** `identity` receives the user: `userId`, `email`, `emailVerified`, `name`, `role`, and the raw
   `claims`. Nothing is granted unless `identity` grants it.
-- **Getting a token.** In your app, Neon's client gives the JWT with `authClient.token()`, or in the `set-auth-jwt`
-  header of `getSession()`; send it to Mayura's server as a bearer token. Tokens last 15 minutes.
-- Applications still on the earlier Stack Auth-based Neon Auth use `@mayurajs/auth-hexclave`.
+- **Getting a token.** In your app, Neon's client gives the JWT as `data.token` from `authClient.token()`, or in the
+  `set-auth-jwt` header of `getSession()`; send it to Mayura's server as a bearer token. Tokens last 15 minutes.
 - Options: `authUrl`, `identity`, `clockSkewMs` (5 s), `maxIdentityMs` (60 s), `fetch`.
 
 See [Authentication and API keys](https://mayurajs.com/docs/guides/authentication/). Apache-2.0.

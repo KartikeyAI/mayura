@@ -28,8 +28,9 @@ await browser.release();
   them on with `solveCaptchas` and `recordSession`. Proxies are not used. Labels become the session's `userMetadata`.
 - `liveViewUrl` is Browserbase's debugger view of the session, valid for its lifetime; anyone with it can watch and
   use the browser. Turn it off with `liveView: false`.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Browserbase itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Browserbase
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Treat the connect URL as a secret, as Browserbase does not say what it carries: Mayura never logs it.
 - Options: `apiKey`, `projectId`, `region`, `liveView`, `solveCaptchas`, `recordSession`, `blockAds`, `maxLifetimeMs`
   (6 hours), `fetch`, `baseUrl`.

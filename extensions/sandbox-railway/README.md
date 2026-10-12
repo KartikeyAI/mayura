@@ -28,7 +28,7 @@ await sandbox.release();
 - Sandboxes are isolated from your environment's private network, except one created with `ports`: Railway publishes
   ports only for sandboxes that join it, so `url(port)` comes at that cost.
 - Railway has no maximum lifetime, only an idle timeout: a release destroys the sandbox when its lifetime ends, and the
-  idle timeout (the lifetime, at most 2 hours) ends one whose release never came.
+  idle timeout (the lifetime, at most 5 minutes) ends one whose release never came.
 - Commands run with Railway's exec; their output goes to files, of which only as much as is kept is read back, and
   standard input travels as a file. A timeout or cancellation kills the command's process group through Railway, and
   every process carrying its tag. Files use Railway's file API.

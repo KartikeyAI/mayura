@@ -30,8 +30,9 @@ await browser.release();
   it only shows (`liveView: 'view'`); `'interact'` lets them use it too, and `false` gives none.
 - The key travels on the CDP WebSocket as Steel asks (`apiKey` in its query): treat the URL as a secret; Mayura never
   logs it.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Steel itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Steel
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `apiKey`, `liveView`, `solveCaptcha`, `blockAds`, `inactivityTimeoutMs`, `maxLifetimeMs` (24 hours), `fetch`,
   `baseUrl`.
 

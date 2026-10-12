@@ -53,8 +53,9 @@ const browsers = createBrowsers(firecrawlBrowsers({ apiKey }), { maxBrowsers: 2,
 - `liveViewUrl` is Firecrawl's live view: view-only by default; `liveView: 'interact'` gives the interactive one, which
   lets whoever has the link use the browser; `false` gives none.
 - Treat the CDP URL as a secret, as Firecrawl's docs differ on what it carries: Mayura never logs it.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Firecrawl itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Firecrawl
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `apiKey`, `liveView`, `activityTimeoutSeconds`, `maxLifetimeMs` (1 hour), `fetch`, `baseUrl`.
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.

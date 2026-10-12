@@ -36,7 +36,6 @@ const authenticate = workosAuthenticator({
 - **What you get.** `identity` receives the session: `kind` (`authkit` or `connect`), `subject` (the user, or a
   machine's client ID), `machine`, `sessionId`, `clientId`, `orgId`, `role` and `roles`, `permissions` (AuthKit),
   `scopes` (Connect), and the raw `claims`. Nothing is granted unless `identity` grants it.
-- WorkOS API keys are verified by `@mayurajs/km-workos`.
 - Options: `clientId`, `identity`, `issuer`, `connect: { domain, audience }`, `allowMachines`, `clockSkewMs` (5 s),
   `maxIdentityMs` (60 s), `fetch`.
 

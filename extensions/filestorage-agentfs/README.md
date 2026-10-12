@@ -9,10 +9,11 @@ npm install mayura agentfs-sdk @mayurajs/filestorage-agentfs
 ```ts
 import { AgentFS } from 'agentfs-sdk';
 import { createFileStore } from 'mayura/files';
-import { agentFsFiles } from '@mayurajs/filestorage-agentfs';
+import { agentFsFiles, type AgentFsLike } from '@mayurajs/filestorage-agentfs';
 
 const agent = await AgentFS.open({ id: 'support-agent' });
-const files = createFileStore(agentFsFiles({ fs: agent.fs, singleWriter: true }), { maxFileBytes: 10 * 1024 * 1024 });
+// agentfs-sdk 0.6.4 types writeFile with Node's Buffer; the package passes Uint8Array, which it accepts.
+const files = createFileStore(agentFsFiles({ fs: agent.fs as AgentFsLike, singleWriter: true }), { maxFileBytes: 10 * 1024 * 1024 });
 ```
 
 - Each key is a path under `root` (`/files` by default). A file's etag is the SHA-256 of its content; its media type and

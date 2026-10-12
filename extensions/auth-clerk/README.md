@@ -38,7 +38,6 @@ const authenticate = clerkAuthenticator({
   `actor` when someone is impersonating the user; and the raw `claims`. Nothing is granted unless `identity` grants it.
 - `clerkFrontendApi(publishableKey)`, `clerkSession(claims)` and `clerkPermissions(claims)` are exported for your own
   checks.
-- Clerk API keys are verified by `@mayurajs/km-clerk`.
 - Options: `publishableKey` or `frontendApi`, `jwtKey`, `authorizedParties`, `identity`, `allowPending`, `clockSkewMs`,
   `maxIdentityMs` (60 s), `fetch`.
 

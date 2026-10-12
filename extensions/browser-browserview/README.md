@@ -30,8 +30,9 @@ await browser.release();
   Workers or Deno, give `createBrowsers` a `webSocket` that can.
 - `liveViewUrl` is BrowserView's watch link by default (`liveView: 'view'`); `'interact'` gives its viewer, whose token
   lets whoever has the link use the browser; `false` gives none.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  BrowserView itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against BrowserView
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `apiKey`, `liveView`, `stealth`, `idleTimeoutSeconds`, `maxLifetimeMs` (4 hours), `fetch`, `baseUrl`.
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.

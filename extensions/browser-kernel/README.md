@@ -29,8 +29,9 @@ await browser.release();
   (`liveView: 'view'`); `'interact'` lets whoever has the link use it too; `false` gives none and runs the browser
   headless.
 - Treat the CDP URL as a secret, as Kernel does not say what it carries: Mayura never logs it.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Kernel itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Kernel
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `apiKey`, `liveView`, `stealth`, `region` (`us-east`, `eu-west`, `ap-southeast`), `standbyTimeoutSeconds`,
   `maxLifetimeMs` (24 hours), `fetch`, `baseUrl`.
 

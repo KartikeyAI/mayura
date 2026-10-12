@@ -30,8 +30,9 @@ await browser.release();
 - There is no live view unless `liveView: true`: whoever has Browser Use's live link may be able to use the browser,
   not only watch it.
 - Treat the CDP URL as a secret, as Browser Use does not say what it carries: Mayura never logs it.
-- Origins are enforced inside the browser, by intercepting its requests over CDP. This has not yet been tried against
-  Browser Use itself: should its connection not allow that, opening a browser fails rather than running unchecked.
+- Origins are enforced inside the browser, by intercepting its requests over CDP; a live check against Browser Use
+  confirmed it on October 6, 2026. Should a connection ever not allow that, opening a browser fails rather than
+  running unchecked.
 - Options: `apiKey`, `liveView`, `proxyCountryCode`, `solveCaptchas`, `maxLifetimeMs` (4 hours), `fetch`, `baseUrl`.
 
 See the [browser guide](https://mayurajs.com/docs/guides/browsers/). Apache-2.0.
