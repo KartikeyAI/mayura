@@ -361,6 +361,8 @@ export const myModel: ModelAdapter = {
   - `request.history` then holds the earlier turns, oldest first, to send before `request.messages`.
   - An earlier final answer in it is `{ role: 'assistant', output }`.
   - Without the capability, an adapter is never sent a history.
+  - Keep anything that counts this run's turns (a continuation's index, replayed reasoning) on `request.messages` alone,
+    and never give a new tool call an id the history already uses.
 
 For tests, `scriptedModel` from `mayura/testing` is a ready-made adapter; see [Testing](testing.md).
 

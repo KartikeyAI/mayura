@@ -12,6 +12,14 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - Only adapters that declare `capabilities.history` receive `ModelRequest.history`. A history for any other adapter is refused with `INVALID_CONFIG`, never dropped.
   - The model router declares it when every route does, and `scriptedModel` takes it unless given `history: false`.
   - Hooks see the history in their view of a model call, and `run.started` reports how many messages it has. History carries no media yet.
+  - Every Mayura provider takes a history: the built-in OpenAI Responses, OpenAI-compatible Chat and Anthropic adapters, and `@mayurajs/provider-openai`, `-azure`, `-anthropic`, `-groq`, `-google`, `-bedrock`, `-mistral` and `-ollama`.
+    - Each sends it in its provider's format, without reasoning or thinking state, and keeps its continuation counting only the run's own turns.
+    - A call id the provider refuses is renamed on the wire, and a new call never reuses a history id.
+    - For an agent without tools, Anthropic and Bedrock get earlier calls and results as JSON text, since they refuse tool blocks in a request without tools.
+
+### Fixed
+
+- `@mayurajs/provider-google`: when Gemini gives a call no id, the id made up for it no longer repeats an earlier call's id in the run, which the runtime refused as a conflict.
 - **Thread and run-checkpoint storage on every store.** Two new storage contracts, the base that conversation threads and runs paused for approval will build on:
   - `store.threads` keeps a scope's conversations. It supports:
     - create, read, update with compare-and-set, and listing newest first, page by page;

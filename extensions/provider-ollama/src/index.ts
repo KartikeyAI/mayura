@@ -1,6 +1,6 @@
 import { Ollama } from 'ollama/browser';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 
@@ -102,10 +102,28 @@ const withNames = (text: string, media: readonly Media[] | undefined): string =>
 
 /** One of the model's own tool-call turns in this run: its thinking and the ids given to its calls. */
 type OwnTurn = { thinking: string | null; calls: string[] };
-/** The conversation as Ollama chat messages; `assistants` are the model's own earlier tool-call turns. */
+/**
+ * The history as Ollama chat messages, in the encoding this run's own turns use, without thinking (history has none).
+ * This run's tools keep their names; a tool only the history used gets its own.
+ */
+function historyMessages(request: ModelRequest, history: readonly ModelHistoryMessage[]): JsonValue[] {
+  const used = history.flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls.map(call => call.toolId) : message.role === 'tool' ? [message.toolId] : []);
+  const names = modelToolNames([...new Set([...request.tools.map(tool => tool.id), ...used])]);
+  return history.map((message): JsonValue => {
+    if ('media' in message && message.media?.length) return failed('configuration');
+    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+    if (message.role === 'tool') return { role: 'tool', tool_name: names.get(message.toolId)!, content: JSON.stringify(message.result) };
+    if ('output' in message) return { role: 'assistant', content: JSON.stringify(message.output) };
+    return { role: 'assistant', content: '', tool_calls: message.calls.map(call => ({ function: { name: names.get(call.toolId)!, arguments: call.input } })) };
+  });
+}
+/**
+ * The conversation as Ollama chat messages: the history first, then this run's messages. `assistants` are the model's
+ * own earlier tool-call turns in this run, counted in this run's messages alone.
+ */
 function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>, assistants: readonly OwnTurn[]): JsonValue[] {
   let turn = 0;
-  return [{ role: 'system', content: request.instructions }, ...(request.messages as readonly ModelMessage[]).map((message): JsonValue => {
+  return [{ role: 'system', content: request.instructions }, ...request.history ? historyMessages(request, request.history) : [], ...(request.messages as readonly ModelMessage[]).map((message): JsonValue => {
     if (message.role === 'user') return { role: 'user', content: withNames(JSON.stringify(message.content), message.media), ...images(message.media) };
     if (message.role === 'tool') {
       const name = aliases.get(message.toolId); if (!name) return failed();
@@ -120,9 +138,9 @@ function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>
     return { role: 'assistant', content: '', ...(own?.thinking ? { thinking: own.thinking } : {}), tool_calls: toolCalls };
   })];
 }
-/** Ids for a response's tool calls, which Ollama does not give: unique within the run. */
+/** Ids for a response's tool calls, which Ollama does not give: unique within the conversation, its history included. */
 function callIds(request: ModelRequest, count: number): string[] {
-  const used = new Set(request.messages.flatMap(message => message.role === 'assistant' ? message.calls.map(call => call.id) : message.role === 'tool' ? [message.callId] : []));
+  const used = new Set([...request.history ?? [], ...request.messages].flatMap(message => message.role === 'assistant' ? 'calls' in message ? message.calls.map(call => call.id) : [] : message.role === 'tool' ? [message.callId] : []));
   const ids: string[] = [];
   for (let next = used.size + 1; ids.length < count; next++) if (!used.has(`call_${next}`)) ids.push(`call_${next}`);
   return ids;
@@ -278,7 +296,7 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),

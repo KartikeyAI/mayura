@@ -58,8 +58,13 @@ const followUp = runtime.submit(supportAgent, {
   starts.
 - **Sent on every model call:** the history goes before the run's own messages on every model call of the run, and
   counts toward `limits.maxContextBytes`.
-- **Adapter support:** only a model adapter that declares `capabilities.history` takes a history. With another
-  adapter, the submission is refused with `INVALID_CONFIG` rather than sent without it.
+- **Adapter support:** only a model adapter that declares `capabilities.history` takes a history. Every Mayura
+  provider does. With an adapter that doesn't, the submission is refused with `INVALID_CONFIG` rather than sent without
+  it.
+- **Across providers:** a history can come from another provider's run. Each adapter sends it in its provider's own
+  format, with no reasoning or thinking state. Call ids a provider refuses (Anthropic and Bedrock allow fewer
+  characters, Mistral needs nine letters and digits) are renamed on the wire only. Anthropic and Bedrock refuse tool
+  blocks in a request without tools, so for an agent without tools, earlier calls and results are sent as JSON text.
 - **No media yet:** history carries no media in this release.
 - **Hooks:** they see the history in their content view of a model call.
 - **Events:** `run.started` reports how many messages it has.

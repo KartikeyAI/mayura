@@ -1,4 +1,4 @@
-import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelMediaCapability, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
+import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
 import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
 
 /**
@@ -180,6 +180,24 @@ const ALL_MEDIA: ModelMediaCapability = Object.freeze({ types: MEDIA_TYPES, urls
 const TOOL_MEDIA_NOTE = 'Media returned by the tool calls above:';
 
 /**
+ * Provider names for every tool a request mentions: this run's tools first, so their names are exactly the ones used
+ * without a history, then any tool only the history calls (an earlier conversation may have used tools this run lacks).
+ */
+function conversationToolNames(request: ModelRequest): ReadonlyMap<string, string> {
+  const ids = request.tools.map(tool => tool.id); const named = new Set(ids);
+  for (const message of request.history ?? []) {
+    if (message.role === 'assistant' && 'calls' in message) for (const call of message.calls) if (!named.has(call.toolId)) { named.add(call.toolId); ids.push(call.toolId); }
+  }
+  return modelToolNames(ids);
+}
+/** The call ids a history already uses: a call of this run that reuses one would make the conversation ambiguous. */
+function historyCallIds(history: readonly ModelHistoryMessage[] | undefined): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const message of history ?? []) if (message.role === 'assistant' && 'calls' in message) for (const call of message.calls) ids.add(call.id);
+  return ids;
+}
+
+/**
  * Responses input for `messages`, whose first is `request.messages[offset]`. Media appears as placeholders
  * (`{ type: 'mayura_media', message, item }`) that `hydrateResponsesInput` replaces with the real parts, so the stored
  * continuation never holds media bytes.
@@ -205,6 +223,20 @@ function messagesToInput(messages: readonly ModelMessage[], offset: number, hasC
   }
   flush();
   return result;
+}
+/**
+ * Responses input for a run's history, sent before the run's own input. Earlier tool calls are plain `function_call`
+ * items with no reasoning items: history carries no provider state, and OpenAI needs reasoning back only for the tool
+ * calls since the latest user message, which are this run's own. An earlier final answer is an assistant message
+ * holding the answer's JSON text, the form the model was asked to answer in.
+ */
+function historyToInput(history: readonly ModelHistoryMessage[], names: ReadonlyMap<string, string>): JsonValue[] {
+  return history.flatMap((message): JsonValue[] => {
+    if (message.role === 'user') return [{ role: 'user', content: JSON.stringify(message.content) }];
+    if (message.role === 'tool') return [{ type: 'function_call_output', call_id: message.callId, output: JSON.stringify(message.result) }];
+    if ('output' in message) return [{ role: 'assistant', content: JSON.stringify(message.output) }];
+    return message.calls.map(call => ({ type: 'function_call', call_id: call.id, name: names.get(call.toolId) ?? failed(), arguments: JSON.stringify(call.input) }));
+  });
 }
 /** The Responses part for one piece of media. */
 function responsesMediaPart(item: Media): JsonValue {
@@ -273,10 +305,14 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
         }
         const additions = messagesToInput(request.messages.slice(consumed), consumed, request.continuation !== undefined, aliases);
         const input = [...history, ...additions];
+        // The conversation before this run goes first on every call. It is rendered afresh each time and never stored in
+        // the continuation, whose items and `consumed` count are this run's own.
+        const prior = request.history === undefined ? [] : historyToInput(request.history, conversationToolNames(request));
+        const earlierCallIds = historyCallIds(request.history);
         const tools = request.tools.map(tool => ({ type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool), strict: true }));
         const outputSchema = outputSchemaFor(fixedOutput, request.outputJsonSchema);
         // Media placeholders become real parts only in the request body; encoded media is allowed on top of the JSON limit.
-        const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input: hydrateResponsesInput(input, request.messages), tools,
+        const body = JSON.stringify(jsonValue({ model, instructions: request.instructions, input: hydrateResponsesInput([...prior, ...input], request.messages), tools,
           store: false, stream: onDelta !== undefined, include: ['reasoning.encrypted_content'], parallel_tool_calls: true,
           max_output_tokens: request.maxOutputTokens,
           text: { format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } },
@@ -302,7 +338,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
           if (item['type'] === 'reasoning') continue;
           if (item['type'] === 'function_call') {
             const callId = item['call_id']; const name = item['name']; const args = item['arguments'];
-            if (typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(callId) || callIds.has(callId) || typeof name !== 'string' || !ids.has(name) || typeof args !== 'string') return failed();
+            if (typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(callId) || callIds.has(callId) || earlierCallIds.has(callId) || typeof name !== 'string' || !ids.has(name) || typeof args !== 'string') return failed();
             callIds.add(callId); calls.push({ id: callId, toolId: ids.get(name)!, input: jsonValue(JSON.parse(args)) });
           } else if (item['type'] === 'message') {
             if (item['role'] !== 'assistant' || !Array.isArray(item['content'])) return failed();
@@ -350,7 +386,7 @@ export function openAIResponses(options: OpenAIResponsesOptions): ModelAdapter {
     return completed ?? failed();
   };
   return Object.freeze({
-    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
+    id: 'openai.responses', capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -397,6 +433,22 @@ function compatibleMessages(messages: readonly ModelMessage[], aliases: Map<stri
     if (!Array.isArray(ownCalls) || ownCalls.length !== calls.length || ownCalls.some((call, index) => (call as JsonObject)['id'] !== calls[index]!.id)) return failed();
     return own;
   }
+}
+/**
+ * Chat Completions messages for a run's history, sent before the run's own. Earlier tool-call turns carry no
+ * `reasoning_content`: history holds no provider state, and inventing one would misstate the turn. (DeepSeek documents
+ * that with tools in thinking mode it wants every earlier turn's reasoning back; such a provider may refuse a history.)
+ * An earlier final answer is an assistant message holding the answer's JSON text, the form the model was asked to
+ * answer in.
+ */
+function compatibleHistory(history: readonly ModelHistoryMessage[], names: ReadonlyMap<string, string>): JsonValue[] {
+  return history.map((message): JsonValue => {
+    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+    if (message.role === 'tool') return { role: 'tool', tool_call_id: message.callId, content: JSON.stringify(message.result) };
+    if ('output' in message) return { role: 'assistant', content: JSON.stringify(message.output) };
+    return { role: 'assistant', content: null, tool_calls: message.calls.map(call => ({ id: call.id, type: 'function',
+      function: { name: names.get(call.toolId) ?? failed(), arguments: JSON.stringify(call.input) } })) };
+  });
 }
 /** The fields of a provider assistant turn worth sending back: its text, reasoning and tool calls, nothing else. */
 function assistantTurn(message: JsonObject): JsonObject {
@@ -502,7 +554,8 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           ? `${request.instructions}\n\nAnswer with one JSON object, and nothing else, that matches this JSON Schema:\n${JSON.stringify(outputSchema)}`
           : request.instructions;
         const body = JSON.stringify(jsonValue({ ...extraBody, model, stream: onDelta !== undefined, ...(onDelta ? { stream_options: { include_usage: true } } : {}),
-          messages: [{ role: 'system', content: instructions }, ...compatibleMessages(request.messages, aliases, assistants)],
+          messages: [{ role: 'system', content: instructions }, ...(request.history === undefined ? [] : compatibleHistory(request.history, conversationToolNames(request))),
+            ...compatibleMessages(request.messages, aliases, assistants)],
           ...(tools.length > 0 ? { tools, parallel_tool_calls: true } : {}), [tokenLimitField]: request.maxOutputTokens,
           response_format: outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'mayura_output', strict: true, schema: outputSchema } },
         }, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) }));
@@ -518,11 +571,12 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
         const choice = object(payload['choices'][0]); const message = object(choice['message']);
         if (message['role'] !== 'assistant') return failed();
         if (choice['finish_reason'] === 'tool_calls') {
+          const earlierCallIds = historyCallIds(request.history);
           if (!Array.isArray(message['tool_calls']) || message['tool_calls'].length < 1 || message['tool_calls'].length > 128) return failed();
           const seen = new Set<string>(); const calls = message['tool_calls'].map(raw => {
             const call = object(raw); const fn = object(call['function']); const callId = call['id']; const alias = fn['name'];
             if (call['type'] !== 'function' || typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId)
-              || seen.has(callId) || typeof alias !== 'string' || !ids.has(alias) || typeof fn['arguments'] !== 'string') return failed();
+              || seen.has(callId) || earlierCallIds.has(callId) || typeof alias !== 'string' || !ids.has(alias) || typeof fn['arguments'] !== 'string') return failed();
             seen.add(callId); return { id: callId, toolId: ids.get(alias)!, input: jsonValue(JSON.parse(fn['arguments'])) };
           });
           // Keep this turn as the provider sent it (with any reasoning) for the next call of the run.
@@ -582,7 +636,7 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
       ...(calls.length > 0 ? { tool_calls: calls.map(entry => ({ type: 'function', id: entry.id ?? null, function: { name: entry.name, arguments: entry.arguments } })) } : {}) };
     return { choices: [{ message, finish_reason: finish }], usage };
   };
-  return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
+  return Object.freeze({ id: remote ? `openai-compatible.${remote.id}` : 'openai-compatible.chat', capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }), maxCostMicros: options.maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
     stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),

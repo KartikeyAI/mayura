@@ -29,6 +29,9 @@ const agent = defineAgent({
 - Tool parameters and structured output use strict JSON Schema; streaming reports output text as it arrives; the
   model's thoughts and thought signatures are kept for the next call and never released.
 - Thinking tokens are charged as output, and cached input at the full input rate. Media is sent as bytes.
+- A run's conversation history (`capabilities.history`) goes first, in Gemini's turn order: turns of one role in a row
+  share a turn, and a history that starts with an answer gets a user turn holding `null` before it. History has no
+  thought signatures; Gemini checks them only in the current turn.
 - `catalog` holds the Gemini API's list prices on its date, used only with `prices: 'catalog'`. Gemini 3.8 Flash is
   listed at the price announced from January 1, 2027, so a budget never undercounts.
 

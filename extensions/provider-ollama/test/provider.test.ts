@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createModels, createRuntime, defineAgent, media, z, type JsonObject, type ModelRequest } from 'mayura';
+import { createModels, createRuntime, defineAgent, media, z, type JsonObject, type ModelHistoryMessage, type ModelRequest } from 'mayura';
 import { conformanceTools, modelAdapterConformance, type ModelAdapterHarness, type ModelScenario } from 'mayura/testing';
 import { ollama } from '../src/index.js';
 
@@ -137,6 +137,57 @@ describe('@mayurajs/provider-ollama', () => {
     expect(freeSystem!.content).toBe('Be brief.');
     expect(formatSystem!.content).toContain(JSON.stringify(seen[1]!.body['format']));
     expect(formatRest).toEqual(freeRest);
+  });
+
+  describe('a conversation history', () => {
+    const history: ModelHistoryMessage[] = [
+      { role: 'user', content: { message: 'Where is A-1?' } },
+      { role: 'assistant', calls: [{ id: 'call_3', toolId: 'orders.lookup', input: { orderId: 'A-1' } }, { id: 'h/2', toolId: 'orders.cancel', input: { orderId: 'A-1' } }] },
+      { role: 'tool', callId: 'call_3', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool', callId: 'h/2', toolId: 'orders.cancel', result: 'too late' },
+      { role: 'assistant', output: { answer: 'It has shipped.' } },
+      { role: 'assistant', output: 'Anything else?' },
+    ];
+    // A tool only the history used is named in it too; a string output is still JSON.
+    const rendered = [
+      { role: 'user', content: '{"message":"Where is A-1?"}' },
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'orders_lookup', arguments: { orderId: 'A-1' } } }, { function: { name: 'orders_cancel', arguments: { orderId: 'A-1' } } }] },
+      { role: 'tool', tool_name: 'orders_lookup', content: '{"status":"shipped"}' },
+      { role: 'tool', tool_name: 'orders_cancel', content: '"too late"' },
+      { role: 'assistant', content: '{"answer":"It has shipped."}' },
+      { role: 'assistant', content: '"Anything else?"' },
+    ];
+    const conversation = (entry: Seen[number]) => (entry.body['messages'] as JsonObject[]).slice(1);
+
+    it('declares the capability and sends the history first on both calls: with the tools, and for the answer in the format', async () => {
+      expect(ollama().model('gpt-oss:20b', settings).capabilities.history).toBe(true);
+      const replies = [reply({ content: 'It is on its way.' }, 'stop', 1, 1), reply({ content: '{"answer":"Soon."}' }, 'stop', 1, 1)];
+      const seen: Seen = [];
+      await ollama({ fetch: async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(replies.shift()); } })
+        .model('gpt-oss:20b', settings).generate(request({ tools, history, messages: [{ role: 'user', content: 'And when?' }] }));
+      expect(seen).toHaveLength(2);
+      for (const entry of seen) expect(conversation(entry)).toEqual([...rendered, { role: 'user', content: '"And when?"' }]);
+      expect((seen[0]!.body['tools'] as { function: JsonObject }[]).map(tool => tool.function['name'])).toEqual(['orders_lookup']);
+    });
+
+    it('gives new calls ids the history does not have, and sends the history first on the next call with the run\'s thinking', async () => {
+      const first = await ollama({ fetch: transport({ kind: 'raw', body: reply({ thinking: 'Look them up.',
+        tool_calls: [{ function: { name: 'orders_lookup', arguments: { orderId: 'A-2' } } }, { function: { name: 'orders_lookup', arguments: { orderId: 'A-3' } } }] }, 'stop', 10, 5) }) })
+        .model('gpt-oss:20b', settings).generate(request({ tools, history }));
+      expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_4' }, { id: 'call_5' }] });
+      const messages: ModelRequest['messages'] = [{ role: 'user', content: 'hi' }, { role: 'assistant', calls: first.type === 'tool_calls' ? first.calls : [] },
+        { role: 'tool', callId: 'call_4', toolId: 'orders.lookup', result: { status: 'new' } }, { role: 'tool', callId: 'call_5', toolId: 'orders.lookup', result: { status: 'old' } }];
+      const seen: Seen = [];
+      const second = await ollama({ fetch: transport({ kind: 'raw', body: reply({ tool_calls: [{ function: { name: 'orders_lookup', arguments: { orderId: 'A-4' } } }] }, 'stop', 20, 5) }, seen) })
+        .model('gpt-oss:20b', settings).generate(request({ tools, history, continuation: first.continuation!, messages }));
+      expect(second).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_6' }] });
+      expect(conversation(seen[0]!)).toEqual([...rendered, { role: 'user', content: '"hi"' },
+        { role: 'assistant', content: '', thinking: 'Look them up.', tool_calls: [{ function: { name: 'orders_lookup', arguments: { orderId: 'A-2' } } }, { function: { name: 'orders_lookup', arguments: { orderId: 'A-3' } } }] },
+        { role: 'tool', tool_name: 'orders_lookup', content: '{"status":"new"}' }, { role: 'tool', tool_name: 'orders_lookup', content: '{"status":"old"}' }]);
+      // The continuation still counts this run's own turns alone.
+      await expect(ollama({ fetch: transport(final) }).model('gpt-oss:20b', settings).generate(request({ tools, history, continuation: first.continuation! })))
+        .rejects.toMatchObject({ reason: 'invalid_response' });
+    });
   });
 
   it('with tools, never streams the free reply, only the answer in the format', async () => {

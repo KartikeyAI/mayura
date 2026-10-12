@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerTracerProvider } from '@mistralai/mistralai/extra/observability';
-import { createModels, createRuntime, defineAgent, media, z, type JsonObject, type ModelRequest } from 'mayura';
+import { createModels, createRuntime, defineAgent, media, z, type JsonObject, type ModelHistoryMessage, type ModelRequest } from 'mayura';
 import { conformanceTools, modelAdapterConformance, type ModelAdapterHarness, type ModelScenario } from 'mayura/testing';
 import { catalog, mistral } from '../src/index.js';
 
@@ -143,6 +143,56 @@ describe('@mayurajs/provider-mistral', () => {
     const ids = (messages[2]!['tool_calls'] as JsonObject[]).map(call => call['id']);
     expect(ids[0]).toMatch(/^[A-Za-z0-9]{9}$/u); expect(ids[1]).toBe('Keep12345');
     expect([messages[3]!['tool_call_id'], messages[4]!['tool_call_id']]).toEqual(ids);
+  });
+
+  describe('a conversation history', () => {
+    const history: ModelHistoryMessage[] = [
+      { role: 'user', content: { message: 'Where is A-1?' } },
+      { role: 'assistant', calls: [{ id: 'Hist12345', toolId: 'orders.lookup', input: { orderId: 'A-1' } }, { id: 'h/2', toolId: 'orders.cancel', input: { orderId: 'A-1' } }] },
+      { role: 'tool', callId: 'Hist12345', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool', callId: 'h/2', toolId: 'orders.cancel', result: 'too late' },
+      { role: 'assistant', output: { answer: 'It has shipped.' } },
+      { role: 'assistant', output: 'Anything else?' },
+    ];
+    // A call id Mistral would refuse ('h/2') is renamed; a tool only the history used is named too.
+    const rendered = [
+      { role: 'user', content: '{"message":"Where is A-1?"}' },
+      { role: 'assistant', prefix: false, tool_calls: [{ id: 'Hist12345', type: 'function', index: 0, function: { name: 'orders_lookup', arguments: '{"orderId":"A-1"}' } },
+        { id: 'm00000000', type: 'function', index: 0, function: { name: 'orders_cancel', arguments: '{"orderId":"A-1"}' } }] },
+      { role: 'tool', tool_call_id: 'Hist12345', name: 'orders_lookup', content: '{"status":"shipped"}' },
+      { role: 'tool', tool_call_id: 'm00000000', name: 'orders_cancel', content: '"too late"' },
+      { role: 'assistant', prefix: false, content: '{"answer":"It has shipped."}' },
+      { role: 'assistant', prefix: false, content: '"Anything else?"' },
+    ];
+    const run = (seen: Seen, scenario: Parameters<typeof transport>[0], overrides: Partial<ModelRequest>) =>
+      mistral({ apiKey: 'fixture-key', fetch: transport(scenario, seen) }).model('mistral-test', settings).generate(request({ tools, history, ...overrides }));
+
+    it('declares the capability and sends every kind of history message first, in order, then the run', async () => {
+      expect(mistral({ apiKey: 'fixture-key' }).model('mistral-test', settings).capabilities.history).toBe(true);
+      const seen: Seen = [];
+      await run(seen, final, { messages: [{ role: 'user', content: 'And when?' }] });
+      expect(seen[0]!.body['messages']).toEqual([{ role: 'system', content: 'Be brief.' }, ...rendered, { role: 'user', content: '"And when?"' }]);
+      expect((seen[0]!.body['tools'] as { function: JsonObject }[]).map(tool => tool.function['name'])).toEqual(['orders_lookup']);
+    });
+
+    it('sends the history first on the next call of a tool loop, with the run\'s thinking, and renamed ids never repeat the history\'s', async () => {
+      const thinking = { type: 'thinking', thinking: [{ type: 'text', text: 'Look it up.' }], signature: 'sig-1' };
+      const first = await run([], { kind: 'raw', body: completion({ content: [thinking],
+        tool_calls: [{ id: 'Run123456', type: 'function', function: { name: 'orders_lookup', arguments: '{"orderId":"A-2"}' } }] }, 'tool_calls', usage(10, 5)) }, {});
+      const seen: Seen = [];
+      await run(seen, final, { continuation: first.continuation!, messages: [{ role: 'user', content: 'hi' },
+        { role: 'assistant', calls: [{ id: 'Run123456', toolId: 'orders.lookup', input: { orderId: 'A-2' } }] },
+        { role: 'tool', callId: 'Run123456', toolId: 'orders.lookup', result: { status: 'new' } },
+        { role: 'assistant', calls: [{ id: 'run/2', toolId: 'orders.lookup', input: { orderId: 'A-3' } }] },
+        { role: 'tool', callId: 'run/2', toolId: 'orders.lookup', result: { status: 'old' } }] });
+      expect(seen[0]!.body['messages']).toEqual([{ role: 'system', content: 'Be brief.' }, ...rendered, { role: 'user', content: '"hi"' },
+        { role: 'assistant', prefix: false, content: [thinking], tool_calls: [{ id: 'Run123456', type: 'function', index: 0, function: { name: 'orders_lookup', arguments: '{"orderId":"A-2"}' } }] },
+        { role: 'tool', tool_call_id: 'Run123456', name: 'orders_lookup', content: '{"status":"new"}' },
+        { role: 'assistant', prefix: false, tool_calls: [{ id: 'm00000001', type: 'function', index: 0, function: { name: 'orders_lookup', arguments: '{"orderId":"A-3"}' } }] },
+        { role: 'tool', tool_call_id: 'm00000001', name: 'orders_lookup', content: '{"status":"old"}' }]);
+      // The continuation still counts this run's own turns alone.
+      await expect(run([], final, { continuation: first.continuation! })).rejects.toMatchObject({ reason: 'invalid_response' });
+    });
   });
 
   it('streams text and tool calls, reporting output text as it arrives', async () => {

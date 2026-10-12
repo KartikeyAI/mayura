@@ -26,6 +26,7 @@ const agent = defineAgent({
 - Credentials are options: nothing is read from the environment. Set `baseURL: 'https://api.eu.mistral.ai'` to keep requests in the EU.
 - The SDK's own retries, debug logging and telemetry are off; the registry's `retry` option retries and charges every attempt.
 - Tool inputs and structured output use strict JSON Schema; streaming reports output text as it arrives; the model's thinking is kept for the next call and never released.
+- A run's conversation history (`capabilities.history`) goes first, as Mistral messages; a call id Mistral would refuse is renamed, never to one the conversation already has.
 - Models see PNG, JPEG, WebP and GIF images, as bytes or URLs.
 - `catalog` holds Mistral's list prices on its date for dated model versions, used only with `prices: 'catalog'`. A `-latest` alias moves to newer models, so give its price yourself.
 

@@ -190,6 +190,64 @@ describe('@mayurajs/provider-groq', () => {
       { role: 'user', content: [{ type: 'text', text: 'Images from the tool results above:' }, { type: 'text', text: 'Image: receipt' }, image] }]);
   });
 
+  describe('with a conversation history', () => {
+    // All four kinds of history message, one of them a call to a tool this run does not offer.
+    const history = [
+      { role: 'user' as const, content: { message: 'Where is order A-1001?' } },
+      { role: 'assistant' as const, calls: [{ id: 'call_b790', toolId: 'orders.lookup', input: { orderId: 'A-1001' } }, { id: 'call-2', toolId: 'billing.refund', input: { orderId: 'A-1001' } }] },
+      { role: 'tool' as const, callId: 'call_b790', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool' as const, callId: 'call-2', toolId: 'billing.refund', result: 'refused' },
+      { role: 'assistant' as const, output: 'Order A-1001 has shipped.' },
+    ];
+    const sent = [
+      { role: 'system', content: 'Be brief.' },
+      { role: 'user', content: '{"message":"Where is order A-1001?"}' },
+      { role: 'assistant', tool_calls: [{ id: 'call_b790', type: 'function', function: { name: 'orders_lookup', arguments: '{"orderId":"A-1001"}' } },
+        { id: 'call-2', type: 'function', function: { name: 'billing_refund', arguments: '{"orderId":"A-1001"}' } }] },
+      { role: 'tool', tool_call_id: 'call_b790', content: '{"status":"shipped"}' },
+      { role: 'tool', tool_call_id: 'call-2', content: '"refused"' },
+      { role: 'assistant', content: '"Order A-1001 has shipped."' },
+      { role: 'user', content: '"hi"' },
+    ];
+    const replying = (bodies: unknown[], seen: Seen): typeof globalThis.fetch => async (input, init) => { await transport({ kind: 'raw', body: {} }, seen)(input, init); return json(bodies.shift()); };
+    const calling = (...ids: string[]) => completion({ reasoning: 'Looking it up.', tool_calls: ids.map(id => ({ id, type: 'function', function: { name: 'orders_lookup', arguments: '{"orderId":"A-1002"}' } })) }, 'tool_calls', usage(10, 5));
+    const answering = [completion({ content: 'It is packed.' }, 'stop', usage(10, 5)), completion({ content: '{"answer":"Packed."}' }, 'stop', usage(20, 4))];
+
+    it('sends the history after the instructions and before this run\'s messages, on the free reply and on the call for the format', async () => {
+      const seen: Seen = [];
+      const adapter = groq({ apiKey: 'fixture-key', fetch: replying([...answering], seen) }).model('groq-test', settings);
+      expect(adapter.capabilities.history).toBe(true);
+      expect(await adapter.generate(request({ tools, history }))).toMatchObject({ type: 'final', output: { answer: 'Packed.' } });
+      expect(seen).toHaveLength(2);
+      expect(seen[0]!.body['messages']).toEqual(sent);
+      expect(seen[1]!.body['messages']).toEqual(sent);
+      expect((seen[0]!.body['tools'] as { function: { name: string } }[]).map(tool => tool.function.name)).toEqual(['orders_lookup']);
+      // Without tools there is one call, in the format, and it has the history too.
+      const plain: Seen = [];
+      await groq({ apiKey: 'fixture-key', fetch: transport(final, plain) }).model('groq-test', settings).generate(request({ history }));
+      expect(plain[0]!.body['messages']).toEqual(sent);
+    });
+
+    it('gives a call whose id repeats a history call\'s a fresh id, and sends the history first on the next call of the run', async () => {
+      const first = await groq({ apiKey: 'fixture-key', fetch: replying([calling('call_b790', 'call_c1')], []) }).model('groq-test', settings).generate(request({ tools, history }));
+      expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_b790_2', toolId: 'orders.lookup' }, { id: 'call_c1', toolId: 'orders.lookup' }] });
+      const seen: Seen = [];
+      const ownTurn = { role: 'assistant' as const, calls: [{ id: 'call_b790_2', toolId: 'orders.lookup', input: { orderId: 'A-1002' } }, { id: 'call_c1', toolId: 'orders.lookup', input: { orderId: 'A-1002' } }] };
+      const results = [{ role: 'tool' as const, callId: 'call_b790_2', toolId: 'orders.lookup', result: { status: 'packed' } }, { role: 'tool' as const, callId: 'call_c1', toolId: 'orders.lookup', result: null }];
+      const messages = [{ role: 'user' as const, content: 'hi' }, ownTurn, ...results];
+      expect(await groq({ apiKey: 'fixture-key', fetch: replying([...answering], seen) }).model('groq-test', settings)
+        .generate(request({ tools, history, continuation: first.continuation!, messages }))).toMatchObject({ type: 'final', output: { answer: 'Packed.' } });
+      const own = [{ role: 'assistant', reasoning: 'Looking it up.', tool_calls: ['call_b790_2', 'call_c1'].map(id => ({ id, type: 'function', function: { name: 'orders_lookup', arguments: '{"orderId":"A-1002"}' } })) },
+        { role: 'tool', tool_call_id: 'call_b790_2', content: '{"status":"packed"}' }, { role: 'tool', tool_call_id: 'call_c1', content: 'null' }];
+      for (const entry of seen) expect(entry.body['messages']).toEqual([...sent, ...own]);
+      // Groq repeating the history's id again gets the next free one, never one this run already used.
+      const again = await groq({ apiKey: 'fixture-key', fetch: replying([calling('call_b790')], []) }).model('groq-test', settings)
+        .generate(request({ tools, history, continuation: first.continuation!, messages }));
+      expect(again).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_b790_3' }] });
+      expect(again.continuation).toMatchObject({ assistants: [{ calls: ['call_b790_2', 'call_c1'] }, { calls: ['call_b790_3'] }] });
+    });
+  });
+
   it('refuses a response larger than maxResponseBytes, and configuration it cannot use', async () => {
     const big = { kind: 'raw' as const, body: completion({ content: JSON.stringify({ answer: 'x'.repeat(5_000) }) }, 'stop', usage(1, 1)) };
     await expect(groq({ apiKey: 'fixture-key', maxResponseBytes: 1_000, fetch: transport(big) }).model('groq-test', settings).generate(request())).rejects.toMatchObject({ reason: 'invalid_response' });

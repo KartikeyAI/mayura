@@ -100,6 +100,40 @@ describe('@mayurajs/provider-azure', () => {
       .rejects.toMatchObject({ reason: 'invalid_response' });
   });
 
+  it('sends a conversation history before this run\'s messages, on every call of the run, and refuses a call id that repeats one of it', async () => {
+    const tools = [{ id: 'orders.lookup', description: 'Look up an order.', inputJsonSchema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false } }];
+    const history = [
+      { role: 'user' as const, content: { message: 'Where is order A-1001?' } },
+      { role: 'assistant' as const, calls: [{ id: 'call-1', toolId: 'orders.lookup', input: { orderId: 'A-1001' } }] },
+      { role: 'tool' as const, callId: 'call-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'assistant' as const, output: { answer: 'It has shipped.' } },
+    ];
+    const historyInput = [
+      { role: 'user', content: '{"message":"Where is order A-1001?"}' },
+      { type: 'function_call', call_id: 'call-1', name: 'orders_lookup', arguments: '{"orderId":"A-1001"}' },
+      { type: 'function_call_output', call_id: 'call-1', output: '{"status":"shipped"}' },
+      { role: 'assistant', content: '{"answer":"It has shipped."}' },
+    ];
+    const seen: Seen = [];
+    const adapter = azure({ resource: 'contoso', apiKey: 'k', fetch: async (input, init) => (seen.length === 0 ? transport({ kind: 'calls', name: 'orders_lookup' }, seen) : transport(final, seen))(input, init) })
+      .model('prod-chat', settings);
+    expect(adapter.capabilities.history).toBe(true);
+    const first = await adapter.generate(request({ tools, history }));
+    expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_0', toolId: 'orders.lookup' }] });
+    expect(seen[0]!.body['input']).toEqual([...historyInput, { role: 'user', content: '"hi"' }]);
+    await adapter.generate(request({ tools, history, continuation: first.continuation!, messages: [{ role: 'user', content: 'hi' },
+      { role: 'assistant', calls: [{ id: 'call_0', toolId: 'orders.lookup', input: { orderId: 'ord-1' } }] },
+      { role: 'tool', callId: 'call_0', toolId: 'orders.lookup', result: { status: 'packed' } }] }));
+    expect(seen[1]!.body['input']).toEqual([...historyInput, { role: 'user', content: '"hi"' },
+      { type: 'function_call', id: 'fc_0', status: 'completed', call_id: 'call_0', name: 'orders_lookup', arguments: '{"orderId":"ord-1"}' },
+      { type: 'function_call_output', call_id: 'call_0', output: '{"status":"packed"}' }]);
+    // Azure's call id repeating a history call's id is refused, not sent on.
+    const repeated = [{ role: 'user' as const, content: 'x' }, { role: 'assistant' as const, calls: [{ id: 'call_0', toolId: 'orders.lookup', input: { orderId: 'ord-0' } }] },
+      { role: 'tool' as const, callId: 'call_0', toolId: 'orders.lookup', result: null }];
+    await expect(azure({ resource: 'contoso', apiKey: 'k', fetch: transport({ kind: 'calls', name: 'orders_lookup' }) }).model('prod-chat', settings).generate(request({ tools, history: repeated })))
+      .rejects.toMatchObject({ reason: 'invalid_response' });
+  });
+
   it('refuses configuration it cannot use', () => {
     for (const options of [{}, { apiKey: 'k' }, { resource: 'contoso' }, { resource: 'contoso', baseURL: 'https://x.example/openai/v1', apiKey: 'k' },
       { resource: 'contoso', apiKey: 'k', token: async () => 't' }, { resource: 'bad resource', apiKey: 'k' }, { baseURL: 'http://insecure.example/openai/v1', apiKey: 'k' },

@@ -106,6 +106,83 @@ describe('@mayurajs/provider-anthropic', () => {
       .generate(request({ continuation: first.continuation! }))).rejects.toMatchObject({ reason: 'invalid_response' });
   });
 
+  describe('with a conversation history', () => {
+    const tools = [{ id: 'orders.lookup', description: 'Look up an order.', inputJsonSchema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false } }];
+    // All four kinds of history message; a call to a tool this run does not offer; ids Anthropic would not take.
+    const history = [
+      { role: 'user' as const, content: { message: 'Where is order A-1001?' } },
+      { role: 'assistant' as const, calls: [{ id: 'call-1', toolId: 'orders.lookup', input: { orderId: 'A-1001' } }, { id: 'lookup/2', toolId: 'billing.refund', input: { orderId: 'A-1001' } }] },
+      { role: 'tool' as const, callId: 'call-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool' as const, callId: 'lookup/2', toolId: 'billing.refund', result: 'refused' },
+      { role: 'assistant' as const, output: 'Order A-1001 has shipped.' },
+      { role: 'user' as const, content: { message: 'And A-1002?' } },
+      { role: 'assistant' as const, calls: [{ id: 'lookup_2', toolId: 'orders.lookup', input: { orderId: 'A-1002' } }] },
+      { role: 'tool' as const, callId: 'lookup_2', toolId: 'orders.lookup', result: { status: 'packed' } },
+    ];
+    const sent = [
+      { role: 'user', content: [{ type: 'text', text: '{"message":"Where is order A-1001?"}' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'call-1', name: 'orders_lookup', input: { orderId: 'A-1001' } },
+        { type: 'tool_use', id: 'lookup_2_2', name: 'billing_refund', input: { orderId: 'A-1001' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-1', content: '{"status":"shipped"}' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'lookup_2_2', content: '"refused"' }] },
+      { role: 'assistant', content: [{ type: 'text', text: '"Order A-1001 has shipped."' }] },
+      { role: 'user', content: [{ type: 'text', text: '{"message":"And A-1002?"}' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'lookup_2', name: 'orders_lookup', input: { orderId: 'A-1002' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'lookup_2', content: '{"status":"packed"}' }] },
+    ];
+    const hi = { role: 'user', content: [{ type: 'text', text: '"hi"' }] };
+    const thinking = { type: 'thinking', thinking: 'The customer wants order ord-1.', signature: 'sig-1' };
+    const lookup = (id: string) => message([thinking, { type: 'tool_use', id, name: 'orders_lookup', input: { orderId: 'ord-1' } }], 'tool_use', usage(10, 5));
+
+    it('sends the history first, in the Messages encoding and without thinking, then this run\'s messages', async () => {
+      const seen: Seen = [];
+      const adapter = anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('claude-test', settings);
+      expect(adapter.capabilities.history).toBe(true);
+      await adapter.generate(request({ tools, history }));
+      expect(seen[0]!.body['messages']).toEqual([...sent, hi]);
+      expect((seen[0]!.body['tools'] as JsonObject[]).map(tool => tool['name'])).toEqual(['orders_lookup']);
+    });
+
+    it('sends the history first on the next call of the run too, with this run\'s own thinking still matched to its own turn', async () => {
+      const first = await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body: lookup('toolu_1') }) }).model('claude-test', settings).generate(request({ tools, history }));
+      expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'toolu_1', toolId: 'orders.lookup' }] });
+      expect(JSON.stringify(first.continuation)).not.toContain('A-1001');
+      const seen: Seen = [];
+      await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'Shipped.' }, inputTokens: 20, outputTokens: 5 }, seen) }).model('claude-test', settings).generate(request({
+        tools, history, continuation: first.continuation!,
+        messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', calls: [{ id: 'toolu_1', toolId: 'orders.lookup', input: { orderId: 'ord-1' } }] },
+          { role: 'tool', callId: 'toolu_1', toolId: 'orders.lookup', result: { status: 'shipped' } }],
+      }));
+      expect(seen[0]!.body['messages']).toEqual([...sent, hi, { role: 'assistant', content: [thinking, { type: 'tool_use', id: 'toolu_1', name: 'orders_lookup', input: { orderId: 'ord-1' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '{"status":"shipped"}' }] }]);
+    });
+
+    it('sends the history\'s tool calls and results as text when this run offers no tools', async () => {
+      const seen: Seen = [];
+      await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('claude-test', settings)
+        .generate(request({ history: history.slice(0, 5) }));
+      expect(seen[0]!.body['tools']).toBeUndefined();
+      expect(seen[0]!.body['messages']).toEqual([sent[0],
+        { role: 'assistant', content: [{ type: 'text', text: 'Tool call call-1: orders_lookup {"orderId":"A-1001"}' }, { type: 'text', text: 'Tool call lookup_2: billing_refund {"orderId":"A-1001"}' }] },
+        { role: 'user', content: [{ type: 'text', text: 'Result of tool call call-1: {"status":"shipped"}' }] },
+        { role: 'user', content: [{ type: 'text', text: 'Result of tool call lookup_2: "refused"' }] },
+        sent[4], hi]);
+    });
+
+    it('refuses a call whose id repeats a history call\'s, as Mayura has it or as it was sent, charging for it', async () => {
+      for (const id of ['call-1', 'lookup_2_2']) {
+        await expect(anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'raw', body: lookup(id) }) }).model('claude-test', settings).generate(request({ tools, history })))
+          .rejects.toMatchObject({ reason: 'invalid_response', costMicros: 10 + 5 * 5 });
+      }
+    });
+
+    it('without a history, sends this run\'s messages alone, as before', async () => {
+      const seen: Seen = [];
+      await anthropic({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('claude-test', settings).generate(request());
+      expect(seen[0]!.body['messages']).toEqual([hi]);
+    });
+  });
+
   it('refuses a response larger than maxResponseBytes, and configuration it cannot use', async () => {
     const big = { kind: 'raw' as const, body: message([{ type: 'text', text: JSON.stringify({ answer: 'x'.repeat(5_000) }) }], 'end_turn', usage(1, 1)) };
     await expect(anthropic({ apiKey: 'fixture-key', maxResponseBytes: 1_000, fetch: transport(big) }).model('claude-test', settings).generate(request())).rejects.toMatchObject({ reason: 'invalid_response' });

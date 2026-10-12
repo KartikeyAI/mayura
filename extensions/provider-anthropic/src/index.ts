@@ -1,6 +1,6 @@
 import { Anthropic, APIConnectionError, APIError } from '@anthropic-ai/sdk';
 import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -107,6 +107,47 @@ function messagesFor(messages: readonly ModelMessage[], aliases: ReadonlyMap<str
   });
 }
 
+/**
+ * The ids a history's tool calls are sent under. Anthropic takes only letters, digits, `_` and `-` in a tool_use id,
+ * while Mayura's ids may also hold `.` and `/`: such an id is sent with those replaced by `_` (and a suffix if that
+ * name is taken), the same in its tool_use and its tool_result. Ids Anthropic takes are sent unchanged.
+ */
+function historyWireIds(history: readonly ModelHistoryMessage[]): ReadonlyMap<string, string> {
+  const ids = history.flatMap(message => 'calls' in message ? message.calls.map(call => call.id) : []);
+  const valid = (id: string): boolean => /^[A-Za-z0-9_-]+$/u.test(id);
+  const taken = new Set(ids.filter(valid)); const wire = new Map<string, string>();
+  for (const id of ids) {
+    if (valid(id)) { wire.set(id, id); continue; }
+    const base = id.replace(/[^A-Za-z0-9_-]/gu, '_'); let name = base;
+    for (let suffix = 2; taken.has(name); suffix++) name = `${base}_${suffix}`;
+    taken.add(name); wire.set(id, name);
+  }
+  return wire;
+}
+/**
+ * A run's history as Anthropic messages, encoded as this run's own messages are, with no thinking blocks (history has
+ * none: Anthropic needs thinking only within the current tool-use turn, and history's turns came before it). An earlier
+ * final answer is an assistant text block holding its JSON.
+ *
+ * Anthropic refuses tool_use and tool_result blocks in a request that offers no tools, so when this run offers none,
+ * the history's tool calls and results are sent as text in the same places instead.
+ */
+function historyFor(history: readonly ModelHistoryMessage[], tools: readonly string[], offersTools: boolean): JsonValue[] {
+  const called = history.flatMap(message => 'calls' in message ? message.calls.map(call => call.toolId) : []);
+  // This run's tools keep their names; a tool only the history called is named the same way, after them.
+  const names = modelToolNames([...new Set([...tools, ...called])]); const wire = historyWireIds(history);
+  return history.map(message => {
+    if ('output' in message) return { role: 'assistant', content: [{ type: 'text', text: JSON.stringify(message.output) }] };
+    if (message.role === 'user') return { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }] };
+    if (message.role === 'tool') {
+      return { role: 'user', content: [offersTools ? { type: 'tool_result', tool_use_id: wire.get(message.callId)!, content: JSON.stringify(message.result) }
+        : { type: 'text', text: `Result of tool call ${wire.get(message.callId)!}: ${JSON.stringify(message.result)}` }] };
+    }
+    return { role: 'assistant', content: message.calls.map(call => offersTools ? { type: 'tool_use', id: wire.get(call.id)!, name: names.get(call.toolId)!, input: call.input }
+      : { type: 'text', text: `Tool call ${wire.get(call.id)!}: ${names.get(call.toolId)!} ${JSON.stringify(call.input)}` }) };
+  });
+}
+
 /** Rebuilds the message a non-streamed call returns from a Messages event stream, reporting text deltas as they arrive. */
 async function assemble(events: AsyncIterable<JsonObject>, maxResponseBytes: number, onDelta: (text: string) => void): Promise<JsonObject> {
   let message: JsonObject | undefined; let stopped = false; let stopReason: JsonValue = null; let usage: JsonObject = {};
@@ -210,9 +251,13 @@ export function anthropic(options: AnthropicProviderOptions): ModelProvider {
             return { name: aliases.get(tool.id)!, description: tool.description, input_schema: strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`), strict: true };
           });
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
+          // The conversation before this run goes first on every call. `assistants` holds only this run's own turns, so
+          // it is matched against this run's messages alone.
+          const earlier = request.history ?? [];
+          const historyIds = new Set([...historyWireIds(earlier)].flat());
           const body: JsonObject = {
             model: name, max_tokens: request.maxOutputTokens, system: request.instructions,
-            messages: messagesFor(request.messages, aliases, assistants),
+            messages: [...historyFor(earlier, request.tools.map(tool => tool.id), tools.length > 0), ...messagesFor(request.messages, aliases, assistants)],
             output_config: { format: { type: 'json_schema', schema: outputSchema } },
             ...(tools.length > 0 ? { tools, tool_choice: { type: 'auto', disable_parallel_tool_use: false } } : {}),
           };
@@ -236,7 +281,9 @@ export function anthropic(options: AnthropicProviderOptions): ModelProvider {
               // Text before a tool call is narration, not an answer: it is dropped. Thinking is kept for the next call.
               if ((block['type'] === 'text' && typeof block['text'] === 'string') || isThinking(block)) continue;
               const callId = block['id']; const alias = block['name'];
-              if (block['type'] !== 'tool_use' || typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId) || seen.has(callId)
+              // Anthropic's tool_use ids are long and random: one that repeats a history call's id, as Mayura has it or as it
+              // was sent, could not be told apart from it.
+              if (block['type'] !== 'tool_use' || typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId) || seen.has(callId) || historyIds.has(callId)
                 || typeof alias !== 'string' || !ids.has(alias) || block['input'] === undefined) return failed();
               seen.add(callId); calls.push({ id: callId, toolId: ids.get(alias)!, input: jsonValue(block['input']) });
             }
@@ -268,7 +315,7 @@ export function anthropic(options: AnthropicProviderOptions): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),

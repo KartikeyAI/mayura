@@ -26,6 +26,7 @@ const agent = defineAgent({
 - Credentials are options: nothing is read from the environment.
 - The SDK's own retries are off; the registry's `retry` option retries and charges every attempt.
 - Tool inputs and structured output use strict JSON Schema, and streaming reports output text as it arrives.
+- Runs can take a conversation history (`runtime.submit(agent, { input, history })`), sent before the run's own messages on every call.
 - `catalog` holds OpenAI's list prices on its date, used only with `prices: 'catalog'`.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.

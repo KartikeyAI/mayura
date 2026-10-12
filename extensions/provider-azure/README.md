@@ -32,5 +32,6 @@ const agent = defineAgent({
 - `token` takes a Microsoft Entra ID token source, called for every request, instead of `apiKey`.
 - Built on `responsesProvider` from `@mayurajs/provider-openai`: nothing is read from the environment, the SDK's
   retries are off, responses are bounded, and schemas are strict.
+- Runs can take a conversation history (`runtime.submit(agent, { input, history })`), sent before the run's own messages on every call.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
