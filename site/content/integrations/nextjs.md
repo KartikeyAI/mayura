@@ -164,8 +164,10 @@ Agents that don't start workflows need neither.
 
 ## Good to know
 
-- **Keep the route on the Node.js runtime.** Mayura 1.0 runs on Node.js 22 and 24. Support for edge runtimes is planned
-  for Mayura 1.1.
+- **Keep the route on the Node.js runtime** unless you need the edge. Since 1.1, Mayura also runs on the Edge runtime,
+  apart from its Node-only entry points; an Edge route needs storage over a pool the runtime allows and runs that
+  finish inside their request. See
+  [Edge runtimes](../../../docs/guides/deployment.md#edge-runtimes).
 - **One server instance per process.** Create `api` once, at module level as above, not inside the route handler:
   runs in progress, streams and limits belong to the instance.
 - **Several instances need shared run records.** When more than one process serves `/v1/*`, give `createAgentServer`

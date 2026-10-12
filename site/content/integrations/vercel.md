@@ -2,6 +2,7 @@
 title: "Deploy Mayura on Vercel"
 description: "Run agents and durable workflows on Vercel Functions with Neon PostgreSQL: request-bound runs, workflows advanced by cron, and what we measured on a real deployment."
 date: 2026-09-29
+updated: 2026-10-12
 tags: Vercel, serverless, PostgreSQL, deployment
 ---
 
@@ -12,11 +13,11 @@ short scheduled invocations, and every instance connects to PostgreSQL through a
 This guide walks through that setup and ends with what happened when we ran it on a real Vercel deployment, including
 a function stopped by its time limit in the middle of a payment step.
 
-| | Status in Mayura 1.0 |
+| | Status in Mayura 1.1 |
 |---|---|
 | Vercel Functions (Node.js runtime) | Supported and tested on Vercel |
 | Vercel Cron and Next.js route files | Experimental: same code path, not yet run on Vercel |
-| Edge Functions | Planned for Mayura 1.1 |
+| Edge Functions | Supported and tested on a Vercel Edge deployment, apart from the Node-only entry points; see [Edge runtimes](../../../docs/guides/deployment.md#edge-runtimes) |
 
 ## How Mayura runs on a function
 
