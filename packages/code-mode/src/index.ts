@@ -239,6 +239,7 @@ const messages: Readonly<Record<ErrorCode, string>> = Object.freeze({
   CONFLICT: 'The execution has finished; it accepts no more tool calls.',
   STORAGE_UNAVAILABLE: 'Storage needed by the tool call is unavailable.',
   INTEGRITY_VIOLATION: 'The tool call failed an integrity check.',
+  APPROVAL_UNAVAILABLE: 'The tool call needs approval from a person, which a program cannot wait for.',
 });
 
 const failureReasons: ReadonlySet<string> = new Set<SandboxFailureReason>(['program_error', 'cpu_limit', 'memory_limit',

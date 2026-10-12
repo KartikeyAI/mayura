@@ -1788,7 +1788,7 @@
       },
       "ErrorCode": {
         "kind": "type",
-        "declaration": "cd9130cf41a4cff0"
+        "declaration": "0600ef8947a76854"
       },
       "ExecutionContext": {
         "kind": "interface",
@@ -2012,7 +2012,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "ff195f0e76ed7a93"
+        "declaration": "89a96b98bb854bae"
       },
       "RunHandle": {
         "kind": "interface",
@@ -3190,6 +3190,14 @@
         "kind": "interface",
         "declaration": "042d9f746409cc6e"
       },
+      "ApprovalAnswer": {
+        "kind": "interface",
+        "declaration": "5930e08f71695102"
+      },
+      "ApprovalOptions": {
+        "kind": "interface",
+        "declaration": "bb784b96c09f754e"
+      },
       "assertAgent": {
         "kind": "function",
         "declaration": "dbb255e6d0321bc5"
@@ -3298,6 +3306,10 @@
         "kind": "interface",
         "declaration": "9253f669322c749d"
       },
+      "PendingApproval": {
+        "kind": "interface",
+        "declaration": "4d6b31b3126f0b42"
+      },
       "ProviderModelSettings": {
         "kind": "interface",
         "declaration": "2a44056cfec686f7"
@@ -3308,11 +3320,15 @@
       },
       "RunInspection": {
         "kind": "interface",
-        "declaration": "85bb0e8aaba23798"
+        "declaration": "7bd078937eb2d329"
+      },
+      "RunStatus": {
+        "kind": "type",
+        "declaration": "aebd00872754bd94"
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "6d321894dad1e6a9"
+        "declaration": "f4d8425b059c43fd"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -3320,7 +3336,7 @@
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "28976f4bd4aec7da"
+        "declaration": "2590bd24554d8a28"
       },
       "SpeculationBranch": {
         "kind": "interface",
@@ -3526,6 +3542,14 @@
         "kind": "type",
         "declaration": "2a6ef1266c1741bd"
       },
+      "ApprovalAnswer": {
+        "kind": "interface",
+        "declaration": "5930e08f71695102"
+      },
+      "ApprovalOptions": {
+        "kind": "interface",
+        "declaration": "bb784b96c09f754e"
+      },
       "assertAgent": {
         "kind": "function",
         "declaration": "dbb255e6d0321bc5"
@@ -3656,7 +3680,7 @@
       },
       "ErrorCode": {
         "kind": "type",
-        "declaration": "cd9130cf41a4cff0"
+        "declaration": "0600ef8947a76854"
       },
       "ExecutionContext": {
         "kind": "interface",
@@ -3744,7 +3768,7 @@
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "b074c318a95e9e65"
+        "declaration": "b3267e5058c37cbd"
       },
       "isModelFailureReason": {
         "kind": "function",
@@ -3954,6 +3978,10 @@
         "kind": "type",
         "declaration": "cb048baf60dfd415"
       },
+      "PendingApproval": {
+        "kind": "interface",
+        "declaration": "4d6b31b3126f0b42"
+      },
       "Permissions": {
         "kind": "interface",
         "declaration": "3cffe9d96ebe6c15"
@@ -3980,7 +4008,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "ff195f0e76ed7a93"
+        "declaration": "89a96b98bb854bae"
       },
       "RunHandle": {
         "kind": "interface",
@@ -3988,11 +4016,15 @@
       },
       "RunInspection": {
         "kind": "interface",
-        "declaration": "85bb0e8aaba23798"
+        "declaration": "7bd078937eb2d329"
+      },
+      "RunStatus": {
+        "kind": "type",
+        "declaration": "aebd00872754bd94"
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "6d321894dad1e6a9"
+        "declaration": "f4d8425b059c43fd"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -4000,7 +4032,7 @@
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "28976f4bd4aec7da"
+        "declaration": "2590bd24554d8a28"
       },
       "Schema": {
         "kind": "interface",
@@ -4030,6 +4062,10 @@
         "kind": "interface",
         "declaration": "4fe2c18361daf3a4"
       },
+      "ToolApprovalBinding": {
+        "kind": "interface",
+        "declaration": "e408f8c7b8f32f85"
+      },
       "ToolBudgetTicketBinding": {
         "kind": "interface",
         "declaration": "f24bbc4e4a8f9cd0"
@@ -4044,15 +4080,19 @@
       },
       "ToolDefinition": {
         "kind": "interface",
-        "declaration": "94591dfc06a6b277"
+        "declaration": "9855ec6c6650c1bc"
       },
       "ToolExecutionContext": {
         "kind": "interface",
         "declaration": "13836369df25ce76"
       },
+      "toolNeedsApproval": {
+        "kind": "function",
+        "declaration": "2104c8005ebcdef4"
+      },
       "ToolOptions": {
         "kind": "interface",
-        "declaration": "a2f12e44b3052b79"
+        "declaration": "a408505b1240cef0"
       },
       "ToolOutcome": {
         "kind": "type",
@@ -7094,7 +7134,7 @@
       },
       "TestToolOptions": {
         "kind": "interface",
-        "declaration": "0a916a20d1f55b56"
+        "declaration": "09b69fccaf5f6f39"
       },
       "TestToolResult": {
         "kind": "interface",
@@ -7192,11 +7232,15 @@
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "b074c318a95e9e65"
+        "declaration": "b3267e5058c37cbd"
       },
       "SkippedBatchOutcome": {
         "kind": "interface",
         "declaration": "1250833df3f32730"
+      },
+      "ToolApprovalBinding": {
+        "kind": "interface",
+        "declaration": "e408f8c7b8f32f85"
       },
       "ToolBudgetTicketBinding": {
         "kind": "interface",
@@ -7212,15 +7256,19 @@
       },
       "ToolDefinition": {
         "kind": "interface",
-        "declaration": "94591dfc06a6b277"
+        "declaration": "9855ec6c6650c1bc"
       },
       "ToolExecutionContext": {
         "kind": "interface",
         "declaration": "13836369df25ce76"
       },
+      "toolNeedsApproval": {
+        "kind": "function",
+        "declaration": "2104c8005ebcdef4"
+      },
       "ToolOptions": {
         "kind": "interface",
-        "declaration": "a2f12e44b3052b79"
+        "declaration": "a408505b1240cef0"
       },
       "ToolOutcome": {
         "kind": "type",
@@ -7244,9 +7292,21 @@
       }
     },
     "@mayura/tools/host": {
+      "bindToolApproval": {
+        "kind": "function",
+        "declaration": "891e35cc00ec659a"
+      },
       "bindToolBudgetTicket": {
         "kind": "function",
         "declaration": "36c88f011f26dd1f"
+      },
+      "ToolApprovalBinding": {
+        "kind": "interface",
+        "declaration": "e408f8c7b8f32f85"
+      },
+      "ToolApprovalContext": {
+        "kind": "interface",
+        "declaration": "9ab62bd4596fb3f5"
       },
       "ToolBudgetTicketBinding": {
         "kind": "interface",
@@ -7255,6 +7315,10 @@
       "ToolBudgetTicketContext": {
         "kind": "interface",
         "declaration": "cce94f0e23dc6cfb"
+      },
+      "toolNeedsApproval": {
+        "kind": "function",
+        "declaration": "2104c8005ebcdef4"
       }
     },
     "@mayura/voice": {

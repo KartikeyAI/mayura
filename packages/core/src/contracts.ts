@@ -37,7 +37,7 @@ export interface RunEvent {
   readonly timestamp: string;
   readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
-    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
+    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld' | 'approval.requested' | 'approval.resolved';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RunHandle<T> {

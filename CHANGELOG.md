@@ -16,6 +16,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
     - Each sends it in its provider's format, without reasoning or thinking state, and keeps its continuation counting only the run's own turns.
     - A call id the provider refuses is renamed on the wire, and a new call never reuses a history id.
     - For an agent without tools, Anthropic and Bedrock get earlier calls and results as JSON text, since they refuse tool blocks in a request without tools.
+- **Agent runs can wait for a person to approve a tool call.**
+  - A tool declares `approval: 'required'`, or a function of the proposed input. `createRuntime({ approvals: { tools, expiresInMs, onExpired } })` adds tools without editing them and sets how long a request waits (default 15 minutes, at most 7 days).
+  - The run asks only after the call passed its permissions, input schema and `beforeToolCall` hooks. It emits `approval.requested`, its status becomes `waiting`, and `runtime.inspect(run).approval` shows the exact call and its digest. It holds no reservation while waiting, and waiting does not count against `maxDurationMs`.
+  - `runtime.approve(run or runId, { callId, digest, decision, actorId, reason? })` answers it. The digest binds the answer to the run, call, tool version, input and expiry. Approved, the call runs with exactly that input. Rejected or expired, the model gets `{ error: 'APPROVAL_REJECTED' | 'APPROVAL_EXPIRED', message }` as the tool's result and carries on, or with `onExpired: 'cancel'` the run is cancelled. `approval.resolved` reports the decision.
+  - The tools broker enforces it: a tool that declares approval runs only with the runtime's proof that a person approved that exact call. Child runs, hook actions, code mode and other callers get the new error code `APPROVAL_UNAVAILABLE`. A workflow step with `approval: true` supplies the proof once approved.
+  - `testTool(tool, input, { approved: true })` tests such a tool, and `toolNeedsApproval(tool, input)` tells whether a call would wait. Types `ApprovalOptions`, `ApprovalAnswer`, `PendingApproval` and `RunStatus` are exported. Run records and the observability bridge accept the two new events.
+  - A waiting run lives in memory in this release.
 
 ### Fixed
 

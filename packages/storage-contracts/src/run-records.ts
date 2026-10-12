@@ -44,7 +44,8 @@ const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const replicaPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const statuses = new Set<RunRecordStatus>(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld']);
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld',
+  'approval.requested', 'approval.resolved']);
 /** Outcomes up to this size live in the run record; larger ones in chunk events of a companion aggregate. */
 const inlineOutcomeBytes = 262_144; const maxOutcomeBytes = 16_777_216; const chunkChars = 16_384; const chunksPerWrite = 16;
 /** One record write carries at most this much event data, well inside the store's one-MiB transaction bound. */
@@ -73,7 +74,7 @@ function replica(value: unknown): string { if (typeof value !== 'string' || !rep
 function time(value: unknown): number { if (!Number.isSafeInteger(value) || (value as number) < 0) invalid('A run record time must be a nonnegative integer.'); return value as number; }
 function snapshotOf(value: unknown, id: string): JsonObject {
   let copy: JsonValue; try { copy = jsonValue(value, { maxBytes: 786_432 }); } catch { return invalid('A run snapshot must be bounded JSON.'); }
-  if (copy === null || typeof copy !== 'object' || Array.isArray(copy) || copy['id'] !== id || !statuses.has(copy['status'] as RunRecordStatus)
+  if (copy === null || typeof copy !== 'object' || Array.isArray(copy) || copy['id'] !== id || !(statuses.has(copy['status'] as RunRecordStatus) || copy['status'] === 'waiting')
     || Object.keys(copy).some(key => !['id', 'status', 'budget', 'evidence'].includes(key))) invalid('A run snapshot has an unexpected shape.');
   return copy;
 }

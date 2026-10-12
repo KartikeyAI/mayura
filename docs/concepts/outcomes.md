@@ -103,6 +103,7 @@ your tool if you need them. The one exception is `ToolRefusal`, whose reason you
 | `CONFLICT` | The request conflicts with current state: a closed runtime, a reused id, a record changed meanwhile. |
 | `STORAGE_UNAVAILABLE` | Storage could not be reached. |
 | `INTEGRITY_VIOLATION` | Stored or packaged data failed an integrity check. |
+| `APPROVAL_UNAVAILABLE` | A call needs a person's approval where none can be given: in a child run, a hook action, or outside an agent run. |
 
 Storage adapters report their own failures as `StorageError`, a `MayuraError` whose `code` is one of the codes above
 and whose `storageCode` names the exact storage condition, such as `STORE_CLOSED`. See

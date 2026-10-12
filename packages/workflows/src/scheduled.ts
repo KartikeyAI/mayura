@@ -1,5 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import {
   StorageError, executionRef, workflowPolicy, workflowResources, workflowOutputs,
@@ -343,8 +344,10 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       scheduleRenewal();
       const state = stateFrom(initial.record);
       const raw = resolveBinding(node.input, state.input, outputs(state));
+      // A job for a step that needs approval exists only once the step was approved; the tool's own rule then accepts it.
+      const approvalBinding = node.approval ? bindToolApproval(node.tool, { runId: id, callId: `${id}/step:${node.id}`, input: raw }) : undefined;
       const result = await invokeTool(node.tool, raw, {
-        runId: id, callId: `${id}/step:${node.id}`, scope, permissions, signal: controller.signal,
+        runId: id, callId: `${id}/step:${node.id}`, scope, permissions, signal: controller.signal, ...(approvalBinding ? { approvalBinding } : {}),
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes: policy.maxOutputBytes,
         acquireExecution: async signal => {
           signal.throwIfAborted(); acquired = true; dispatchSignal = signal;

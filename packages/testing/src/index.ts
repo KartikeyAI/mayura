@@ -1,5 +1,6 @@
 import { Budget, MayuraError, MEDIA_TYPES, jsonValue, mediaFromBase64, type ExecutionReceipt, type Media, type ModelAdapter, type ModelMediaCapability, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Outcome, type Scope } from '@mayura/core';
 import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 
 /**
  * Deterministic test-only model. It never performs inference or network requests.
@@ -70,6 +71,8 @@ export interface TestToolOptions {
   readonly signal?: AbortSignal;
   readonly runId?: string;
   readonly callId?: string;
+  /** Treat the call as approved by a person, for a tool that declares `approval`; without it, such a call is refused. */
+  readonly approved?: boolean;
 }
 
 export interface TestToolResult<T extends AnyTool> {
@@ -89,8 +92,14 @@ export interface TestToolResult<T extends AnyTool> {
 export async function testTool<T extends AnyTool>(tool: T, input: unknown, options: TestToolOptions = {}): Promise<TestToolResult<T>> {
   const budget = new Budget(options.budgetMicros ?? tool.costMicros, 1);
   let receipt: ExecutionReceipt | undefined;
+  const runId = options.runId ?? 'test-run'; const callId = options.callId ?? 'test-call';
+  let approvalBinding;
+  if (options.approved === true) {
+    try { approvalBinding = bindToolApproval(tool, { runId, callId, input: jsonValue(input) }); }
+    catch { /* Input that is not plain JSON is refused by the broker itself. */ }
+  }
   const outcome = await invokeTool(tool, input, {
-    runId: options.runId ?? 'test-run', callId: options.callId ?? 'test-call',
+    runId, callId, ...(approvalBinding ? { approvalBinding } : {}),
     scope: options.scope ?? { principalId: 'test', projectId: 'test' }, signal: options.signal ?? new AbortController().signal,
     permissions: { allow: [...(options.permissions ?? toolGrants(tool))] }, budget,
     onExecutionReceipt: async evidence => { receipt = evidence; },

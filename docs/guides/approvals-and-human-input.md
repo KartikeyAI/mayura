@@ -12,6 +12,9 @@ need information only a person has: a corrected address, a choice between two pl
 - **Human requests.** A `human` step asks a typed question and continues with the validated answer as its output.
 - **Standalone requests.** `mayura/workstream/humans` stores the same kind of typed question outside any workflow.
 
+An agent run can also wait for approval, in memory, without a workflow: see
+[Approve a tool call](../concepts/runtime.md#approve-a-tool-call).
+
 ## A complete example
 
 This workflow checks a refund and waits for approval before paying it. The approver is verified by `verifyHuman`.
@@ -261,6 +264,10 @@ a request, and `sweepDeadlines()` expires overdue ones; call it on a schedule. A
 and each request or answer is at most 3.5 KiB.
 
 ## Good to know
+
+- A tool can declare `approval` itself (`'required'`, or a function of its input). Such a tool runs in a workflow only
+  as a step with `approval: true`, once a person approved it; in any other step it fails with `APPROVAL_UNAVAILABLE`
+  before it runs.
 
 - Approvals are attributed to whatever `id` your verifier returns. If every operator token maps to one service
   identity, every approval is attributed to that identity; put your identity provider in front for per-person records.

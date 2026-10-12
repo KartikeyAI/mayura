@@ -136,6 +136,30 @@ describe('durable format-5 lifecycle runtime on SQLite', () => {
       steps: { review: { status: 'skipped' }, publishAt: { status: 'skipped' } } });
   });
 
+  it('runs a tool that declares approval only in a step a person approved', async () => {
+    const clock = { value: 100 }; const runtime = await open(clock);
+    let runs = 0;
+    const guarded = defineTool({ id: 'fixture/draft', version: '1', description: 'Create a draft.', input: any, output: any,
+      effects: 'none', capabilities: [], costMicros: 2, approval: 'required', execute: input => { runs++; return { draft: input }; } });
+    const approvedFlow = defineWorkflowLifecycle({ id: 'tool-approval', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'draft', tool: guarded, approval: true, input: { kind: 'input', path: [] } }],
+      result: { kind: 'step', stepId: 'draft', path: [] } });
+    const submitted = await runtime.submit(approvedFlow, { input: 'draft', idempotencyKey: 'tool-approval' });
+    const waiting = await runtime.runUntilSettled(approvedFlow, submitted.id);
+    const digest = waiting.steps['draft']?.kind === 'tool' ? waiting.steps['draft'].approval?.digest ?? '' : '';
+    await runtime.approve({ id: submitted.id, nodeId: 'draft', digest, credential: 'approver' });
+    expect(await runtime.runUntilSettled(approvedFlow, submitted.id)).toMatchObject({ status: 'succeeded' });
+    expect(runs).toBe(1);
+
+    const unapproved = defineWorkflowLifecycle({ id: 'tool-no-approval', version: '1', input: any, output: any,
+      nodes: [{ kind: 'tool', id: 'draft', tool: guarded, input: { kind: 'input', path: [] } }],
+      result: { kind: 'step', stepId: 'draft', path: [] } });
+    const run = await runtime.submit(unapproved, { input: 'draft', idempotencyKey: 'tool-no-approval' });
+    expect(await runtime.runUntilSettled(unapproved, run.id)).toMatchObject({ status: 'failed',
+      steps: { draft: { status: 'failed', receipt: { execution: 'not_started' } } } });
+    expect(runs).toBe(1);
+  });
+
   it('persists a quiescent operator pause across restart and resumes without bypassing waits', async () => {
     const clock = { value: 100 }; let effects = 0; let runtime = await open(clock);
     const counted = defineTool({ id: 'fixture/draft', version: '1', description: 'Create a draft.', input: any, output: any,

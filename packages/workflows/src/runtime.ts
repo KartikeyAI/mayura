@@ -1,5 +1,6 @@
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 import { abandoned, dispatchedAt } from './abandoned.js';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workflowOutputs, mergeWorkflowReceipt,
@@ -172,8 +173,11 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     }
     const controller = new AbortController(); const activeKey = `${id}/${node.id}`; active.set(activeKey, controller);
     try {
-      const result = await invokeTool(node.tool, resolveBinding(node.input, state.input, outputs(state)), {
-        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions,
+      const raw = resolveBinding(node.input, state.input, outputs(state));
+      // A step that needs approval reaches here only approved; the tool's own approval rule then accepts the call.
+      const approvalBinding = node.approval ? bindToolApproval(node.tool, { runId: id, callId: `${id}/${step.callId}`, input: raw }) : undefined;
+      const result = await invokeTool(node.tool, raw, {
+        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions, ...(approvalBinding ? { approvalBinding } : {}),
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes,
         beforeDispatch: async processed => {
           const current = stateFrom(await load(id));

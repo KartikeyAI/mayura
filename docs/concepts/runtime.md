@@ -77,6 +77,7 @@ const followUp = runtime.submit(supportAgent, {
 | `permissions` | `{ allow: [] }` | What runs may use. Nothing is allowed by default. See [Permissions](./permissions.md). |
 | `scope` | `{ principalId: 'local', projectId: 'default' }` | Who runs act for. Tools, guards and hooks receive it. |
 | `limits` | see below | Ceilings for every run. |
+| `approvals` | none | `{ tools, expiresInMs, onExpired }`: tools whose calls need a person's approval, and how long a request waits. See [Approve a tool call](#approve-a-tool-call). |
 
 `ephemeral` means the runtime keeps everything in memory. Runs, events and costs are lost when the process exits, and
 a run interrupted by a crash is not resumed. For work that must survive restarts, use
@@ -144,6 +145,8 @@ object (ids, counts and statuses, never prompts or secrets).
 | `hook.started`, `hook.completed` | A lifecycle hook ran. |
 | `delegate.started`, `delegate.completed` | A child run began or ended. |
 | `output.delta`, `output.withheld` | A streamed batch of text was released, or streaming stopped. |
+| `approval.requested` | The run is waiting for a person to approve a tool call: its `callId`, `toolId`, `digest` and `expiresAtMs`. |
+| `approval.resolved` | The request was answered (`approved` or `rejected`, with the `actorId`) or `expired`. |
 | `events.gap` | Older events were dropped before you read them. |
 | `run.completed` | The run ended, with its status and cost totals. |
 
@@ -160,11 +163,67 @@ complete it. In that case the call is `outcome_unknown`, and so is the run. See 
 
 When `maxDurationMs` passes, the run is stopped the same way and fails with `TIMEOUT`.
 
+## Approve a tool call
+
+A tool can require a person to approve a call before it runs. Declare it on the tool, for every call or depending on
+the input the model proposed:
+
+```ts
+import { createRuntime, defineTool, z } from 'mayura';
+
+const refund = defineTool({
+  id: 'orders.refund', version: '1', description: 'Refund part or all of an order.',
+  input: z.object({ orderId: z.string(), amountCents: z.number().int().positive() }),
+  output: z.object({ refundId: z.string() }), effects: 'write', capabilities: [],
+  approval: input => input.amountCents > 10_000, // refunds over $100 wait for a person
+  execute: async input => ({ refundId: `re_${input.orderId}` }),
+});
+
+const runtime = createRuntime({
+  profile: 'ephemeral',
+  permissions: { allow: ['model:openai.responses', 'tool:orders.refund', 'effect:write'] },
+  approvals: { expiresInMs: 30 * 60_000 },
+});
+
+const run = runtime.submit(refundAgent, { input: { message: 'Refund order A-1001 in full.' } });
+for await (const event of run.observe()) {
+  if (event.type !== 'approval.requested') continue;
+  const { approval } = runtime.inspect(run); // the exact call: toolId, toolVersion, input
+  if (approval && (await askManager(approval))) {
+    await runtime.approve(run, { callId: approval.callId, digest: approval.digest, decision: 'approved', actorId: 'manager-7' });
+  } else if (approval) {
+    await runtime.approve(run, { callId: approval.callId, digest: approval.digest, decision: 'rejected', actorId: 'manager-7',
+      reason: 'Refunds over $100 need a receipt.' });
+  }
+}
+```
+
+- **When it asks:** only for a call that passed the run's permissions, the tool's input schema and any
+  `beforeToolCall` hook. An approval never grants anything the run lacks. Earlier calls of the same batch run first.
+- **Waiting:** the run's status is `waiting`, and `runtime.inspect(run).approval` holds the call: `callId`, `toolId`,
+  `toolVersion`, `input`, `digest` and `expiresAtMs`. The run holds no reservation while it waits, and waiting does
+  not count against `maxDurationMs`. `result()` stays pending until the run ends.
+- **Answering:** `runtime.approve(run or runId, { callId, digest, decision, actorId, reason? })`. The digest binds
+  the answer to this run, call, tool version, input and expiry; a different one is refused with `CONFLICT`, as is an
+  answer after the request expired. A call is answered once.
+- **Approved:** the tool runs with exactly the approved input, under the run's limits as they are then.
+- **Rejected:** the call does not run. The model gets `{ error: 'APPROVAL_REJECTED', message, reason? }` as the tool's
+  result and carries on, for example by explaining to the user.
+- **Expired:** after `approvals.expiresInMs` (default 15 minutes, at most 7 days), the model gets
+  `{ error: 'APPROVAL_EXPIRED', message }`. With `onExpired: 'cancel'`, the run is cancelled instead.
+- **Cancelling** a waiting run ends it `cancelled`; the call never runs.
+- **Without editing tools:** `approvals: { tools: ['orders.refund'] }` makes every call of those tools wait.
+- **Only root runs wait.** A child run, a speculative branch or a hook action that reaches a call needing approval
+  fails with `APPROVAL_UNAVAILABLE`. So does calling the tool outside a run, for example from code mode or a workflow
+  step: the tool checks for the runtime's proof that a person approved that exact call.
+- **In memory:** a waiting run lives in this process. If it exits, the run is lost, as any ephemeral run is.
+
 ## Inspect a run
 
 `runtime.inspect(handle)` returns a snapshot of a run and its children, while it runs or after:
 
-- `status`: `running` or the final status.
+- `status`: `running`, `waiting` (for an [approval](#approve-a-tool-call)) or the final status.
+- `approval`: while the run waits, the call it asks a person to approve.
 - `budget`: `spentMicros`, `reservedMicros` (cost held for calls in progress or with unknown cost) and `calls`.
 - `runs`: the run and every child run, with ids, agent ids and statuses.
 - `evidence`: for each tool call, whether it ran (`not_started`, `succeeded`, `failed` or `unknown`) and whether its

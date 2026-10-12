@@ -32,7 +32,9 @@ export { batchOutput, invokeBatch, type BatchCall, type BatchInput, type BatchOu
 export { createToolContextSlot, type ToolContextSlot, type ToolContextBinding } from './context.js';
 import { attachToolContext, type ToolContextBinding } from './context.js';
 import { claimToolBudgetTicket, type ToolBudgetTicketBinding } from './budget-binding.js';
+import { claimToolApproval, type ToolApprovalBinding } from './approval-binding.js';
 export type { ToolBudgetTicketBinding } from './budget-binding.js';
+export type { ToolApprovalBinding } from './approval-binding.js';
 
 /** Authoring contract. Executors are trusted application code, not sandboxed callbacks. */
 export interface ToolExecutionContext extends ExecutionContext {
@@ -58,6 +60,12 @@ export interface ToolOptions<I extends Schema, O extends Schema> {
    * `withMedia(output, [media(...)])`. Without it, a tool returning media fails.
    */
   readonly media?: MediaPolicy;
+  /**
+   * Whether a person must approve a call before it runs, in an agent run: `'required'` for every call, or a function
+   * that decides from the input the model proposed (`true` asks). The run pauses before the call until the call is
+   * approved or rejected; see the runtime's `approve`. A function that throws asks for approval.
+   */
+  readonly approval?: 'required' | ((input: InferInput<I>) => boolean);
 }
 
 /** Immutable public metadata; intentionally does not expose a callable executor. */
@@ -74,6 +82,8 @@ export interface ToolDefinition<I extends Schema = Schema, O extends Schema = Sc
   readonly inputJsonSchema?: JsonObject;
   /** The media the tool may return, with defaults filled in; absent when it returns none. */
   readonly media?: ResolvedMediaPolicy;
+  /** Whether calls need a person's approval: always, or depending on the input. Absent when they never do. */
+  readonly approval?: 'required' | 'conditional';
 }
 
 /** A tool's outcome: on success, any media it returned for the model to see (see `withMedia`). */
@@ -86,6 +96,11 @@ export interface InvokeToolContext extends ExecutionContext {
   readonly budget: Budget;
   /** Trusted-host pre-reserved invocation; still subject to every ordinary broker admission check. */
   readonly budgetBinding?: ToolBudgetTicketBinding;
+  /**
+   * Trusted-host proof that a person approved this exact call. A tool that declares `approval` refuses a call that needs
+   * it without one, with APPROVAL_UNAVAILABLE: only an agent run can ask a person.
+   */
+  readonly approvalBinding?: ToolApprovalBinding;
   readonly maxOutputBytes?: number;
   /** The most bytes of media this call may return (default: the tool's own media limits). */
   readonly maxMediaBytes?: number;
@@ -103,6 +118,8 @@ export interface InvokeToolContext extends ExecutionContext {
 
 interface Registration {
   readonly execute: (input: unknown, context: ToolExecutionContext) => unknown;
+  /** Decides whether a call with this proposed input needs approval; absent when none does. */
+  readonly approval?: (input: unknown) => boolean;
   readonly inputGuards: readonly Guard[];
   readonly outputGuards: readonly Guard[];
 }
@@ -116,7 +133,7 @@ function snapshotInvocation(value: InvokeToolContext): InvokeToolContext {
     if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
     const fields = Object.getOwnPropertyDescriptors(value);
     const required = ['runId', 'callId', 'scope', 'signal', 'permissions', 'budget'];
-    const optional = ['maxOutputBytes', 'maxMediaBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding'];
+    const optional = ['maxOutputBytes', 'maxMediaBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding', 'approvalBinding'];
     if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || ![...required, ...optional].includes(key))
       || required.some(key => !fields[key])) throw new Error();
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -142,6 +159,7 @@ const errorMessages = {
   LIMIT_EXCEEDED: 'A tool execution limit was reached.', CANCELLED: 'Tool execution was cancelled.', TIMEOUT: 'Tool execution exceeded its deadline.',
   TOOL_FAILED: 'The tool executor failed; raw exception details are withheld.', GUARD_BLOCKED: 'A required guard withheld this operation or output.',
   GUARD_UNAVAILABLE: 'A required guard could not establish a verdict.', CONFLICT: 'The tool invocation authority is no longer available.',
+  APPROVAL_UNAVAILABLE: 'This call needs approval from a person, and none was given for it; it did not run.',
 } as const;
 /** Even configuration/reflection exceptions that imitate framework errors never supply public text. */
 function safeToolFailure(error: unknown): PublicError {
@@ -220,6 +238,10 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
   if (timeoutMs > 2_147_483_647) throw new MayuraError('INVALID_CONFIG', 'timeoutMs exceeds the supported timer range.');
   const costMicros = options.costMicros ?? 0;
   if (!Number.isSafeInteger(costMicros) || costMicros < 0) throw new MayuraError('INVALID_CONFIG', 'costMicros must be a non-negative safe integer.');
+  const approval = options.approval;
+  if (approval !== undefined && approval !== 'required' && typeof approval !== 'function') {
+    throw new MayuraError('INVALID_CONFIG', `Tool ${options.id}: approval must be 'required' or a function of the input.`);
+  }
   // What a model is told the input looks like: as given, or generated from the input validator when it can describe
   // itself (Zod 4.2 and later can).
   const inputJsonSchema = options.inputJsonSchema === undefined ? jsonSchemaOf(options.input) : freezeJson(jsonValue(options.inputJsonSchema));
@@ -238,10 +260,15 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
     costMicros,
     ...(inputJsonSchema === undefined ? {} : { inputJsonSchema }),
     ...(options.media === undefined ? {} : { media: mediaPolicy(options.media, `Tool ${options.id}`) }),
+    ...(approval === undefined ? {} : { approval: approval === 'required' ? 'required' as const : 'conditional' as const }),
   });
   const execute = options.execute;
   registrations.set(definition, {
     execute: (input, context) => execute(input as InferOutput<I>, context),
+    // A deciding function that fails asks for approval: failing closed.
+    ...(approval === undefined ? {} : { approval: approval === 'required' ? () => true : (input: unknown) => {
+      try { return approval(input as InferInput<I>) !== false; } catch { return true; }
+    } }),
     inputGuards: snapshotGuards(options.guards?.input),
     outputGuards: snapshotGuards(options.guards?.output),
   });
@@ -268,6 +295,12 @@ export function withPreflight<T extends AnyTool>(tool: T,
     return registration.execute(input, context);
   } });
   return definition;
+}
+
+/** Whether a call of `tool` with this proposed input needs a person's approval first. Trusted host use (the runtime). */
+export function toolNeedsApproval(tool: AnyTool, input: unknown): boolean {
+  const registration = registrations.get(tool); if (!registration) throw new MayuraError('INVALID_CONFIG', 'Tool was not created by this tools package instance.');
+  return registration.approval ? registration.approval(input) : false;
 }
 
 /**
@@ -370,6 +403,10 @@ export async function invokeTool<T extends AnyTool>(
     let inputSnapshot: JsonValue;
     try { inputSnapshot = freezeJson(jsonValue(input)); }
     catch { throw new MayuraError('INVALID_INPUT', 'Tool input must be bounded plain JSON.'); }
+    // A call that needs a person's approval runs only with proof that this exact call was approved.
+    if (registration.approval?.(inputSnapshot)) {
+      claimToolApproval(options.approvalBinding, tool, { runId: options.runId, callId: options.callId, input: inputSnapshot });
+    }
 
     const bounded = new Promise<never>((_resolve, reject) => {
       rejectOnAbort = (): void => { reject(abortError()); };

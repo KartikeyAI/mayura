@@ -3,9 +3,9 @@ import {
   type BudgetTicket, type BudgetBundle, type Reservation, type ManagedGuardDefinition, type ExecutionEvidence, type ExecutionReceipt, type Guard, type InferInput, type InferOutput, type JsonValue, type ModelHistoryMessage, type ModelMessage, type ModelRequest,
   type Outcome, type Permissions, type RunHandle, type Schema, type Scope, type Media, mediaSummary,
 } from '@mayura/core';
-import { admitMedia, readManagedGuardDefinition } from '@mayura/core/host';
+import { admitMedia, readManagedGuardDefinition, sha256Hex } from '@mayura/core/host';
 import { invokeTool, type AnyTool, type ToolOutcome } from '@mayura/tools';
-import { bindToolBudgetTicket } from '@mayura/tools/host';
+import { bindToolApproval, bindToolBudgetTicket, toolNeedsApproval, type ToolApprovalBinding } from '@mayura/tools/host';
 import { assertAgent, isIdentifier, type AgentDefinition, type AgentGuard } from './agent.js';
 import { EventBuffer } from './event-buffer.js';
 import { admitHistory } from './history.js';
@@ -67,11 +67,42 @@ export interface SpeculationResult<T> {
   readonly branches: readonly { readonly id: string; readonly runId: string; readonly status: Outcome<unknown>['status']; readonly assumptionsDigest: string; readonly verified: boolean }[];
 }
 
+/** When a person must approve a tool call before it runs, and how long a request waits for them. */
+export interface ApprovalOptions {
+  /** Tool ids whose every call needs approval, in addition to tools that declare `approval` themselves. */
+  readonly tools?: readonly string[];
+  /** How long a request waits for an answer (default 15 minutes, at most 7 days). Waiting does not count against `maxDurationMs`. */
+  readonly expiresInMs?: number;
+  /** What an unanswered request does when it expires: tell the model it was not approved (default), or cancel the run. */
+  readonly onExpired?: 'reject' | 'cancel';
+}
+/** A person's answer to a pending approval. `digest` is the one in `approval.requested` and the run's inspection. */
+export interface ApprovalAnswer {
+  readonly callId: string;
+  readonly digest: string;
+  readonly decision: 'approved' | 'rejected';
+  /** Who answered, as a stable identifier; it appears in the `approval.resolved` event. */
+  readonly actorId: string;
+  /** Why, for a rejection: the model sees it with the refusal (at most 1,000 characters). */
+  readonly reason?: string;
+}
+/** The tool call a waiting run asks a person to approve: exactly what will run if it is approved. */
+export interface PendingApproval {
+  readonly callId: string;
+  readonly toolId: string;
+  readonly toolVersion: string;
+  readonly input: JsonValue;
+  readonly digest: string;
+  readonly expiresAtMs: number;
+}
+
 export interface RuntimeOptions {
   readonly profile: 'ephemeral';
   readonly permissions?: Permissions;
   readonly scope?: Scope;
   readonly limits?: RuntimeLimits;
+  /** Calls that need a person's approval before they run, beyond the tools that declare it. */
+  readonly approvals?: ApprovalOptions;
 }
 export interface Runtime {
   readonly profile: 'ephemeral';
@@ -86,6 +117,11 @@ export interface Runtime {
   }): RunHandle<InferOutput<O>>;
   spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
   inspect(handle: RunHandle<unknown>): RunInspection;
+  /**
+   * Answer the approval a waiting run asks for, by its handle or id. The answer must name the pending call and its exact
+   * digest, before the request expires. Approved, the call runs; rejected, the model is told and carries on.
+   */
+  approve(run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<void>;
   /**
    * Run isolated speculative child branches under the parent's shared budget and promote at most one. Branches may
    * not hold write, host, delegation or memory-mutation grants; losing and unverified branches are cancelled.
@@ -146,14 +182,18 @@ function outcomeFor(error: unknown): Outcome<never> {
 }
 
 
+/** A run is `waiting` while it waits for a person to approve a tool call. */
+export type RunStatus = 'running' | 'waiting' | Outcome<unknown>['status'];
 export interface RunInspection {
   readonly id: string;
   readonly rootId: string;
   readonly parentId?: string;
   readonly agentId: string;
-  readonly status: 'running' | Outcome<unknown>['status'];
+  readonly status: RunStatus;
+  /** The call a waiting run asks a person to approve. */
+  readonly approval?: PendingApproval;
   readonly budget: ReturnType<Budget['snapshot']>;
-  readonly runs: readonly { readonly id: string; readonly parentId?: string; readonly agentId: string; readonly status: 'running' | Outcome<unknown>['status'] }[];
+  readonly runs: readonly { readonly id: string; readonly parentId?: string; readonly agentId: string; readonly status: RunStatus }[];
   readonly evidence: readonly ExecutionEvidence[];
 }
 type Failure = Exclude<Outcome<never>, { readonly status: 'succeeded' }>;
@@ -169,7 +209,8 @@ interface RunState {
   readonly parent: RunState | undefined;
   readonly root: RunState;
   readonly depth: number;
-  readonly deadline: number;
+  /** Moves later after a wait for approval: waiting does not count against maxDurationMs. */
+  deadline: number;
   readonly limits: Required<RuntimeLimits>;
   readonly permissions: Permissions;
   readonly budget: Budget;
@@ -181,7 +222,9 @@ interface RunState {
   readonly speculative: boolean;
   readonly receipts: Map<string, ExecutionReceipt>;
   accepting: boolean;
-  status: 'running' | Outcome<unknown>['status'];
+  status: RunStatus;
+  /** The pending approval while the run waits, with the function that answers it. */
+  approval: (PendingApproval & { answer(answer: Answered): void }) | undefined;
   descendants: number;
   modelCalls: number;
   toolCalls: number;
@@ -268,6 +311,23 @@ function canonicalJson(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`).join(',')}}`;
 }
+type Answered = { readonly decision: 'approved' | 'rejected' | 'expired'; readonly actorId?: string; readonly reason?: string };
+const APPROVAL_DEFAULT_MS = 900_000;
+const APPROVAL_MAX_MS = 604_800_000;
+function approvalOptions(supplied: ApprovalOptions | undefined): { readonly tools: ReadonlySet<string>; readonly expiresInMs: number; readonly onExpired: 'reject' | 'cancel' } {
+  if (supplied !== undefined && (typeof supplied !== 'object' || supplied === null || Object.keys(supplied).some(key => !['tools', 'expiresInMs', 'onExpired'].includes(key)))) {
+    throw new MayuraError('INVALID_CONFIG', 'approvals takes only tools, expiresInMs and onExpired.');
+  }
+  const tools = supplied?.tools ?? []; const expiresInMs = supplied?.expiresInMs ?? APPROVAL_DEFAULT_MS; const onExpired = supplied?.onExpired ?? 'reject';
+  if (!Array.isArray(tools) || tools.length > 256 || tools.some(tool => !isIdentifier(tool))) throw new MayuraError('INVALID_CONFIG', 'approvals.tools must be at most 256 tool ids.');
+  if (!Number.isSafeInteger(expiresInMs) || expiresInMs < 1 || expiresInMs > APPROVAL_MAX_MS) throw new MayuraError('INVALID_CONFIG', `approvals.expiresInMs must be 1 to ${APPROVAL_MAX_MS} ms (7 days).`);
+  if (onExpired !== 'reject' && onExpired !== 'cancel') throw new MayuraError('INVALID_CONFIG', "approvals.onExpired must be 'reject' or 'cancel'.");
+  return Object.freeze({ tools: new Set(tools), expiresInMs, onExpired });
+}
+/** Binds an approval to exactly one call: this run, call, tool version, input, policy and expiry. */
+function approvalDigest(fields: { runId: string; callId: string; toolId: string; toolVersion: string; input: JsonValue; policy: { onExpired: string }; expiresAtMs: number }): string {
+  return sha256Hex(`mayura:run-approval:v1\0${canonicalJson(fields as unknown as JsonValue)}`);
+}
 function terminalView(stage: TerminalHookStage, outcome: Outcome<unknown>): HookEvent<TerminalHookStage> {
   return Object.freeze({ stage, status: outcome.status, ...(outcome.status === 'succeeded' ? {} : { error: Object.freeze({ code: outcome.error.code }) }) });
 }
@@ -282,6 +342,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     throw new MayuraError('INVALID_CONFIG', 'Scope requires bounded principal and project identifiers.');
   }
   const scope: Scope = Object.freeze({ principalId: suppliedScope.principalId, projectId: suppliedScope.projectId });
+  const approvalPolicy = approvalOptions(options.approvals);
   const active = new Map<string, RunHandle<unknown>>();
   const states = new WeakMap<object, RunState>();
   const operations = new OperationPermits(rootLimits.maxConcurrentOperations, Math.min(65536, rootLimits.maxConcurrentRuns * (rootLimits.maxDescendantRuns + 1)));
@@ -347,10 +408,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     let terminal = false;
     let settle!: (result: Outcome<InferOutput<O>>) => void;
     const result = new Promise<Outcome<InferOutput<O>>>((resolve) => { settle = resolve; });
-    const deadline = Math.min(Date.now() + limits.maxDurationMs, parent?.deadline ?? Infinity);
-    const timer = setTimeout(() => {
+    let deadline = Math.min(Date.now() + limits.maxDurationMs, parent?.deadline ?? Infinity);
+    const armDeadline = (): ReturnType<typeof setTimeout> => setTimeout(() => {
       if (!terminal) controller.abort(new MayuraError('TIMEOUT', 'The run deadline elapsed; no new work will be dispatched.'));
     }, Math.max(0, deadline - Date.now()));
+    let timer = armDeadline();
     const handle: RunHandle<InferOutput<O>> = Object.freeze({
       id, profile: 'ephemeral', result: () => result,
       observe: (observerOptions?: { readonly after?: number; readonly signal?: AbortSignal }) => events.observe(observerOptions),
@@ -358,7 +420,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     });
     const runOperations = (parent?.operations ?? operations).fork(limits.maxConcurrentOperations);
     const state = { id, events, agent, parent, depth: parent ? parent.depth + 1 : 0, deadline, limits, permissions, budget, operations: runOperations, controller,
-      handle, children: [], speculative, receipts: new Map(), accepting: true, status: 'running', descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
+      handle, children: [], speculative, receipts: new Map(), accepting: true, status: 'running', approval: undefined, descendants: 0, modelCalls: 0, toolCalls: 0, hookCalls: 0,
       heldModelCalls: 0, heldToolCalls: 0, bundles: new Set() } as unknown as RunState;
     Object.defineProperty(state, 'root', { value: parent?.root ?? state });
     const relayParent = (): void => { if (!controller.signal.aborted) controller.abort(parent?.controller.signal.reason); };
@@ -559,6 +621,52 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     };
     state.control = control; state.observe = observe;
 
+    /**
+     * Wait for a person to answer an approval request for this call. Called at a safe point: the model call has settled
+     * and this call holds no reservation. The deadline stops while the run waits and moves later by the time waited.
+     */
+    const awaitApproval = async (tool: AnyTool, input: JsonValue, callId: string, signal: AbortSignal): Promise<Answered> => {
+      if (parent) throw new MayuraError('APPROVAL_UNAVAILABLE', `Tool ${tool.id} needs a person's approval, which only a root run can wait for.`);
+      const expiresAtMs = Date.now() + approvalPolicy.expiresInMs;
+      const policy = { onExpired: approvalPolicy.onExpired };
+      const digest = approvalDigest({ runId: id, callId, toolId: tool.id, toolVersion: tool.version, input, policy, expiresAtMs });
+      const pausedAt = Date.now();
+      clearTimeout(timer);
+      let answered: Answered;
+      try {
+        answered = await new Promise<Answered>((resolve, reject) => {
+          const settle = (): void => { clearTimeout(expiry); signal.removeEventListener('abort', abort); state.approval = undefined; };
+          const abort = (): void => { settle(); reject(signal.reason); };
+          const expiry = setTimeout(() => {
+            settle();
+            events.emit('approval.resolved', { callId, toolId: tool.id, decision: 'expired' });
+            if (approvalPolicy.onExpired === 'cancel') reject(new MayuraError('CANCELLED', 'The approval request expired, and the run was cancelled.'));
+            else resolve({ decision: 'expired' });
+          }, approvalPolicy.expiresInMs);
+          signal.addEventListener('abort', abort, { once: true });
+          state.approval = Object.freeze({ callId, toolId: tool.id, toolVersion: tool.version, input, digest, expiresAtMs,
+            answer: (answer: Answered) => {
+              settle();
+              events.emit('approval.resolved', { callId, toolId: tool.id, decision: answer.decision, ...(answer.actorId === undefined ? {} : { actorId: answer.actorId }) });
+              resolve(answer);
+            } });
+          state.status = 'waiting';
+          events.emit('approval.requested', { callId, toolId: tool.id, digest, expiresAtMs });
+          if (signal.aborted) abort();
+        });
+      } finally {
+        if (state.status === 'waiting') state.status = 'running';
+        deadline += Date.now() - pausedAt; state.deadline = deadline;
+        if (!terminal) timer = armDeadline();
+      }
+      // The call that runs is the one approved: the same input under the same digest.
+      if (answered.decision === 'approved'
+        && approvalDigest({ runId: id, callId, toolId: tool.id, toolVersion: tool.version, input, policy, expiresAtMs }) !== digest) {
+        throw new MayuraError('CONFLICT', 'The approved call no longer matches its approval.');
+      }
+      return answered;
+    };
+
     /** Ordinary proposals and hook actions share the same broker, exact account and output barriers. */
     const invokeRunTool = async (tool: AnyTool, rawInput: JsonValue, callId: string, step: number,
       signal: AbortSignal = controller.signal, withHooks = true): Promise<Outcome<JsonValue>> => {
@@ -566,7 +674,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       // Model envelopes are validated JSON but not frozen. Do not expose their live history
       // objects to callbacks or let a proposal hook rewrite the later executor's arguments.
       const input = freezeJson(jsonValue(rawInput, { maxBytes: limits.maxInputBytes }));
-      const toolBundle = operationBundle('tool', tool.costMicros);
+      let toolBundle = operationBundle('tool', tool.costMicros);
+      let approvalBinding: ToolApprovalBinding | undefined;
       try {
         if (withHooks) {
           const failure = await control(Object.freeze({ stage: 'beforeToolCall', phase: 'proposal',
@@ -574,11 +683,28 @@ export function createRuntime(options: RuntimeOptions): Runtime {
           if (failure) return failure;
         }
         checkCancelled(signal);
+        // Approval applies to calls that passed preflight and the proposal hooks; it never grants anything.
+        if (approvalPolicy.tools.has(tool.id) || toolNeedsApproval(tool, input)) {
+          if (!withHooks) throw new MayuraError('APPROVAL_UNAVAILABLE', `A hook action cannot call ${tool.id}, which needs a person's approval.`);
+          // Nothing is held while the run waits; an approved call reserves again, under the limits as they are then.
+          toolBundle.close();
+          const answer = await awaitApproval(tool, input, callId, signal);
+          checkCancelled(signal);
+          if (answer.decision !== 'approved') {
+            const refusal = answer.decision === 'rejected'
+              ? { error: 'APPROVAL_REJECTED', message: `A person did not approve this call to ${tool.id}; it did not run.`, ...(answer.reason ? { reason: answer.reason } : {}) }
+              : { error: 'APPROVAL_EXPIRED', message: `Nobody approved this call to ${tool.id} in time; it did not run.` };
+            return Object.freeze({ status: 'succeeded' as const, output: freezeJson(refusal) });
+          }
+          toolBundle = operationBundle('tool', tool.costMicros);
+          approvalBinding = bindToolApproval(tool, { runId: id, callId, input });
+        }
         consumeCall(state, toolBundle.entries[0]!, 'tool');
         events.emit('tool.started', { callId, toolId: tool.id });
         let outcome: ToolOutcome<unknown> = await invokeTool(tool, input, {
           runId: id, callId, scope, signal, permissions, budget, maxMediaBytes: Math.max(0, limits.maxMediaBytes - mediaBytes),
           budgetBinding: bindToolBudgetTicket(tool, toolBundle.entries[0]!.ticket, { budget, runId: id, callId, scope, signal }),
+          ...(approvalBinding ? { approvalBinding } : {}),
           maxOutputBytes: limits.maxOutputBytes,
           acquireCallback: (callbackSignal: AbortSignal) => runOperations.acquire(callbackSignal),
           onExecutionReceipt: async receipt => { record(state, receipt); },
@@ -942,11 +1068,31 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     },
     inspect: (handle: RunHandle<unknown>): RunInspection => {
       const state = lookup(handle);
+      const pending = state.approval;
       return Object.freeze({ id: state.id, rootId: state.root.id, ...(state.parent ? { parentId: state.parent.id } : {}),
-        agentId: state.agent.id, status: state.status, budget: state.budget.snapshot(),
+        agentId: state.agent.id, status: state.status,
+        ...(pending ? { approval: Object.freeze({ callId: pending.callId, toolId: pending.toolId, toolVersion: pending.toolVersion, input: pending.input,
+          digest: pending.digest, expiresAtMs: pending.expiresAtMs }) } : {}),
+        budget: state.budget.snapshot(),
         runs: Object.freeze(subtree(state).map((run) => Object.freeze({ id: run.id, ...(run.parent ? { parentId: run.parent.id } : {}), agentId: run.agent.id, status: run.status }))),
         evidence: evidenceFor(state),
       });
+    },
+    approve: async (run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<void> => {
+      const target = typeof run === 'string' ? active.get(run) : run;
+      if (!target) throw new MayuraError('NOT_FOUND', 'No active run has that id.');
+      const state = lookup(target);
+      const reason = answer?.reason;
+      if (!answer || typeof answer !== 'object' || typeof answer.callId !== 'string' || typeof answer.digest !== 'string'
+        || (answer.decision !== 'approved' && answer.decision !== 'rejected') || !isIdentifier(answer.actorId)
+        || (reason !== undefined && (typeof reason !== 'string' || reason.length > 1_000))) {
+        throw new MayuraError('INVALID_INPUT', 'An approval answer needs callId, digest, decision (approved or rejected), actorId, and at most a 1,000-character reason.');
+      }
+      const pending = state.approval;
+      if (!pending || pending.callId !== answer.callId) throw new MayuraError('NOT_FOUND', 'This run is not waiting for an approval of that call.');
+      if (Date.now() >= pending.expiresAtMs) throw new MayuraError('CONFLICT', 'The approval request has expired.');
+      if (answer.digest !== pending.digest) throw new MayuraError('CONFLICT', 'The digest does not match the call waiting for approval.');
+      pending.answer(Object.freeze({ decision: answer.decision, actorId: answer.actorId, ...(reason === undefined ? {} : { reason }) }));
     },
     close: async (): Promise<void> => {
       closed = true;
