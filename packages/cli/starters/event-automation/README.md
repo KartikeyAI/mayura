@@ -120,7 +120,7 @@ caller scopes and configuration.
    server. Scale both horizontally; one worker leads at a time, and deliveries are deduplicated across servers.
 5. Terminate TLS in front of both ports. Set `MAYURA_PUBLIC_ORIGIN` to the API's exact `https://` origin; the API
    refuses other hosts. Route only `POST /webhooks/tickets` to the ingress and rate-limit it at the proxy.
-   `/healthz` and `/readyz` are on the API port; the worker serves its own on port 9090.
+   `/livez` and `/readyz` are on the API port; the worker serves its own on port 9090.
 
 `docker compose up --build` runs this shape locally (PostgreSQL, migrate, server, worker and the stand-in tracker)
 from `.env`. The image builds from the npm registry, so it needs published Mayura packages.

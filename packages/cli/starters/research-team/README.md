@@ -156,7 +156,7 @@ changing `MAYURA_MAX_RUN_COST_MICROS` or `RESEARCH_BUDGET_MICROS` does.
    reports, the server reads them for `research.report`.
 4. Run `npm run migrate` before new code serves traffic, then `npm run serve` and `npm run worker` as separate
    processes. One worker leads at a time.
-5. Terminate TLS in front of the server and set `MAYURA_PUBLIC_ORIGIN` to the exact `https://` origin. `/healthz` and
+5. Terminate TLS in front of the server and set `MAYURA_PUBLIC_ORIGIN` to the exact `https://` origin. `/livez` and
    `/readyz` are unauthenticated and content-free; the worker serves its own on port 9090.
 
 `docker compose up --build` runs this shape locally (PostgreSQL, migrate, server, worker, a shared artifact volume)
