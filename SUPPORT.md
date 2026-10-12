@@ -22,7 +22,7 @@ are unsupported until they are added with evidence.
 Open an issue at [github.com/KartikeyAI/mayura/issues](https://github.com/KartikeyAI/mayura/issues) for questions,
 bugs and integration requests. [Reporting a bug](docs/project/support.md#reporting-a-bug) lists what to include.
 
-Support is community support on a best-effort basis, with no response-time commitment.
+Mayura receives best-effort community support only, with no response-time commitment or service-level agreement.
 
 ## Security
 
