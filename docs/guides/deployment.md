@@ -561,8 +561,9 @@ Vercel Edge. Two things change in the module:
   has no TCP sockets, that is a WebSocket pool such as Neon's `@neondatabase/serverless`. On Workers (with
   `nodejs_compat`), Deno and Bun, a `pg` Pool works too. On Workers, [`@mayurajs/storage-d1`](storage.md#d1-and-dynamodb)
   keeps everything in D1.
-- **Configuration from the platform.** Workers without `nodejs_compat` and Vercel Edge have no `process.env`: read the
-  database URL and keys from the platform's bindings or environment, and pass them in.
+- **Configuration from the platform.** Workers without `nodejs_compat` have no `process.env`: read the database URL and
+  keys from the Worker's bindings (`env`) and pass them in. Vercel Edge gives environment variables through
+  `process.env`.
 
 On Workers, the default export answers requests and a Cron Trigger (`crons = ["* * * * *"]` in `wrangler.toml`)
 advances workflows:

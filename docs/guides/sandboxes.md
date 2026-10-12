@@ -156,8 +156,9 @@ const releaseSandbox = defineHook({
 });
 ```
 
-Grant the run `tool:workspace.exec` and `sandbox:workspace:exec` (and the same for each other tool), as for any
-[tool](../concepts/tools.md).
+Grant the run `tool:workspace.exec`, `sandbox:workspace:exec` and the tool's effect (and the same for each other tool),
+as for any [tool](../concepts/tools.md). `exec`, `write`, `remove` and the desktop actions (`click`, `scroll`, `type`,
+`key`) have write effects and need `effect:write`; `read`, `list`, `url` and `screenshot` need `effect:read`.
 
 ## Docker
 

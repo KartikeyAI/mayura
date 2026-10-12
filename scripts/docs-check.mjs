@@ -144,7 +144,9 @@ if (count) {
   await writeFile(join(snippets, 'package.json'), `${JSON.stringify({ type: 'module', private: true })}\n`);
   await writeFile(join(snippets, 'tsconfig.json'), `${JSON.stringify({ compilerOptions: {
     strict: true, noImplicitAny: false, target: 'es2023', lib: ['es2023', 'dom'], module: 'nodenext', moduleResolution: 'nodenext',
-    types: ['node'], jsx: 'react-jsx', noEmit: true, skipLibCheck: true }, include: ['*.ts', '*.tsx'] }, null, 2)}\n`);
+    types: ['node'], jsx: 'react-jsx', noEmit: true, skipLibCheck: true,
+    // `@mayurajs/<name>` is the built extension in extensions/<name>, as a project that installed it would see it.
+    paths: { '@mayurajs/*': [join(workspace, 'extensions', '*').split(sep).join('/')] } }, include: ['*.ts', '*.tsx'] }, null, 2)}\n`);
   const tsc = join(workspace, 'node_modules', 'typescript', 'bin', 'tsc');
   assert(existsSync(join(workspace, 'packages', 'mayura', 'dist', 'index.d.ts')), 'Run pnpm build first: the snippets are checked against the built entry points.');
   let output = '';
@@ -155,8 +157,8 @@ if (count) {
     if (!diagnostic) { if (text.trim() && !/^\s/u.test(text)) problems.push(`docs snippets: ${text.trim()}`); continue; }
     const [, path, line, , code, message] = diagnostic; const source = origin.get(path.split(/[\\/]/u).pop());
     if (allowed.has(Number(code))) continue;
-    // Only `mayura` modules must resolve; a snippet may import the reader's own files and packages.
-    if ((code === '2307' || code === '7016') && !/'mayura(?:\/[^']*)?'/u.test(message)) continue;
+    // Only `mayura` and `@mayurajs/*` modules must resolve; a snippet may import the reader's own files and packages.
+    if ((code === '2307' || code === '7016') && !/'(?:mayura(?:\/[^']*)?|@mayurajs\/[^']+)'/u.test(message)) continue;
     if (!source) { problems.push(`docs snippets: ${text}`); continue; }
     problem(source.file, source.start + Number(line) - 1, `TS${code}: ${message}`);
   }

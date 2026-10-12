@@ -83,6 +83,121 @@ Rules that matter when writing Mayura code:
 - [Deploy with mayura deploy](docs/cli/deploy.md): Write a target's deployment files, plan a release and run it with the tools you already use: Docker, Docker Compose, Kubernetes, or a platform package.
 - [Operate a server](docs/cli/operations.md): Inspect and control a running Mayura server from the CLI: health, tools, runs, human requests, workflows and the fleet.
 
+## Integrations: model providers
+
+- [Amazon Bedrock models](docs/integrations/provider-bedrock.md): Call Claude, Nova, Llama and Mistral models on Amazon Bedrock with @mayurajs/provider-bedrock: model ids, catalog prices, credentials and errors.
+- [Anthropic Claude models](docs/integrations/provider-anthropic.md): Call Claude models through Anthropic's Messages API with @mayurajs/provider-anthropic: model ids, catalog prices, thinking, costs and errors.
+- [Google Gemini models](docs/integrations/provider-google.md): Call Gemini models through the Gemini API with @mayurajs/provider-google: model ids, catalog prices, thinking, media, costs and errors.
+- [Groq models](docs/integrations/provider-groq.md): Call open models on Groq through its Chat Completions API with @mayurajs/provider-groq: model ids, catalog prices, tools, costs and errors.
+- [Azure OpenAI models](docs/integrations/provider-azure.md): Call your Azure OpenAI deployments through Azure's v1 API with @mayurajs/provider-azure: deployment ids, Global prices, Entra ID tokens and errors.
+- [Mistral models](docs/integrations/provider-mistral.md): Call Mistral models through the Chat Completions API with @mayurajs/provider-mistral: model ids, catalog prices, EU endpoint, costs and errors.
+- [Ollama models](docs/integrations/provider-ollama.md): Run local or Ollama cloud models with @mayurajs/provider-ollama: model ids, zero or own prices, thinking, structured output and errors.
+- [OpenAI models](docs/integrations/provider-openai.md): Call OpenAI's GPT models through the Responses API with @mayurajs/provider-openai: model ids, catalog prices, options, costs and errors.
+
+## Integrations: voice
+
+- [AssemblyAI transcription](docs/integrations/voice-assemblyai.md): Transcribe audio with AssemblyAI's Universal models through @mayurajs/voice-assemblyai: prices, bounds, transcript deletion and errors.
+- [Cartesia voice](docs/integrations/voice-cartesia.md): Speak text with Cartesia's Sonic models and transcribe audio with Ink-Whisper through @mayurajs/voice-cartesia: prices, bounds, formats and errors.
+- [Deepgram voice](docs/integrations/voice-deepgram.md): Transcribe audio with Nova-3 and speak text with Aura voices through @mayurajs/voice-deepgram: prices, bounds, formats and errors.
+- [ElevenLabs voice](docs/integrations/voice-elevenlabs.md): Speak text with ElevenLabs voices and transcribe audio with Scribe through @mayurajs/voice-elevenlabs: prices, bounds, formats and errors.
+- [Google Cloud speech](docs/integrations/voice-google.md): Transcribe audio with Chirp and speak text with Google Cloud voices through @mayurajs/voice-google: credentials, prices, limits and errors.
+- [Azure Speech](docs/integrations/voice-azure.md): Transcribe audio with Azure's fast transcription and speak text with Azure neural voices through @mayurajs/voice-azure: prices, bounds and errors.
+- [OpenAI speech](docs/integrations/voice-openai.md): Transcribe audio with Whisper and speak text with OpenAI's TTS models through @mayurajs/voice-openai: prices, bounds, formats and errors.
+
+## Integrations: storage
+
+- [Amazon DynamoDB storage](docs/integrations/storage-dynamodb.md): Keep Mayura's workflows, jobs, memory, budgets and API keys in one Amazon DynamoDB table with @mayurajs/storage-dynamodb.
+- [Cloudflare D1 storage](docs/integrations/storage-d1.md): Keep Mayura's workflows, jobs, memory, budgets and API keys in Cloudflare D1 from a Worker with @mayurajs/storage-d1.
+- [MongoDB storage](docs/integrations/storage-mongodb.md): Keep Mayura's workflows, jobs, memory, budgets and API keys in a MongoDB replica set or Atlas cluster with @mayurajs/storage-mongodb.
+- [MySQL storage](docs/integrations/storage-mysql.md): Keep Mayura's workflows, jobs, memory, budgets and API keys in MySQL 8.0.19 or later with @mayurajs/storage-mysql, through mysql2.
+- [Turso and libSQL storage](docs/integrations/storage-libsql.md): Keep Mayura's workflows, jobs, memory, budgets and API keys in Turso, a sqld server or a local libSQL file with @mayurajs/storage-libsql.
+
+## Integrations: files
+
+- [Cloudflare R2 files](docs/integrations/filestorage-r2.md): Store files in Cloudflare R2 from a Worker through its bucket binding with @mayurajs/filestorage-r2: setup, preconditions, limits and errors.
+- [Files SDK files](docs/integrations/filestorage-files-sdk.md): Use any Files SDK provider, such as Supabase, Dropbox, OneDrive, Box, SFTP or WebDAV, as a Mayura file store with @mayurajs/filestorage-files-sdk.
+- [Google Cloud Storage files](docs/integrations/filestorage-gcs.md): Store files in a Google Cloud Storage bucket with @mayurajs/filestorage-gcs: setup, generation preconditions, options, limits and errors.
+- [Google Drive files](docs/integrations/filestorage-google-drive.md): Store files in one Google Drive folder, or the app's hidden folder, with @mayurajs/filestorage-google-drive: scopes, limits, trash and errors.
+- [Mesa files](docs/integrations/filestorage-mesa.md): Store files in a Mesa repository, each write a committed change, with @mayurajs/filestorage-mesa: tokens, rebasing writes, limits and errors.
+- [Azure Blob Storage files](docs/integrations/filestorage-azure-blob.md): Store files in an Azure Blob Storage container with @mayurajs/filestorage-azure-blob: Shared Key, Entra ID or SAS, preconditions and errors.
+- [AgentFS files](docs/integrations/filestorage-agentfs.md): Store files in AgentFS, Turso's SQLite-backed filesystem for agents, with @mayurajs/filestorage-agentfs: single-writer preconditions and limits.
+- [Vercel Blob files](docs/integrations/filestorage-vercel-blob.md): Store files in a private Vercel Blob store with @mayurajs/filestorage-vercel-blob: token, preconditions, CDN-bypassing reads, limits and errors.
+
+## Integrations: observability
+
+- [Arize AX and Phoenix tracing](docs/integrations/observability-arize.md): Send agent runs to Arize AX or Phoenix with OpenInference attributes using @mayurajs/observability-arize: setup, regions, limits and errors.
+- [Better Stack tracing](docs/integrations/observability-betterstack.md): Send agent runs to a Better Stack OpenTelemetry source with @mayurajs/observability-betterstack: setup, options, limits and errors.
+- [Datadog APM and LLM Observability](docs/integrations/observability-datadog.md): Send agent runs to Datadog APM or LLM Observability over Datadog's OTLP intake with @mayurajs/observability-datadog: sites, limits and errors.
+- [Langfuse tracing](docs/integrations/observability-langfuse.md): Send agent runs, model calls and tool calls to Langfuse as traces with @mayurajs/observability-langfuse: setup, regions, limits and errors.
+- [LangSmith tracing](docs/integrations/observability-langsmith.md): Send agent runs to LangSmith as chains with LLM and tool runs using @mayurajs/observability-langsmith: setup, regions, limits and errors.
+- [PostHog LLM analytics](docs/integrations/observability-posthog.md): Send agent runs to PostHog LLM analytics as AI events with @mayurajs/observability-posthog: setup, regions, person ids, limits and errors.
+- [Sentry tracing](docs/integrations/observability-sentry.md): Send agent runs to Sentry's AI Agents view over its OTLP endpoint with @mayurajs/observability-sentry: DSN setup, span ops, limits and errors.
+
+## Integrations: sandboxes
+
+- [Apple container sandboxes](docs/integrations/sandbox-apple-container.md): Run agent commands in lightweight VMs on your Mac with @mayurajs/sandbox-apple-container: setup, options, the host-only network and errors.
+- [Amazon Bedrock AgentCore sandboxes](docs/integrations/sandbox-agentcore.md): Run agent commands in AgentCore Code Interpreter sessions with @mayurajs/sandbox-agentcore: IAM, options, network modes, limits and errors.
+- [Cloudflare sandboxes](docs/integrations/sandbox-cloudflare.md): Run agent commands in Cloudflare Sandboxes through your sandbox bridge Worker with @mayurajs/sandbox-cloudflare: setup, options and errors.
+- [CodeSandbox sandboxes](docs/integrations/sandbox-codesandbox.md): Run agent commands in private CodeSandbox microVMs with @mayurajs/sandbox-codesandbox: setup, options, lifetimes, port URLs and errors.
+- [Daytona sandboxes](docs/integrations/sandbox-daytona.md): Run agent commands in Daytona sandboxes with @mayurajs/sandbox-daytona: setup, options, network rules, signed port URLs, desktop and errors.
+- [E2B sandboxes](docs/integrations/sandbox-e2b.md): Run agent commands in E2B's Firecracker microVMs with @mayurajs/sandbox-e2b: setup, options, network rules, limits and errors.
+- [E2B Desktop sandboxes](docs/integrations/sandbox-e2b-desktop.md): Give agents a Linux desktop they can see and use with @mayurajs/sandbox-e2b-desktop: setup, live view, options, network rules and errors.
+- [Fly.io Machines sandboxes](docs/integrations/sandbox-fly.md): Run agent commands in Fly.io Machines with @mayurajs/sandbox-fly: setup, options, why the network is always on, limits and errors.
+- [Modal sandboxes](docs/integrations/sandbox-modal.md): Run agent commands in Modal Sandboxes with @mayurajs/sandbox-modal: setup, options, network rules, tunnels, limits and errors.
+- [Northflank sandboxes](docs/integrations/sandbox-northflank.md): Run agent commands in Northflank microVM services with @mayurajs/sandbox-northflank: setup, options, lifetimes, limits and errors.
+- [Railway sandboxes](docs/integrations/sandbox-railway.md): Run agent commands in Railway Sandboxes with @mayurajs/sandbox-railway: setup, options, the idle timeout, ports, limits and errors.
+- [Vercel Sandbox](docs/integrations/sandbox-vercel.md): Run agent commands in Vercel Sandbox microVMs with @mayurajs/sandbox-vercel: setup, options, network rules, ports, limits and errors.
+
+## Integrations: browsers
+
+- [agent-browser tools](docs/integrations/browser-agent-browser.md): Run Vercel Labs' agent-browser commands as permission-gated tools on a Mayura browser with @mayurajs/browser-agent-browser: setup, commands and limits.
+- [Anchor Browser sessions](docs/integrations/browser-anchor.md): Drive Anchor Browser's hosted Chromium sessions from agents with @mayurajs/browser-anchor: setup, timeouts, recording, live view and errors.
+- [Browser Use Cloud browsers](docs/integrations/browser-browser-use.md): Drive Browser Use Cloud's hosted Chromium from your own agents with @mayurajs/browser-browser-use: setup, timeouts, proxies, live view and errors.
+- [Browserbase browsers](docs/integrations/browser-browserbase.md): Drive Browserbase's hosted Chromium sessions from agents with @mayurajs/browser-browserbase: setup, options, live view, origins and errors.
+- [Browserless browsers](docs/integrations/browser-browserless.md): Give agents fresh hosted or self-hosted Browserless browsers with @mayurajs/browser-browserless: setup, regions, options, origins and errors.
+- [BrowserView browsers](docs/integrations/browser-browserview.md): Drive BrowserView's hosted Chromium sessions from agents with @mayurajs/browser-browserview: setup, session tokens, live view, origins and errors.
+- [Cloudflare Browser Run browsers](docs/integrations/browser-cloudflare.md): Drive Cloudflare Browser Run sessions from outside a Worker with @mayurajs/browser-cloudflare: token, keep-alive, live view, CDP headers and errors.
+- [Cloudflare quick actions](docs/integrations/cloudflare-quick-action.md): Read web pages through Cloudflare Browser Run's quick actions with @mayurajs/cloudflare-quick-action: a client, and markdown, links, scrape and crawl tools.
+- [Firecrawl browsers and web tools](docs/integrations/browser-firecrawl.md): Use Firecrawl from agents with @mayurajs/browser-firecrawl: Interact sessions as browsers, and scrape, map, search, crawl and extract as tools.
+- [Hyperbrowser browsers](docs/integrations/browser-hyperbrowser.md): Drive Hyperbrowser's hosted Chromium sessions from agents with @mayurajs/browser-hyperbrowser: setup, options, live view, origins and errors.
+- [Kernel browsers](docs/integrations/browser-kernel.md): Drive Kernel's hosted Chromium browsers from agents with @mayurajs/browser-kernel: setup, standby timeouts, stealth, live view and errors.
+- [Live browser viewer](docs/integrations/browser-viewer.md): Let people watch, and optionally use, an agent's browser through an expiring link with @mayurajs/browser-viewer: setup, sharing, limits and security.
+- [Stagehand tools](docs/integrations/browser-stagehand.md): Give agents Stagehand 3's extract, observe and act on a Mayura browser with @mayurajs/browser-stagehand: setup, model, permissions, costs and limits.
+- [Steel browsers](docs/integrations/browser-steel.md): Drive Steel's hosted Chromium sessions from agents with @mayurajs/browser-steel: setup, options, session lifetimes, live view and errors.
+
+## Integrations: sign-in providers
+
+- [Amazon Cognito tokens](docs/integrations/auth-cognito.md): Accept Amazon Cognito user pool access or ID tokens on Mayura's server with @mayurajs/auth-cognito: checks, app clients, machines and errors.
+- [Auth0 access tokens](docs/integrations/auth-auth0.md): Accept Auth0 access tokens for your API on Mayura's server with @mayurajs/auth-auth0: checks, users and machines, options and errors.
+- [Clerk session tokens](docs/integrations/auth-clerk.md): Let Clerk-signed-in users call Mayura's server with @mayurajs/auth-clerk: token checks, organizations and permissions, options and errors.
+- [Facebook Login](docs/integrations/auth-facebook.md): Accept Facebook Login access tokens and iOS Limited Login tokens on Mayura's server with @mayurajs/auth-facebook, or sign in with better-auth.
+- [Firebase Authentication ID tokens](docs/integrations/auth-firebase.md): Accept Firebase Authentication ID tokens on Mayura's server with @mayurajs/auth-firebase: checks, tenants, anonymous users and errors.
+- [Google sign-in](docs/integrations/auth-google.md): Accept Google ID tokens on Mayura's server, or sign users in with better-auth, using @mayurajs/auth-google: checks, Workspace domains and errors.
+- [Microsoft Entra ID access tokens](docs/integrations/auth-entra.md): Accept Microsoft Entra ID access tokens for your API on Mayura's server with @mayurajs/auth-entra: tenants, app-only tokens and errors.
+- [Neon Auth tokens](docs/integrations/auth-neon.md): Accept Neon Auth (Neon's managed better-auth) JWTs on Mayura's server with @mayurajs/auth-neon: checks, banned users, options and errors.
+- [Okta access tokens](docs/integrations/auth-okta.md): Accept Okta access tokens from a custom authorization server on Mayura's server with @mayurajs/auth-okta: checks, machines, DPoP and errors.
+- [Supabase Auth tokens](docs/integrations/auth-supabase.md): Accept Supabase Auth access tokens on Mayura's server with @mayurajs/auth-supabase: roles, anonymous users, MFA, legacy secrets and errors.
+- [WorkOS AuthKit and Connect tokens](docs/integrations/auth-workos.md): Accept WorkOS AuthKit session tokens and Connect access tokens on Mayura's server with @mayurajs/auth-workos: checks, machines and errors.
+
+## Integrations: api key services
+
+- [ReqKey API keys](docs/integrations/km-reqkey.md): Accept API keys issued by ReqKey as Mayura server identities with @mayurajs/km-reqkey: every request validated with ReqKey, no cache, explicit grants.
+- [Unkey API keys](docs/integrations/km-unkey.md): Accept API keys issued by Unkey as Mayura server identities with @mayurajs/km-unkey: every request verified with Unkey, no cache, explicit grants.
+
+## Integrations: deploy targets
+
+- [Amazon Bedrock AgentCore deploy target](docs/integrations/deploy-agentcore.md): Deploy a Mayura agent to Amazon Bedrock AgentCore Runtime with @mayurajs/deploy-agentcore: an ARM64 image serving its HTTP contract.
+- [Amazon ECS deploy target](docs/integrations/deploy-aws-ecs.md): Deploy a Mayura app to Amazon ECS on Fargate with @mayurajs/deploy-aws-ecs: task definitions, a checked migration task, then the services.
+- [AWS Lambda deploy target](docs/integrations/deploy-aws-lambda.md): Deploy a Mayura app to AWS Lambda with @mayurajs/deploy-aws-lambda: one container image, a checked migration, then the API and workflows.
+- [Azure Container Apps deploy target](docs/integrations/deploy-azure.md): Deploy a Mayura app to Azure Container Apps with @mayurajs/deploy-azure: a migration job run to success, then the server and worker apps.
+- [Cloudflare deploy target](docs/integrations/deploy-cloudflare.md): Deploy a Mayura app to Cloudflare with @mayurajs/deploy-cloudflare: the app in Containers, or the serverless module on Workers.
+- [DigitalOcean App Platform deploy target](docs/integrations/deploy-digitalocean.md): Deploy a Mayura app to DigitalOcean App Platform with @mayurajs/deploy-digitalocean: server, worker, pre-deploy migration and PostgreSQL.
+- [Fly.io deploy target](docs/integrations/deploy-fly.md): Deploy a Mayura app to Fly.io with @mayurajs/deploy-fly: fly.toml, server and worker process groups, the migration as release command.
+- [Google Cloud Run deploy target](docs/integrations/deploy-cloudrun.md): Deploy a Mayura app to Google Cloud Run with @mayurajs/deploy-cloudrun: a migration job, then the server and an always-on worker.
+- [Railway deploy target](docs/integrations/deploy-railway.md): Deploy a Mayura app to Railway with @mayurajs/deploy-railway: server and worker services from config-as-code files, each migrating first.
+- [Render deploy target](docs/integrations/deploy-render.md): Deploy a Mayura app to Render with @mayurajs/deploy-render: a Blueprint with a web service, a background worker and PostgreSQL.
+- [Vercel deploy target](docs/integrations/deploy-vercel.md): Deploy a Mayura app to Vercel Functions with @mayurajs/deploy-vercel: the API, workflows advanced by Vercel Cron, storage migrated first.
+
 ## Reference
 
 - [Entry points](docs/reference/entry-points.md): Every public entry point of the mayura package: what it is for, its key exports and the optional packages it needs.
