@@ -23,6 +23,7 @@ import { schedulerConformance } from '../../../packages/storage/test/scheduler-c
 import { selectedAdapterCompatibility } from '../../../packages/storage/test/selected-adapters-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
+import { conversationConformance } from '../../../packages/storage/test/conversation-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
 import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
@@ -100,6 +101,7 @@ identityIntegrityConformance('libSQL', simple('identity'));
 scheduledBounds('libSQL', simple('bounds'));
 memoryConformance('libSQL', simple('memory') as never);
 nativeMemoryConformance('libSQL', simple('native-memory'));
+conversationConformance('libSQL', async () => { const fixture = await simple('conversations')(); return { store: fixture.store, close: async () => { await fixture.store.close(); await fixture.cleanup(); } }; });
 workflowConformance('libSQL', simple('workflows'));
 
 schedulerConformance('libSQL', async () => {

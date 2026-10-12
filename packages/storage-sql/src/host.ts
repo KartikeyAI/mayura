@@ -21,6 +21,10 @@ export { WorkflowTreeDatabase } from './workflow-tree-database.js';
 export type { WorkflowTreeJobRow, WorkflowTreeMemberRow, WorkflowTreePersistence, WorkflowTreeTransaction } from './workflow-tree-persistence.js';
 export { MemoryIndexDatabase } from './memory-database.js';
 export { memoryIndexFacade } from '@mayura/storage-contracts';
+export { ConversationDatabase, checkpointParts } from './conversation-database.js';
+/** The rows the thread and run-checkpoint reducer reads and writes. */
+export type { CheckpointRow, ConversationPersistence, ConversationTransaction, ThreadEntryRow, ThreadRow } from './conversation-persistence.js';
+export { threadFacade, runCheckpointFacade } from '@mayura/storage-contracts';
 export type { WorkflowTreeCancellationResult, WorkflowTreeChildAdmission, WorkflowTreeChildCancellationResult, WorkflowTreeClaimedTool, WorkflowTreeCompletedTool, WorkflowTreeMemberResult, WorkflowTreePreparedTool, WorkflowTreeReceiptResult, WorkflowTreeRecoveryResult, WorkflowTreeRenewedTool, WorkflowTreeRootSnapshot, WorkflowTreeRootSubmission, WorkflowTreeStartedTool } from '@mayura/storage-contracts';
 export { schedulerFacade, type SchedulerMethod } from './scheduler-validation.js';
 export { scheduledFacade, workflowGraphFacade, type ScheduledMethod } from './scheduled-validation.js';

@@ -4326,6 +4326,10 @@
         "kind": "function",
         "declaration": "c730ae8cb9923d8b"
       },
+      "CHECKPOINT_LIMITS": {
+        "kind": "const",
+        "declaration": "6a0d6912c3e68a66"
+      },
       "Claim": {
         "kind": "interface",
         "declaration": "ec6a6bdd82578ab7"
@@ -4333,6 +4337,10 @@
       "CompleteJobCommand": {
         "kind": "interface",
         "declaration": "43291e3338c024ba"
+      },
+      "ConversationAggregateStore": {
+        "kind": "interface",
+        "declaration": "d58a1536e8276bae"
       },
       "createAggregateRunRecords": {
         "kind": "function",
@@ -4344,7 +4352,7 @@
       },
       "createPostgresStore": {
         "kind": "function",
-        "declaration": "1eb440e6774d53bc"
+        "declaration": "30e92bb620beb8ea"
       },
       "CreateRecord": {
         "kind": "interface",
@@ -4352,7 +4360,7 @@
       },
       "createSqliteStore": {
         "kind": "function",
-        "declaration": "1e5ba687f743f80d"
+        "declaration": "b53e2fdda0b5b4f4"
       },
       "DurableBudgetAccount": {
         "kind": "interface",
@@ -4654,6 +4662,62 @@
         "kind": "function",
         "declaration": "7dabd09a43a68419"
       },
+      "RunCheckpoint": {
+        "kind": "interface",
+        "declaration": "085f8781dac37f76"
+      },
+      "RunCheckpointClaim": {
+        "kind": "interface",
+        "declaration": "76a36df2a96fa322"
+      },
+      "runCheckpointCommand": {
+        "kind": "function",
+        "declaration": "b9b55afcb0348bd3"
+      },
+      "RunCheckpointDelete": {
+        "kind": "interface",
+        "declaration": "e8c48d5a56b7f2e5"
+      },
+      "RunCheckpointDue": {
+        "kind": "interface",
+        "declaration": "3dd0da097a67fab8"
+      },
+      "runCheckpointFacade": {
+        "kind": "function",
+        "declaration": "048142287f9b8feb"
+      },
+      "RunCheckpointKey": {
+        "kind": "interface",
+        "declaration": "3c04aefc2d6440ac"
+      },
+      "RunCheckpointMethod": {
+        "kind": "type",
+        "declaration": "d575b275de85b0ea"
+      },
+      "RunCheckpointPut": {
+        "kind": "interface",
+        "declaration": "a775c8984c24ad8e"
+      },
+      "runCheckpointRecord": {
+        "kind": "function",
+        "declaration": "a2eedb4f980e0b47"
+      },
+      "runCheckpointResult": {
+        "kind": "function",
+        "declaration": "2f9bbff4922265c9"
+      },
+      "RunCheckpointStatus": {
+        "kind": "type",
+        "declaration": "22ce92e5b9845b25"
+      },
+      "RunCheckpointStore": {
+        "kind": "interface",
+        "declaration": "51ce26dc08dc4463"
+      },
+      "RunCheckpointUpdate": {
+        "kind": "interface",
+        "declaration": "bdccabb287e55818"
+      },
       "RunRecordClaim": {
         "kind": "type",
         "declaration": "d4f18b50ab9d8f3b"
@@ -4761,6 +4825,98 @@
       "SubmissionJournal": {
         "kind": "interface",
         "declaration": "2fc0aa0321c8866a"
+      },
+      "THREAD_LIMITS": {
+        "kind": "const",
+        "declaration": "60c8bbb1e9cc6169"
+      },
+      "ThreadAppend": {
+        "kind": "interface",
+        "declaration": "e451e96bbd593d07"
+      },
+      "threadCommand": {
+        "kind": "function",
+        "declaration": "34a7df0aebe4e0f9"
+      },
+      "ThreadCreate": {
+        "kind": "interface",
+        "declaration": "1a339724a2f3b154"
+      },
+      "ThreadDelete": {
+        "kind": "interface",
+        "declaration": "9bd1f51d76e43053"
+      },
+      "ThreadEntries": {
+        "kind": "interface",
+        "declaration": "ef59bc3a2d579afd"
+      },
+      "ThreadEntry": {
+        "kind": "interface",
+        "declaration": "ccddcc2c08c18e20"
+      },
+      "ThreadEntryInput": {
+        "kind": "interface",
+        "declaration": "70f271c10541e804"
+      },
+      "ThreadEntryKind": {
+        "kind": "type",
+        "declaration": "0535db5b16c1bf3b"
+      },
+      "ThreadExpire": {
+        "kind": "interface",
+        "declaration": "0b0452e3e99568af"
+      },
+      "threadFacade": {
+        "kind": "function",
+        "declaration": "d9a888d96062b1c8"
+      },
+      "ThreadKey": {
+        "kind": "interface",
+        "declaration": "197c4f9623a6ec0b"
+      },
+      "ThreadLease": {
+        "kind": "interface",
+        "declaration": "b405fd0488b36446"
+      },
+      "ThreadLeaseCommand": {
+        "kind": "interface",
+        "declaration": "4320a1d3269264e1"
+      },
+      "ThreadList": {
+        "kind": "interface",
+        "declaration": "df01d3eec419e7f1"
+      },
+      "ThreadMethod": {
+        "kind": "type",
+        "declaration": "7e867197bdb6fd04"
+      },
+      "threadRecord": {
+        "kind": "function",
+        "declaration": "5523b3d8299584a4"
+      },
+      "ThreadRecord": {
+        "kind": "interface",
+        "declaration": "e76dd03a843187c6"
+      },
+      "ThreadRelease": {
+        "kind": "interface",
+        "declaration": "da569ab3c851a950"
+      },
+      "threadResult": {
+        "kind": "function",
+        "declaration": "332cea0339e80c99"
+      },
+      "ThreadStatus": {
+        "kind": "type",
+        "declaration": "8952b7b45edb7e0a"
+      },
+      "ThreadStore": {
+        "kind": "interface",
+        "declaration": "d3b811d04f472358"
+      },
+      "ThreadUpdate": {
+        "kind": "interface",
+        "declaration": "95f52da82c07c932"
       },
       "UpdateRecord": {
         "kind": "interface",
@@ -5300,6 +5456,10 @@
         "kind": "function",
         "declaration": "0a3b363f16066a9e"
       },
+      "CHECKPOINT_LIMITS": {
+        "kind": "const",
+        "declaration": "6a0d6912c3e68a66"
+      },
       "Claim": {
         "kind": "interface",
         "declaration": "ec6a6bdd82578ab7"
@@ -5307,6 +5467,10 @@
       "CompleteJobCommand": {
         "kind": "interface",
         "declaration": "43291e3338c024ba"
+      },
+      "ConversationAggregateStore": {
+        "kind": "interface",
+        "declaration": "d58a1536e8276bae"
       },
       "createAggregateRunRecords": {
         "kind": "function",
@@ -5604,6 +5768,62 @@
         "kind": "function",
         "declaration": "2611f73823dc58f4"
       },
+      "RunCheckpoint": {
+        "kind": "interface",
+        "declaration": "085f8781dac37f76"
+      },
+      "RunCheckpointClaim": {
+        "kind": "interface",
+        "declaration": "76a36df2a96fa322"
+      },
+      "runCheckpointCommand": {
+        "kind": "function",
+        "declaration": "b9b55afcb0348bd3"
+      },
+      "RunCheckpointDelete": {
+        "kind": "interface",
+        "declaration": "e8c48d5a56b7f2e5"
+      },
+      "RunCheckpointDue": {
+        "kind": "interface",
+        "declaration": "3dd0da097a67fab8"
+      },
+      "runCheckpointFacade": {
+        "kind": "function",
+        "declaration": "048142287f9b8feb"
+      },
+      "RunCheckpointKey": {
+        "kind": "interface",
+        "declaration": "3c04aefc2d6440ac"
+      },
+      "RunCheckpointMethod": {
+        "kind": "type",
+        "declaration": "d575b275de85b0ea"
+      },
+      "RunCheckpointPut": {
+        "kind": "interface",
+        "declaration": "a775c8984c24ad8e"
+      },
+      "runCheckpointRecord": {
+        "kind": "function",
+        "declaration": "a2eedb4f980e0b47"
+      },
+      "runCheckpointResult": {
+        "kind": "function",
+        "declaration": "2f9bbff4922265c9"
+      },
+      "RunCheckpointStatus": {
+        "kind": "type",
+        "declaration": "22ce92e5b9845b25"
+      },
+      "RunCheckpointStore": {
+        "kind": "interface",
+        "declaration": "51ce26dc08dc4463"
+      },
+      "RunCheckpointUpdate": {
+        "kind": "interface",
+        "declaration": "bdccabb287e55818"
+      },
       "RunRecordClaim": {
         "kind": "type",
         "declaration": "d4f18b50ab9d8f3b"
@@ -5699,6 +5919,98 @@
       "SubmissionJournal": {
         "kind": "interface",
         "declaration": "2fc0aa0321c8866a"
+      },
+      "THREAD_LIMITS": {
+        "kind": "const",
+        "declaration": "60c8bbb1e9cc6169"
+      },
+      "ThreadAppend": {
+        "kind": "interface",
+        "declaration": "e451e96bbd593d07"
+      },
+      "threadCommand": {
+        "kind": "function",
+        "declaration": "34a7df0aebe4e0f9"
+      },
+      "ThreadCreate": {
+        "kind": "interface",
+        "declaration": "1a339724a2f3b154"
+      },
+      "ThreadDelete": {
+        "kind": "interface",
+        "declaration": "9bd1f51d76e43053"
+      },
+      "ThreadEntries": {
+        "kind": "interface",
+        "declaration": "ef59bc3a2d579afd"
+      },
+      "ThreadEntry": {
+        "kind": "interface",
+        "declaration": "ccddcc2c08c18e20"
+      },
+      "ThreadEntryInput": {
+        "kind": "interface",
+        "declaration": "70f271c10541e804"
+      },
+      "ThreadEntryKind": {
+        "kind": "type",
+        "declaration": "0535db5b16c1bf3b"
+      },
+      "ThreadExpire": {
+        "kind": "interface",
+        "declaration": "0b0452e3e99568af"
+      },
+      "threadFacade": {
+        "kind": "function",
+        "declaration": "d9a888d96062b1c8"
+      },
+      "ThreadKey": {
+        "kind": "interface",
+        "declaration": "197c4f9623a6ec0b"
+      },
+      "ThreadLease": {
+        "kind": "interface",
+        "declaration": "b405fd0488b36446"
+      },
+      "ThreadLeaseCommand": {
+        "kind": "interface",
+        "declaration": "4320a1d3269264e1"
+      },
+      "ThreadList": {
+        "kind": "interface",
+        "declaration": "df01d3eec419e7f1"
+      },
+      "ThreadMethod": {
+        "kind": "type",
+        "declaration": "7e867197bdb6fd04"
+      },
+      "threadRecord": {
+        "kind": "function",
+        "declaration": "5523b3d8299584a4"
+      },
+      "ThreadRecord": {
+        "kind": "interface",
+        "declaration": "e76dd03a843187c6"
+      },
+      "ThreadRelease": {
+        "kind": "interface",
+        "declaration": "da569ab3c851a950"
+      },
+      "threadResult": {
+        "kind": "function",
+        "declaration": "332cea0339e80c99"
+      },
+      "ThreadStatus": {
+        "kind": "type",
+        "declaration": "8952b7b45edb7e0a"
+      },
+      "ThreadStore": {
+        "kind": "interface",
+        "declaration": "d3b811d04f472358"
+      },
+      "ThreadUpdate": {
+        "kind": "interface",
+        "declaration": "95f52da82c07c932"
       },
       "UpdateRecord": {
         "kind": "interface",
@@ -6204,7 +6516,7 @@
     "@mayura/storage-postgres": {
       "createPostgresStore": {
         "kind": "function",
-        "declaration": "1eb440e6774d53bc"
+        "declaration": "30e92bb620beb8ea"
       },
       "PostgresPoolOptions": {
         "kind": "interface",
@@ -6234,7 +6546,7 @@
       },
       "PostgresStore": {
         "kind": "type",
-        "declaration": "2450e12dbee7bb75"
+        "declaration": "cf729b2b3eae5420"
       }
     },
     "@mayura/storage-sql/host": {
@@ -6254,6 +6566,14 @@
         "kind": "interface",
         "declaration": "40be46d18dde3d4e"
       },
+      "checkpointParts": {
+        "kind": "function",
+        "declaration": "f214b1d56b8dc2cc"
+      },
+      "CheckpointRow": {
+        "kind": "interface",
+        "declaration": "40f58753ff4ff685"
+      },
       "compareDocumentKeys": {
         "kind": "function",
         "declaration": "0e57c0dc2e67da9d"
@@ -6261,6 +6581,18 @@
       "CompletionRow": {
         "kind": "interface",
         "declaration": "c28fe25fe15776ff"
+      },
+      "ConversationDatabase": {
+        "kind": "class",
+        "declaration": "e5b09a402246c2a4"
+      },
+      "ConversationPersistence": {
+        "kind": "interface",
+        "declaration": "086748217d149bbe"
+      },
+      "ConversationTransaction": {
+        "kind": "interface",
+        "declaration": "61329ad64b36229a"
       },
       "createCommand": {
         "kind": "function",
@@ -6292,7 +6624,7 @@
       },
       "DocumentStore": {
         "kind": "type",
-        "declaration": "56bfc6bb3c780a6e"
+        "declaration": "613f2ab8c259e1c7"
       },
       "DocumentStoreOptions": {
         "kind": "interface",
@@ -6406,6 +6738,10 @@
         "kind": "function",
         "declaration": "a15eb61281467d95"
       },
+      "runCheckpointFacade": {
+        "kind": "function",
+        "declaration": "048142287f9b8feb"
+      },
       "scheduledFacade": {
         "kind": "function",
         "declaration": "8c96208ad0eac38c"
@@ -6481,6 +6817,18 @@
       "submissionDigest": {
         "kind": "function",
         "declaration": "95e73c0372792903"
+      },
+      "ThreadEntryRow": {
+        "kind": "interface",
+        "declaration": "239bba0e5903f697"
+      },
+      "threadFacade": {
+        "kind": "function",
+        "declaration": "d9a888d96062b1c8"
+      },
+      "ThreadRow": {
+        "kind": "interface",
+        "declaration": "50d7321acbf07796"
       },
       "updateCommand": {
         "kind": "function",
@@ -6598,7 +6946,7 @@
       },
       "createSqliteStore": {
         "kind": "function",
-        "declaration": "1e5ba687f743f80d"
+        "declaration": "b53e2fdda0b5b4f4"
       },
       "migrateSqliteStoreV0ToV1": {
         "kind": "function",
@@ -9740,7 +10088,7 @@
       },
       "LibsqlStore": {
         "kind": "type",
-        "declaration": "03444d4470b8f4c7"
+        "declaration": "10bbc4f4714e86f7"
       },
       "LibsqlStoreOptions": {
         "kind": "interface",
@@ -9754,7 +10102,7 @@
       },
       "MongoStore": {
         "kind": "type",
-        "declaration": "c0ddc54901a24100"
+        "declaration": "314cdf4b491a8843"
       },
       "MongoStoreOptions": {
         "kind": "interface",
@@ -9776,7 +10124,7 @@
       },
       "MysqlStore": {
         "kind": "type",
-        "declaration": "2e64fe543c255ce3"
+        "declaration": "9647aa994cbc0181"
       },
       "MysqlStoreOptions": {
         "kind": "interface",

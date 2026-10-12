@@ -1,18 +1,19 @@
 import { MongoClient, MongoError, type ClientSession, type Collection, type Db } from 'mongodb';
-import { StorageError, storageError, type DurableBudgetAggregateStore, type WorkflowGraphDiscoveryAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
+import { StorageError, storageError, type DurableBudgetAggregateStore, type WorkflowGraphDiscoveryAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore, type ConversationAggregateStore, type CreateRecord, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord } from 'mayura/storage-contracts';
 import { mongoBudgetPersistence } from './budget-rows.js';
+import { mongoConversationPersistence } from './conversations.js';
 import { mongoMemory } from './memory.js';
 import { mongoSchedulerPersistence } from './scheduler.js';
 import { mongoExecutionWaitPersistence } from './execution-waits.js';
 import { mongoWorkflowTreePersistence } from './trees.js';
 import { mongoScheduledPersistence } from './workflows.js';
-import { createCommand, cursor, durableBudgetFacade, DurableBudgetDatabase, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, executionWaitFacade, ExecutionWaitDatabase, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, WorkflowTreeDatabase, workflowTreeDiscoveryFacade, workflowTreeFacade, writerRequired } from 'mayura/storage-sql/host';
+import { ConversationDatabase, runCheckpointFacade, threadFacade, createCommand, cursor, durableBudgetFacade, DurableBudgetDatabase, EVENT_PAGE_SIZE, identifier, migrateCommand, nextCounter, executionWaitFacade, ExecutionWaitDatabase, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest, updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, WorkflowTreeDatabase, workflowTreeDiscoveryFacade, workflowTreeFacade, writerRequired } from 'mayura/storage-sql/host';
 
 /**
- * The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, the leased
+ * The Mayura store on MongoDB: aggregates (records, their versions and events), native memory, durable budgets, threads and run checkpoints, the leased
  * scheduler, scheduled workflows, workflow graphs with execution waits and discovery, and workflow trees with discovery.
  */
-export type MongoStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & WorkflowGraphDiscoveryAggregateStore & WorkflowTreeDiscoveryAggregateStore;
+export type MongoStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & ConversationAggregateStore & WorkflowGraphDiscoveryAggregateStore & WorkflowTreeDiscoveryAggregateStore;
 
 export interface MongoStoreOptions {
   /**
@@ -103,6 +104,7 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   const executionWaitDatabase = new ExecutionWaitDatabase(mongoExecutionWaitPersistence(db, transaction), workflowsDatabase);
   const budgets = mongoBudgetPersistence(db, transaction);
   const durableBudgetDatabase = new DurableBudgetDatabase(budgets);
+  const conversationDatabase = new ConversationDatabase(mongoConversationPersistence(db, transaction));
   const workflowTreeDatabase = new WorkflowTreeDatabase(mongoWorkflowTreePersistence(db, transaction), schedulerDatabase, budgets);
   /** Every capability call: only after initialization, and a driver failure reported without the driver's text. */
   const guarded = <T>(run: () => Promise<T>): Promise<T> => { available(); return run().catch((error: unknown) => { throw safeFailure(error); }); };
@@ -112,6 +114,8 @@ export function createMongoStore(options: MongoStoreOptions): MongoStore {
   return {
     memory: mongoMemory(db, transaction, () => available()),
     durableBudgets: durableBudgetFacade((method, input) => guarded(() => durableBudgetDatabase.execute(method, input))),
+    threads: threadFacade((method, input) => guarded(() => conversationDatabase.thread(method, input))),
+    runCheckpoints: runCheckpointFacade((method, input) => guarded(() => conversationDatabase.checkpoint(method, input))),
     scheduler: schedulerFacade((method, input) => guarded(() => schedulerDatabase.execute(method, input))),
     workflows: scheduledFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input))),
     workflowGraphs: workflowGraphFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input, 2))),

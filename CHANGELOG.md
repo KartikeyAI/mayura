@@ -4,6 +4,19 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- **Thread and run-checkpoint storage on every store.** Two new storage contracts, the base that conversation threads and runs paused for approval will build on:
+  - `store.threads` keeps a scope's conversations. It supports:
+    - create, read, update with compare-and-set, and listing newest first, page by page;
+    - a lease, so one run at a time writes to a thread;
+    - appending entries in order (user inputs, final answers, tool calls and results, approvals, summaries and run boundaries), with each entry's data at most 256 KiB and at most 64 entries or 1 MiB per append;
+    - reading entries in either direction.
+  - Deleting a thread makes its content unreadable at once, then removes its entries page by page and keeps a tombstone, so the id is never reused. `expire({ idleBeforeMs })` marks threads idle since a time for deletion, for retention.
+  - `store.runCheckpoints` keeps a paused run's saved state, at most 3 MiB, stored in parts. It is claimed by one holder at a time with a lease, updated by that holder at the version it read, released, deleted, and listed when past its expiry.
+  - Written once in the shared storage layer, with one implementation for the four SQL stores, one for D1 and DynamoDB, and one for MongoDB. Every store passes the same conformance suite.
+  - `await store.threads.initialize()` creates the tables or indexes. It is additive; the schema version stays 1.
+
 ## [1.1.0] - 2026-10-12
 
 ### Added

@@ -17,6 +17,7 @@ import { scheduledBounds } from '../../../packages/storage/test/scheduled-bounds
 import { schedulerConformance } from '../../../packages/storage/test/scheduler-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
+import { conversationConformance } from '../../../packages/storage/test/conversation-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
 import { graphCoordinatorConformance } from '../../../packages/workflows/test/graph-coordinator-conformance.js';
@@ -83,6 +84,7 @@ describe.skipIf(!server)('MySQL', () => {
   scheduledBounds('MySQL', simple);
   memoryConformance('MySQL', simple as never);
   nativeMemoryConformance('MySQL', simple);
+  conversationConformance('MySQL', async () => { const fixture = await simple(); return { store: fixture.store, close: async () => { await fixture.store.close(); await fixture.cleanup(); } }; });
   workflowConformance('MySQL', simple);
   scheduledWorkflowConformance('MySQL', workflowFixture as never);
   graphWorkflowConformance('MySQL', workflowFixture as never);

@@ -21,6 +21,7 @@ import { schedulerConformance } from '../../../packages/storage/test/scheduler-c
 import { workflowTreeCapabilityConformance } from '../../../packages/storage/test/workflow-tree-capability-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
+import { conversationConformance } from '../../../packages/storage/test/conversation-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
 import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
@@ -76,6 +77,7 @@ describe('D1 engine', () => {
   scheduledBounds('D1', fixtures.simple);
   memoryConformance('D1', fixtures.simple as never);
   nativeMemoryConformance('D1', fixtures.simple);
+  conversationConformance('D1', async () => { const fixture = await fixtures.simple(); return { store: fixture.store, close: async () => { await fixture.store.close(); await fixture.cleanup(); } }; });
   workflowConformance('D1', fixtures.simple);
   schedulerConformance('D1', fixtures.scheduler as never);
   scheduledWorkflowConformance('D1', fixtures.workflow as never);

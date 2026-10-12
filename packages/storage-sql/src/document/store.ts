@@ -6,11 +6,14 @@ import { workflowGraphDiscoveryFacade } from '../workflow-graph-discovery-valida
 import { workflowTreeDiscoveryFacade } from '../workflow-tree-discovery-validation.js';
 import { workflowTreeFacade } from '../workflow-tree-validation.js';
 import {
-  StorageError, storageError,
-  type CreateRecord, type DurableBudgetAggregateStore, type MemoryIndexAggregateStore, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord,
+  StorageError, runCheckpointFacade, storageError, threadFacade,
+  type ConversationAggregateStore, type CreateRecord, type DurableBudgetAggregateStore, type MemoryIndexAggregateStore, type MigrateRecord, type StoredEvent, type StoredRecord, type UpdateRecord,
   type WorkflowGraphDiscoveryAggregateStore, type WorkflowTreeDiscoveryAggregateStore,
 } from '@mayura/storage-contracts';
 import { aggregateRecord, type AggregateRow } from '../aggregate-session.js';
+import { ConversationDatabase } from '../conversation-database.js';
+import type { ConversationPersistence, ConversationTransaction } from '../conversation-persistence.js';
+import { documentConversationRows } from './conversation-rows.js';
 import { DurableBudgetDatabase } from '../durable-budget-database.js';
 import { ExecutionWaitDatabase } from '../execution-wait-database.js';
 import { ScheduledWorkflowDatabase } from '../scheduled-database.js';
@@ -32,8 +35,8 @@ import type { ScheduledPersistence, ScheduledTransaction } from '../scheduled-pe
 import type { SchedulerPersistence, SchedulerTransaction } from '../scheduler-persistence.js';
 import type { WorkflowTreePersistence, WorkflowTreeTransaction } from '../workflow-tree-persistence.js';
 
-/** Everything the SQL stores keep: records, memory, durable budgets, the scheduler, and durable workflows with graphs, trees, waits and discovery. */
-export type DocumentStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & WorkflowGraphDiscoveryAggregateStore & WorkflowTreeDiscoveryAggregateStore;
+/** Everything the SQL stores keep: records, memory, durable budgets, threads and run checkpoints, the scheduler, and durable workflows with graphs, trees, waits and discovery. */
+export type DocumentStore = MemoryIndexAggregateStore & DurableBudgetAggregateStore & ConversationAggregateStore & WorkflowGraphDiscoveryAggregateStore & WorkflowTreeDiscoveryAggregateStore;
 export interface DocumentStoreOptions extends DocumentTransactionOptions {
   /** Called once when the store closes, to release what the adapter opened. */
   readonly close?: () => Promise<void>;
@@ -66,6 +69,8 @@ export function createDocumentStore(backend: DocumentBackend, options: DocumentS
   const budgets: DurableBudgetPersistence = { initialize: nothing, transaction: <T>(body: (tx: DurableBudgetTransaction) => Promise<T>) => transaction(session => body(documentBudgetRows(session))) };
   const trees: WorkflowTreePersistence = { initialize: nothing, initializeDiscovery: nothing,
     transaction: <T>(body: (tx: WorkflowTreeTransaction) => Promise<T>) => transaction(session => body(documentTreeRows(session))) };
+  const conversations: ConversationPersistence = { initialize: nothing, transaction: <T>(body: (tx: ConversationTransaction) => Promise<T>) => transaction(session => body(documentConversationRows(session))) };
+  const conversationDatabase = new ConversationDatabase(conversations);
   const schedulerDatabase = new SchedulerDatabase(scheduler);
   const workflowsDatabase = new ScheduledWorkflowDatabase(scheduled, schedulerDatabase);
   const executionWaitDatabase = new ExecutionWaitDatabase(waits, workflowsDatabase);
@@ -77,6 +82,8 @@ export function createDocumentStore(backend: DocumentBackend, options: DocumentS
   return {
     memory: documentMemory(transaction, () => available()),
     durableBudgets: durableBudgetFacade((method, input) => guarded(() => durableBudgetDatabase.execute(method, input))),
+    threads: threadFacade((method, input) => guarded(() => conversationDatabase.thread(method, input))),
+    runCheckpoints: runCheckpointFacade((method, input) => guarded(() => conversationDatabase.checkpoint(method, input))),
     scheduler: schedulerFacade((method, input) => guarded(() => schedulerDatabase.execute(method, input))),
     workflows: scheduledFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input))),
     workflowGraphs: workflowGraphFacade((method, input) => guarded(() => workflowsDatabase.execute(method, input, 2))),
