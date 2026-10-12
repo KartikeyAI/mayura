@@ -217,7 +217,10 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
           // answers freely; once it calls no more tools, one more call without tools asks for the answer in the format.
           const messages = messagesFor(request, aliases, assistants);
           const common = { model: name, messages, options: { num_predict: request.maxOutputTokens }, ...(options.think === undefined ? {} : { think: options.think }) };
-          const body: JsonObject = tools.length > 0 ? { ...common, tools } : { ...common, format: outputSchema };
+          // Ollama's cloud accepts a format without enforcing it, so a request with one also gives the schema in its instructions.
+          const formatted: JsonObject = { ...common, format: outputSchema, messages: [
+            { role: 'system', content: `${request.instructions}\n\nAnswer with one JSON object, and nothing else, that matches this JSON Schema:\n${JSON.stringify(outputSchema)}` }, ...messages.slice(1)] };
+          const body: JsonObject = tools.length > 0 ? { ...common, tools } : formatted;
           jsonValue(body, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) });
 
           // A client per call, so the call's signal reaches every request it makes.
@@ -261,7 +264,7 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
           }
           if (finish === 'length') return failed('refused');
           if (finish !== 'stop') return failed();
-          return finalFrom(await chat({ ...common, format: outputSchema }, onDelta));
+          return finalFrom(await chat(formatted, onDelta));
         } catch (error) {
           if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
           if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');

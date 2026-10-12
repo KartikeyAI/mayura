@@ -66,8 +66,12 @@ describe('@mayurajs/provider-ollama', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.url).toBe('http://127.0.0.1:11434/api/chat');
     expect(seen[0]!.headers.get('authorization')).toBeNull();
-    expect(seen[0]!.body).toMatchObject({ model: 'gpt-oss:20b', stream: false, options: { num_predict: 64 }, messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: '"hi"' }],
+    expect(seen[0]!.body).toMatchObject({ model: 'gpt-oss:20b', stream: false, options: { num_predict: 64 }, messages: [{ role: 'system' }, { role: 'user', content: '"hi"' }],
       format: { type: 'object', required: ['answer'] } });
+    // Ollama's cloud does not enforce a format, so the instructions carry the schema too.
+    const system = (seen[0]!.body['messages'] as { content: string }[])[0]!.content;
+    expect(system.startsWith('Be brief.\n\nAnswer with one JSON object')).toBe(true);
+    expect(system).toContain(JSON.stringify(seen[0]!.body['format']));
     expect(seen[0]!.body['think']).toBeUndefined();
   });
 
@@ -127,7 +131,12 @@ describe('@mayurajs/provider-ollama', () => {
     expect(seen[0]!.body['tools']).toHaveLength(1);
     expect(seen[1]!.body['tools']).toBeUndefined();
     expect(seen[1]!.body['format']).toMatchObject({ type: 'object', required: ['answer'] });
-    expect(seen[1]!.body['messages']).toEqual(seen[0]!.body['messages']);
+    // Only the call with the format states the schema in its instructions; the conversation is the same.
+    const [freeSystem, ...freeRest] = seen[0]!.body['messages'] as { content: string }[];
+    const [formatSystem, ...formatRest] = seen[1]!.body['messages'] as { content: string }[];
+    expect(freeSystem!.content).toBe('Be brief.');
+    expect(formatSystem!.content).toContain(JSON.stringify(seen[1]!.body['format']));
+    expect(formatRest).toEqual(freeRest);
   });
 
   it('with tools, never streams the free reply, only the answer in the format', async () => {
