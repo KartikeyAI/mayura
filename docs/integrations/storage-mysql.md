@@ -24,7 +24,7 @@ npm install mayura @mayurajs/storage-mysql
 
 ## Credentials
 
-The store takes a `mysql://user:password@host:port/database` URL. Create the database and a user for it in your MySQL
+The store takes a `mysql://USER:PASS@HOST:3306/DATABASE` URL. Create the database and a user for it in your MySQL
 host's console. The database holds Mayura's tables, so the user needs, on that database: `SELECT`, `INSERT`, `UPDATE`,
 `DELETE`, `CREATE`, `INDEX` and `REFERENCES` (the events table has a foreign key), and `CREATE TEMPORARY TABLES`, which
 `initialize()` uses for a one-off check of the connection's settings.
