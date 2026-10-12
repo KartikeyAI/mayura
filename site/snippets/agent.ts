@@ -1,5 +1,11 @@
-import { defineAgent, defineTool, z } from 'mayura';
-import { openAIResponses } from 'mayura/provider-openai';
+import { createModels, defineAgent, defineTool, z } from 'mayura';
+import { openai } from '@mayurajs/provider-openai';
+
+// Models as provider/model, priced from a dated catalog.
+const models = createModels({
+  providers: [openai({ apiKey })],
+  prices: 'catalog', maxCallCostMicros: 20_000,
+});
 
 const getWeather = defineTool({
   id: 'weather.get', version: '1',
@@ -16,6 +22,5 @@ export const agent = defineAgent({
   tools: [getWeather],
   input: z.object({ question: z.string() }),
   output: z.object({ reply: z.string() }),
-  model: openAIResponses({ apiKey, model: 'gpt-5-mini',
-    pricing, maxCostMicros: 20_000 }),
+  model: models.model('openai/gpt-5-mini'),
 });

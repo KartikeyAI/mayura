@@ -140,6 +140,15 @@ for (const file of checked) for (const block of parse(file).blocks) {
   await writeFile(join(snippets, name), `${block.lines.join('\n')}\nexport {};\n`);
   origin.set(name, { file, start: block.start }); count += 1;
 }
+// The landing page's code (site/snippets/*.ts) is checked the same way, a whole file per snippet.
+const landing = join(workspace, 'site', 'snippets');
+if (!selected.length && existsSync(landing)) for (const file of readdirSync(landing).filter(name => name.endsWith('.ts')).sort()) {
+  const name = `site_snippets_${file.replace(/[^A-Za-z0-9]+/gu, '_')}.ts`;
+  // A snippet that imports another (`./agent.js`) gets that snippet's copy, so the two are checked together.
+  const source = readFileSync(join(landing, file), 'utf8').replace(/from '\.\/([\w-]+)\.js'/gu, (_, base) => `from './site_snippets_${base.replace(/[^A-Za-z0-9]+/gu, '_')}_ts.js'`);
+  await writeFile(join(snippets, name), `${source}\nexport {};\n`);
+  origin.set(name, { file: join(landing, file), start: 1 }); count += 1;
+}
 if (count) {
   await writeFile(join(snippets, 'package.json'), `${JSON.stringify({ type: 'module', private: true })}\n`);
   await writeFile(join(snippets, 'tsconfig.json'), `${JSON.stringify({ compilerOptions: {

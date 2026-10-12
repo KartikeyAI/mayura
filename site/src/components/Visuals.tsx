@@ -28,7 +28,7 @@ const Tick = ({ ok = true }: { ok?: boolean }) => (
 export function RunPreview() {
   const steps = [
     { label: 'input', body: '{ "question": "Do I need an umbrella?" }', note: 'matches input schema' },
-    { label: 'model', body: 'calls weather.get { "city": "Paris" }', note: 'openai.responses · $0.0009' },
+    { label: 'model', body: 'calls weather.get { "city": "Paris" }', note: 'openai/gpt-5-mini · $0.0009' },
     { label: 'tool', body: 'weather.get → { "celsius": 21 }', note: 'effect: read · granted' },
     { label: 'output', body: '{ "reply": "No umbrella needed." }', note: 'matches output schema' },
   ];
@@ -53,7 +53,7 @@ export function RunPreview() {
 /** The allow-list at work: grants, a refused tool and the run's budget. */
 export function PolicyPreview() {
   const grants = [
-    { name: 'model:openai.responses', ok: true },
+    { name: 'model:openai/gpt-5-mini', ok: true },
     { name: 'tool:weather.get', ok: true },
     { name: 'effect:read', ok: true },
     { name: 'tool:orders.refund', ok: false },
@@ -163,14 +163,73 @@ export function TestPreview() {
   );
 }
 
+/** An agent working in a sandbox: commands it ran, files it wrote, and the rules the sandbox runs under. */
+export function SandboxPreview() {
+  const lines = [
+    { prompt: '$ python3 -m pytest -q', out: '1 failed, 11 passed' },
+    { prompt: 'write src/parse.py', out: '1.4 KB' },
+    { prompt: '$ python3 -m pytest -q', out: '12 passed in 0.8s' },
+  ];
+  return (
+    <Panel title="workspace · e2b" badge="sandbox">
+      <div className="rounded-xl border border-line bg-code p-4 font-mono text-[0.76rem] leading-6">
+        {lines.map((line, index) => (
+          <div key={index} className="rise-in" style={{ animationDelay: `${index * 120}ms` }}>
+            <div className="truncate text-fg">{line.prompt}</div>
+            <div className={`truncate ${index === lines.length - 1 ? 'text-primary' : 'text-muted'}`}>{line.out}</div>
+          </div>
+        ))}
+      </div>
+      <ul className="mt-4 grid grid-cols-2 gap-2 text-xs">
+        {[['network', 'none'], ['lifetime', '10 min'], ['exec', 'granted'], ['sandboxes', '1 of 5']].map(([label, value]) => (
+          <li key={label} className="rounded-lg border border-line px-3 py-2"><div className="font-mono text-fg">{value}</div><div className="text-muted">{label}</div></li>
+        ))}
+      </ul>
+      <p className="mt-4 text-xs leading-relaxed text-muted">A timeout or cancellation stops the command and everything it started.</p>
+    </Panel>
+  );
+}
+
+/** A browser kept to its origins: pages it read, one it was refused, and a live view a person can watch. */
+export function BrowserPreview() {
+  const visits = [
+    { url: 'docs.example.com/pricing', ok: true, note: 'read' },
+    { url: 'docs.example.com/limits', ok: true, note: 'read' },
+    { url: 'tracker.ads.example.net', ok: false, note: 'origin not allowed' },
+  ];
+  return (
+    <Panel title="web · browserbase" badge="live view">
+      <div className="overflow-hidden rounded-xl border border-line bg-code">
+        <div className="flex items-center gap-1.5 border-b border-line px-3 py-2">
+          <span className="size-2 rounded-full bg-muted/30" /><span className="size-2 rounded-full bg-muted/30" /><span className="size-2 rounded-full bg-muted/30" />
+          <span className="ml-2 truncate rounded-md bg-soft px-2 py-0.5 font-mono text-[0.7rem] text-muted">https://docs.example.com/limits</span>
+        </div>
+        <div className="space-y-1.5 p-3">
+          <div className="h-2.5 w-2/3 rounded bg-fg/15" /><div className="h-2 w-full rounded bg-fg/8" /><div className="h-2 w-5/6 rounded bg-fg/8" />
+          <div className="h-2 w-3/4 rounded bg-primary/25" />
+        </div>
+      </div>
+      <ul className="mt-4 space-y-2 font-mono text-[0.75rem]">
+        {visits.map(visit => (
+          <li key={visit.url} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${visit.ok ? 'border-line bg-code' : 'border-red-500/30 bg-red-500/5'}`}>
+            <Tick ok={visit.ok} />
+            <span className={`truncate ${visit.ok ? '' : 'text-red-700 dark:text-red-300'}`}>{visit.url}</span>
+            <span className="ml-auto shrink-0 font-sans text-xs text-muted">{visit.note}</span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 // ---- Feature card illustrations -------------------------------------------------------------------------------------
 
 export function ModelsArt() {
   return (
     <div className="w-full max-w-60 space-y-2 font-mono text-[0.72rem]">
-      <div className="flex items-center gap-2 rounded-lg border border-line bg-code px-3 py-2 opacity-70"><Tick ok={false} /><span>openai.responses</span><span className="ml-auto text-muted">429</span></div>
+      <div className="flex items-center gap-2 rounded-lg border border-line bg-code px-3 py-2 opacity-70"><Tick ok={false} /><span>openai/gpt-5-mini</span><span className="ml-auto text-muted">429</span></div>
       <div className="flex justify-center"><Icon name="arrow" className="size-4 rotate-90 text-muted" /></div>
-      <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-code px-3 py-2"><Tick /><span>anthropic.messages</span><span className="ml-auto text-primary">200</span></div>
+      <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-code px-3 py-2"><Tick /><span>anthropic/claude-haiku-4-5</span><span className="ml-auto text-primary">200</span></div>
     </div>
   );
 }

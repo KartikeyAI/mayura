@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useId, useState, type ReactNode } from 'react';
+import { articles } from 'virtual:mayura-content';
 import agentSnippet from 'virtual:mayura-snippet/agent.ts';
+import browserSnippet from 'virtual:mayura-snippet/browser.ts';
 import runSnippet from 'virtual:mayura-snippet/run.ts';
+import sandboxSnippet from 'virtual:mayura-snippet/sandbox.ts';
 import serveSnippet from 'virtual:mayura-snippet/serve.ts';
 import testSnippet from 'virtual:mayura-snippet/test.ts';
 import workflowSnippet from 'virtual:mayura-snippet/workflow.ts';
@@ -9,11 +12,12 @@ import { GitHubIcon } from '../components/Header';
 import { Html } from '../components/Html';
 import { Icon, type IconName } from '../components/Icon';
 import { LogoMark } from '../components/Logo';
-import { WorksWith } from '../components/Logos';
+import { IntegrationsWall } from '../components/IntegrationsWall';
 import {
-  CostArt, MemoryArt, ModelsArt, PolicyPreview, RunPreview, ServePreview, StreamingArt, TestPreview, TraceArt, VisionArt,
-  WorkflowPreview,
+  BrowserPreview, CostArt, MemoryArt, ModelsArt, PolicyPreview, RunPreview, SandboxPreview, ServePreview, StreamingArt, TestPreview,
+  TraceArt, VisionArt, WorkflowPreview,
 } from '../components/Visuals';
+import { formatDate, sectionOrder, sections } from '../lib/content';
 import { pageMeta, site } from '../lib/site';
 
 export const Route = createFileRoute('/')({
@@ -26,11 +30,12 @@ function Home() {
     <main>
       <Hero />
       <Guarantees />
-      <WorksWith />
+      <IntegrationsWall />
       <Tour />
       <Features />
       <NewInRelease />
       <GetStarted />
+      <Reading />
       <Faq />
       <Closing />
     </main>
@@ -79,6 +84,13 @@ function CopyCommand({ command }: { command: string }) {
 
 // ---- Hero -----------------------------------------------------------------------------------------------------------
 
+const stats = [
+  ['85', 'integration packages'],
+  ['8', 'model provider packages'],
+  ['7', 'databases for durable state'],
+  ['5', 'runtimes, edge included'],
+];
+
 function Hero() {
   return (
     <section className="relative overflow-hidden">
@@ -102,6 +114,15 @@ function Hero() {
           <SecondaryButton slug="introduction">Learn Mayura</SecondaryButton>
         </div>
         <div className="mt-6"><CopyCommand command="npx mayura init" /></div>
+        <dl className="mt-16 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+          {stats.map(([value, label]) => (
+            <div key={label} className="bg-bg/80 px-4 py-4 backdrop-blur">
+              <dt className="sr-only">{label}</dt>
+              <dd className="text-2xl font-semibold tracking-tight">{value}</dd>
+              <dd className="mt-0.5 text-xs text-muted">{label}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   );
@@ -161,6 +182,10 @@ const tour: { label: string; icon: IconName; file: string; code: string; preview
     title: 'Allow-lists and limits', body: 'A run may use only what you grant, and never spends past its budget.' },
   { label: 'Workflows', icon: 'workflow', file: 'refund.ts', code: workflowSnippet, preview: <WorkflowPreview />, slug: 'guides/durable-workflows',
     title: 'Durable workflows', body: 'Steps that wait for people, timers and signals, and carry on after a restart.' },
+  { label: 'Sandboxes', icon: 'box', file: 'sandbox.ts', code: sandboxSnippet, preview: <SandboxPreview />, slug: 'guides/sandboxes',
+    title: 'Sandboxes for code', body: 'Isolated Linux machines on Docker or twelve hosted providers, with no network unless you allow it.' },
+  { label: 'Browsers', icon: 'globe', file: 'browser.ts', code: browserSnippet, preview: <BrowserPreview />, slug: 'guides/browsers',
+    title: 'Real browsers', body: 'Local Chrome or ten hosted services, kept to the origins you list, with a live view to watch.' },
   { label: 'Serve', icon: 'terminal', file: 'server.ts', code: serveSnippet, preview: <ServePreview />, slug: 'guides/server-and-client',
     title: 'Server and client', body: 'Authenticated HTTP with live events, a typed client and React hooks.' },
   { label: 'Test', icon: 'flask', file: 'agent.test.ts', code: testSnippet, preview: <TestPreview />, slug: 'guides/testing',
@@ -223,7 +248,7 @@ function Tour() {
 // ---- Features -------------------------------------------------------------------------------------------------------
 
 const features: { title: string; body: string; slug: string; art: ReactNode }[] = [
-  { title: 'Any model, with failover', body: 'OpenAI, Anthropic, Gemini, Bedrock, Mistral, Groq, Ollama and more, routed with automatic failover.', slug: 'guides/model-routing', art: <ModelsArt /> },
+  { title: 'Any model, with failover', body: 'Models as provider/model, with dated prices, retries and fallback chains across eight provider packages and any OpenAI-compatible API.', slug: 'guides/model-registry', art: <ModelsArt /> },
   { title: 'Cost control', body: 'Prices, per-call caps and shared budgets, from the tokens providers report.', slug: 'concepts/costs-and-budgets', art: <CostArt /> },
   { title: 'Streaming', body: 'Show an answer as it is written, with guards on every batch.', slug: 'guides/streaming', art: <StreamingArt /> },
   { title: 'Vision', body: 'Agents that see images and PDFs, checked by their own bytes.', slug: 'guides/vision', art: <VisionArt /> },
@@ -270,11 +295,13 @@ function Features() {
 // ---- New in 1.1 -----------------------------------------------------------------------------------------------------
 
 const additions: { icon: IconName; title: string; body: string; slug: string }[] = [
+  { icon: 'models', title: 'Model registry', body: 'provider/model names, a dated price catalog, retries and fallback chains, and eight provider packages.', slug: 'guides/model-registry' },
   { icon: 'mic', title: 'Voice', body: 'Transcribe speech and speak text with seven providers, priced and bounded per call.', slug: 'guides/voice' },
   { icon: 'folder', title: 'Files', body: 'S3, R2, Google Cloud Storage, Azure, Vercel Blob and more, with versions and file tools.', slug: 'guides/files' },
   { icon: 'box', title: 'Sandboxes', body: 'Isolated Linux machines for agents, on Docker or twelve hosted providers.', slug: 'guides/sandboxes' },
   { icon: 'globe', title: 'Browsers', body: 'Real browsers for agents, local or hosted by ten services, kept to allowed origins.', slug: 'guides/browsers' },
   { icon: 'key', title: 'Sign-in and API keys', body: 'Eleven identity providers, better-auth, and API keys in your own database.', slug: 'guides/authentication' },
+  { icon: 'eye', title: 'Tracing services', body: 'GenAI spans for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog.', slug: 'guides/observability' },
   { icon: 'upload', title: 'Deploy anywhere', body: 'mayura deploy to eleven platforms, and edge runtimes: Workers, Vercel Edge, Deno and Bun.', slug: 'cli/deploy' },
 ];
 
@@ -283,7 +310,7 @@ function NewInRelease() {
     <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
       <div className="mx-auto max-w-7xl">
         <Heading strong="New in Mayura 1.1." soft="85 integration packages, and more an agent can do." />
-        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {additions.map(item => (
             <Link key={item.title} {...docs(item.slug)} className="group bg-raised p-7 transition hover:bg-soft">
               <span className="grid size-10 place-items-center rounded-xl border border-line text-primary"><Icon name={item.icon} /></span>
@@ -293,7 +320,9 @@ function NewInRelease() {
           ))}
         </div>
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <SecondaryButton slug="reference/integrations">All integration packages</SecondaryButton>
+          <Link to="/integrations/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium backdrop-blur transition hover:border-muted/50">
+            Browse the integrations
+          </Link>
           <SecondaryButton slug="project/whats-new">What’s new in 1.1</SecondaryButton>
         </div>
       </div>
@@ -362,12 +391,50 @@ function GetStarted() {
   );
 }
 
+// ---- Reading --------------------------------------------------------------------------------------------------------
+
+function Reading() {
+  const latest = sectionOrder.flatMap(section => articles[section])
+    .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title)).slice(0, 3);
+  return (
+    <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
+      <div className="mx-auto max-w-7xl">
+        <Heading strong="Learn by building." soft="Guides, comparisons and research from the people who make Mayura." />
+        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {latest.map(entry => (
+            <Link key={`${entry.section}/${entry.slug}`} to={`/${entry.section}/$slug/` as '/guides/$slug/'} params={{ slug: entry.slug }}
+              className="group flex flex-col rounded-2xl border border-line bg-raised p-6 transition hover:border-muted/40">
+              <span className="self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary first-letter:uppercase">{sections[entry.section].noun}</span>
+              <h3 className="mt-4 font-semibold tracking-tight text-balance group-hover:text-primary">{entry.title}</h3>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-pretty text-muted">{entry.description}</p>
+              <p className="mt-4 text-xs text-muted">{formatDate(entry.date)} · {entry.minutes} min read</p>
+            </Link>
+          ))}
+          <Link to="/roadmap/" className="group flex flex-col justify-between rounded-2xl border border-line bg-soft/60 p-6 transition hover:border-muted/40">
+            <div>
+              <span className="rounded-full bg-fg px-2.5 py-0.5 text-xs font-medium text-bg">Roadmap</span>
+              <h3 className="mt-4 font-semibold tracking-tight group-hover:text-primary">What comes next</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">Framework starters, a native UI library, agent UI protocols, AI gateways and retrieval.</p>
+            </div>
+            <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary">See the roadmap <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" /></span>
+          </Link>
+        </div>
+        <div className="mt-10 flex justify-center">
+          <Link to="/articles/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium transition hover:border-muted/50">All articles</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ---- FAQ ------------------------------------------------------------------------------------------------------------
 
 const questions: { q: string; a: ReactNode }[] = [
   { q: 'What is Mayura?', a: <>A TypeScript framework for AI agents, typed tools and durable workflows. You describe an agent with schemas, give it tools and a model, and run it under an allow-list of permissions and limits. It is one npm package, <code>mayura</code>, with a CLI of the same name.</> },
-  { q: 'Do I need to install anything else?', a: <>No. <code>npm install mayura</code> is enough to build agents: schemas use <code>z</code> from <code>mayura</code> (it is Zod). Optional parts such as SQLite or PostgreSQL storage, the QuickJS sandbox and React hooks each need one extra package, only if you use them. Other services, from more model providers and databases to hosted browsers and identity providers, come as <Link {...docs('reference/integrations')} className="text-primary hover:underline"><code>@mayurajs/*</code> packages</Link>.</> },
-  { q: 'Which models can I use?', a: <>OpenAI and Anthropic natively, and any OpenAI-compatible provider, such as DeepSeek, xAI, OpenRouter, Together, Fireworks and local servers. Provider packages add Google Gemini, Amazon Bedrock, Azure OpenAI, Mistral, Groq and Ollama, with their prices. A router fails over between them.</> },
+  { q: 'Do I need to install anything else?', a: <>No. <code>npm install mayura</code> is enough to build agents: schemas use <code>z</code> from <code>mayura</code> (it is Zod). Optional parts such as SQLite or PostgreSQL storage, the QuickJS sandbox and React hooks each need one extra package, only if you use them. Other services, from more model providers and databases to hosted browsers and identity providers, come as <Link to="/integrations/" className="text-primary hover:underline"><code>@mayurajs/*</code> packages</Link>.</> },
+  { q: 'What can Mayura connect to?', a: <>85 optional packages, released with every version: model providers, voice, databases, file storage, tracing services, sandboxes, hosted browsers, sign-in providers, API key services and deploy targets. Each reads nothing from the environment and runs under the same permissions and budgets as the rest of your app. Browse them in the <Link to="/integrations/" className="text-primary hover:underline">integrations directory</Link>.</> },
+  { q: 'Which models can I use?', a: <>Through the model registry, OpenAI, Anthropic, Google Gemini, Amazon Bedrock, Azure OpenAI, Mistral, Groq and Ollama, each a provider package with a dated price catalog, named as <code>provider/model</code>. Any OpenAI-compatible API works too, such as DeepSeek, xAI, OpenRouter, Together, Fireworks and local servers. Retries and fallback chains move a call to the next model when one fails.</> },
+  { q: 'Can agents run code or use a browser?', a: <>Yes, in a sandbox (Docker, or one of twelve hosted providers such as E2B, Daytona and Modal) or a real browser (local Chrome, or one of ten hosted services). Both are off until you grant them, have lifetimes and limits, and keep to the network or origins you allow. See <Link {...docs('guides/sandboxes')} className="text-primary hover:underline">Sandboxes</Link> and <Link {...docs('guides/browsers')} className="text-primary hover:underline">Browsers</Link>.</> },
   { q: 'How does Mayura keep agents in bounds?', a: <>A run can use a model, tool or effect only when you grant it, every run has cost, step, tool-call and time limits, and every input and output is validated. When a side effect may or may not have happened, the run ends <code>outcome_unknown</code> instead of retrying blindly.</> },
   { q: 'Can I test without an API key?', a: <>Yes. Scripted models from <code>mayura/testing</code> replay fixed responses, so agents, tools and workflows run offline in your tests.</> },
   { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel (AWS Lambda and Cloud Run functions experimental). It also runs on edge runtimes: Vercel Edge, Cloudflare Workers, Deno and Bun. <code>mayura deploy</code> ships to Docker, Kubernetes and eleven platforms through their own tools. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
