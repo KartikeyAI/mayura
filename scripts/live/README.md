@@ -21,9 +21,12 @@ node --env-file=.env.live scripts/live/auth-okta.mjs
   and verify tokens. Use test accounts.
 - **Paths.** Scripts import the built packages relative to their own location, so run `pnpm build` first. They can
   be run from any directory.
-- **Shared checks.** `model-checks.mjs`, `voice-checks.mjs`, `trace-checks.mjs` and `storage-checks.mjs` hold the
-  checks that every model provider, voice provider, observability service and hosted database script runs, so each
-  service is held to the same test. Model and voice checks make small paid calls, priced from the package's catalog.
+- **Shared checks.** `model-checks.mjs`, `voice-checks.mjs`, `trace-checks.mjs`, `storage-checks.mjs` and
+  `files-checks.mjs` hold the checks that every model provider, voice provider, observability service, hosted database
+  and file store script runs, so each service is held to the same test. Model and voice checks make small paid calls, priced from the package's catalog.
 - **Shared databases.** The `storage-*` scripts run against a database you may use for other things: they write one
   record and a few key records under new ids (in their own schema on PostgreSQL), never delete anything, and print
-  what they wrote.
+  what they wrote. `storage-d1.mjs` reaches D1 from outside a Worker through D1's HTTP API, standing in for the binding.
+- **File stores.** The `filestorage-*` scripts run the file store conformance suite under a new prefix and delete what
+  they wrote. `filestorage-r2.mjs` uses R2's S3 API through `mayura/files`; the Workers binding package runs only inside
+  a Worker.

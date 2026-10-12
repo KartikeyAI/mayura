@@ -83,7 +83,7 @@ The JSON report lists each provider and check with `status` (`passed`, `failed` 
 ## Checking other integrations against live accounts
 
 `scripts/live/` has a live check for each sign-in provider, sandbox, browser and API key service package, and for
-model providers, voice providers, observability services and hosted databases. Each script is named after its package and run by hand with your own accounts, as
+model providers, voice providers, observability services, hosted databases and file stores. Each script is named after its package and run by hand with your own accounts, as
 [scripts/live/README.md](scripts/live/README.md) describes. `.env.example` lists the variables for every integrated
 platform, grouped by platform with where to get each one. Copy it to `.env.live`, which is git-ignored, and fill in
 what you have. Leave the rest empty: an empty variable counts as unset. Platforms that `.env.example` marks "no live
