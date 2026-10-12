@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { parseEnv } from 'node:util';
 import { createClient, type MayuraClient, type RemoteRun } from 'mayura/client';
 import { createWorkflowLifecycleFleetRuntime } from 'mayura/workflows/lifecycle';
 import { newToken, tokenDigest } from '../src/auth.js';
@@ -136,5 +138,20 @@ describe('configuration', () => {
     await assert.rejects(loadConfig({ MAYURA_ENV: 'production', MAYURA_PUBLIC_ORIGIN: 'https://refunds.example.com' }), /MAYURA_OPERATOR_TOKEN_SHA256/u);
     await assert.rejects(loadConfig({ MAYURA_MODEL_PROVIDER: 'openai' }), /OPENAI_API_KEY/u);
     assert.equal((await loadConfig({ DATABASE_URL: 'postgres://refunds@db/refunds' })).storage.kind, 'postgres');
+  });
+});
+
+describe('.env.example', () => {
+  it('configures production once the values it asks for are filled in', async () => {
+    // `cp .env.example .env` then `docker compose up`: compose hands every line to the app, so a `NAME=` line arrives as an
+    // empty value, which is refused. The only empty lines are the ones to fill in; optional settings are commented out.
+    // A generated project has .env.example; the Mayura repository stores it as dot-env.example so that npm packs it.
+    const file = ['.env.example', 'dot-env.example'].map(name => new URL(`../../${name}`, import.meta.url)).find(url => existsSync(url))!;
+    const example = parseEnv(await readFile(file, 'utf8')) as Record<string, string>;
+    const filled = { MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(newToken()), MAYURA_INTAKE_TOKEN_SHA256: tokenDigest(newToken()) };
+    assert.deepEqual(Object.keys(example).filter(name => example[name] === '').sort(), Object.keys(filled).sort());
+    // What compose.yaml adds on top of .env.
+    const config = await loadConfig({ ...example, ...filled, DATABASE_URL: 'postgres://refunds:change-me@postgres:5432/refunds' });
+    assert.equal(config.environment, 'production'); assert.equal(config.storage.kind, 'postgres');
   });
 });

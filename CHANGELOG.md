@@ -4,6 +4,11 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+
+- The server starters' production flow works out of the box again. `docker compose up` failed in `migrate`, and `npm run dev` failed at startup once `.env.example` was copied to `.env`, with "Environment values must satisfy configured bounds." because each `.env.example` (approval-workflow, event-automation, research-team, support-agent) shipped an empty `MAYURA_ALLOWED_ORIGINS=` line, and an empty variable is refused. The optional line is now commented out, so the only empty lines are the values the README asks you to fill in; each starter's tests load its `.env.example` with just those filled in and check that production configuration succeeds. The event-automation compose file also says to fill in `TRACKER_MCP_TOKEN`, which it requires.
+- `validatedEnvironment` from `mayura/helpers` names the empty or oversized variables it refuses (`Empty environment variable: MAYURA_ALLOWED_ORIGINS. Set a value or leave it unset.`), never their values, as its schema errors already did. The error code stays `INVALID_CONFIG`.
+
 ## [1.1.0] - 2026-10-12
 
 ### Added

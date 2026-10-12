@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { parseEnv } from 'node:util';
 import { createClient, type ClientEvent, type MayuraClient } from 'mayura/client';
 import type { JsonValue, ModelAdapter, ModelRequest, ModelResponse, ModelStreamEvent } from 'mayura/core';
 import { anthropicMessages } from 'mayura/provider-anthropic';
@@ -283,5 +285,20 @@ describe('configuration', () => {
     assert.equal((await loadConfig({ DATABASE_URL: 'postgres://support@db/support' })).storage.kind, 'postgres');
     const complete = await loadConfig({ ...production, MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(newToken()), MAYURA_SESSION_SECRET: sessionSecret.toString('hex') });
     assert.deepEqual(complete.sessionSecret, sessionSecret);
+  });
+});
+
+describe('.env.example', () => {
+  it('configures production once the values it asks for are filled in', async () => {
+    // `cp .env.example .env` then `docker compose up`: compose hands every line to the app, so a `NAME=` line arrives as an
+    // empty value, which is refused. The only empty lines are the ones to fill in; optional settings are commented out.
+    // A generated project has .env.example; the Mayura repository stores it as dot-env.example so that npm packs it.
+    const file = ['.env.example', 'dot-env.example'].map(name => new URL(`../../${name}`, import.meta.url)).find(url => existsSync(url))!;
+    const example = parseEnv(await readFile(file, 'utf8')) as Record<string, string>;
+    const filled = { MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(newToken()), MAYURA_SESSION_SECRET: randomBytes(32).toString('hex') };
+    assert.deepEqual(Object.keys(example).filter(name => example[name] === '').sort(), Object.keys(filled).sort());
+    // What compose.yaml adds on top of .env.
+    const config = await loadConfig({ ...example, ...filled, DATABASE_URL: 'postgres://support:change-me@postgres:5432/support' });
+    assert.equal(config.environment, 'production'); assert.equal(config.storage.kind, 'postgres');
   });
 });

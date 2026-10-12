@@ -34,8 +34,8 @@ const orders = await retry(async (_attempt, signal) => {
 | `providerSchema(schema, jsonSchema)` | Pair a runtime validator with the JSON Schema you send to a model provider, so neither is inferred from the other. |
 | `capture(operation)` | Run an operation and get `{ ok: true, value }` or `{ ok: false, error }` with a safe public error instead of a thrown exception. |
 
-Empty variables are rejected unless you pass `allowEmpty: true`. Each value is limited to 16 KiB, and a mapping can
-list up to 128 variables.
+Empty variables are rejected, by name, unless you pass `allowEmpty: true`: a `NAME=` line in an `.env` file is an
+empty value, so comment out optional ones. Each value is limited to 16 KiB, and a mapping can list up to 128 variables.
 
 ## Secret references and the credential broker
 

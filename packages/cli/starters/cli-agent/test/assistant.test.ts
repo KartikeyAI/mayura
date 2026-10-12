@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { after, before, describe, it } from 'node:test';
+import { parseEnv } from 'node:util';
 import { createRuntime, defineAgent } from 'mayura';
 import { runAgentCommand } from 'mayura/terminal';
 import { scriptedModel, testImage } from 'mayura/testing';
@@ -201,5 +202,16 @@ describe('configuration', () => {
     assert.equal(selectModel(gateway.model, scriptedModel([])).id, 'anthropic.messages');
     await assert.rejects(loadConfig({ MAYURA_MODEL_PROVIDER: 'anthropic', MAYURA_MODEL: 'claude-sonnet-5', MAYURA_MODEL_GATEWAY_TOKEN: 'fixture-gateway-token',
       MAYURA_MODEL_INPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_OUTPUT_MICROS_PER_MILLION_TOKENS: '1', MAYURA_MODEL_MAX_CALL_COST_MICROS: '10' }, workspace), /ANTHROPIC_API_KEY/u);
+  });
+});
+
+describe('.env.example', () => {
+  it('runs as it ships: every setting in it is either set or commented out', async () => {
+    // `npm run chat` loads .env, so a `NAME=` line copied from the example would arrive as an empty value, which is refused.
+    // A generated project has .env.example; the Mayura repository stores it as dot-env.example so that npm packs it.
+    const file = ['.env.example', 'dot-env.example'].map(name => new URL(`../../${name}`, import.meta.url)).find(url => existsSync(url))!;
+    const example = parseEnv(await readFile(file, 'utf8')) as Record<string, string>;
+    assert.deepEqual(Object.keys(example).filter(name => example[name] === ''), []);
+    assert.deepEqual((await loadConfig(example, workspace)).model, { provider: 'offline' });
   });
 });
