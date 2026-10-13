@@ -62,6 +62,7 @@ validator works too.
 | `mayura/terminal` | Terminal chat and one-shot agent commands, with a person in the loop. | `runTerminalChat`, `runAgentCommand`, `confirmBeforeRunning`, `askPersonTool` | |
 | `mayura/guardrails` | Input and output checks: PII redaction, moderation, protected literals, guarded streaming. | `createPipeline`, `pipelineGuard`, `redactPII`, `createModerationGuard`, `protectLiterals` | |
 | `mayura/memory` | Scoped long-term memory with provenance, correction and deletion. | `createMemoryStore`, `createNativeMemory`, `hashingEmbedder` | a storage adapter |
+| `mayura/threads` | Users' conversation threads in your store, and turns that run with the conversation so far. | `createThreads`, `runInThread`, `purgeIdleThreads` | a storage adapter |
 | `mayura/memory-remote` | Mem0, Supermemory and OpenViking as search indexes over native memory. | `createRemoteMemoryBridge`, `mem0Memory`, `supermemory`, `openViking` | |
 | `mayura/context` | Selecting context for a model call within a size budget. | `assembleContext`, `byteTokenEstimator`, `createContextCache` | |
 | `mayura/artifacts` | Content-addressed storage for files and reports, on local disk or in a file store. | `createLocalArtifactStore`, `createArtifactStore` | |

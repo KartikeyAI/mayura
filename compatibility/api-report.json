@@ -3336,7 +3336,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "d2eca5f45b925d93"
+        "declaration": "7076b8c18c19fd03"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -4044,7 +4044,7 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "d2eca5f45b925d93"
+        "declaration": "7076b8c18c19fd03"
       },
       "RuntimeLimits": {
         "kind": "interface",
@@ -7187,6 +7187,56 @@
       "VoiceScenarioKind": {
         "kind": "type",
         "declaration": "09a588eb04db675f"
+      }
+    },
+    "@mayura/threads": {
+      "createThreads": {
+        "kind": "function",
+        "declaration": "da7c01cd728a08ea"
+      },
+      "HistoryPolicy": {
+        "kind": "interface",
+        "declaration": "b79613cb35c5c649"
+      },
+      "purgeIdleThreads": {
+        "kind": "function",
+        "declaration": "52ff558b41a0ffad"
+      },
+      "runInThread": {
+        "kind": "function",
+        "declaration": "b00a4fa9bbdf65bb"
+      },
+      "RunInThreadOptions": {
+        "kind": "interface",
+        "declaration": "c54f71e29ba6cc96"
+      },
+      "Thread": {
+        "kind": "interface",
+        "declaration": "b762d713631a41d6"
+      },
+      "ThreadEntry": {
+        "kind": "type",
+        "declaration": "8f732aae54506b11"
+      },
+      "ThreadEntryData": {
+        "kind": "type",
+        "declaration": "34431d16b535bdf8"
+      },
+      "ThreadHistory": {
+        "kind": "interface",
+        "declaration": "5684080726bdcae8"
+      },
+      "Threads": {
+        "kind": "interface",
+        "declaration": "23bd60f247556dcf"
+      },
+      "ThreadsOptions": {
+        "kind": "interface",
+        "declaration": "b7e00b4af80217ea"
+      },
+      "ThreadTurn": {
+        "kind": "interface",
+        "declaration": "94afe51f5b2a18b5"
       }
     },
     "@mayura/tools": {

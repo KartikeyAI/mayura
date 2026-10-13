@@ -89,6 +89,9 @@ importers:
       '@mayura/testing':
         specifier: workspace:*
         version: link:packages/testing
+      '@mayura/threads':
+        specifier: workspace:*
+        version: link:packages/threads
       '@mayura/tools':
         specifier: workspace:*
         version: link:packages/tools
@@ -1514,6 +1517,9 @@ importers:
       '@mayura/testing':
         specifier: workspace:*
         version: link:../testing
+      '@mayura/threads':
+        specifier: workspace:*
+        version: link:../threads
       '@mayura/tools':
         specifier: workspace:*
         version: link:../tools
@@ -1727,6 +1733,31 @@ importers:
       '@mayura/voice':
         specifier: workspace:*
         version: link:../voice
+
+  packages/threads:
+    dependencies:
+      '@mayura/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mayura/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@mayura/storage-contracts':
+        specifier: workspace:*
+        version: link:../storage-contracts
+    devDependencies:
+      '@mayura/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@mayura/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
+      '@mayura/testing':
+        specifier: workspace:*
+        version: link:../testing
+      '@mayura/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/tools:
     dependencies:

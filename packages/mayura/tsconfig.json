@@ -120,6 +120,9 @@
       "path": "../testing"
     },
     {
+      "path": "../threads"
+    },
+    {
       "path": "../tools"
     },
     {

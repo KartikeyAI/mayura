@@ -221,6 +221,10 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
+    "./threads": {
+      "types": "./dist/threads.d.ts",
+      "import": "./dist/threads.js"
+    },
     "./tools": {
       "types": "./dist/tools.d.ts",
       "import": "./dist/tools.js"
@@ -327,6 +331,7 @@
     "@mayura/storage-sqlite": "workspace:*",
     "@mayura/terminal": "workspace:*",
     "@mayura/testing": "workspace:*",
+    "@mayura/threads": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/voice": "workspace:*",
     "@mayura/workflows": "workspace:*",

@@ -32,6 +32,8 @@ describe('a run with a conversation history', () => {
       for (const request of seen) { expect(request.history).toEqual(earlier); expect(Object.isFrozen(request.history)).toBe(true); }
       expect(seen[0]!.messages).toEqual([{ role: 'user', content: { question: 'And now?' } }]);
       expect(seen[1]!.messages.map(message => message.role)).toEqual(['user', 'assistant', 'tool']);
+      // The transcript is the run's own conversation, without the history it was given.
+      expect(runtime.transcript(run)).toEqual(seen[1]!.messages);
       const started: RunEvent[] = [];
       for await (const event of run.observe()) if (event.type === 'run.started') started.push(event);
       expect(started[0]!.metadata['history']).toBe(4);

@@ -53,6 +53,7 @@
     "@mayura/storage-sqlite",
     "@mayura/terminal",
     "@mayura/testing",
+    "@mayura/threads",
     "@mayura/tools",
     "@mayura/voice",
     "@mayura/workflows",

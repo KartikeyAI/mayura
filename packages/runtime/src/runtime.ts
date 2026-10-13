@@ -124,6 +124,12 @@ export interface Runtime {
   spawn<I extends Schema, O extends Schema>(parent: RunHandle<unknown>, agent: AgentDefinition<I, O>, options: ChildOptions & { readonly input: InferInput<I>; readonly media?: readonly Media[] }): RunHandle<InferOutput<O>>;
   inspect(handle: RunHandle<unknown>): RunInspection;
   /**
+   * A run's conversation so far, in order: its input as the model saw it (after input guards), its tool calls, and the
+   * tool results released to the model. A history given to the run is not included, nor a final output (that is the
+   * outcome). It holds content, so keep it to trusted code, as you would the outcome.
+   */
+  transcript(handle: RunHandle<unknown>): readonly ModelMessage[];
+  /**
    * Answer the approval a waiting run asks for, by its handle or id. The answer must name the pending call and its exact
    * digest, before the request expires. Approved, the call runs; rejected, the model is told and carries on.
    */
@@ -245,6 +251,8 @@ interface RunState {
   endSuspended(error: MayuraError): void;
   /** The run's budget, counting what it spent before a resume in another process. */
   budgetSnapshot(): ReturnType<Budget['snapshot']>;
+  /** The run's conversation so far, without any history it was given. */
+  transcript(): readonly ModelMessage[];
   descendants: number;
   modelCalls: number;
   toolCalls: number;
@@ -1147,6 +1155,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       active.set(id, handle); if (!parent) activeRoots++;
       state.status = 'running';
     };
+    state.transcript = () => Object.freeze([...messages]);
     state.resume = (body, answer) => {
       reactivate();
       // The deadline restarts with the active time the run had left: waiting did not count.
@@ -1292,6 +1301,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         evidence: evidenceFor(state),
       });
     },
+    transcript: (handle: RunHandle<unknown>): readonly ModelMessage[] => lookup(handle).transcript(),
     approve: async (run: RunHandle<unknown> | string, answer: ApprovalAnswer): Promise<RunHandle<unknown>> => {
       const reason = answer?.reason;
       if (!answer || typeof answer !== 'object' || typeof answer.callId !== 'string' || typeof answer.digest !== 'string'

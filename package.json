@@ -79,6 +79,7 @@
     "@mayura/storage-postgres": "workspace:*",
     "@mayura/storage-sqlite": "workspace:*",
     "@mayura/testing": "workspace:*",
+    "@mayura/threads": "workspace:*",
     "@mayura/tools": "workspace:*",
     "@mayura/workflows": "workspace:*",
     "@mayura/workstream": "workspace:*",
