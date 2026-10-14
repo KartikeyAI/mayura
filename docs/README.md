@@ -129,6 +129,10 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [PostHog](integrations/observability-posthog.md): PostHog LLM analytics for Mayura's traces, over PostHog's OpenTelemetry endpoint for AI events.
 - [Sentry](integrations/observability-sentry.md): Sentry for Mayura's traces, with Sentry's gen_ai span ops, over Sentry's OTLP endpoint.
 
+## Integrations: agent security
+
+- [Rokad](integrations/firewall.md): Firewall for agents: Mayura-native Dvar policy enforcement for tool calls and outputs.
+
 ## Integrations: sandboxes
 
 - [Apple](integrations/sandbox-apple-container.md): Apple container (macOS) sandboxes for mayura/sandbox, through the container command line.
