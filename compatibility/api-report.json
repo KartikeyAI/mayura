@@ -9280,6 +9280,14 @@
         "kind": "function",
         "declaration": "8a17cad9c545cdc2"
       },
+      "createDvar": {
+        "kind": "external",
+        "declaration": "873ad0ff76dd196d"
+      },
+      "createOutputGuard": {
+        "kind": "external",
+        "declaration": "7f8c075657bfe875"
+      },
       "FirewallAction": {
         "kind": "interface",
         "declaration": "0d3937c03e268015"
