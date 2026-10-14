@@ -1,0 +1,23 @@
+name: Firewall API snapshot
+on:
+  push:
+    branches:
+      - feat/firewall-for-agents-dvar
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+      - run: npm install -g pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm build
+      - run: node scripts/api-report.mjs --update
+      - name: Print reviewed public extension symbols
+        run: |
+          node --input-type=module -e "import{readFileSync}from'node:fs';const v=JSON.parse(readFileSync('compatibility/api-report.json','utf8'));console.log('FIREWALL_API_START');console.log(JSON.stringify(v.entryPoints['@mayurajs/firewall']));console.log('FIREWALL_API_END')"
