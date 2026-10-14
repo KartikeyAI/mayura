@@ -65,7 +65,7 @@ describe('Firewall for Agents', () => {
     const guard = createAgentFirewall({
       dvar: { authorize: f.authorize, recordOutcome: f.recordOutcome },
       environment: 'test', tools: [],
-      outputFilter: { filter: <T>(input: { value: T }) => ({
+      outputFilter: { filter: <T>(_input: { value: T }) => ({
         value: { token: '[REDACTED]' } as T,
         summary: { status: 'redacted' as const }
       }) }
