@@ -3,7 +3,7 @@ title: "Integration packages"
 description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, sign-in, API keys and deploy targets."
 ---
 
-Beside `mayura`, 85 optional `@mayurajs/*` packages connect it to other services. Each is published with every Mayura
+Beside `mayura`, 86 optional `@mayurajs/*` packages connect it to other services. Each is published with every Mayura
 release at the same version, takes `mayura` as a peer, and is installed only if you use it:
 
 ```bash
@@ -83,6 +83,14 @@ Trace exporters for observability services, over OpenTelemetry. See [Observabili
 | [`@mayurajs/observability-langsmith`](../integrations/observability-langsmith.md) | LangSmith for Mayura's traces, with LangSmith's run types, over LangSmith's OpenTelemetry endpoint. |
 | [`@mayurajs/observability-posthog`](../integrations/observability-posthog.md) | PostHog LLM analytics for Mayura's traces, over PostHog's OpenTelemetry endpoint for AI events. |
 | [`@mayurajs/observability-sentry`](../integrations/observability-sentry.md) | Sentry for Mayura's traces, with Sentry's gen_ai span ops, over Sentry's OTLP endpoint. |
+
+## Agent security
+
+Deterministic action policy for agent tools, backed by Dvar. See [Agent security](../guides/guardrails.md).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/firewall`](../integrations/firewall.md) | Firewall for agents: Mayura-native Dvar policy enforcement for tool calls and outputs. |
 
 ## Sandboxes
 
