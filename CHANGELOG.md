@@ -6,7 +6,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Added
 
-- **`@mayurajs/firewall` — Firewall for Agents**, powered by Dvar. A Node.js agent hook integration that evaluates model-proposed Mayura tool calls through a supplied Dvar runtime before execution, records real tool outcomes for Dvar runtime controls, and optionally delegates output redaction and denial to Dvar's output guard. It preserves Mayura's own permissions, budgets and schema validation; unwrapped tools and direct workflow steps remain outside the hook boundary.
+- **`@mayurajs/firewall` — Firewall for Agents**, powered by Dvar. A Node.js agent hook integration that evaluates model-proposed Mayura tool calls through a supplied Dvar runtime before execution, records real tool outcomes for Dvar runtime controls, and optionally delegates output redaction and denial to Dvar's output guard. Dvar is a direct dependency, and the extension re-exports its setup helpers for a one-package installation. It preserves Mayura's own permissions, budgets and schema validation; unwrapped tools and direct workflow steps remain outside the hook boundary.
 
 ### Fixed
 
