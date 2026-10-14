@@ -8,22 +8,20 @@ area: "security"
 ---
 
 **Firewall for Agents** is a Mayura extension powered by [Dvar](https://github.com/rokadhq/dvar).
-Mayura retains its own verified scopes, permissions, budgets, schemas and outcome semantics.
+Mayura retains its own verified scopes, permissions, budgets, schemas and outcome semantics.\n`@rokadhq/dvar` is a direct runtime dependency of `@mayurajs/firewall`; applications do not install Dvar separately.
 Dvar provides an additional deterministic policy decision, bounded approvals and runtime limits.
 
 ## Install
 
 ```bash
-npm install mayura @mayurajs/firewall @rokadhq/dvar@alpha
+npm install mayura @mayurajs/firewall
 ```
 
 ## Protect an agent
 
 ```js
 import { defineAgent, defineTool, z } from 'mayura';
-import { createAgentFirewall } from '@mayurajs/firewall';
-import { createDvar } from '@rokadhq/dvar';
-import { createOutputGuard } from '@rokadhq/dvar/output-guard';
+import { createAgentFirewall, createDvar, createOutputGuard } from '@mayurajs/firewall';
 
 const dvar = await createDvar({ policyPath: 'dvar.yaml' });
 const order = defineTool({
