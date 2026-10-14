@@ -20,13 +20,7 @@
     "node": ">=22.12.0 <23 || >=24.14.1 <25"
   },
   "peerDependencies": {
-    "mayura": "workspace:^",
-    "@rokadhq/dvar": "^0.7.0"
-  },
-  "peerDependenciesMeta": {
-    "@rokadhq/dvar": {
-      "optional": true
-    }
+    "mayura": "workspace:^"
   },
   "devDependencies": {
     "mayura": "workspace:*"
