@@ -1193,6 +1193,94 @@
         "declaration": "db21185a30e0eaf1"
       }
     },
+    "@mayura/client-react": {
+      "MayuraReactError": {
+        "kind": "class",
+        "declaration": "08eeeb66dde34080"
+      },
+      "MayuraRunActions": {
+        "kind": "interface",
+        "declaration": "87ecb5cc9a62262d"
+      },
+      "useMayuraHumanRequest": {
+        "kind": "function",
+        "declaration": "db54e7f38d7f14cd"
+      },
+      "useMayuraHumanResponseCommand": {
+        "kind": "function",
+        "declaration": "457efc8e34ac0859"
+      },
+      "useMayuraRun": {
+        "kind": "function",
+        "declaration": "43b7641215132cb0"
+      },
+      "useMayuraRunActions": {
+        "kind": "function",
+        "declaration": "cfc2f72563875c14"
+      },
+      "useMayuraRunActivity": {
+        "kind": "function",
+        "declaration": "237f2a0822e49227"
+      },
+      "useMayuraWorkflowCommand": {
+        "kind": "function",
+        "declaration": "9d4d3260c24cbb0f"
+      },
+      "useMayuraWorkflowGraph": {
+        "kind": "function",
+        "declaration": "06b6ac8d64f5a1a1"
+      }
+    },
+    "@mayura/client-react/components": {
+      "MayuraFleetHoldControl": {
+        "kind": "function",
+        "declaration": "989d7b418a64d4e9"
+      },
+      "MayuraFleetHoldControlProps": {
+        "kind": "interface",
+        "declaration": "0d17419ec53b5fd5"
+      },
+      "MayuraHumanRequestCard": {
+        "kind": "function",
+        "declaration": "ba1797c2c1d8708b"
+      },
+      "MayuraHumanRequestCardProps": {
+        "kind": "interface",
+        "declaration": "bbfb65b725f1d8ae"
+      },
+      "MayuraHumanResponseForm": {
+        "kind": "function",
+        "declaration": "fc7d194533224c30"
+      },
+      "MayuraHumanResponseFormProps": {
+        "kind": "interface",
+        "declaration": "66cb714451b026b7"
+      },
+      "MayuraRunSummary": {
+        "kind": "function",
+        "declaration": "ccd144683cd31e06"
+      },
+      "MayuraRunSummaryProps": {
+        "kind": "interface",
+        "declaration": "d477a32a53b3e549"
+      },
+      "MayuraWorkflowGraph": {
+        "kind": "function",
+        "declaration": "4b83506788e3914e"
+      },
+      "MayuraWorkflowGraphProps": {
+        "kind": "interface",
+        "declaration": "4d220c142daa1a07"
+      },
+      "MayuraWorkflowPauseControl": {
+        "kind": "function",
+        "declaration": "0d9cd62ea6c060eb"
+      },
+      "MayuraWorkflowPauseControlProps": {
+        "kind": "interface",
+        "declaration": "9754880883adc547"
+      }
+    },
     "@mayura/client/forms": {
       "createHumanResponseController": {
         "kind": "function",
@@ -1389,94 +1477,6 @@
       "WorkflowViewStepStatus": {
         "kind": "type",
         "declaration": "b512c78dc04eae85"
-      }
-    },
-    "@mayura/client-react": {
-      "MayuraReactError": {
-        "kind": "class",
-        "declaration": "08eeeb66dde34080"
-      },
-      "MayuraRunActions": {
-        "kind": "interface",
-        "declaration": "87ecb5cc9a62262d"
-      },
-      "useMayuraHumanRequest": {
-        "kind": "function",
-        "declaration": "db54e7f38d7f14cd"
-      },
-      "useMayuraHumanResponseCommand": {
-        "kind": "function",
-        "declaration": "457efc8e34ac0859"
-      },
-      "useMayuraRun": {
-        "kind": "function",
-        "declaration": "43b7641215132cb0"
-      },
-      "useMayuraRunActions": {
-        "kind": "function",
-        "declaration": "cfc2f72563875c14"
-      },
-      "useMayuraRunActivity": {
-        "kind": "function",
-        "declaration": "237f2a0822e49227"
-      },
-      "useMayuraWorkflowCommand": {
-        "kind": "function",
-        "declaration": "9d4d3260c24cbb0f"
-      },
-      "useMayuraWorkflowGraph": {
-        "kind": "function",
-        "declaration": "06b6ac8d64f5a1a1"
-      }
-    },
-    "@mayura/client-react/components": {
-      "MayuraFleetHoldControl": {
-        "kind": "function",
-        "declaration": "989d7b418a64d4e9"
-      },
-      "MayuraFleetHoldControlProps": {
-        "kind": "interface",
-        "declaration": "0d17419ec53b5fd5"
-      },
-      "MayuraHumanRequestCard": {
-        "kind": "function",
-        "declaration": "ba1797c2c1d8708b"
-      },
-      "MayuraHumanRequestCardProps": {
-        "kind": "interface",
-        "declaration": "bbfb65b725f1d8ae"
-      },
-      "MayuraHumanResponseForm": {
-        "kind": "function",
-        "declaration": "fc7d194533224c30"
-      },
-      "MayuraHumanResponseFormProps": {
-        "kind": "interface",
-        "declaration": "66cb714451b026b7"
-      },
-      "MayuraRunSummary": {
-        "kind": "function",
-        "declaration": "ccd144683cd31e06"
-      },
-      "MayuraRunSummaryProps": {
-        "kind": "interface",
-        "declaration": "d477a32a53b3e549"
-      },
-      "MayuraWorkflowGraph": {
-        "kind": "function",
-        "declaration": "4b83506788e3914e"
-      },
-      "MayuraWorkflowGraphProps": {
-        "kind": "interface",
-        "declaration": "4d220c142daa1a07"
-      },
-      "MayuraWorkflowPauseControl": {
-        "kind": "function",
-        "declaration": "0d9cd62ea6c060eb"
-      },
-      "MayuraWorkflowPauseControlProps": {
-        "kind": "interface",
-        "declaration": "9754880883adc547"
       }
     },
     "@mayura/code-mode": {
@@ -7589,140 +7589,14 @@
         "declaration": "a0e4f610998022c7"
       }
     },
-    "@mayura/workflows/ephemeral": {
-      "WorkflowAgentOptions": {
-        "kind": "interface",
-        "declaration": "c6ea6016b89ea5f4"
-      },
-      "workflowAsAgent": {
+    "@mayura/workflows/agents": {
+      "agentAsDurableWorkflow": {
         "kind": "function",
-        "declaration": "f078525332bbc51a"
+        "declaration": "02bacaf4a822a460"
       },
-      "workflowAsTool": {
-        "kind": "function",
-        "declaration": "884fe396b626653c"
-      },
-      "WorkflowToolOptions": {
+      "DurableAgentWorkflowOptions": {
         "kind": "interface",
-        "declaration": "ae66b0de6de5879f"
-      }
-    },
-    "@mayura/workflows/graphs": {
-      "createWorkflowGraphCoordinator": {
-        "kind": "function",
-        "declaration": "3486a6f66fef969a"
-      },
-      "createWorkflowGraphDiscovery": {
-        "kind": "function",
-        "declaration": "87049d22aa475ff7"
-      },
-      "createWorkflowGraphRuntime": {
-        "kind": "function",
-        "declaration": "53fbb5a7e31a958d"
-      },
-      "defineWorkflowGraph": {
-        "kind": "function",
-        "declaration": "7ca31c42364475da"
-      },
-      "defineWorkflowMigration": {
-        "kind": "function",
-        "declaration": "68649d7959d1cc80"
-      },
-      "MigrationCommand": {
-        "kind": "interface",
-        "declaration": "f8a5bea7a97dabb6"
-      },
-      "MigrationPlan": {
-        "kind": "interface",
-        "declaration": "e583daeca6aebcbe"
-      },
-      "WorkflowDrainOptions": {
-        "kind": "interface",
-        "declaration": "a3d1202bb3c7d21b"
-      },
-      "WorkflowDrainReport": {
-        "kind": "interface",
-        "declaration": "363cc10512002dff"
-      },
-      "WorkflowGraphCandidateOutcome": {
-        "kind": "type",
-        "declaration": "9b90385ea01cebc6"
-      },
-      "WorkflowGraphCatalogEntry": {
-        "kind": "interface",
-        "declaration": "ecf9261a4a49cf64"
-      },
-      "WorkflowGraphCoordinator": {
-        "kind": "interface",
-        "declaration": "29e289eaf3499610"
-      },
-      "WorkflowGraphCoordinatorOptions": {
-        "kind": "interface",
-        "declaration": "e8df41b7e4f1ff0e"
-      },
-      "WorkflowGraphDefinition": {
-        "kind": "interface",
-        "declaration": "06facf9784f8625a"
-      },
-      "WorkflowGraphDiscovery": {
-        "kind": "interface",
-        "declaration": "3067022b40a1e45e"
-      },
-      "WorkflowGraphDiscoveryCandidate": {
-        "kind": "interface",
-        "declaration": "021d31d26a64666d"
-      },
-      "WorkflowGraphDiscoveryCursor": {
-        "kind": "interface",
-        "declaration": "8b57d680efccf149"
-      },
-      "WorkflowGraphDiscoveryOptions": {
-        "kind": "interface",
-        "declaration": "8c0e1ba925864d30"
-      },
-      "WorkflowGraphDiscoveryPage": {
-        "kind": "interface",
-        "declaration": "54043bc229e83b84"
-      },
-      "WorkflowGraphNode": {
-        "kind": "type",
-        "declaration": "0d9bc27864234ca9"
-      },
-      "WorkflowGraphOptions": {
-        "kind": "interface",
-        "declaration": "5b35ad41523b9f8e"
-      },
-      "WorkflowGraphOutput": {
-        "kind": "type",
-        "declaration": "816279a183dd4d53"
-      },
-      "WorkflowGraphPageReport": {
-        "kind": "type",
-        "declaration": "3501b23f4c38c7f9"
-      },
-      "WorkflowGraphRuntime": {
-        "kind": "interface",
-        "declaration": "5c17a710a4ae3b63"
-      },
-      "WorkflowGraphRuntimeOptions": {
-        "kind": "interface",
-        "declaration": "035c4bacc565172f"
-      },
-      "WorkflowGraphSnapshot": {
-        "kind": "interface",
-        "declaration": "82dca88b0a0f17ee"
-      },
-      "WorkflowGraphTargetBinding": {
-        "kind": "type",
-        "declaration": "bbf79841cda85324"
-      },
-      "WorkflowMigration": {
-        "kind": "interface",
-        "declaration": "33245a693901f030"
-      },
-      "WorkflowMigrationResult": {
-        "kind": "interface",
-        "declaration": "c5e268fad79685f8"
+        "declaration": "5a3ec6dd51dc8c8b"
       }
     },
     "@mayura/workflows/children": {
@@ -7861,6 +7735,208 @@
       "WorkflowTreeSnapshot": {
         "kind": "interface",
         "declaration": "d41e8acf5722f18b"
+      }
+    },
+    "@mayura/workflows/composites": {
+      "createWorkflowCompositeFleetRuntime": {
+        "kind": "function",
+        "declaration": "b00259cb5e1e6955"
+      },
+      "createWorkflowCompositeHost": {
+        "kind": "function",
+        "declaration": "876151bde766ce12"
+      },
+      "WorkflowCompositeCandidate": {
+        "kind": "interface",
+        "declaration": "1049eea0a0f3e210"
+      },
+      "WorkflowCompositeCursor": {
+        "kind": "interface",
+        "declaration": "6a8d23a8311b013d"
+      },
+      "WorkflowCompositeFleetOptions": {
+        "kind": "interface",
+        "declaration": "92a87b6d22d334e8"
+      },
+      "WorkflowCompositeFleetRuntime": {
+        "kind": "interface",
+        "declaration": "0dfd05eabd5ad96a"
+      },
+      "WorkflowCompositeHost": {
+        "kind": "interface",
+        "declaration": "748c511c65b446e2"
+      },
+      "WorkflowCompositeHostCycle": {
+        "kind": "interface",
+        "declaration": "7af8fba1274ec3e4"
+      },
+      "WorkflowCompositeHostOptions": {
+        "kind": "interface",
+        "declaration": "51e29205f7b463a8"
+      },
+      "WorkflowCompositeHostStatus": {
+        "kind": "interface",
+        "declaration": "1495a39abdb34640"
+      },
+      "WorkflowCompositeKind": {
+        "kind": "type",
+        "declaration": "dc605694f882567a"
+      },
+      "WorkflowCompositeOutcome": {
+        "kind": "type",
+        "declaration": "f84f5b9f4b952a7c"
+      },
+      "WorkflowCompositePage": {
+        "kind": "interface",
+        "declaration": "f225c732243b36de"
+      },
+      "WorkflowCompositeReport": {
+        "kind": "interface",
+        "declaration": "a351aeee2859f6c4"
+      },
+      "WorkflowDrainOptions": {
+        "kind": "interface",
+        "declaration": "a3d1202bb3c7d21b"
+      },
+      "WorkflowDrainReport": {
+        "kind": "interface",
+        "declaration": "363cc10512002dff"
+      }
+    },
+    "@mayura/workflows/ephemeral": {
+      "WorkflowAgentOptions": {
+        "kind": "interface",
+        "declaration": "c6ea6016b89ea5f4"
+      },
+      "workflowAsAgent": {
+        "kind": "function",
+        "declaration": "f078525332bbc51a"
+      },
+      "workflowAsTool": {
+        "kind": "function",
+        "declaration": "884fe396b626653c"
+      },
+      "WorkflowToolOptions": {
+        "kind": "interface",
+        "declaration": "ae66b0de6de5879f"
+      }
+    },
+    "@mayura/workflows/graphs": {
+      "createWorkflowGraphCoordinator": {
+        "kind": "function",
+        "declaration": "3486a6f66fef969a"
+      },
+      "createWorkflowGraphDiscovery": {
+        "kind": "function",
+        "declaration": "87049d22aa475ff7"
+      },
+      "createWorkflowGraphRuntime": {
+        "kind": "function",
+        "declaration": "53fbb5a7e31a958d"
+      },
+      "defineWorkflowGraph": {
+        "kind": "function",
+        "declaration": "7ca31c42364475da"
+      },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
+      },
+      "WorkflowDrainOptions": {
+        "kind": "interface",
+        "declaration": "a3d1202bb3c7d21b"
+      },
+      "WorkflowDrainReport": {
+        "kind": "interface",
+        "declaration": "363cc10512002dff"
+      },
+      "WorkflowGraphCandidateOutcome": {
+        "kind": "type",
+        "declaration": "9b90385ea01cebc6"
+      },
+      "WorkflowGraphCatalogEntry": {
+        "kind": "interface",
+        "declaration": "ecf9261a4a49cf64"
+      },
+      "WorkflowGraphCoordinator": {
+        "kind": "interface",
+        "declaration": "29e289eaf3499610"
+      },
+      "WorkflowGraphCoordinatorOptions": {
+        "kind": "interface",
+        "declaration": "e8df41b7e4f1ff0e"
+      },
+      "WorkflowGraphDefinition": {
+        "kind": "interface",
+        "declaration": "06facf9784f8625a"
+      },
+      "WorkflowGraphDiscovery": {
+        "kind": "interface",
+        "declaration": "3067022b40a1e45e"
+      },
+      "WorkflowGraphDiscoveryCandidate": {
+        "kind": "interface",
+        "declaration": "021d31d26a64666d"
+      },
+      "WorkflowGraphDiscoveryCursor": {
+        "kind": "interface",
+        "declaration": "8b57d680efccf149"
+      },
+      "WorkflowGraphDiscoveryOptions": {
+        "kind": "interface",
+        "declaration": "8c0e1ba925864d30"
+      },
+      "WorkflowGraphDiscoveryPage": {
+        "kind": "interface",
+        "declaration": "54043bc229e83b84"
+      },
+      "WorkflowGraphNode": {
+        "kind": "type",
+        "declaration": "0d9bc27864234ca9"
+      },
+      "WorkflowGraphOptions": {
+        "kind": "interface",
+        "declaration": "5b35ad41523b9f8e"
+      },
+      "WorkflowGraphOutput": {
+        "kind": "type",
+        "declaration": "816279a183dd4d53"
+      },
+      "WorkflowGraphPageReport": {
+        "kind": "type",
+        "declaration": "3501b23f4c38c7f9"
+      },
+      "WorkflowGraphRuntime": {
+        "kind": "interface",
+        "declaration": "5c17a710a4ae3b63"
+      },
+      "WorkflowGraphRuntimeOptions": {
+        "kind": "interface",
+        "declaration": "035c4bacc565172f"
+      },
+      "WorkflowGraphSnapshot": {
+        "kind": "interface",
+        "declaration": "82dca88b0a0f17ee"
+      },
+      "WorkflowGraphTargetBinding": {
+        "kind": "type",
+        "declaration": "bbf79841cda85324"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
       }
     },
     "@mayura/workflows/lifecycle": {
@@ -8109,6 +8185,92 @@
         "declaration": "c5e268fad79685f8"
       }
     },
+    "@mayura/workflows/loops": {
+      "AnyWorkflowLoop": {
+        "kind": "type",
+        "declaration": "1b5c821a05633f3c"
+      },
+      "assertWorkflowLoop": {
+        "kind": "function",
+        "declaration": "2cc224e199571788"
+      },
+      "createWorkflowLoopRuntime": {
+        "kind": "function",
+        "declaration": "4c56d49fddbe3df6"
+      },
+      "defineWorkflowLoop": {
+        "kind": "function",
+        "declaration": "e90f461f1e7935f0"
+      },
+      "defineWorkflowMigration": {
+        "kind": "function",
+        "declaration": "68649d7959d1cc80"
+      },
+      "loopManifest": {
+        "kind": "function",
+        "declaration": "64d10b3cf0c61801"
+      },
+      "MigrationCommand": {
+        "kind": "interface",
+        "declaration": "f8a5bea7a97dabb6"
+      },
+      "MigrationPlan": {
+        "kind": "interface",
+        "declaration": "e583daeca6aebcbe"
+      },
+      "WorkflowDrainOptions": {
+        "kind": "interface",
+        "declaration": "a3d1202bb3c7d21b"
+      },
+      "WorkflowDrainReport": {
+        "kind": "interface",
+        "declaration": "363cc10512002dff"
+      },
+      "WorkflowLoopBinding": {
+        "kind": "type",
+        "declaration": "fdd5882db06a2748"
+      },
+      "WorkflowLoopDefinition": {
+        "kind": "interface",
+        "declaration": "0298d0de48ca1ac7"
+      },
+      "WorkflowLoopManifest": {
+        "kind": "interface",
+        "declaration": "e8ceeb7f0654f68a"
+      },
+      "WorkflowLoopOptions": {
+        "kind": "interface",
+        "declaration": "fe068486afcd94bb"
+      },
+      "WorkflowLoopOutput": {
+        "kind": "type",
+        "declaration": "df4779efe66c1a78"
+      },
+      "WorkflowLoopRuntime": {
+        "kind": "interface",
+        "declaration": "bca7c61bc405e71d"
+      },
+      "WorkflowLoopRuntimeOptions": {
+        "kind": "interface",
+        "declaration": "1024450c5a08e074"
+      },
+      "WorkflowLoopSnapshot": {
+        "kind": "interface",
+        "declaration": "cf9a142beea66ae4"
+      },
+      "WorkflowLoopStatus": {
+        "kind": "type",
+        "declaration": "2b71a96679c30d50"
+      },
+      "WorkflowMigration": {
+        "kind": "interface",
+        "declaration": "33245a693901f030"
+      },
+      "WorkflowMigrationResult": {
+        "kind": "interface",
+        "declaration": "c5e268fad79685f8"
+      }
+    },
     "@mayura/workflows/sagas": {
       "AnyWorkflowSaga": {
         "kind": "type",
@@ -8201,168 +8363,6 @@
       "WorkflowSagaStepStatus": {
         "kind": "type",
         "declaration": "13a9abc6139f9207"
-      }
-    },
-    "@mayura/workflows/loops": {
-      "AnyWorkflowLoop": {
-        "kind": "type",
-        "declaration": "1b5c821a05633f3c"
-      },
-      "assertWorkflowLoop": {
-        "kind": "function",
-        "declaration": "2cc224e199571788"
-      },
-      "createWorkflowLoopRuntime": {
-        "kind": "function",
-        "declaration": "4c56d49fddbe3df6"
-      },
-      "defineWorkflowLoop": {
-        "kind": "function",
-        "declaration": "e90f461f1e7935f0"
-      },
-      "defineWorkflowMigration": {
-        "kind": "function",
-        "declaration": "68649d7959d1cc80"
-      },
-      "loopManifest": {
-        "kind": "function",
-        "declaration": "64d10b3cf0c61801"
-      },
-      "MigrationCommand": {
-        "kind": "interface",
-        "declaration": "f8a5bea7a97dabb6"
-      },
-      "MigrationPlan": {
-        "kind": "interface",
-        "declaration": "e583daeca6aebcbe"
-      },
-      "WorkflowDrainOptions": {
-        "kind": "interface",
-        "declaration": "a3d1202bb3c7d21b"
-      },
-      "WorkflowDrainReport": {
-        "kind": "interface",
-        "declaration": "363cc10512002dff"
-      },
-      "WorkflowLoopBinding": {
-        "kind": "type",
-        "declaration": "fdd5882db06a2748"
-      },
-      "WorkflowLoopDefinition": {
-        "kind": "interface",
-        "declaration": "0298d0de48ca1ac7"
-      },
-      "WorkflowLoopManifest": {
-        "kind": "interface",
-        "declaration": "e8ceeb7f0654f68a"
-      },
-      "WorkflowLoopOptions": {
-        "kind": "interface",
-        "declaration": "fe068486afcd94bb"
-      },
-      "WorkflowLoopOutput": {
-        "kind": "type",
-        "declaration": "df4779efe66c1a78"
-      },
-      "WorkflowLoopRuntime": {
-        "kind": "interface",
-        "declaration": "bca7c61bc405e71d"
-      },
-      "WorkflowLoopRuntimeOptions": {
-        "kind": "interface",
-        "declaration": "1024450c5a08e074"
-      },
-      "WorkflowLoopSnapshot": {
-        "kind": "interface",
-        "declaration": "cf9a142beea66ae4"
-      },
-      "WorkflowLoopStatus": {
-        "kind": "type",
-        "declaration": "2b71a96679c30d50"
-      },
-      "WorkflowMigration": {
-        "kind": "interface",
-        "declaration": "33245a693901f030"
-      },
-      "WorkflowMigrationResult": {
-        "kind": "interface",
-        "declaration": "c5e268fad79685f8"
-      }
-    },
-    "@mayura/workflows/composites": {
-      "createWorkflowCompositeFleetRuntime": {
-        "kind": "function",
-        "declaration": "b00259cb5e1e6955"
-      },
-      "createWorkflowCompositeHost": {
-        "kind": "function",
-        "declaration": "876151bde766ce12"
-      },
-      "WorkflowCompositeCandidate": {
-        "kind": "interface",
-        "declaration": "1049eea0a0f3e210"
-      },
-      "WorkflowCompositeCursor": {
-        "kind": "interface",
-        "declaration": "6a8d23a8311b013d"
-      },
-      "WorkflowCompositeFleetOptions": {
-        "kind": "interface",
-        "declaration": "92a87b6d22d334e8"
-      },
-      "WorkflowCompositeFleetRuntime": {
-        "kind": "interface",
-        "declaration": "0dfd05eabd5ad96a"
-      },
-      "WorkflowCompositeHost": {
-        "kind": "interface",
-        "declaration": "748c511c65b446e2"
-      },
-      "WorkflowCompositeHostCycle": {
-        "kind": "interface",
-        "declaration": "7af8fba1274ec3e4"
-      },
-      "WorkflowCompositeHostOptions": {
-        "kind": "interface",
-        "declaration": "51e29205f7b463a8"
-      },
-      "WorkflowCompositeHostStatus": {
-        "kind": "interface",
-        "declaration": "1495a39abdb34640"
-      },
-      "WorkflowCompositeKind": {
-        "kind": "type",
-        "declaration": "dc605694f882567a"
-      },
-      "WorkflowCompositeOutcome": {
-        "kind": "type",
-        "declaration": "f84f5b9f4b952a7c"
-      },
-      "WorkflowCompositePage": {
-        "kind": "interface",
-        "declaration": "f225c732243b36de"
-      },
-      "WorkflowCompositeReport": {
-        "kind": "interface",
-        "declaration": "a351aeee2859f6c4"
-      },
-      "WorkflowDrainOptions": {
-        "kind": "interface",
-        "declaration": "a3d1202bb3c7d21b"
-      },
-      "WorkflowDrainReport": {
-        "kind": "interface",
-        "declaration": "363cc10512002dff"
-      }
-    },
-    "@mayura/workflows/agents": {
-      "agentAsDurableWorkflow": {
-        "kind": "function",
-        "declaration": "02bacaf4a822a460"
-      },
-      "DurableAgentWorkflowOptions": {
-        "kind": "interface",
-        "declaration": "5a3ec6dd51dc8c8b"
       }
     },
     "@mayura/workstream": {
@@ -9265,6 +9265,36 @@
       "VercelBlobFilesOptions": {
         "kind": "interface",
         "declaration": "69462e75afca4442"
+      }
+    },
+    "@mayurajs/firewall": {
+      "AgentFirewall": {
+        "kind": "interface",
+        "declaration": "87707688c395e756"
+      },
+      "AgentFirewallOptions": {
+        "kind": "interface",
+        "declaration": "0aa4706df6ceec1e"
+      },
+      "createAgentFirewall": {
+        "kind": "function",
+        "declaration": "8a17cad9c545cdc2"
+      },
+      "FirewallAction": {
+        "kind": "interface",
+        "declaration": "0d3937c03e268015"
+      },
+      "FirewallDecision": {
+        "kind": "interface",
+        "declaration": "8a8c34bc95990053"
+      },
+      "FirewallEngine": {
+        "kind": "interface",
+        "declaration": "fd53f44cdb7697f1"
+      },
+      "FirewallOutputFilter": {
+        "kind": "interface",
+        "declaration": "65c665b695841730"
       }
     },
     "@mayurajs/km-reqkey": {
