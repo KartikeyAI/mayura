@@ -6,7 +6,7 @@
 - Dvar evaluates the proposed tool action, applies configured approval/runtime controls, and emits its audit events.
 - Tool outputs can be redacted or blocked using the Dvar output guard.
 
-Install `mayura`, `@mayurajs/firewall` and `@rokadhq/dvar@alpha`. Dvar is supplied explicitly—there is no hidden cloud service or second policy engine.
+Install `mayura` and `@mayurajs/firewall`. The firewall package installs `@rokadhq/dvar` automatically and re-exports `createDvar` and `createOutputGuard` for consumers. Dvar is supplied explicitly—there is no hidden cloud service or second policy engine.
 
 See `docs/integrations/firewall.md` for a complete example.
 
