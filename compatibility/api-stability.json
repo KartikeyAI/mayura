@@ -135,6 +135,7 @@
     "@mayurajs/filestorage-mesa",
     "@mayurajs/filestorage-r2",
     "@mayurajs/filestorage-vercel-blob",
+    "@mayurajs/firewall",
     "@mayurajs/observability-langfuse",
     "@mayurajs/observability-langsmith",
     "@mayurajs/observability-posthog",
