@@ -50,7 +50,7 @@ with a CLI that scaffolds, runs and operates your project.
   configure it.
 - **Deploy anywhere.** `mayura deploy` to Docker, Compose, Kubernetes and eleven platforms, from Fly.io and Cloud Run
   to AWS Lambda and Cloudflare. Runs on Node.js, Bun, Deno, Cloudflare Workers and Vercel Edge.
-- **85 integration packages.** Optional `@mayurajs/*` packages, released with `mayura`: see the
+- **86 integration packages.** Optional `@mayurajs/*` packages, released with `mayura`: see the
   [list](docs/reference/integrations.md).
 - **Test offline.** Scripted models run agents, tools and workflows without a network or an API key.
 

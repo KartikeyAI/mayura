@@ -23,6 +23,7 @@ const areas = [
   { key: 'storage', title: 'Storage', prefixes: ['storage-'], guide: 'guides/storage.md', about: 'Databases for runs, workflows, memory and keys, beside the built-in SQLite and PostgreSQL.' },
   { key: 'files', title: 'Files', prefixes: ['filestorage-'], guide: 'guides/files.md', about: 'Object stores and filesystems for file stores and artifacts, beside the built-in S3.' },
   { key: 'observability', title: 'Observability', prefixes: ['observability-'], guide: 'guides/observability.md', about: 'Trace exporters for observability services, over OpenTelemetry.' },
+  { key: 'security', title: 'Agent security', prefixes: ['firewall'], guide: 'guides/guardrails.md', about: 'Deterministic action policy for agent tools, backed by Dvar.' },
   { key: 'sandboxes', title: 'Sandboxes', prefixes: ['sandbox-'], guide: 'guides/sandboxes.md', about: 'Hosted Linux machines for agents, beside the built-in Docker sandboxes.' },
   { key: 'browsers', title: 'Browsers', prefixes: ['browser-', 'cloudflare-quick-action'], guide: 'guides/browsers.md', about: 'Hosted browsers, browser tools and a live viewer, beside the local Chrome or Edge.' },
   { key: 'auth', title: 'Sign-in providers', prefixes: ['auth-'], guide: 'guides/authentication.md', about: 'Identity provider tokens as server identities.' },

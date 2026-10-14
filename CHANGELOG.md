@@ -4,6 +4,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Added
+
+- **`@mayurajs/firewall` — Firewall for Agents**, powered by Dvar. A Node.js agent hook integration that evaluates model-proposed Mayura tool calls through a supplied Dvar runtime before execution, records real tool outcomes for Dvar runtime controls, and optionally delegates output redaction and denial to Dvar's output guard. Dvar is a direct dependency, and the extension re-exports its setup helpers for a one-package installation. It preserves Mayura's own permissions, budgets and schema validation; unwrapped tools and direct workflow steps remain outside the hook boundary.
+
 ### Fixed
 
 - The server starters' production flow works out of the box again. `docker compose up` failed in `migrate`, and `npm run dev` failed at startup once `.env.example` was copied to `.env`, with "Environment values must satisfy configured bounds." because each `.env.example` (approval-workflow, event-automation, research-team, support-agent) shipped an empty `MAYURA_ALLOWED_ORIGINS=` line, and an empty variable is refused. The optional line is now commented out, so the only empty lines are the values the README asks you to fill in; each starter's tests load its `.env.example` with just those filled in and check that production configuration succeeds. The event-automation compose file also says to fill in `TRACKER_MCP_TOKEN`, which it requires.

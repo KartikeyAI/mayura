@@ -128,6 +128,7 @@
     "@mayurajs/filestorage-mesa": "workspace:*",
     "@mayurajs/filestorage-r2": "workspace:*",
     "@mayurajs/filestorage-vercel-blob": "workspace:*",
+    "@mayurajs/firewall": "workspace:*",
     "@mayurajs/observability-arize": "workspace:*",
     "@mayurajs/observability-betterstack": "workspace:*",
     "@mayurajs/observability-datadog": "workspace:*",

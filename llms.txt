@@ -133,6 +133,10 @@ Rules that matter when writing Mayura code:
 - [PostHog LLM analytics](docs/integrations/observability-posthog.md): Send agent runs to PostHog LLM analytics as AI events with @mayurajs/observability-posthog: setup, regions, person ids, limits and errors.
 - [Sentry tracing](docs/integrations/observability-sentry.md): Send agent runs to Sentry's AI Agents view over its OTLP endpoint with @mayurajs/observability-sentry: DSN setup, span ops, limits and errors.
 
+## Integrations: agent security
+
+- [Firewall for Agents (Dvar)](docs/integrations/firewall.md): Deterministic Dvar policy for Mayura agent tool calls, with outcome accounting and optional output redaction.
+
 ## Integrations: sandboxes
 
 - [Apple container sandboxes](docs/integrations/sandbox-apple-container.md): Run agent commands in lightweight VMs on your Mac with @mayurajs/sandbox-apple-container: setup, options, the host-only network and errors.
