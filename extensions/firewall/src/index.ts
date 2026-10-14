@@ -186,3 +186,6 @@ export function createAgentFirewall(options: AgentFirewallOptions): AgentFirewal
     ...(outputGuard === undefined ? {} : { outputGuard })
   };
 }
+
+/** Convenience re-exports: consumer apps only install @mayurajs/firewall. */
+export { createDvar, createOutputGuard } from '@rokadhq/dvar';
