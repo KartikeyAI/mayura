@@ -21,8 +21,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
-- Observe real adapter commit acknowledgements through bounded barriers in concurrency fixtures, avoiding polling
-  contention while retaining persisted execution, exclusion and accounting assertions.
+- Observe real adapter commit acknowledgements through bounded barriers in concurrency and late-evidence fixtures,
+  avoiding polling contention while retaining persisted execution, exclusion and accounting assertions. Keep slow-runner
+  fixture admission windows long enough to test approval expiry after preparation rather than before it, and retain
+  explicit short leases only in lease-expiry/renewal scenarios on Windows CI.
 
 - Give process-crash recovery fixtures transaction headroom on Windows CI while retaining actual lease-expiry waits,
   terminal-state checks and exactly-once effect assertions.
