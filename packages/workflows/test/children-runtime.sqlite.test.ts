@@ -121,8 +121,40 @@ describe('workflow-tree developer runtime',()=>{
     const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();let active=0;let peak=0;const execute=vi.fn(async(value:number)=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,20));active--;return value+1;});const tool=defineTool({id:'serial-increment',version:'1',description:'Increment serially.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:1,execute});const tree=defineWorkflowTree({id:'serial-tree',version:'1',input:z.number(),output:z.array(z.number()),nodes:[{kind:'tool',id:'left',tool,input:{kind:'input',path:[]}},{kind:'tool',id:'right',tool,input:{kind:'input',path:[]}},{kind:'join',id:'joined',dependsOn:['left','right']}],result:{kind:'step',stepId:'joined',path:[]}});const selected=createWorkflowTreeRuntime({store,scope,permissions:{allow:['tool:serial-increment']},policyVersion:'1',maxCostMicros:2,maxCalls:2,maxOutputBytes:1_024,workerId:'serial-worker',leaseMs:3_000,maxConcurrentJobs:1});runtimes.push(selected);const submitted=await selected.submit(tree,{input:1,idempotencyKey:'serial'});const finished=await selected.runUntilSettled(tree,submitted.id);expect(finished).toMatchObject({status:'succeeded',output:[2,2]});expect(peak).toBe(1);expect(execute).toHaveBeenCalledTimes(2);
   });
 
-  it('retains shared capacity until a timed-out handler actually settles',async()=>{
-    const store=createSqliteStore({filename:':memory:'});stores.push(store);await store.initialize();let release!:()=>void;let settled!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});const handlerSettled=new Promise<void>(resolve=>{settled=resolve;});const slow=defineTool({id:'slow',version:'1',description:'Settle after timeout.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:1,timeoutMs:25,execute:async value=>{await gate;settled();return value;}});const fastExecute=vi.fn(async(value:number)=>value);const fast=defineTool({id:'fast',version:'1',description:'Run after capacity returns.',input:z.number(),output:z.number(),effects:'none',capabilities:[],costMicros:1,execute:fastExecute});const slowTree=defineWorkflowTree({id:'slow-tree',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'work',tool:slow,input:{kind:'input',path:[]}}],result:{kind:'step',stepId:'work',path:[]}});const fastTree=defineWorkflowTree({id:'fast-tree',version:'1',input:z.number(),output:z.number(),nodes:[{kind:'tool',id:'work',tool:fast,input:{kind:'input',path:[]}}],result:{kind:'step',stepId:'work',path:[]}});const selected=createWorkflowTreeRuntime({store,scope,permissions:{allow:['tool:slow','tool:fast']},policyVersion:'1',maxCostMicros:1,maxCalls:1,maxOutputBytes:1_024,workerId:'capacity-worker',leaseMs:3_000,maxConcurrentJobs:1,maxConcurrentRuns:2});runtimes.push(selected);const slowRun=await selected.submit(slowTree,{input:1,idempotencyKey:'slow'});const slowResult=await selected.runUntilSettled(slowTree,slowRun.id);expect(slowResult.status).toBe('outcome_unknown');const fastRun=await selected.submit(fastTree,{input:2,idempotencyKey:'fast'});const waiting=await selected.runUntilSettled(fastTree,fastRun.id);expect(waiting.status).toBe('running');expect(fastExecute).not.toHaveBeenCalled();release();await handlerSettled;await new Promise(resolve=>setTimeout(resolve,0));const finished=await selected.runUntilSettled(fastTree,fastRun.id);expect(finished).toMatchObject({status:'succeeded',output:2});expect(fastExecute).toHaveBeenCalledTimes(1);
+  it('retains shared capacity until a timed-out handler actually settles', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); stores.push(store); await store.initialize();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const slowExecute = vi.fn(async (value: number) => { await gate; return value; });
+    // The timeout covers durable admission too. Leave room for the real SQLite
+    // start commit so this exercises a running handler, rather than denied dispatch.
+    const slow = defineTool({ id: 'slow', version: '1', description: 'Settle after timeout.', input: z.number(),
+      output: z.number(), effects: 'none', capabilities: [], costMicros: 1, timeoutMs: 1_000, execute: slowExecute });
+    const fastExecute = vi.fn(async (value: number) => value);
+    const fast = defineTool({ id: 'fast', version: '1', description: 'Run after capacity returns.', input: z.number(),
+      output: z.number(), effects: 'none', capabilities: [], costMicros: 1, execute: fastExecute });
+    const tree = (id: string, tool: typeof slow) => defineWorkflowTree({ id, version: '1', input: z.number(), output: z.number(),
+      nodes: [{ kind: 'tool', id: 'work', tool, input: { kind: 'input', path: [] } }], result: { kind: 'step', stepId: 'work', path: [] } });
+    const slowTree = tree('slow-tree', slow); const fastTree = tree('fast-tree', fast);
+    const selected = createWorkflowTreeRuntime({ store, scope, permissions: { allow: ['tool:slow', 'tool:fast'] }, policyVersion: '1',
+      maxCostMicros: 1, maxCalls: 1, maxOutputBytes: 1_024, workerId: 'capacity-worker', leaseMs: 3_000, maxConcurrentJobs: 1, maxConcurrentRuns: 2 });
+    runtimes.push(selected);
+    const slowRun = await selected.submit(slowTree, { input: 1, idempotencyKey: 'slow' });
+    const execution = selected.runUntilSettled(slowTree, slowRun.id); void execution.catch(() => {});
+    try {
+      await vi.waitFor(() => expect(slowExecute).toHaveBeenCalledOnce(), { timeout: 5_000 });
+      expect((await execution).status).toBe('outcome_unknown');
+      const fastRun = await selected.submit(fastTree, { input: 2, idempotencyKey: 'fast' });
+      expect((await selected.runUntilSettled(fastTree, fastRun.id)).status).toBe('running');
+      expect(fastExecute).not.toHaveBeenCalled();
+      release();
+      // Observe actual capacity release instead of assuming a single event-loop
+      // turn also completed the handler's asynchronous receipt persistence.
+      await vi.waitFor(async () => {
+        expect(await selected.runUntilSettled(fastTree, fastRun.id)).toMatchObject({ status: 'succeeded', output: 2 });
+      }, { timeout: 5_000 });
+      expect(slowExecute).toHaveBeenCalledOnce(); expect(fastExecute).toHaveBeenCalledOnce();
+    } finally { release(); await Promise.allSettled([execution]); }
   });
 
   it('coordinates competing runtimes without replaying one root tool',async()=>{
