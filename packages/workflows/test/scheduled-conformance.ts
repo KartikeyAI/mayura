@@ -11,6 +11,8 @@ import { digest } from '../src/definition.js';
 import type { ScheduledFixture } from './scheduled-fixtures.js';
 
 const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+// Observe real adapter commits without polling reads that can contend with DynamoDB transactions.
+const storageBarrierMs = process.env['CI'] === 'true' ? 10_000 : 3_000;
 
 type Runtime = ReturnType<typeof createScheduledWorkflowRuntime>;
 type Options = Parameters<typeof createScheduledWorkflowRuntime>[0];
@@ -456,12 +458,20 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       let started = 0; const both = deferred<void>(); const firstRelease = deferred<{ value: number }>();
       const secondRelease = deferred<{ value: number }>();
       const enter = (which: typeof firstRelease) => { if (++started === 2) both.resolve(); return which.promise; };
-      const definition = parallel(tool({ execute: () => enter(firstRelease) }), tool({ id: 'scheduled.second', execute: () => enter(secondRelease) }));
-      const engine = runtime({ maxConcurrentJobs: 2 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'parallel-completion' });
+      const definition = parallel(tool({ execute: () => enter(firstRelease), timeoutMs: 30_000 }), tool({ id: 'scheduled.second', execute: () => enter(secondRelease), timeoutMs: 30_000 }));
+      const secondCommitted = deferred<void>(); const backing = store.workflows;
+      const observed = wrapped({ complete: async command => {
+        const saved = await backing.complete(command);
+        if (saved.jobs.some(job => job.nodeId === 'second' && job.state === 'succeeded')) secondCommitted.resolve();
+        return saved;
+      } });
+      const engine = runtime({ store: observed, maxConcurrentJobs: 2 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'parallel-completion' });
       const execution = engine.runUntilSettled(definition, run.id);
-      try { await bounded(both.promise); secondRelease.resolve({ value: 20 }); await vi.waitFor(async () => {
+      try {
+        await bounded(both.promise, storageBarrierMs); secondRelease.resolve({ value: 20 });
+        await bounded(secondCommitted.promise, storageBarrierMs);
         expect((await engine.inspect(run.id)).steps['second']!.status).toBe('succeeded');
-      }); }
+      }
       finally { firstRelease.resolve({ value: 10 }); secondRelease.resolve({ value: 20 }); await execution; }
       const result = await engine.inspect(run.id);
       expect(result.status).toBe('succeeded'); expect(result.output).toEqual([{ value: 20 }, { value: 10 }]); expect(started).toBe(2);
@@ -548,14 +558,20 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       let effects = 0; const began = deferred<void>(); const release = deferred<{ value: number }>();
       const definition = single(tool({ execute: input => {
         effects++; if (input.value === 1) { began.resolve(); return release.promise; } return input;
-      } }));
-      const shared = runtime({ resources: { write: ['shared'] } }); const unrelated = runtime({ resources: { write: ['independent'] } });
-      const a = await shared.submit(definition, { input: { value: 1 }, idempotencyKey: 'resource-owner' });
+      }, timeoutMs: 30_000 }));
+      const settled = deferred<void>(); const backing = store.workflows; let ownerId: string | undefined;
+      const observed = wrapped({ recordReceipt: async command => {
+        const saved = await backing.recordReceipt(command);
+        if (command.id === ownerId && command.receipt.execution === 'succeeded') settled.resolve();
+        return saved;
+      } });
+      const shared = runtime({ store: observed, resources: { write: ['shared'] } }); const unrelated = runtime({ resources: { write: ['independent'] } });
+      const a = await shared.submit(definition, { input: { value: 1 }, idempotencyKey: 'resource-owner' }); ownerId = a.id;
       const b = await shared.submit(definition, { input: { value: 2 }, idempotencyKey: 'resource-blocked' });
       const c = await unrelated.submit(definition, { input: { value: 3 }, idempotencyKey: 'resource-free' });
       const execution = shared.runUntilSettled(definition, a.id);
       try {
-        await bounded(began.promise);
+        await bounded(began.promise, storageBarrierMs);
         const whileActive = await shared.runUntilSettled(definition, b.id);
         expect(whileActive.steps['write']!.status).not.toBe('succeeded'); expect(effects).toBe(1);
         await shared.cancel(a.id); await bounded(execution);
@@ -563,7 +579,8 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         expect(blocked.steps['write']!.status).not.toBe('succeeded');
         expect((await unrelated.runUntilSettled(definition, c.id)).status).toBe('succeeded'); expect(effects).toBe(2);
         release.resolve({ value: 1 });
-        await vi.waitFor(async () => { expect((await shared.inspect(a.id)).budget.spentMicros).toBe(1); });
+        await bounded(settled.promise, storageBarrierMs);
+        expect((await shared.inspect(a.id)).budget.spentMicros).toBe(1);
         await shared.runUntilSettled(definition, b.id); expect(effects).toBe(2);
       } finally { release.resolve({ value: 1 }); await execution; }
     });

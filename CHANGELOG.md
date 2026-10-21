@@ -21,6 +21,12 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Observe real adapter commit acknowledgements through bounded barriers in concurrency fixtures, avoiding polling
+  contention while retaining persisted execution, exclusion and accounting assertions.
+
+- Give process-crash recovery fixtures transaction headroom on Windows CI while retaining actual lease-expiry waits,
+  terminal-state checks and exactly-once effect assertions.
+
 - Assert headless disposal against the actual transport signal and drain cancellation fixtures on assertion failures.
 - Pin database CI to Ubuntu 22.04 while the pinned MongoDB build is incompatible with newer runner kernels; fail
   immediately when MongoDB exits or readiness expires, retaining bounded container diagnostics.
