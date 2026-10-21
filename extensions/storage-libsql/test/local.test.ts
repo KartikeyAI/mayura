@@ -89,12 +89,13 @@ const simple = (prefix: string) => async () => {
 };
 
 aggregateConformance('libSQL', simple('aggregate'));
+// The real rate window alone needs more than the unit suite's 10 s Linux deadline.
 describe('libSQL key manager conformance', () => {
   for (const test of keyManagerConformance) {
     it(test.name, async () => {
       const fixture = await simple('keys')(); await fixture.store.initialize();
       try { await test.run({ store: fixture.store }); } finally { await fixture.store.close(); await fixture.cleanup(); }
-    });
+    }, test.name === 'rate limits a key per window' ? 30_000 : undefined);
   }
 });
 identityIntegrityConformance('libSQL', simple('identity'));
