@@ -210,16 +210,23 @@ describe('runs paused to a checkpoint store', () => {
   });
 
   it('lets the host own expiry and returns the resumed handle for event persistence', async () => {
-    const { tool, execute } = refundTool(); const agent = agentWith(priced([call('c1', 40), done('expired')]), [tool]);
-    const engine = runtime({ approvals: { expiresInMs: 30 }, checkpoints: { store: store.runCheckpoints, agents: [agent], autoExpire: false } });
-    const run = engine.submit(agent, { input: { question: 'Refund' } }); await until(run, 'run.paused');
-    expect(await engine.expireApproval(run.id)).toEqual({ status: 'not_due' });
-    await new Promise(resolve => setTimeout(resolve, 40));
-    expect(engine.inspect(run).status).toBe('waiting');
-    const result = await engine.expireApproval(run.id); expect(result.status).toBe('resumed');
-    if (result.status !== 'resumed') throw new Error('Missing resumed handle');
-    expect(result.run).toBe(run); expect((await result.run.result()).status).toBe('succeeded');
-    expect(execute).not.toHaveBeenCalled();
+    // SQLite persistence may exceed the approval window on a busy runner. Control
+    // the expiry clock while retaining real timers and the real checkpoint store.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { tool, execute } = refundTool(); const agent = agentWith(priced([call('c1', 40), done('expired')]), [tool]);
+      const engine = runtime({ approvals: { expiresInMs: 30 }, checkpoints: { store: store.runCheckpoints, agents: [agent], autoExpire: false } });
+      const run = engine.submit(agent, { input: { question: 'Refund' } }); await until(run, 'run.paused');
+      const expiresAtMs = engine.inspect(run).approval!.expiresAtMs;
+      vi.setSystemTime(expiresAtMs - 1);
+      expect(await engine.expireApproval(run.id)).toEqual({ status: 'not_due' });
+      vi.setSystemTime(expiresAtMs);
+      expect(engine.inspect(run).status).toBe('waiting');
+      const result = await engine.expireApproval(run.id); expect(result.status).toBe('resumed');
+      if (result.status !== 'resumed') throw new Error('Missing resumed handle');
+      expect(result.run).toBe(run); expect((await result.run.result()).status).toBe('succeeded');
+      expect(execute).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
   });
 
   it('continues an expired request as its policy says while the process lives', async () => {
