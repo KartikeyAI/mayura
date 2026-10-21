@@ -21,6 +21,9 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Assert headless disposal against the actual transport signal and drain cancellation fixtures on assertion failures.
+- Fail database CI immediately when MongoDB exits or readiness expires, retaining bounded container diagnostics.
+
 - Accept the complete bounded server capability catalog during identity admission, preserving capability and policy
   enforcement for threads, approvals and compaction.
 - Snapshot workflow submission input before asynchronous authorization, so concurrent caller edits cannot change the

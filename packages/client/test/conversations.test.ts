@@ -102,15 +102,24 @@ describe('conversation headless stores', () => {
   });
 
   it('fences concurrent work, bounds listeners and aborts in-flight reads on disposal', async () => {
-    const pending = deferred<Response>(); let signal: AbortSignal | undefined;
-    const { client } = fixture(async request => { signal = request.signal; return pending.promise; });
+    const pending = deferred<Response>();
+    const { client, transport } = fixture(async () => pending.promise);
     const store = createHeadlessThreadsStore({ client, maxSubscribers: 1 }); const listener = vi.fn(); store.subscribe(listener);
     expect(() => store.subscribe(() => {})).toThrowError(expect.objectContaining({ code: 'VIEW_SUBSCRIBER_LIMIT' }));
     const reading = store.refresh(); const rejected = expect(reading).rejects.toMatchObject({ code: 'ABORTED' });
-    await vi.waitFor(() => expect(signal).toBeDefined()); await expect(store.refresh()).rejects.toMatchObject({ code: 'VIEW_BUSY' });
-    store.dispose(); const disposed = store.getSnapshot(); expect(signal!.aborted).toBe(true); pending.resolve(reply({ threads: [], cursor: null }));
-    await rejected; expect(store.getSnapshot()).toBe(disposed); expect(disposed.status).toBe('disposed');
-    await expect(store.refresh()).rejects.toMatchObject({ code: 'VIEW_DISPOSED' });
+    try {
+      await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+      // Observe the signal the client actually supplies, not a dependent signal owned by a temporary Request wrapper.
+      const signal = transport.mock.calls[0]![1]!.signal;
+      expect(signal).toBeDefined(); await expect(store.refresh()).rejects.toMatchObject({ code: 'VIEW_BUSY' });
+      store.dispose(); const disposed = store.getSnapshot(); expect(signal!.aborted).toBe(true);
+      pending.resolve(reply({ threads: [], cursor: null }));
+      await rejected; expect(store.getSnapshot()).toBe(disposed); expect(disposed.status).toBe('disposed');
+      await expect(store.refresh()).rejects.toMatchObject({ code: 'VIEW_DISPOSED' });
+    } finally {
+      // Assertion failures must still release the fake transport and await the admitted cancellation assertion.
+      store.dispose(); pending.resolve(reply({ threads: [], cursor: null })); await rejected;
+    }
   });
 
   it('captures immutable approval identity, prevents duplicates and exposes explicit failure/conflict feedback', async () => {
