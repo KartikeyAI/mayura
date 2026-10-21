@@ -51,7 +51,9 @@ export async function scheduledSqliteFixture(): Promise<ScheduledFixture> {
     async cleanup() {
       const target = resolve(directory);
       if (!target.startsWith(`${resolve(tmpdir())}${sep}mayura-scheduled-workflows-`)) throw new Error('Unexpected scheduled fixture path.');
-      await rm(target, { recursive: true, force: true });
+      // A closed native libSQL connection can briefly retain its WAL/SHM handles on
+      // Windows. Retry only within a bounded window; persistent locks still fail.
+      await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }

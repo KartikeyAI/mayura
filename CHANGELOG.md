@@ -31,6 +31,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   the approval before the not-due assertion; retain the real checkpoint store and execution assertions.
 - Give the coordinator reopen conformance fixture a bounded ten-second lease so delayed claim delivery
   does not unintentionally test expiry; preserve immutable resource plans and exactly-once execution checks.
+- Retry scheduled-workflow fixture removal within a bounded window after closing native database handles,
+  allowing Windows WAL/SHM locks to settle while continuing to fail persistent cleanup errors.
 
 - Resolve the website gallery's shared UI source against the site's own React installation and declarations,
   so clean site-only installs type-check and build without workspace dependencies or duplicate React runtimes.
