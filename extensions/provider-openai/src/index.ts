@@ -324,3 +324,7 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
   });
 }
 
+
+export { gatewayProvider, gatewayCredential, type GatewayOptions, type GatewayProvider, type GatewayBinding } from './gateway.js';
+
+export { openAIEmbeddings, type OpenAIEmbeddingsOptions } from './embeddings.js';

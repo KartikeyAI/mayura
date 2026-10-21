@@ -25,6 +25,10 @@
       "types": "./dist/adapter-mcp.d.ts",
       "import": "./dist/adapter-mcp.js"
     },
+    "./ag-ui": {
+      "types": "./dist/ag-ui.d.ts",
+      "import": "./dist/ag-ui.js"
+    },
     "./artifacts": {
       "types": "./dist/artifacts.d.ts",
       "import": "./dist/artifacts.js"
@@ -44,6 +48,10 @@
     "./auth/testing": {
       "types": "./dist/auth__testing.d.ts",
       "import": "./dist/auth__testing.js"
+    },
+    "./authz": {
+      "types": "./dist/authz.d.ts",
+      "import": "./dist/authz.js"
     },
     "./browser": {
       "types": "./dist/browser.d.ts",
@@ -156,6 +164,14 @@
     "./provider-openai": {
       "types": "./dist/provider-openai.d.ts",
       "import": "./dist/provider-openai.js"
+    },
+    "./rag": {
+      "types": "./dist/rag.d.ts",
+      "import": "./dist/rag.js"
+    },
+    "./rag/host": {
+      "types": "./dist/rag__host.d.ts",
+      "import": "./dist/rag__host.js"
     },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
@@ -298,8 +314,10 @@
     "@mayura/adapter-code-docker": "workspace:*",
     "@mayura/adapter-code-quickjs": "workspace:*",
     "@mayura/adapter-mcp": "workspace:*",
+    "@mayura/ag-ui": "workspace:*",
     "@mayura/artifacts": "workspace:*",
     "@mayura/auth": "workspace:*",
+    "@mayura/authz": "workspace:*",
     "@mayura/browser": "workspace:*",
     "@mayura/cli": "workspace:*",
     "@mayura/client": "workspace:*",
@@ -318,6 +336,7 @@
     "@mayura/observability": "workspace:*",
     "@mayura/provider-anthropic": "workspace:*",
     "@mayura/provider-openai": "workspace:*",
+    "@mayura/rag": "workspace:*",
     "@mayura/runtime": "workspace:*",
     "@mayura/sandbox": "workspace:*",
     "@mayura/sdk": "workspace:*",

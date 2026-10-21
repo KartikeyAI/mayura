@@ -199,3 +199,13 @@ describe('agent hook registration', () => {
     expect(() => defineAgent(configuration)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 });
+
+
+it('types onApprovalRequested as a metadata-only observer with no tool registry', () => {
+  const hook = defineHook({ id: 'approval-observer', version: '1', stage: 'onApprovalRequested', handler: event => {
+    expectTypeOf(event.digest).toEqualTypeOf<string>(); expectTypeOf(event.expiresAtMs).toEqualTypeOf<number>();
+  } });
+  expectTypeOf(hook).toEqualTypeOf<HookDefinition<'onApprovalRequested'>>();
+  expect(hook.kind).toBe('mayura.observer-hook');
+  expect(() => defineHook({ id: 'bad-observer', version: '1', stage: 'onApprovalRequested', tools: [tool()], handler: () => {} } as never)).toThrow();
+});

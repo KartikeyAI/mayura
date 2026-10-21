@@ -123,6 +123,13 @@ Anthropic (`anthropicMessages` from `mayura/provider-anthropic`) and OpenAI-comp
 (`openAICompatibleChat` from `mayura/provider-openai`) are drop-in replacements for the model. The
 [quickstart](docs/quickstart.md) goes further: streaming, a durable workflow, and serving the agent over HTTP.
 
+## Runnable thread chat
+
+From a repository checkout, run `pnpm build` then `node examples/thread-chat/server.mjs` and open the printed URL.
+The [thread chat example](examples/thread-chat/README.md) wires React history and approval controls to SQLite-backed
+runs: send a note, approve/reject the proposed write, or cancel. It works without a model API key and recovers a
+waiting approval after page reload.
+
 ## CLI
 
 The `mayura` command comes with the package. Start a new project with the interactive wizard: pick a starter, pick a
@@ -183,3 +190,6 @@ Mayura is created by **Aryabh** ([dev@rokad.co](mailto:dev@rokad.co)). The team 
 
 Mayura is open source under the [Apache-2.0 license](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute,
 [SECURITY.md](SECURITY.md) to report a vulnerability and [SUPPORT.md](SUPPORT.md) for support.
+
+
+The release-1.2 development branch includes the offline `examples/ag-ui-chat` notebook and a copy-in React registry (`mayura add ui --list`). See [copy-in UI](docs/guides/copy-in-ui.md) and [AG-UI](docs/guides/ag-ui.md). Local Windows tests, builds and package checks pass. V1.2 remains unreleased; see the [release validation status](docs/guides/release-readiness.md) for results and remaining qualifications.

@@ -55,7 +55,6 @@ describe('a run with a conversation history', () => {
     const runtime = createRuntime({ profile: 'ephemeral', permissions: grants(model) });
     try {
       expect(() => runtime.submit(agentWith(model), { input: { question: 'x' }, history: earlier })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
-      expect(() => runtime.submit(agentWith(model), { input: { question: 'x' }, history: [] })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
     } finally { await runtime.close(); }
   });
 
@@ -117,4 +116,58 @@ describe('a run with a conversation history', () => {
       expect(views).toEqual([earlier]);
     } finally { await runtime.close(); }
   });
+});
+
+
+it('emits one content-free history application with exact UTF-8 size and frozen fitting metadata', async () => {
+  const history = { messages: [{ role: 'user' as const, content: 'PRIVATE café' }, { role: 'assistant' as const, output: 'PRIVATE answer' }],
+    omittedTurns: 7, scanTruncated: true };
+  const expectedBytes = new TextEncoder().encode(JSON.stringify(history.messages)).length;
+  const model = scriptedModel([{ type: 'final', output: { reply: 'ok' }, usage: { costMicros: 0 } }]);
+  const runtime = createRuntime({ profile: 'ephemeral', permissions: grants(model) });
+  try {
+    const run = runtime.submit(agentWith(model), { input: { question: 'Now?' }, history });
+    history.omittedTurns = 99; history.messages[0]!.content = 'changed';
+    await run.result(); const events: RunEvent[] = []; for await (const event of run.observe()) events.push(event);
+    const applied = events.filter(event => event.type === 'history.applied');
+    expect(applied).toHaveLength(1); expect(applied[0]?.metadata).toEqual({ entries: 2, omitted: 7, bytes: expectedBytes, scanTruncated: true });
+    expect(Object.isFrozen(applied[0]?.metadata)).toBe(true); expect(JSON.stringify(applied)).not.toContain('PRIVATE');
+    expect(events.findIndex(event => event.type === 'run.started')).toBeLessThan(events.indexOf(applied[0]!));
+    expect(events.indexOf(applied[0]!)).toBeLessThan(events.findIndex(event => event.type === 'model.started'));
+  } finally { await runtime.close(); }
+});
+
+it('supports empty fitted history without sending history to an incapable model', async () => {
+  let received: ModelRequest | undefined;
+  const model = scriptedModel([request => { received = request; return { type: 'final', output: { reply: 'ok' }, usage: { costMicros: 0 } }; }], { history: false });
+  const runtime = createRuntime({ profile: 'ephemeral', permissions: grants(model) });
+  try {
+    const run = runtime.submit(agentWith(model), { input: { question: 'Hello' }, history: { messages: [], omittedTurns: 0 } });
+    expect((await run.result()).status).toBe('succeeded'); expect(received).not.toHaveProperty('history');
+    const events: RunEvent[] = []; for await (const event of run.observe()) events.push(event);
+    expect(events.find(event => event.type === 'history.applied')?.metadata).toEqual({ entries: 0, omitted: 0, bytes: 2, scanTruncated: false });
+  } finally { await runtime.close(); }
+});
+
+it('rejects malformed fitting metadata before starting a run', async () => {
+  const model = scriptedModel([]); const runtime = createRuntime({ profile: 'ephemeral', permissions: grants(model) });
+  try {
+    for (const history of [{ messages: earlier, omittedTurns: -1 }, { messages: earlier, omittedTurns: 0.5 },
+      { messages: earlier, omittedTurns: 0, scanTruncated: 'yes' }, { messages: earlier }, { omittedTurns: 0 }]) {
+      expect(() => runtime.submit(agentWith(model), { input: { question: 'x' }, history: history as never })).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    }
+  } finally { await runtime.close(); }
+});
+
+it('does not claim history was applied when the input boundary refuses execution', async () => {
+  const model = scriptedModel([]); const hook = defineHook({ id: 'deny', version: '1', stage: 'beforeExecution', tools: [], handler: () => ({ decision: 'block' }) });
+  const agent = defineAgent({ id: 'blocked', version: '1', instructions: 'Test', model, tools: [], hooks: [hook],
+    input: z.object({ question: z.string() }), output: z.object({ reply: z.string() }) });
+  const runtime = createRuntime({ profile: 'ephemeral', permissions: grants(model) });
+  try {
+    const run = runtime.submit(agent, { input: { question: 'x' }, history: earlier });
+    expect((await run.result()).status).toBe('blocked');
+    const events: RunEvent[] = []; for await (const event of run.observe()) events.push(event);
+    expect(events.some(event => event.type === 'history.applied')).toBe(false);
+  } finally { await runtime.close(); }
 });

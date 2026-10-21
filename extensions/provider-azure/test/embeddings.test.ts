@@ -1,0 +1,7 @@
+import {describe,expect,it,vi} from 'vitest';
+import {azureEmbeddings} from '../src/index.js';
+const config={model:'fixture',apiKey:'fake-offline-key',dimensions:2,maxBatch:2,costMicros:7,permissions:{allow:['rag:transport:azure-embeddings']},timeoutMs:1000,maxConcurrent:1,resource:'fixture'};
+describe('azure native embeddings',()=>{
+  it('validates the native embedding shape and does not retry',async()=>{const fetch=vi.fn(async()=>new Response(JSON.stringify({data:[{index:0,embedding:[1,0]}]})));const model=azureEmbeddings({...config,fetch});expect(await model.embed(['text'],new AbortController().signal)).toEqual([[1,0]]);expect(fetch).toHaveBeenCalledTimes(1);});
+  it('denies missing permissions, malformed output, cancellation and transport failure',async()=>{const fetch=vi.fn(async()=>new Response(JSON.stringify({})));const model=azureEmbeddings({...config,fetch});await expect(model.embed(['text'],new AbortController().signal)).rejects.toBeDefined();expect(fetch).toHaveBeenCalledTimes(1);const denied=azureEmbeddings({...config,permissions:{allow:[]},fetch});await expect(denied.embed(['text'],new AbortController().signal)).rejects.toBeDefined();expect(fetch).toHaveBeenCalledTimes(1);const control=new AbortController();control.abort();await expect(model.embed(['text'],control.signal)).rejects.toBeDefined();const failed=azureEmbeddings({...config,fetch:async()=>{throw new Error('SECRET');}});await expect(failed.embed(['text'],new AbortController().signal)).rejects.not.toThrow('SECRET');});
+});

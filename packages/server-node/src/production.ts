@@ -4,7 +4,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '@mayura/server';
-import { hardenServer, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
+import { hardenServer, normalizeNodeRequest, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
 
 /** The host rebuilds each request's URL from `publicOrigin` itself, so `mounted` does not apply. */
 export interface ProductionServerOptions extends Omit<AgentServerOptions, 'publicOrigin' | 'mounted'> {
@@ -31,6 +31,11 @@ export interface ProductionAgentServer {
   readonly publicOrigin: string;
   /** The bound port, useful when `port` is 0. */
   readonly port: number;
+  inspectAuthorizationAudit: AgentServer['inspectAuthorizationAudit'];
+  flushAuthorizationAudit: AgentServer['flushAuthorizationAudit'];
+  recoverConversations: AgentServer['recoverConversations'];
+  inspectClaimedApproval: AgentServer['inspectClaimedApproval'];
+  reconcileClaimedApproval: AgentServer['reconcileClaimedApproval'];
   /** False before startup completes and from the moment shutdown begins, so load balancers stop routing first. */
   isAccepting(): boolean;
   /** Stop accepting, fail readiness, drain in-flight requests within the grace period, then close runs and streams. */
@@ -99,7 +104,7 @@ export async function listenProductionServer(options: ProductionServerOptions): 
   });
   app.all('*', async context => {
     if (closing || !protocol) return unavailable();
-    const raw = context.req.raw;
+    const raw = normalizeNodeRequest(context.req.raw);
     // A trusted proxy may carry the public host in X-Forwarded-Host after rewriting Host; it only decides acceptance.
     const peer = peerAddress((context.env as { incoming?: IncomingMessage } | undefined)?.incoming?.socket.remoteAddress ?? '');
     const forwarded = trustedProxies.has(peer) ? raw.headers.get('x-forwarded-host')?.split(',').at(-1)?.trim().toLowerCase() : undefined;
@@ -128,7 +133,11 @@ export async function listenProductionServer(options: ProductionServerOptions): 
       return closingPromise;
     };
     server.on('error', () => { void close().catch(() => {}); });
-    return Object.freeze({ publicOrigin: publicOrigin.origin, port: address.port, isAccepting: () => accepting && !closing, close });
+    return Object.freeze({ publicOrigin: publicOrigin.origin, port: address.port, isAccepting: () => accepting && !closing, recoverConversations: (settings => protocol!.recoverConversations(settings)) as AgentServer['recoverConversations'],
+      inspectClaimedApproval: (request => protocol!.inspectClaimedApproval(request)) as AgentServer['inspectClaimedApproval'],
+      inspectAuthorizationAudit: () => protocol!.inspectAuthorizationAudit(),
+      flushAuthorizationAudit: () => protocol!.flushAuthorizationAudit(),
+      reconcileClaimedApproval: (request => protocol!.reconcileClaimedApproval(request)) as AgentServer['reconcileClaimedApproval'], close });
   } catch {
     closing = true; server.close(); server.closeAllConnections(); await protocol?.close();
     throw new Error('The production agent server could not start.');

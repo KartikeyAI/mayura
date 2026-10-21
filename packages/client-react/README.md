@@ -9,3 +9,20 @@ The caller owns and disposes the headless store. Hooks never refresh, observe, c
 React is a peer dependency. Public Mayura declarations expose only Mayura types, so the framework does not install or export a second React type universe.
 
 The separate `mayura/client-react/components` subpath provides unstyled semantic run-summary, durable-workflow, human-request, schema-driven response-form, workflow pause and fleet hold components. It exposes React types by design, performs no implicit I/O and emits response intent only from an explicit button or form event. The response form is uncontrolled, validates against `mayura/client/forms`, and returns a typed request/digest-bound submission to the application without sending it. Passing the controller state renders safe pending/success/conflict/failure feedback and locks stale submissions.
+
+
+`MayuraThreadHistory` renders a bounded conversation page from a caller-owned thread store, with explicit paging
+callbacks, safe text and omission/truncation markers. `MayuraRunApprovalControl` renders one captured approval
+controller's exact input, expiry, optional reason and explicit decision buttons. It locks expired, busy, settled,
+conflicted and failed decisions; truncated input can be rejected but cannot be approved. Pass `nowMs` from the
+application's clock policy. Neither component fetches, decides, retries or disposes on mount/unmount. See the
+public React guide for usage and lifecycle policy.
+
+
+`useMayuraThreadCompactionCommand` and `useMayuraThreadCompactionActions` subscribe to a caller-owned compaction
+controller and expose stable explicit actions. `MayuraThreadCompactionControl` on the components subpath reviews
+its captured thread/command/prefix, starts an untouched command, inspects uncertainty, publishes a staged summary
+without another model call, and cancels while submission is pending. It never retries a paid command after failure.
+Saved summaries remain bounded plain text, unknown costs stay explicit, and history refresh remains caller-owned.
+Rendering, SSR, StrictMode and unmounting never start requests or dispose the shared controller. See
+[React thread compaction](../../docs/guides/react.md#react-thread-compaction) for usage and lifecycle policy.

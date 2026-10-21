@@ -1,0 +1,23 @@
+import { afterEach, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
+import { createSqliteStore } from '@mayura/storage-sqlite';
+import { createThreads } from '../src/index.js';
+import { mediaReferences, readMediaReferences } from '../src/media.js';
+import { mediaUrl } from '@mayura/core';
+const scope={ principalId:'alice',projectId:'shop' }; const owned: { close():Promise<void> }[]=[]; const folders:string[]=[];
+afterEach(async () => { for (const item of owned.splice(0)) await item.close(); for (const folder of folders.splice(0)) { if (!resolve(folder).startsWith(`${resolve(tmpdir())}${sep}mayura-import-`)) throw new Error('Unsafe cleanup'); await rm(folder,{ recursive:true,force:true }); } });
+async function fixture(grants=['thread:read','thread:write','thread:import']) { const folder=await mkdtemp(join(tmpdir(),'mayura-import-'));folders.push(folder); const store=createSqliteStore({ filename:join(folder,'chat.sqlite') });owned.push(store);await store.initialize();await store.threads.initialize();const threads=createThreads({ store,scope,permissions:{ allow:grants } });await threads.create({ id:'chat' });return { store,threads }; }
+const command={ commandId:'import-1',expectedSequence:0,messages:[{ role:'user' as const,content:'Hello' },{ role:'assistant' as const,output:'Hi' }] };
+it('imports atomically once and preserves exact evidence after later turns',async () => { const { threads }=await fixture(); const first=await threads.append('chat',command); expect(first).toHaveLength(3);expect(await threads.append('chat',command)).toEqual(first);expect((await threads.history('chat')).messages).toHaveLength(2);
+ await threads.append('chat',{ ...command,commandId:'import-2',expectedSequence:3 });expect(await threads.append('chat',command)).toEqual(first);expect((await threads.get('chat'))?.entryCount).toBe(6);await expect(threads.append('chat',{ ...command,expectedSequence:6 })).rejects.toMatchObject({ code:'CONFLICT' });
+ await expect(threads.append('chat',{ ...command,messages:[{ role:'user',content:'changed' },command.messages[1]!] })).rejects.toMatchObject({ code:'CONFLICT' }); });
+it('requires the separate import grant, active scope, expected sequence and a complete alternating conversation',async () => { const { threads,store }=await fixture(['thread:read','thread:write']);await expect(threads.append('chat',command)).rejects.toMatchObject({ code:'PERMISSION_DENIED' });
+ const other=createThreads({ store,scope:{ ...scope,projectId:'other' },permissions:{ allow:['thread:read','thread:write','thread:import'] } });await expect(other.append('chat',command)).rejects.toMatchObject({ code:'NOT_FOUND' });
+ const allowed=createThreads({ store,scope,permissions:{ allow:['thread:read','thread:write','thread:import'] } });await expect(allowed.append('chat',{ ...command,expectedSequence:1 })).rejects.toMatchObject({ code:'CONFLICT' });await expect(allowed.append('chat',{ ...command,messages:[command.messages[0]!] })).rejects.toMatchObject({ code:'INVALID_INPUT' });
+ await allowed.archive('chat');await expect(allowed.append('chat',command)).rejects.toMatchObject({ code:'CONFLICT' }); });
+it('rejects cancellation before import and never writes partial turns',async () => { const { store,threads }=await fixture();const controller=new AbortController();controller.abort();const stopped=createThreads({ store,scope,permissions:{ allow:['thread:read','thread:write','thread:import'] },signal:controller.signal });await expect(stopped.append('chat',command)).rejects.toMatchObject({ code:'CANCELLED' });expect((await threads.get('chat'))?.entryCount).toBe(0); });
+it('stores opaque media identities, never URLs/bytes, and keeps metadata in fitted history',async () => {const { threads }=await fixture(); const refs=mediaReferences([mediaUrl('https://cdn.example/a.png?secret=PRIVATE','image/png')]);expect(JSON.stringify(refs)).not.toContain('PRIVATE');expect(JSON.stringify(refs)).not.toContain('https');
+ const entries=await threads.append('chat',{ ...command,messages:[{ role:'user',content:'Image',media:refs },command.messages[1]!] });expect(entries[0]).toMatchObject({ media:refs });expect(JSON.stringify((await threads.history('chat')).messages)).toContain('mediaReferences');
+ expect(() => readMediaReferences([{ ...refs[0],url:'https://evil.test' }])).toThrow();expect(() => readMediaReferences([{ ...refs[0],name:'../secret' }])).toThrow(); });

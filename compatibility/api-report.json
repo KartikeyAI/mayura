@@ -87,6 +87,136 @@
         "declaration": "f65e360bf1a01ef0"
       }
     },
+    "@mayura/ag-ui": {
+      "AG_UI_PROTOCOL_VERSION": {
+        "kind": "const",
+        "declaration": "217520517db9428b"
+      },
+      "AgUiAdapter": {
+        "kind": "interface",
+        "declaration": "247473f243812a00"
+      },
+      "AgUiAdapterOptions": {
+        "kind": "interface",
+        "declaration": "298a7b07ee58c300"
+      },
+      "AgUiContentPart": {
+        "kind": "type",
+        "declaration": "27ee67351984aa4c"
+      },
+      "AgUiEvent": {
+        "kind": "type",
+        "declaration": "1abb26f743c911bf"
+      },
+      "AgUiFrontendContinuation": {
+        "kind": "interface",
+        "declaration": "a7c34a836ba7ca26"
+      },
+      "AgUiFrontendDispatchMetadata": {
+        "kind": "interface",
+        "declaration": "51e94b7a868d57af"
+      },
+      "AgUiFrontendExecution": {
+        "kind": "interface",
+        "declaration": "04e6fab2a102208f"
+      },
+      "AgUiFrontendExecutor": {
+        "kind": "interface",
+        "declaration": "3dda08a240bef77a"
+      },
+      "AgUiFrontendExecutorOptions": {
+        "kind": "interface",
+        "declaration": "bccd356f9d708a6f"
+      },
+      "AgUiFrontendHandlerContext": {
+        "kind": "interface",
+        "declaration": "54fa9678bd90b0b3"
+      },
+      "AgUiFrontendOutboxView": {
+        "kind": "interface",
+        "declaration": "88288e673f3a368e"
+      },
+      "AgUiFrontendTool": {
+        "kind": "interface",
+        "declaration": "5e799e81f02d4688"
+      },
+      "AgUiFrontendToolLimits": {
+        "kind": "interface",
+        "declaration": "50e9819023bf9e94"
+      },
+      "AgUiFrontendToolOptions": {
+        "kind": "type",
+        "declaration": "bd27d346b1c37be9"
+      },
+      "AgUiFrontendTools": {
+        "kind": "interface",
+        "declaration": "2dc9eeece3ed5e43"
+      },
+      "AgUiFrontendToolsOptions": {
+        "kind": "interface",
+        "declaration": "2cd628aef32daee7"
+      },
+      "AgUiInterrupt": {
+        "kind": "interface",
+        "declaration": "d58c36174e924d7b"
+      },
+      "AgUiLimits": {
+        "kind": "interface",
+        "declaration": "c3077f9d6277bf39"
+      },
+      "AgUiMessage": {
+        "kind": "type",
+        "declaration": "90c62106df9e422b"
+      },
+      "AgUiResume": {
+        "kind": "type",
+        "declaration": "4acb4e98d0590e17"
+      },
+      "AgUiRunInput": {
+        "kind": "interface",
+        "declaration": "85203f65a57031c3"
+      },
+      "AgUiState": {
+        "kind": "type",
+        "declaration": "cc991459a8bd92e7"
+      },
+      "AgUiStateContext": {
+        "kind": "interface",
+        "declaration": "1bab54bb73e50bba"
+      },
+      "AgUiStateMetadata": {
+        "kind": "interface",
+        "declaration": "0876b19997a6f897"
+      },
+      "AgUiStatePatchOperation": {
+        "kind": "type",
+        "declaration": "9aeb11b37470b164"
+      },
+      "AgUiStateSource": {
+        "kind": "interface",
+        "declaration": "d206037f19fab542"
+      },
+      "AgUiStateVersion": {
+        "kind": "interface",
+        "declaration": "64d79328e7c494f1"
+      },
+      "AgUiToolCall": {
+        "kind": "interface",
+        "declaration": "3c5db827ff8ec6bc"
+      },
+      "createAgUiAdapter": {
+        "kind": "function",
+        "declaration": "e110ddc427a83fe9"
+      },
+      "createAgUiFrontendExecutor": {
+        "kind": "function",
+        "declaration": "52c5d571375e23ac"
+      },
+      "createAgUiFrontendTools": {
+        "kind": "function",
+        "declaration": "ed27bad8df99f599"
+      }
+    },
     "@mayura/artifacts": {
       "ArtifactAuditObservation": {
         "kind": "interface",
@@ -461,6 +591,40 @@
         "declaration": "fc69d337a2807ebf"
       }
     },
+    "@mayura/authz": {
+      "createRbacAuthorizer": {
+        "kind": "function",
+        "declaration": "286588698de078c3"
+      },
+      "createRbacPolicy": {
+        "kind": "function",
+        "declaration": "7d64e9c3ea4abeb3"
+      },
+      "RbacAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "6b570bf3fda55dea"
+      },
+      "RbacBinding": {
+        "kind": "interface",
+        "declaration": "ea523e1a26619dcc"
+      },
+      "RbacPolicyOptions": {
+        "kind": "interface",
+        "declaration": "7b4dfb5dffbbb19e"
+      },
+      "RbacResourceSelector": {
+        "kind": "interface",
+        "declaration": "b4801da8ea61cefc"
+      },
+      "RbacRole": {
+        "kind": "interface",
+        "declaration": "d07701444b7d789d"
+      },
+      "RbacRule": {
+        "kind": "interface",
+        "declaration": "feb985c393e0b718"
+      }
+    },
     "@mayura/browser": {
       "Browser": {
         "kind": "interface",
@@ -655,6 +819,10 @@
       "applyProjectPlan": {
         "kind": "function",
         "declaration": "6ccafa7a3873e9cb"
+      },
+      "applyUiPlan": {
+        "kind": "function",
+        "declaration": "07e7f78d133bdef7"
       },
       "approveWorkflow": {
         "kind": "function",
@@ -852,6 +1020,10 @@
         "kind": "function",
         "declaration": "c8a4e7eb034b47d1"
       },
+      "planUiComponents": {
+        "kind": "function",
+        "declaration": "9d7805b79c39e729"
+      },
       "ProjectDefinitionRecord": {
         "kind": "interface",
         "declaration": "7c68357dbc548ee0"
@@ -894,7 +1066,7 @@
       },
       "STARTER_NAMES": {
         "kind": "const",
-        "declaration": "f71443f6798d4fbb"
+        "declaration": "d751b219bd9c2fd4"
       },
       "StarterInitPlan": {
         "kind": "interface",
@@ -923,6 +1095,18 @@
       "templates": {
         "kind": "function",
         "declaration": "1313632376d3a86b"
+      },
+      "UiComponent": {
+        "kind": "interface",
+        "declaration": "f67bbc14e17aa7da"
+      },
+      "uiComponents": {
+        "kind": "function",
+        "declaration": "c335806d97dcca5e"
+      },
+      "UiPlan": {
+        "kind": "interface",
+        "declaration": "514dc73e58bb34ef"
       },
       "validateProject": {
         "kind": "function",
@@ -1074,7 +1258,7 @@
       },
       "ClientEvent": {
         "kind": "interface",
-        "declaration": "d321aaa037848ec1"
+        "declaration": "001709750a648f01"
       },
       "ClientJson": {
         "kind": "type",
@@ -1091,6 +1275,10 @@
       "ClientSchema": {
         "kind": "interface",
         "declaration": "7b7dfc114974156e"
+      },
+      "ConversationClient": {
+        "kind": "interface",
+        "declaration": "247865bf52a07a50"
       },
       "createClient": {
         "kind": "function",
@@ -1110,11 +1298,15 @@
       },
       "MayuraClient": {
         "kind": "interface",
-        "declaration": "42d16a24b735d70b"
+        "declaration": "7c6f625ac169cd9e"
+      },
+      "RemoteApproval": {
+        "kind": "interface",
+        "declaration": "551e2b4f0044c52e"
       },
       "RemoteFeature": {
         "kind": "type",
-        "declaration": "b4f360322e076fa0"
+        "declaration": "d8c63a9bfb09a604"
       },
       "RemoteHumanRequest": {
         "kind": "interface",
@@ -1126,7 +1318,7 @@
       },
       "RemoteOutcome": {
         "kind": "type",
-        "declaration": "72f00aa364b316ad"
+        "declaration": "8ed6f29afff308de"
       },
       "RemoteReceipt": {
         "kind": "interface",
@@ -1134,19 +1326,79 @@
       },
       "RemoteRun": {
         "kind": "interface",
-        "declaration": "ede90c299f032777"
+        "declaration": "9d5e4b3315ebaa4d"
       },
       "RemoteSession": {
         "kind": "interface",
-        "declaration": "05d09d641554c552"
+        "declaration": "c2eaab01e6f02144"
       },
       "RemoteSnapshot": {
         "kind": "interface",
-        "declaration": "1b588e5e2bcd3111"
+        "declaration": "c39c2e047dd861ef"
       },
       "RemoteStatus": {
         "kind": "type",
-        "declaration": "2ada7f88c6f35439"
+        "declaration": "55cb40eabec449e0"
+      },
+      "RemoteThread": {
+        "kind": "interface",
+        "declaration": "8d0f627d6193a394"
+      },
+      "RemoteThreadCompaction": {
+        "kind": "interface",
+        "declaration": "d108b4aadd24e951"
+      },
+      "RemoteThreadCompactionCancellation": {
+        "kind": "interface",
+        "declaration": "abffcd2cc4dc4441"
+      },
+      "RemoteThreadCompactionResult": {
+        "kind": "interface",
+        "declaration": "93a6cddc0f458169"
+      },
+      "RemoteThreadEntry": {
+        "kind": "type",
+        "declaration": "7ce666102b427e4c"
+      },
+      "RemoteThreadMediaReference": {
+        "kind": "interface",
+        "declaration": "fbe07bf3f16c12eb"
+      },
+      "RemoteThreadPage": {
+        "kind": "interface",
+        "declaration": "c4aa99f0903a5cae"
+      },
+      "RemoteThreadSummaryProvenance": {
+        "kind": "interface",
+        "declaration": "d1e1c9b3df9816f4"
+      },
+      "RunApprovalCommand": {
+        "kind": "interface",
+        "declaration": "fb23d7aca8882ca7"
+      },
+      "ThreadAppendInput": {
+        "kind": "interface",
+        "declaration": "321bbdc29f5364fe"
+      },
+      "ThreadCompactionInput": {
+        "kind": "interface",
+        "declaration": "41fdc03d16f11fcc"
+      },
+      "ThreadCreateInput": {
+        "kind": "interface",
+        "declaration": "eaceb11170f86f2f"
+      },
+      "ThreadEntriesOptions": {
+        "kind": "interface",
+        "declaration": "5eecd3d32b8be144"
+      },
+      "ThreadListOptions": {
+        "kind": "interface",
+        "declaration": "7b889a51190aa367"
+      },
+      "ThreadUpdateInput": {
+        "kind": "interface",
+        "declaration": "09c3c5180369443d"
       },
       "WorkflowApprovalCommand": {
         "kind": "interface",
@@ -1264,6 +1516,14 @@
         "kind": "function",
         "declaration": "0f77df2d8c4b06a0"
       },
+      "createHeadlessThreadsStore": {
+        "kind": "function",
+        "declaration": "a010f02c53989957"
+      },
+      "createHeadlessThreadStore": {
+        "kind": "function",
+        "declaration": "097867e7f2332628"
+      },
       "createHumanRequestView": {
         "kind": "function",
         "declaration": "0cedfe5c9ca357dc"
@@ -1272,21 +1532,57 @@
         "kind": "function",
         "declaration": "79697cd34922788f"
       },
+      "createRunApprovalController": {
+        "kind": "function",
+        "declaration": "7062ebcd931c2916"
+      },
+      "createThreadCompactionController": {
+        "kind": "function",
+        "declaration": "7d836438b78471c5"
+      },
       "HeadlessRunState": {
         "kind": "interface",
         "declaration": "4405190c743a2570"
       },
       "HeadlessRunStore": {
         "kind": "interface",
-        "declaration": "48e099007de2a452"
+        "declaration": "2893f6a181dfeb74"
       },
       "HeadlessRunStoreOptions": {
         "kind": "interface",
         "declaration": "69d440d15aa89ebf"
       },
+      "HeadlessThreadsState": {
+        "kind": "interface",
+        "declaration": "1401bf4a4b2197b9"
+      },
+      "HeadlessThreadsStore": {
+        "kind": "interface",
+        "declaration": "cbcb434114e144cf"
+      },
+      "HeadlessThreadsStoreOptions": {
+        "kind": "interface",
+        "declaration": "8705284fed6b2b55"
+      },
+      "HeadlessThreadState": {
+        "kind": "interface",
+        "declaration": "51584a5e4df24130"
+      },
+      "HeadlessThreadStore": {
+        "kind": "interface",
+        "declaration": "02f42b406c672e30"
+      },
+      "HeadlessThreadStoreOptions": {
+        "kind": "interface",
+        "declaration": "0439e127b2c58315"
+      },
       "HumanRequestView": {
         "kind": "interface",
         "declaration": "3c34f3e4a4fbbcf6"
+      },
+      "RemoteThreadMediaReference": {
+        "kind": "interface",
+        "declaration": "fbe07bf3f16c12eb"
       },
       "RunActivityItem": {
         "kind": "interface",
@@ -1302,11 +1598,39 @@
       },
       "RunActivityStatus": {
         "kind": "type",
-        "declaration": "fa26a5bd1a08d2bd"
+        "declaration": "bf4de56d4dff61fb"
+      },
+      "RunApprovalCommandState": {
+        "kind": "interface",
+        "declaration": "c90d8d1af279e27d"
+      },
+      "RunApprovalController": {
+        "kind": "interface",
+        "declaration": "1c9840ecb51321d1"
+      },
+      "RunApprovalControllerOptions": {
+        "kind": "interface",
+        "declaration": "56804fe62f627f06"
       },
       "RunConnection": {
         "kind": "type",
         "declaration": "cddc58b36a72bdb1"
+      },
+      "ThreadAppendInput": {
+        "kind": "interface",
+        "declaration": "321bbdc29f5364fe"
+      },
+      "ThreadCompactionController": {
+        "kind": "interface",
+        "declaration": "0798a2785d21dd1a"
+      },
+      "ThreadCompactionControllerOptions": {
+        "kind": "interface",
+        "declaration": "cef0ccd43896589e"
+      },
+      "ThreadCompactionState": {
+        "kind": "interface",
+        "declaration": "9c6bb9a4eaea04e7"
       }
     },
     "@mayura/client/workflows": {
@@ -1394,11 +1718,19 @@
     "@mayura/client-react": {
       "MayuraReactError": {
         "kind": "class",
-        "declaration": "08eeeb66dde34080"
+        "declaration": "34383135bca7b958"
       },
       "MayuraRunActions": {
         "kind": "interface",
         "declaration": "87ecb5cc9a62262d"
+      },
+      "MayuraThreadActions": {
+        "kind": "type",
+        "declaration": "bba823e29bcd714b"
+      },
+      "MayuraThreadCompactionActions": {
+        "kind": "type",
+        "declaration": "fa41353ed033c0d8"
       },
       "useMayuraHumanRequest": {
         "kind": "function",
@@ -1419,6 +1751,30 @@
       "useMayuraRunActivity": {
         "kind": "function",
         "declaration": "237f2a0822e49227"
+      },
+      "useMayuraRunApprovalCommand": {
+        "kind": "function",
+        "declaration": "e878b05ab8c18a8a"
+      },
+      "useMayuraThread": {
+        "kind": "function",
+        "declaration": "7ab19415c27a310b"
+      },
+      "useMayuraThreadActions": {
+        "kind": "function",
+        "declaration": "1252a0d389beeaad"
+      },
+      "useMayuraThreadCompactionActions": {
+        "kind": "function",
+        "declaration": "58a4e933726edc37"
+      },
+      "useMayuraThreadCompactionCommand": {
+        "kind": "function",
+        "declaration": "6a7c1292f4aa57ee"
+      },
+      "useMayuraThreads": {
+        "kind": "function",
+        "declaration": "f3b0b65505ea2d89"
       },
       "useMayuraWorkflowCommand": {
         "kind": "function",
@@ -1454,6 +1810,14 @@
         "kind": "interface",
         "declaration": "66cb714451b026b7"
       },
+      "MayuraRunApprovalControl": {
+        "kind": "function",
+        "declaration": "0855949a3c63c0d6"
+      },
+      "MayuraRunApprovalControlProps": {
+        "kind": "interface",
+        "declaration": "ccef703c6838199d"
+      },
       "MayuraRunSummary": {
         "kind": "function",
         "declaration": "ccd144683cd31e06"
@@ -1461,6 +1825,22 @@
       "MayuraRunSummaryProps": {
         "kind": "interface",
         "declaration": "d477a32a53b3e549"
+      },
+      "MayuraThreadCompactionControl": {
+        "kind": "function",
+        "declaration": "c46bfbf8ee4d63d7"
+      },
+      "MayuraThreadCompactionControlProps": {
+        "kind": "interface",
+        "declaration": "060e137b05771cdb"
+      },
+      "MayuraThreadHistory": {
+        "kind": "function",
+        "declaration": "4ae777b98e99f459"
+      },
+      "MayuraThreadHistoryProps": {
+        "kind": "interface",
+        "declaration": "f028b04561ab0880"
       },
       "MayuraWorkflowGraph": {
         "kind": "function",
@@ -1630,7 +2010,7 @@
       },
       "AssembleContextOptions": {
         "kind": "interface",
-        "declaration": "53e42a33b4a13745"
+        "declaration": "7df4f642ddb02e3d"
       },
       "BeforeContextBuildEvent": {
         "kind": "interface",
@@ -1710,7 +2090,7 @@
       },
       "ExclusionReason": {
         "kind": "type",
-        "declaration": "a993967e035aaea2"
+        "declaration": "7cf7c25db4f0af8d"
       },
       "ReadonlyJson": {
         "kind": "type",
@@ -1754,6 +2134,66 @@
         "kind": "function",
         "declaration": "b10ac3d8b5eae04a"
       },
+      "AUTHORIZATION_RESOURCE_KINDS": {
+        "kind": "const",
+        "declaration": "367db746ab8f942c"
+      },
+      "AuthorizationAuditEvent": {
+        "kind": "interface",
+        "declaration": "283880761b8c8493"
+      },
+      "AuthorizationAuditOptions": {
+        "kind": "interface",
+        "declaration": "6bca2f935c1ccf34"
+      },
+      "AuthorizationAuditSink": {
+        "kind": "type",
+        "declaration": "2b45bfed97548e36"
+      },
+      "AuthorizationAuditSnapshot": {
+        "kind": "interface",
+        "declaration": "7060ee916319636c"
+      },
+      "AuthorizationDecision": {
+        "kind": "type",
+        "declaration": "d1d9bc5d9a39b496"
+      },
+      "AuthorizationDenyReason": {
+        "kind": "type",
+        "declaration": "c5dfcb92d41389bb"
+      },
+      "AuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "577001c064be993b"
+      },
+      "authorizationRequest": {
+        "kind": "function",
+        "declaration": "c732532a0674cc24"
+      },
+      "AuthorizationRequest": {
+        "kind": "interface",
+        "declaration": "1d1573250618cf57"
+      },
+      "AuthorizationResource": {
+        "kind": "interface",
+        "declaration": "814a78e467d9c4e1"
+      },
+      "AuthorizationResourceKind": {
+        "kind": "type",
+        "declaration": "98270e2b062c3059"
+      },
+      "AuthorizationSubject": {
+        "kind": "type",
+        "declaration": "773ae60fa45c45c6"
+      },
+      "Authorizer": {
+        "kind": "interface",
+        "declaration": "80ab89be81e31199"
+      },
+      "AuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "249c81369376f96b"
+      },
       "Budget": {
         "kind": "class",
         "declaration": "02f234dbb4c517c7"
@@ -1781,6 +2221,10 @@
       "BundleOperation": {
         "kind": "interface",
         "declaration": "5ecb850600e32086"
+      },
+      "createAuthorizer": {
+        "kind": "function",
+        "declaration": "174cae4817c0944f"
       },
       "Effect": {
         "kind": "type",
@@ -2012,7 +2456,7 @@
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "e07cb7aa5671dc8b"
+        "declaration": "0b1d9eb328e19d02"
       },
       "RunHandle": {
         "kind": "interface",
@@ -2025,6 +2469,10 @@
       "Scope": {
         "kind": "interface",
         "declaration": "80e9f980babcec72"
+      },
+      "snapshotAuthorizationAuditEvent": {
+        "kind": "function",
+        "declaration": "a907ad0b7d44a3e6"
       },
       "sniffMediaType": {
         "kind": "function",
@@ -2296,6 +2744,10 @@
       }
     },
     "@mayura/exporter-otlp/opentelemetry": {
+      "createOpenTelemetryAuthorization": {
+        "kind": "function",
+        "declaration": "14e396aaffacd5dc"
+      },
       "createOpenTelemetryRunMetrics": {
         "kind": "function",
         "declaration": "2ba9a2d156e6c617"
@@ -2303,6 +2755,14 @@
       "createOpenTelemetryTraceBridge": {
         "kind": "function",
         "declaration": "4e8edc7ea4ba480f"
+      },
+      "OpenTelemetryAuthorization": {
+        "kind": "interface",
+        "declaration": "2a2b05b9e9cb0784"
+      },
+      "OpenTelemetryAuthorizationOptions": {
+        "kind": "interface",
+        "declaration": "4d8d1a4550068aef"
       },
       "OpenTelemetryRunMetrics": {
         "kind": "interface",
@@ -2946,7 +3406,7 @@
       },
       "MemoryStoreOptions": {
         "kind": "interface",
-        "declaration": "02cf8a86f637cf76"
+        "declaration": "0bca9ae366a7494c"
       },
       "MemorySubgraph": {
         "kind": "interface",
@@ -2978,7 +3438,7 @@
       },
       "NativeMemoryOptions": {
         "kind": "interface",
-        "declaration": "2100031971ee500e"
+        "declaration": "443dc08277911868"
       },
       "SemanticSearchResult": {
         "kind": "interface",
@@ -2988,7 +3448,7 @@
     "@mayura/memory-remote": {
       "createRemoteMemoryBridge": {
         "kind": "function",
-        "declaration": "dd988fd2f182b4eb"
+        "declaration": "16b8e55f685823da"
       },
       "mem0Memory": {
         "kind": "function",
@@ -3134,7 +3594,7 @@
       },
       "OpenAICompatibleChatOptions": {
         "kind": "interface",
-        "declaration": "c1c62ae32ad7e236"
+        "declaration": "0a1ebcc511ffa25b"
       },
       "openAIEmbeddings": {
         "kind": "function",
@@ -3161,6 +3621,182 @@
         "declaration": "ad94e0403a29c98d"
       }
     },
+    "@mayura/rag": {
+      "aggregateRagCatalog": {
+        "kind": "function",
+        "declaration": "58400bf4ab89c8e2"
+      },
+      "chunkDocument": {
+        "kind": "function",
+        "declaration": "9215547bc3d19181"
+      },
+      "ChunkOptions": {
+        "kind": "interface",
+        "declaration": "1fdc86d563cb5445"
+      },
+      "citationCoverage": {
+        "kind": "function",
+        "declaration": "5f9dd1e656741d4f"
+      },
+      "createRetriever": {
+        "kind": "function",
+        "declaration": "c4cbe761e2b79001"
+      },
+      "defineRagIngestion": {
+        "kind": "function",
+        "declaration": "3daa8f61e34fc7c1"
+      },
+      "defineRetrievalTool": {
+        "kind": "function",
+        "declaration": "41ec67ec9da41b9e"
+      },
+      "deleteRagDocument": {
+        "kind": "function",
+        "declaration": "e6f0f45c3e00ae8b"
+      },
+      "evaluateRetrieval": {
+        "kind": "function",
+        "declaration": "6ce82579e6cdae7b"
+      },
+      "HtmlParser": {
+        "kind": "interface",
+        "declaration": "6e5b979c63773cd5"
+      },
+      "hybridVectorStore": {
+        "kind": "function",
+        "declaration": "8a20478dc5b4f31a"
+      },
+      "inMemoryVectorStore": {
+        "kind": "function",
+        "declaration": "75366e8fe153d931"
+      },
+      "LoadDocumentOptions": {
+        "kind": "interface",
+        "declaration": "1f39cd89dc4289c3"
+      },
+      "loadHtml": {
+        "kind": "function",
+        "declaration": "cce4a99e00e9cdd3"
+      },
+      "loadJson": {
+        "kind": "function",
+        "declaration": "517db03d154f7e41"
+      },
+      "loadMarkdown": {
+        "kind": "function",
+        "declaration": "740474b0220a60c4"
+      },
+      "loadPdf": {
+        "kind": "function",
+        "declaration": "f0d630ecd2c3797a"
+      },
+      "loadText": {
+        "kind": "function",
+        "declaration": "e79eac1fd67077fd"
+      },
+      "modelQueryTransform": {
+        "kind": "function",
+        "declaration": "9f022775a587c09a"
+      },
+      "modelReranker": {
+        "kind": "function",
+        "declaration": "396da12ae778d746"
+      },
+      "nativeMemoryVectorStore": {
+        "kind": "function",
+        "declaration": "cba651c8bc5d6d5d"
+      },
+      "PdfParser": {
+        "kind": "interface",
+        "declaration": "e171d1bce8de420f"
+      },
+      "RagClaimVerification": {
+        "kind": "interface",
+        "declaration": "8eca0b31dd73bb2e"
+      },
+      "ragEmbedder": {
+        "kind": "function",
+        "declaration": "9676e8ab27fd6d94"
+      },
+      "ragIndexSpace": {
+        "kind": "function",
+        "declaration": "e4db68c306d3a6d0"
+      },
+      "RagIngestionInput": {
+        "kind": "interface",
+        "declaration": "1d94a99b2cc4081b"
+      },
+      "RagIngestionOptions": {
+        "kind": "interface",
+        "declaration": "391df532057cd164"
+      },
+      "reconcileRagClaim": {
+        "kind": "function",
+        "declaration": "9ebf796a50a86cca"
+      },
+      "retrievalQuality": {
+        "kind": "function",
+        "declaration": "cfb4c577f570ce06"
+      },
+      "RetrieverOptions": {
+        "kind": "interface",
+        "declaration": "e00c2815b5dc9a8b"
+      }
+    },
+    "@mayura/rag/host": {
+      "cancelled": {
+        "kind": "function",
+        "declaration": "1d44b5e874acae51"
+      },
+      "checkedEntries": {
+        "kind": "function",
+        "declaration": "a2d44839574a74db"
+      },
+      "checkedQuery": {
+        "kind": "function",
+        "declaration": "6fd39bb9cbc44e6a"
+      },
+      "chunk": {
+        "kind": "function",
+        "declaration": "ec4d95f84bdda661"
+      },
+      "id": {
+        "kind": "function",
+        "declaration": "ad0433f83975cd76"
+      },
+      "integer": {
+        "kind": "function",
+        "declaration": "4edc8b4fb2665501"
+      },
+      "matches": {
+        "kind": "function",
+        "declaration": "588e5ef3f16d9dd3"
+      },
+      "metadata": {
+        "kind": "function",
+        "declaration": "83914ee3cfd8b245"
+      },
+      "ragHttp": {
+        "kind": "function",
+        "declaration": "06625105c9c88d48"
+      },
+      "RagHttpOptions": {
+        "kind": "interface",
+        "declaration": "072861827a7c8fb1"
+      },
+      "scopeKey": {
+        "kind": "function",
+        "declaration": "b1d09367ca304e07"
+      },
+      "snapshot": {
+        "kind": "function",
+        "declaration": "7ff1d3e412ea4c5f"
+      },
+      "vector": {
+        "kind": "function",
+        "declaration": "915e4ce10e8864f0"
+      }
+    },
     "@mayura/runtime": {
       "agentAsTool": {
         "kind": "function",
@@ -3168,15 +3804,19 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "debd2b8766bb1b64"
+        "declaration": "aa1fdce5019dcb92"
       },
       "AgentGuard": {
         "kind": "type",
         "declaration": "fb86f72e77ac3ce2"
       },
+      "AgentHandoff": {
+        "kind": "interface",
+        "declaration": "9dcf0fc5bb2abb28"
+      },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "0b27da3b6c775f06"
+        "declaration": "7efb0493daf10fbd"
       },
       "AgentOutput": {
         "kind": "type",
@@ -3208,7 +3848,7 @@
       },
       "CheckpointOptions": {
         "kind": "interface",
-        "declaration": "b6b1cceadb8b0a1c"
+        "declaration": "da178d6efb859699"
       },
       "ChildOptions": {
         "kind": "interface",
@@ -3318,17 +3958,37 @@
         "kind": "interface",
         "declaration": "2a44056cfec686f7"
       },
+      "RecordedApproval": {
+        "kind": "interface",
+        "declaration": "77627c3db3f4f894"
+      },
       "RegisteredModel": {
         "kind": "interface",
         "declaration": "91f2068267462312"
       },
       "RunCheckpointPort": {
         "kind": "interface",
-        "declaration": "379fff4b9385a3a2"
+        "declaration": "22b91f42946e3751"
+      },
+      "RunHistory": {
+        "kind": "type",
+        "declaration": "8b51cb30eb33d8b1"
       },
       "RunInspection": {
         "kind": "interface",
-        "declaration": "7bd078937eb2d329"
+        "declaration": "7cef91ddba709263"
+      },
+      "RunRecorder": {
+        "kind": "interface",
+        "declaration": "96a220284c6c4419"
+      },
+      "RunRecording": {
+        "kind": "interface",
+        "declaration": "12497eba9c67cdd7"
+      },
+      "RunRecordingContext": {
+        "kind": "interface",
+        "declaration": "4fba0a5ca89344bc"
       },
       "RunStatus": {
         "kind": "type",
@@ -3336,15 +3996,15 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "7076b8c18c19fd03"
+        "declaration": "1bc5a58e7c695de5"
       },
       "RuntimeLimits": {
         "kind": "interface",
-        "declaration": "ec60dbae94edfabb"
+        "declaration": "d773b6175ee076b3"
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "0c0ef5666bf65aa9"
+        "declaration": "1d83fd91a5b6de27"
       },
       "SpeculationBranch": {
         "kind": "interface",
@@ -3360,7 +4020,7 @@
       },
       "StoredRunCheckpoint": {
         "kind": "interface",
-        "declaration": "17fe0a0eca023800"
+        "declaration": "db9f18eac2b7b7f4"
       }
     },
     "@mayura/sandbox": {
@@ -3528,15 +4188,19 @@
       },
       "AgentDefinition": {
         "kind": "interface",
-        "declaration": "debd2b8766bb1b64"
+        "declaration": "aa1fdce5019dcb92"
       },
       "AgentGuard": {
         "kind": "type",
         "declaration": "fb86f72e77ac3ce2"
       },
+      "AgentHandoff": {
+        "kind": "interface",
+        "declaration": "9dcf0fc5bb2abb28"
+      },
       "AgentOptions": {
         "kind": "interface",
-        "declaration": "0b27da3b6c775f06"
+        "declaration": "7efb0493daf10fbd"
       },
       "AgentOutput": {
         "kind": "type",
@@ -3585,6 +4249,66 @@
       "assertTool": {
         "kind": "function",
         "declaration": "1da14fdec9062068"
+      },
+      "AUTHORIZATION_RESOURCE_KINDS": {
+        "kind": "const",
+        "declaration": "367db746ab8f942c"
+      },
+      "AuthorizationAuditEvent": {
+        "kind": "interface",
+        "declaration": "283880761b8c8493"
+      },
+      "AuthorizationAuditOptions": {
+        "kind": "interface",
+        "declaration": "6bca2f935c1ccf34"
+      },
+      "AuthorizationAuditSink": {
+        "kind": "type",
+        "declaration": "2b45bfed97548e36"
+      },
+      "AuthorizationAuditSnapshot": {
+        "kind": "interface",
+        "declaration": "7060ee916319636c"
+      },
+      "AuthorizationDecision": {
+        "kind": "type",
+        "declaration": "d1d9bc5d9a39b496"
+      },
+      "AuthorizationDenyReason": {
+        "kind": "type",
+        "declaration": "c5dfcb92d41389bb"
+      },
+      "AuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "577001c064be993b"
+      },
+      "authorizationRequest": {
+        "kind": "function",
+        "declaration": "c732532a0674cc24"
+      },
+      "AuthorizationRequest": {
+        "kind": "interface",
+        "declaration": "1d1573250618cf57"
+      },
+      "AuthorizationResource": {
+        "kind": "interface",
+        "declaration": "814a78e467d9c4e1"
+      },
+      "AuthorizationResourceKind": {
+        "kind": "type",
+        "declaration": "98270e2b062c3059"
+      },
+      "AuthorizationSubject": {
+        "kind": "type",
+        "declaration": "773ae60fa45c45c6"
+      },
+      "Authorizer": {
+        "kind": "interface",
+        "declaration": "80ab89be81e31199"
+      },
+      "AuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "249c81369376f96b"
       },
       "BatchAdmissionDecision": {
         "kind": "type",
@@ -3656,11 +4380,15 @@
       },
       "CheckpointOptions": {
         "kind": "interface",
-        "declaration": "b6b1cceadb8b0a1c"
+        "declaration": "da178d6efb859699"
       },
       "ChildOptions": {
         "kind": "interface",
         "declaration": "06ddc8627523ecaa"
+      },
+      "createAuthorizer": {
+        "kind": "function",
+        "declaration": "174cae4817c0944f"
       },
       "createModelRouter": {
         "kind": "function",
@@ -3784,7 +4512,7 @@
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "b3267e5058c37cbd"
+        "declaration": "caee13fac06b8329"
       },
       "isModelFailureReason": {
         "kind": "function",
@@ -4014,6 +4742,10 @@
         "kind": "interface",
         "declaration": "cb2e50226e3587d7"
       },
+      "RecordedApproval": {
+        "kind": "interface",
+        "declaration": "77627c3db3f4f894"
+      },
       "RegisteredModel": {
         "kind": "interface",
         "declaration": "91f2068267462312"
@@ -4024,19 +4756,35 @@
       },
       "RunCheckpointPort": {
         "kind": "interface",
-        "declaration": "379fff4b9385a3a2"
+        "declaration": "22b91f42946e3751"
       },
       "RunEvent": {
         "kind": "interface",
-        "declaration": "e07cb7aa5671dc8b"
+        "declaration": "0b1d9eb328e19d02"
       },
       "RunHandle": {
         "kind": "interface",
         "declaration": "c492a87f7eb354d7"
       },
+      "RunHistory": {
+        "kind": "type",
+        "declaration": "8b51cb30eb33d8b1"
+      },
       "RunInspection": {
         "kind": "interface",
-        "declaration": "7bd078937eb2d329"
+        "declaration": "7cef91ddba709263"
+      },
+      "RunRecorder": {
+        "kind": "interface",
+        "declaration": "96a220284c6c4419"
+      },
+      "RunRecording": {
+        "kind": "interface",
+        "declaration": "12497eba9c67cdd7"
+      },
+      "RunRecordingContext": {
+        "kind": "interface",
+        "declaration": "4fba0a5ca89344bc"
       },
       "RunStatus": {
         "kind": "type",
@@ -4044,15 +4792,15 @@
       },
       "Runtime": {
         "kind": "interface",
-        "declaration": "7076b8c18c19fd03"
+        "declaration": "1bc5a58e7c695de5"
       },
       "RuntimeLimits": {
         "kind": "interface",
-        "declaration": "ec60dbae94edfabb"
+        "declaration": "d773b6175ee076b3"
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "declaration": "0c0ef5666bf65aa9"
+        "declaration": "1d83fd91a5b6de27"
       },
       "Schema": {
         "kind": "interface",
@@ -4065,6 +4813,10 @@
       "SkippedBatchOutcome": {
         "kind": "interface",
         "declaration": "1250833df3f32730"
+      },
+      "snapshotAuthorizationAuditEvent": {
+        "kind": "function",
+        "declaration": "a907ad0b7d44a3e6"
       },
       "sniffMediaType": {
         "kind": "function",
@@ -4084,7 +4836,7 @@
       },
       "StoredRunCheckpoint": {
         "kind": "interface",
-        "declaration": "17fe0a0eca023800"
+        "declaration": "db9f18eac2b7b7f4"
       },
       "ToolApprovalBinding": {
         "kind": "interface",
@@ -4154,11 +4906,43 @@
     "@mayura/server": {
       "AgentServer": {
         "kind": "interface",
-        "declaration": "46b79f363588f62d"
+        "declaration": "5f05e531f073d70e"
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "bdc5e40f36421ca5"
+        "declaration": "02c356e703c5a928"
+      },
+      "ApprovalReconciliationOptions": {
+        "kind": "interface",
+        "declaration": "6c2a7f2f65d3c75b"
+      },
+      "ApprovalReconciliationResult": {
+        "kind": "interface",
+        "declaration": "79bf1b66ae22e3c2"
+      },
+      "ClaimedApprovalRequest": {
+        "kind": "interface",
+        "declaration": "e24da841b8d003e5"
+      },
+      "ClaimedApprovalView": {
+        "kind": "interface",
+        "declaration": "c3ad106c29e9af57"
+      },
+      "ConversationRecoveryOptions": {
+        "kind": "interface",
+        "declaration": "a196ce32bb90a732"
+      },
+      "ConversationRecoveryOutcome": {
+        "kind": "interface",
+        "declaration": "73b6838ad7316700"
+      },
+      "ConversationRecoveryReport": {
+        "kind": "interface",
+        "declaration": "103cea0a21bff6c1"
+      },
+      "ConversationRecoveryRequest": {
+        "kind": "interface",
+        "declaration": "e6941732ea5773ff"
       },
       "createAgentServer": {
         "kind": "function",
@@ -4176,6 +4960,10 @@
         "kind": "interface",
         "declaration": "ffd5f125222294f3"
       },
+      "ReconcileClaimedApprovalRequest": {
+        "kind": "interface",
+        "declaration": "af8902c2c8836e01"
+      },
       "RegisteredAgent": {
         "kind": "interface",
         "declaration": "0df06014648a2dbf"
@@ -4186,15 +4974,19 @@
       },
       "RunRecordStatus": {
         "kind": "type",
-        "declaration": "7674725187ffe313"
+        "declaration": "3906ec32ff76a585"
       },
       "RunRecordStore": {
         "kind": "interface",
-        "declaration": "9081f0cb40e1d5c3"
+        "declaration": "a0fe6fb7afc9fb99"
       },
       "RunRecordView": {
         "kind": "interface",
         "declaration": "520aa863481a4e0d"
+      },
+      "ServerAuthorizationOptions": {
+        "kind": "interface",
+        "declaration": "49da75b81965707d"
       },
       "ServerErrorCode": {
         "kind": "type",
@@ -4202,7 +4994,15 @@
       },
       "ServerIdentity": {
         "kind": "interface",
-        "declaration": "e0fbf3de0a4592e5"
+        "declaration": "4cbe856e84f2022c"
+      },
+      "ServerThreadCompactionCommand": {
+        "kind": "interface",
+        "declaration": "a7eb7b54463e6fa7"
+      },
+      "ServerThreadCompactionOptions": {
+        "kind": "interface",
+        "declaration": "ce056217e5bfdb0d"
       },
       "SubmissionJournal": {
         "kind": "interface",
@@ -4292,7 +5092,7 @@
       },
       "LocalAgentServer": {
         "kind": "interface",
-        "declaration": "690c8e64f6bedb98"
+        "declaration": "09b2fb587bf79a7f"
       },
       "LocalServerOptions": {
         "kind": "interface",
@@ -4308,7 +5108,7 @@
       },
       "ProductionAgentServer": {
         "kind": "interface",
-        "declaration": "974b60789077ab3b"
+        "declaration": "b759805da5e03db0"
       },
       "ProductionServerOptions": {
         "kind": "interface",
@@ -4316,7 +5116,7 @@
       },
       "ServerIdentity": {
         "kind": "interface",
-        "declaration": "e0fbf3de0a4592e5"
+        "declaration": "4cbe856e84f2022c"
       }
     },
     "@mayura/skills": {
@@ -4358,6 +5158,10 @@
       }
     },
     "@mayura/storage": {
+      "AggregateFrontendToolStoreOptions": {
+        "kind": "interface",
+        "declaration": "f46fd0562db0e660"
+      },
       "AggregateRunRecordOptions": {
         "kind": "interface",
         "declaration": "9f3f809e2d351788"
@@ -4413,6 +5217,10 @@
       "ConversationAggregateStore": {
         "kind": "interface",
         "declaration": "d58a1536e8276bae"
+      },
+      "createAggregateFrontendToolStore": {
+        "kind": "function",
+        "declaration": "36ac958c308358a6"
       },
       "createAggregateRunRecords": {
         "kind": "function",
@@ -4586,6 +5394,30 @@
         "kind": "interface",
         "declaration": "3eb6fd33efe60f37"
       },
+      "FrontendToolBinding": {
+        "kind": "interface",
+        "declaration": "af597dbaaa211909"
+      },
+      "FrontendToolCallRecord": {
+        "kind": "interface",
+        "declaration": "1e28053ddeb4c575"
+      },
+      "FrontendToolRegistration": {
+        "kind": "interface",
+        "declaration": "394902073cb4be2a"
+      },
+      "FrontendToolResultOutbox": {
+        "kind": "interface",
+        "declaration": "ce023b6adc48eb1e"
+      },
+      "FrontendToolStore": {
+        "kind": "interface",
+        "declaration": "a5a0ac1632ec70a0"
+      },
+      "FrontendToolStoreKey": {
+        "kind": "interface",
+        "declaration": "e117827c6884edaa"
+      },
       "initialWorkflowGraphState": {
         "kind": "function",
         "declaration": "60a9713eca6ec12c"
@@ -4740,15 +5572,19 @@
       },
       "RunCheckpointClaim": {
         "kind": "interface",
-        "declaration": "76a36df2a96fa322"
+        "declaration": "7217b6bc27c0e97e"
       },
       "runCheckpointCommand": {
         "kind": "function",
         "declaration": "b9b55afcb0348bd3"
       },
+      "RunCheckpointCursor": {
+        "kind": "interface",
+        "declaration": "5e9c72972b63f8cc"
+      },
       "RunCheckpointDelete": {
         "kind": "interface",
-        "declaration": "e8c48d5a56b7f2e5"
+        "declaration": "625d0b3fdc6d71bb"
       },
       "RunCheckpointDue": {
         "kind": "interface",
@@ -4770,6 +5606,10 @@
         "kind": "interface",
         "declaration": "a775c8984c24ad8e"
       },
+      "RunCheckpointReconcile": {
+        "kind": "interface",
+        "declaration": "7f91b61828578aa3"
+      },
       "runCheckpointRecord": {
         "kind": "function",
         "declaration": "a2eedb4f980e0b47"
@@ -4778,13 +5618,17 @@
         "kind": "function",
         "declaration": "2f9bbff4922265c9"
       },
+      "RunCheckpointScan": {
+        "kind": "interface",
+        "declaration": "7b051f1029b8d64d"
+      },
       "RunCheckpointStatus": {
         "kind": "type",
         "declaration": "22ce92e5b9845b25"
       },
       "RunCheckpointStore": {
         "kind": "interface",
-        "declaration": "51ce26dc08dc4463"
+        "declaration": "465a0a56f866a253"
       },
       "RunCheckpointUpdate": {
         "kind": "interface",
@@ -4796,11 +5640,11 @@
       },
       "RunRecords": {
         "kind": "interface",
-        "declaration": "56b2a9ae0d671eb2"
+        "declaration": "d3354b5ce3091138"
       },
       "RunRecordStatus": {
         "kind": "type",
-        "declaration": "7674725187ffe313"
+        "declaration": "3906ec32ff76a585"
       },
       "RunRecordView": {
         "kind": "interface",
@@ -4910,6 +5754,14 @@
         "kind": "function",
         "declaration": "34a7df0aebe4e0f9"
       },
+      "ThreadCompactionCommand": {
+        "kind": "type",
+        "declaration": "717b017e92be4210"
+      },
+      "ThreadCompactionRecord": {
+        "kind": "interface",
+        "declaration": "163446433eaf7414"
+      },
       "ThreadCreate": {
         "kind": "interface",
         "declaration": "1a339724a2f3b154"
@@ -4970,6 +5822,10 @@
         "kind": "interface",
         "declaration": "e76dd03a843187c6"
       },
+      "ThreadRecordingCommand": {
+        "kind": "type",
+        "declaration": "8964e827e1b3156d"
+      },
       "ThreadRelease": {
         "kind": "interface",
         "declaration": "da569ab3c851a950"
@@ -4984,7 +5840,7 @@
       },
       "ThreadStore": {
         "kind": "interface",
-        "declaration": "d3b811d04f472358"
+        "declaration": "66287639e4240d1b"
       },
       "ThreadUpdate": {
         "kind": "interface",
@@ -5492,6 +6348,10 @@
       }
     },
     "@mayura/storage-contracts": {
+      "AggregateFrontendToolStoreOptions": {
+        "kind": "interface",
+        "declaration": "f46fd0562db0e660"
+      },
       "AggregateRunRecordOptions": {
         "kind": "interface",
         "declaration": "9f3f809e2d351788"
@@ -5543,6 +6403,10 @@
       "ConversationAggregateStore": {
         "kind": "interface",
         "declaration": "d58a1536e8276bae"
+      },
+      "createAggregateFrontendToolStore": {
+        "kind": "function",
+        "declaration": "36ac958c308358a6"
       },
       "createAggregateRunRecords": {
         "kind": "function",
@@ -5708,6 +6572,30 @@
         "kind": "interface",
         "declaration": "3eb6fd33efe60f37"
       },
+      "FrontendToolBinding": {
+        "kind": "interface",
+        "declaration": "af597dbaaa211909"
+      },
+      "FrontendToolCallRecord": {
+        "kind": "interface",
+        "declaration": "1e28053ddeb4c575"
+      },
+      "FrontendToolRegistration": {
+        "kind": "interface",
+        "declaration": "394902073cb4be2a"
+      },
+      "FrontendToolResultOutbox": {
+        "kind": "interface",
+        "declaration": "ce023b6adc48eb1e"
+      },
+      "FrontendToolStore": {
+        "kind": "interface",
+        "declaration": "a5a0ac1632ec70a0"
+      },
+      "FrontendToolStoreKey": {
+        "kind": "interface",
+        "declaration": "e117827c6884edaa"
+      },
       "initialWorkflowGraphState": {
         "kind": "function",
         "declaration": "60a9713eca6ec12c"
@@ -5846,15 +6734,19 @@
       },
       "RunCheckpointClaim": {
         "kind": "interface",
-        "declaration": "76a36df2a96fa322"
+        "declaration": "7217b6bc27c0e97e"
       },
       "runCheckpointCommand": {
         "kind": "function",
         "declaration": "b9b55afcb0348bd3"
       },
+      "RunCheckpointCursor": {
+        "kind": "interface",
+        "declaration": "5e9c72972b63f8cc"
+      },
       "RunCheckpointDelete": {
         "kind": "interface",
-        "declaration": "e8c48d5a56b7f2e5"
+        "declaration": "625d0b3fdc6d71bb"
       },
       "RunCheckpointDue": {
         "kind": "interface",
@@ -5876,6 +6768,10 @@
         "kind": "interface",
         "declaration": "a775c8984c24ad8e"
       },
+      "RunCheckpointReconcile": {
+        "kind": "interface",
+        "declaration": "7f91b61828578aa3"
+      },
       "runCheckpointRecord": {
         "kind": "function",
         "declaration": "a2eedb4f980e0b47"
@@ -5884,13 +6780,17 @@
         "kind": "function",
         "declaration": "2f9bbff4922265c9"
       },
+      "RunCheckpointScan": {
+        "kind": "interface",
+        "declaration": "7b051f1029b8d64d"
+      },
       "RunCheckpointStatus": {
         "kind": "type",
         "declaration": "22ce92e5b9845b25"
       },
       "RunCheckpointStore": {
         "kind": "interface",
-        "declaration": "51ce26dc08dc4463"
+        "declaration": "465a0a56f866a253"
       },
       "RunCheckpointUpdate": {
         "kind": "interface",
@@ -5902,11 +6802,11 @@
       },
       "RunRecords": {
         "kind": "interface",
-        "declaration": "56b2a9ae0d671eb2"
+        "declaration": "d3354b5ce3091138"
       },
       "RunRecordStatus": {
         "kind": "type",
-        "declaration": "7674725187ffe313"
+        "declaration": "3906ec32ff76a585"
       },
       "RunRecordView": {
         "kind": "interface",
@@ -6004,6 +6904,14 @@
         "kind": "function",
         "declaration": "34a7df0aebe4e0f9"
       },
+      "ThreadCompactionCommand": {
+        "kind": "type",
+        "declaration": "717b017e92be4210"
+      },
+      "ThreadCompactionRecord": {
+        "kind": "interface",
+        "declaration": "163446433eaf7414"
+      },
       "ThreadCreate": {
         "kind": "interface",
         "declaration": "1a339724a2f3b154"
@@ -6064,6 +6972,10 @@
         "kind": "interface",
         "declaration": "e76dd03a843187c6"
       },
+      "ThreadRecordingCommand": {
+        "kind": "type",
+        "declaration": "8964e827e1b3156d"
+      },
       "ThreadRelease": {
         "kind": "interface",
         "declaration": "da569ab3c851a950"
@@ -6078,7 +6990,7 @@
       },
       "ThreadStore": {
         "kind": "interface",
-        "declaration": "d3b811d04f472358"
+        "declaration": "66287639e4240d1b"
       },
       "ThreadUpdate": {
         "kind": "interface",
@@ -6664,7 +7576,7 @@
       },
       "ConversationTransaction": {
         "kind": "interface",
-        "declaration": "61329ad64b36229a"
+        "declaration": "dae9528fc13d2301"
       },
       "createCommand": {
         "kind": "function",
@@ -7196,7 +8108,7 @@
       },
       "HistoryPolicy": {
         "kind": "interface",
-        "declaration": "b79613cb35c5c649"
+        "declaration": "a62b0c3f13ae5ed3"
       },
       "purgeIdleThreads": {
         "kind": "function",
@@ -7214,25 +8126,49 @@
         "kind": "interface",
         "declaration": "b762d713631a41d6"
       },
+      "ThreadAppendInput": {
+        "kind": "interface",
+        "declaration": "679495c3e284f582"
+      },
+      "ThreadCompactionCancellation": {
+        "kind": "interface",
+        "declaration": "d4e51fdf1ebf4cff"
+      },
+      "ThreadCompactionOptions": {
+        "kind": "interface",
+        "declaration": "6e0676fe7c9e7c04"
+      },
+      "ThreadCompactionResult": {
+        "kind": "interface",
+        "declaration": "b790f8e7b6e97e1b"
+      },
       "ThreadEntry": {
         "kind": "type",
         "declaration": "8f732aae54506b11"
       },
       "ThreadEntryData": {
         "kind": "type",
-        "declaration": "34431d16b535bdf8"
+        "declaration": "da404ca070a5ab2b"
       },
       "ThreadHistory": {
         "kind": "interface",
-        "declaration": "5684080726bdcae8"
+        "declaration": "3a37469df1db26bd"
+      },
+      "ThreadMediaReference": {
+        "kind": "interface",
+        "declaration": "65413701c6265ed7"
       },
       "Threads": {
         "kind": "interface",
-        "declaration": "23bd60f247556dcf"
+        "declaration": "08418ef5e0985984"
       },
       "ThreadsOptions": {
         "kind": "interface",
-        "declaration": "b7e00b4af80217ea"
+        "declaration": "b9067f53df697fd6"
+      },
+      "ThreadSummaryProvenance": {
+        "kind": "interface",
+        "declaration": "c91c4facabdaa870"
       },
       "ThreadTurn": {
         "kind": "interface",
@@ -7306,7 +8242,7 @@
       },
       "InvokeToolContext": {
         "kind": "interface",
-        "declaration": "b3267e5058c37cbd"
+        "declaration": "caee13fac06b8329"
       },
       "SkippedBatchOutcome": {
         "kind": "interface",
@@ -7366,6 +8302,10 @@
       }
     },
     "@mayura/tools/host": {
+      "bindPreparedToolInput": {
+        "kind": "function",
+        "declaration": "d8fd4568b94979f8"
+      },
       "bindToolApproval": {
         "kind": "function",
         "declaration": "891e35cc00ec659a"
@@ -7373,6 +8313,18 @@
       "bindToolBudgetTicket": {
         "kind": "function",
         "declaration": "36c88f011f26dd1f"
+      },
+      "PreparedToolInputBinding": {
+        "kind": "interface",
+        "declaration": "335e2a6641e32939"
+      },
+      "prepareToolInput": {
+        "kind": "function",
+        "declaration": "09c3ada0cebd292f"
+      },
+      "registerToolContinuation": {
+        "kind": "function",
+        "declaration": "1f2d3e5109a1eafb"
       },
       "ToolApprovalBinding": {
         "kind": "interface",
@@ -7389,6 +8341,18 @@
       "ToolBudgetTicketContext": {
         "kind": "interface",
         "declaration": "cce94f0e23dc6cfb"
+      },
+      "toolContinuation": {
+        "kind": "function",
+        "declaration": "fc4f1aab9970fbd6"
+      },
+      "ToolContinuation": {
+        "kind": "interface",
+        "declaration": "9538a478c8e36416"
+      },
+      "ToolContinuationContext": {
+        "kind": "interface",
+        "declaration": "d7c461c3f69590ad"
       },
       "toolNeedsApproval": {
         "kind": "function",
@@ -7648,7 +8612,7 @@
       },
       "DurableAgentWorkflowOptions": {
         "kind": "interface",
-        "declaration": "5a3ec6dd51dc8c8b"
+        "declaration": "cd0fd9e10d7a933f"
       },
       "ExternalEffectProviderAttestation": {
         "kind": "interface",
@@ -7968,7 +8932,7 @@
       },
       "WorkflowRuntimeOptions": {
         "kind": "interface",
-        "declaration": "3decf9bf2345aecd"
+        "declaration": "bac77e967c5dc3f6"
       },
       "WorkflowSnapshot": {
         "kind": "interface",
@@ -8350,7 +9314,7 @@
       },
       "WorkflowTreeRuntimeOptions": {
         "kind": "interface",
-        "declaration": "1c30f976e87a614e"
+        "declaration": "1b87de3fb1434830"
       },
       "WorkflowTreeSnapshot": {
         "kind": "interface",
@@ -8556,7 +9520,7 @@
       },
       "WorkflowLifecycleRuntimeOptions": {
         "kind": "interface",
-        "declaration": "329e6b6686114614"
+        "declaration": "b2c96721c7c64c6e"
       },
       "WorkflowLifecycleSettledEntry": {
         "kind": "interface",
@@ -8856,7 +9820,7 @@
       },
       "DurableAgentWorkflowOptions": {
         "kind": "interface",
-        "declaration": "5a3ec6dd51dc8c8b"
+        "declaration": "cd0fd9e10d7a933f"
       }
     },
     "@mayura/workstream": {
@@ -9265,6 +10229,188 @@
       "WorkOSSession": {
         "kind": "interface",
         "declaration": "4551995bd8e23b18"
+      }
+    },
+    "@mayurajs/authz-cedar": {
+      "CedarAttributeValue": {
+        "kind": "type",
+        "declaration": "adfb005d7def3a20"
+      },
+      "CedarAuthorizationAttributes": {
+        "kind": "interface",
+        "declaration": "c05a5711efae5875"
+      },
+      "CedarAuthorizationCall": {
+        "kind": "interface",
+        "declaration": "e52b1d7ac6163f7c"
+      },
+      "CedarAuthorizationEvaluator": {
+        "kind": "type",
+        "declaration": "3bad6d82d6dfa548"
+      },
+      "CedarAuthorizationMapping": {
+        "kind": "interface",
+        "declaration": "5a96b7bb56e1ea4f"
+      },
+      "CedarAuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "07a75d50b76d88d3"
+      },
+      "CedarAuthorizationPolicyOptions": {
+        "kind": "interface",
+        "declaration": "6f37a926158f57c7"
+      },
+      "CedarAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "237ceaa6042a4a41"
+      },
+      "CedarEntityUid": {
+        "kind": "interface",
+        "declaration": "2ca6f0a70c1040ef"
+      },
+      "createCedarAuthorizationPolicy": {
+        "kind": "function",
+        "declaration": "8dedda4b711ecd73"
+      },
+      "createCedarAuthorizer": {
+        "kind": "function",
+        "declaration": "964754c5d0e5b3e1"
+      }
+    },
+    "@mayurajs/authz-http": {
+      "createHttpAuthorizationPolicy": {
+        "kind": "function",
+        "declaration": "0a2a14c4eb65a47e"
+      },
+      "createHttpAuthorizer": {
+        "kind": "function",
+        "declaration": "2d531e3af102cb3f"
+      },
+      "HTTP_AUTHORIZATION_PROTOCOL": {
+        "kind": "const",
+        "declaration": "9b6a049701c4bd34"
+      },
+      "HttpAuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "635dd96ec0257441"
+      },
+      "HttpAuthorizationPolicyOptions": {
+        "kind": "interface",
+        "declaration": "883d06a502cef0c5"
+      },
+      "HttpAuthorizationRequest": {
+        "kind": "interface",
+        "declaration": "7bdca893e54eebbc"
+      },
+      "HttpAuthorizationResponse": {
+        "kind": "interface",
+        "declaration": "534fd5a0fba192c8"
+      },
+      "HttpAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "4419a2d007f28b7f"
+      }
+    },
+    "@mayurajs/authz-openfga": {
+      "createOpenFgaAuthorizationPolicy": {
+        "kind": "function",
+        "declaration": "7703737115d68ea7"
+      },
+      "createOpenFgaAuthorizer": {
+        "kind": "function",
+        "declaration": "0d14b423bfe5359b"
+      },
+      "OpenFgaAuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "a0618e50a0bb8836"
+      },
+      "OpenFgaAuthorizationPolicyOptions": {
+        "kind": "interface",
+        "declaration": "32ffd7a8d74e9057"
+      },
+      "OpenFgaAuthorizationRelation": {
+        "kind": "interface",
+        "declaration": "ae6f64fe692a7a79"
+      },
+      "OpenFgaAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "49804a718ee5cba0"
+      },
+      "OpenFgaTransportOptions": {
+        "kind": "interface",
+        "declaration": "f74f5db25f00a272"
+      },
+      "OpenFgaTupleKey": {
+        "kind": "interface",
+        "declaration": "ecd3b276de859b53"
+      }
+    },
+    "@mayurajs/authz-oso": {
+      "createOsoAuthorizationPolicy": {
+        "kind": "function",
+        "declaration": "0a5476558e359499"
+      },
+      "createOsoAuthorizer": {
+        "kind": "function",
+        "declaration": "90cc6103e289f388"
+      },
+      "OsoAuthorizationInput": {
+        "kind": "interface",
+        "declaration": "7dbddcbc2785d812"
+      },
+      "OsoAuthorizationMapping": {
+        "kind": "interface",
+        "declaration": "ba2a565130d4be4d"
+      },
+      "OsoAuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "6503bf6490668c6d"
+      },
+      "OsoAuthorizationPolicyOptions": {
+        "kind": "interface",
+        "declaration": "e6dee65fb737615a"
+      },
+      "OsoAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "85ba4b38035f7936"
+      },
+      "OsoTransportOptions": {
+        "kind": "interface",
+        "declaration": "fad86499deccf394"
+      }
+    },
+    "@mayurajs/authz-permit": {
+      "createPermitAuthorizationPolicy": {
+        "kind": "function",
+        "declaration": "f2089ba707b374df"
+      },
+      "createPermitAuthorizer": {
+        "kind": "function",
+        "declaration": "75a19d36231fce1c"
+      },
+      "PermitAuthorizationInput": {
+        "kind": "interface",
+        "declaration": "3c274c70d18910ed"
+      },
+      "PermitAuthorizationMapping": {
+        "kind": "interface",
+        "declaration": "793ee5d5e7e28b36"
+      },
+      "PermitAuthorizationPolicy": {
+        "kind": "interface",
+        "declaration": "62918e8861c56a08"
+      },
+      "PermitAuthorizationPolicyOptions": {
+        "kind": "interface",
+        "declaration": "322759306bb93219"
+      },
+      "PermitAuthorizerOptions": {
+        "kind": "interface",
+        "declaration": "730ec5ee18798080"
+      },
+      "PermitTransportOptions": {
+        "kind": "interface",
+        "declaration": "995588c8d1064497"
       }
     },
     "@mayurajs/browser-agent-browser": {
@@ -9761,6 +10907,90 @@
         "declaration": "69462e75afca4442"
       }
     },
+    "@mayurajs/gateway-cloudflare": {
+      "cloudflareGateway": {
+        "kind": "function",
+        "declaration": "4ea9504912cf6aa1"
+      },
+      "CloudflareGatewayOptions": {
+        "kind": "interface",
+        "declaration": "56e22b1e583ffdbb"
+      },
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      }
+    },
+    "@mayurajs/gateway-helicone": {
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      },
+      "helicone": {
+        "kind": "function",
+        "declaration": "67fe4b7920df8b5f"
+      },
+      "HeliconeOptions": {
+        "kind": "interface",
+        "declaration": "be5cabdd4ead1cbc"
+      }
+    },
+    "@mayurajs/gateway-litellm": {
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      },
+      "litellm": {
+        "kind": "function",
+        "declaration": "54ea560a579c195a"
+      },
+      "LitellmOptions": {
+        "kind": "interface",
+        "declaration": "014cc238cd286d08"
+      }
+    },
+    "@mayurajs/gateway-openrouter": {
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      },
+      "openrouter": {
+        "kind": "function",
+        "declaration": "cc1340f0f1d08c0a"
+      },
+      "OpenrouterOptions": {
+        "kind": "interface",
+        "declaration": "6315c734e5f23b29"
+      }
+    },
+    "@mayurajs/gateway-portkey": {
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      },
+      "portkey": {
+        "kind": "function",
+        "declaration": "c3f23ee8d0ca1e31"
+      },
+      "PortkeyOptions": {
+        "kind": "interface",
+        "declaration": "59fa056d8fe0b80c"
+      }
+    },
+    "@mayurajs/gateway-vercel": {
+      "GatewayProvider": {
+        "kind": "external",
+        "declaration": "114298797be06937"
+      },
+      "vercelGateway": {
+        "kind": "function",
+        "declaration": "45903296ac2e2979"
+      },
+      "VercelGatewayOptions": {
+        "kind": "interface",
+        "declaration": "a2ff44b9919e804d"
+      }
+    },
     "@mayurajs/km-reqkey": {
       "ReqkeyKey": {
         "kind": "interface",
@@ -9918,6 +11148,10 @@
         "kind": "function",
         "declaration": "dc7ee57f9304f592"
       },
+      "azureEmbeddings": {
+        "kind": "function",
+        "declaration": "8db2dd8a9d5ebeca"
+      },
       "AzureProviderOptions": {
         "kind": "interface",
         "declaration": "d2a1c287b7822db9"
@@ -9925,6 +11159,10 @@
       "catalog": {
         "kind": "const",
         "declaration": "781763c0b1d17fe3"
+      },
+      "EmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "753dc76914d4235b"
       }
     },
     "@mayurajs/provider-bedrock": {
@@ -9943,6 +11181,14 @@
       "catalog": {
         "kind": "const",
         "declaration": "781763c0b1d17fe3"
+      },
+      "titanEmbeddings": {
+        "kind": "function",
+        "declaration": "2b8b383ee03300fd"
+      },
+      "TitanEmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "9a9aca89d732b4b1"
       }
     },
     "@mayurajs/provider-google": {
@@ -9950,9 +11196,17 @@
         "kind": "const",
         "declaration": "781763c0b1d17fe3"
       },
+      "EmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "baba57258f580dbb"
+      },
       "google": {
         "kind": "function",
         "declaration": "bf7e532b8f0c2452"
+      },
+      "googleEmbeddings": {
+        "kind": "function",
+        "declaration": "1b375381a59020d0"
       },
       "GoogleProviderOptions": {
         "kind": "interface",
@@ -9978,9 +11232,17 @@
         "kind": "const",
         "declaration": "781763c0b1d17fe3"
       },
+      "EmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "baba57258f580dbb"
+      },
       "mistral": {
         "kind": "function",
         "declaration": "5c46cab9e829646e"
+      },
+      "mistralEmbeddings": {
+        "kind": "function",
+        "declaration": "72bc93271d77a3fe"
       },
       "MistralProviderOptions": {
         "kind": "interface",
@@ -9988,9 +11250,17 @@
       }
     },
     "@mayurajs/provider-ollama": {
+      "EmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "7a3dbd78d83a3909"
+      },
       "ollama": {
         "kind": "function",
         "declaration": "c2ec2d32dda75f51"
+      },
+      "ollamaEmbeddings": {
+        "kind": "function",
+        "declaration": "21cde0a35a48f512"
       },
       "OllamaProviderOptions": {
         "kind": "interface",
@@ -10002,9 +11272,37 @@
         "kind": "const",
         "declaration": "781763c0b1d17fe3"
       },
+      "GatewayBinding": {
+        "kind": "interface",
+        "declaration": "6dfcfc8b5e3db909"
+      },
+      "gatewayCredential": {
+        "kind": "function",
+        "declaration": "e5e2726113e9ed64"
+      },
+      "GatewayOptions": {
+        "kind": "interface",
+        "declaration": "64bb32a6f4d7a6cd"
+      },
+      "gatewayProvider": {
+        "kind": "function",
+        "declaration": "43ea55db1ced7dfe"
+      },
+      "GatewayProvider": {
+        "kind": "interface",
+        "declaration": "aa0b5d4a083bc055"
+      },
       "openai": {
         "kind": "function",
         "declaration": "0906818a39d68867"
+      },
+      "openAIEmbeddings": {
+        "kind": "function",
+        "declaration": "7de950a905a7c09f"
+      },
+      "OpenAIEmbeddingsOptions": {
+        "kind": "interface",
+        "declaration": "dd79cbd14058855a"
       },
       "OpenAIProviderOptions": {
         "kind": "interface",
@@ -10017,6 +11315,36 @@
       "ResponsesProviderOptions": {
         "kind": "interface",
         "declaration": "0c2baf80f6bc0ca2"
+      }
+    },
+    "@mayurajs/reranker-cohere": {
+      "cohereReranker": {
+        "kind": "function",
+        "declaration": "791c299b226e6c47"
+      },
+      "RerankerOptions": {
+        "kind": "interface",
+        "declaration": "75c7df8f242e17c0"
+      }
+    },
+    "@mayurajs/reranker-jina": {
+      "jinaReranker": {
+        "kind": "function",
+        "declaration": "b3657cc593fd348a"
+      },
+      "RerankerOptions": {
+        "kind": "interface",
+        "declaration": "75c7df8f242e17c0"
+      }
+    },
+    "@mayurajs/reranker-voyage": {
+      "RerankerOptions": {
+        "kind": "interface",
+        "declaration": "75c7df8f242e17c0"
+      },
+      "voyageReranker": {
+        "kind": "function",
+        "declaration": "ae7aa83158efb868"
       }
     },
     "@mayurajs/sandbox-agentcore": {
@@ -10275,6 +11603,70 @@
       "MysqlStoreOptions": {
         "kind": "interface",
         "declaration": "5238cca3c0083103"
+      }
+    },
+    "@mayurajs/vector-chroma": {
+      "ChromaOptions": {
+        "kind": "interface",
+        "declaration": "1bd53af67f2c011e"
+      },
+      "chromaVectorStore": {
+        "kind": "function",
+        "declaration": "eb6ed681a1416a37"
+      },
+      "Options": {
+        "kind": "interface",
+        "declaration": "dbcb91afa4a8d5ad"
+      }
+    },
+    "@mayurajs/vector-libsql": {
+      "libsqlVectorStore": {
+        "kind": "function",
+        "declaration": "9f803db6905f819b"
+      },
+      "SqlVectorOptions": {
+        "kind": "interface",
+        "declaration": "4d34110a25cfa9cb"
+      }
+    },
+    "@mayurajs/vector-pgvector": {
+      "pgvectorStore": {
+        "kind": "function",
+        "declaration": "19dbf91e1658b5fa"
+      },
+      "SqlVectorOptions": {
+        "kind": "interface",
+        "declaration": "4d34110a25cfa9cb"
+      }
+    },
+    "@mayurajs/vector-pinecone": {
+      "Options": {
+        "kind": "interface",
+        "declaration": "dbcb91afa4a8d5ad"
+      },
+      "pineconeVectorStore": {
+        "kind": "function",
+        "declaration": "5b78eaac5ca4bfac"
+      }
+    },
+    "@mayurajs/vector-qdrant": {
+      "Options": {
+        "kind": "interface",
+        "declaration": "dbcb91afa4a8d5ad"
+      },
+      "qdrantVectorStore": {
+        "kind": "function",
+        "declaration": "fccd2c2549451737"
+      }
+    },
+    "@mayurajs/vector-weaviate": {
+      "Options": {
+        "kind": "interface",
+        "declaration": "dbcb91afa4a8d5ad"
+      },
+      "weaviateVectorStore": {
+        "kind": "function",
+        "declaration": "3b0b9cd2981c3780"
       }
     },
     "@mayurajs/voice-assemblyai": {

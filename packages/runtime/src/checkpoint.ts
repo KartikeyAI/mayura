@@ -1,5 +1,7 @@
+import { toolContinuation } from '@mayura/tools/host';
 import { freezeJson, jsonValue, MayuraError, MEDIA_TYPES, type JsonObject, type JsonValue, type Media, type MediaType, type ModelMessage, type ModelToolCall, type Scope } from '@mayura/core';
 import { fromBase64Url, sha256Hex, toBase64Url } from '@mayura/core/host';
+import type { RecordedApproval } from './recording.js';
 import { isIdentifier, type AgentDefinition } from './agent.js';
 
 /** A saved checkpoint, as the runtime reads it back. `store.runCheckpoints` of any Mayura store fits. */
@@ -7,6 +9,7 @@ export interface StoredRunCheckpoint {
   readonly runId: string;
   readonly scope: string;
   readonly status: string;
+  readonly leaseExpiresAtMs?: number | null;
   readonly expiresAtMs: number;
   readonly body: JsonObject;
 }
@@ -14,8 +17,8 @@ export interface StoredRunCheckpoint {
 export interface RunCheckpointPort {
   put(command: { readonly runId: string; readonly scope: string; readonly expiresAtMs: number; readonly body: JsonObject }): Promise<unknown>;
   get(command: { readonly runId: string }): Promise<StoredRunCheckpoint | undefined>;
-  claim(command: { readonly runId: string; readonly holderId: string; readonly leaseMs: number }): Promise<unknown>;
-  delete(command: { readonly runId: string; readonly holderId?: string }): Promise<boolean>;
+  claim(command: { readonly runId: string; readonly holderId: string; readonly leaseMs: number; readonly expectedDigest?: string }): Promise<unknown>;
+  delete(command: { readonly runId: string; readonly holderId?: string; readonly expectedVersion?: number; readonly expectedDigest?: string }): Promise<boolean>;
   due(command: { readonly expiresBeforeMs: number; readonly limit: number }): Promise<readonly string[]>;
 }
 /** Where runs waiting for approval are saved, so they survive a restart and any replica can resume them. */
@@ -28,19 +31,23 @@ export interface CheckpointOptions {
   readonly replicaId?: string;
   /** How long a hold on a checkpoint lasts while the run resumes (default 30 seconds, 1 second to 1 hour). */
   readonly leaseMs?: number;
+  /** Let a host recovery worker own expiry instead of starting process-local timers (default true). */
+  readonly autoExpire?: boolean;
 }
 export interface ResolvedCheckpoints {
   readonly store: RunCheckpointPort;
   readonly agents: ReadonlyMap<string, AgentDefinition>;
   readonly replicaId: string;
   readonly leaseMs: number;
+  readonly autoExpire: boolean;
 }
 
 export function checkpointOptions(supplied: CheckpointOptions | undefined): ResolvedCheckpoints | undefined {
   if (supplied === undefined) return undefined;
   const fail = (detail: string): never => { throw new MayuraError('INVALID_CONFIG', `checkpoints: ${detail}`); };
   if (typeof supplied !== 'object' || supplied === null) return fail('pass { store, agents?, replicaId?, leaseMs? }.');
-  if (Object.keys(supplied).some(key => !['store', 'agents', 'replicaId', 'leaseMs'].includes(key))) fail('takes only store, agents, replicaId and leaseMs.');
+  if (Object.keys(supplied).some(key => !['store', 'agents', 'replicaId', 'leaseMs', 'autoExpire'].includes(key))) fail('takes only store, agents, replicaId, leaseMs and autoExpire.');
+  if (supplied.autoExpire !== undefined && typeof supplied.autoExpire !== 'boolean') fail('autoExpire must be a boolean.');
   const store = supplied.store;
   if (!store || ['put', 'get', 'claim', 'delete', 'due'].some(method => typeof (store as unknown as Record<string, unknown>)[method] !== 'function')) {
     fail('store must be a run-checkpoint store, such as store.runCheckpoints.');
@@ -55,7 +62,7 @@ export function checkpointOptions(supplied: CheckpointOptions | undefined): Reso
   if (!isIdentifier(replicaId)) fail('replicaId must be a short identifier.');
   const leaseMs = supplied.leaseMs ?? 30_000;
   if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 3_600_000) fail('leaseMs must be 1000 to 3600000.');
-  return Object.freeze({ store, agents, replicaId, leaseMs });
+  return Object.freeze({ store, agents, replicaId, leaseMs, autoExpire: supplied.autoExpire !== false });
 }
 
 function canonical(value: JsonValue): string {
@@ -72,19 +79,22 @@ const ids = (items: readonly { readonly id?: unknown }[]): JsonValue[] => items.
  * What a resumed run must find unchanged in its agent: identity, instructions, model, tools and their policies, guards,
  * hooks, streaming and schemas. A deploy that changes any of them while a run waits means the run cannot continue.
  */
-export function agentDigest(agent: AgentDefinition): string {
+export function agentDigest(agent: AgentDefinition, memo = new Map<AgentDefinition, string>()): string {
+  const cached = memo.get(agent); if (cached) return cached;
   const shape: JsonValue = {
     id: agent.id, version: agent.version, instructions: agent.instructions,
+    ...((agent.handoffs?.length ?? 0) > 0 ? { handoffs: agent.handoffs!.map(edge => ({ id: edge.agent.id,
+      digest: agentDigest(edge.agent, memo), permissions: [...edge.permissions.allow], description: edge.description ?? null })) } : {}),
     model: { id: agent.model.id, maxCostMicros: agent.model.maxCostMicros },
     tools: agent.tools.map(tool => ({ id: tool.id, version: tool.version, effects: tool.effects, capabilities: [...tool.capabilities],
-      costMicros: tool.costMicros, approval: tool.approval ?? null })),
+      costMicros: tool.costMicros, approval: tool.approval ?? null, ...(toolContinuation(tool) ? { continuation: 'external-result-v1' } : {}) })),
     guards: { input: ids(agent.guards.input), output: ids(agent.guards.output) },
     hooks: agent.hooks.map(hook => ({ id: hook.id, version: hook.version, stage: hook.stage })),
     stream: agent.stream ? [...agent.stream.field] : null,
     input: agent.inputJsonSchema ?? null, output: agent.outputJsonSchema ?? null,
     media: agent.media ? jsonValue(agent.media) : null,
   };
-  return sha256Hex(`mayura:agent-definition:v1\0${canonical(shape)}`);
+  const digest = sha256Hex(`mayura:agent-definition:v1\0${canonical(shape)}`); memo.set(agent, digest); return digest;
 }
 
 function encodeMedia(items: readonly Media[]): JsonValue[] {
@@ -141,6 +151,17 @@ export function decodeMessages(raw: unknown): ModelMessage[] {
 
 /** A run paused for approval, as saved: everything needed to continue it exactly where it stopped. */
 export interface CheckpointBody {
+  /** External frontend waits are distinct from human approval and can never be answered by approve(). */
+  readonly waitKind?: 'frontend';
+  /** Schema-admitted input with input guards completed before external publication. */
+  readonly preparedInput?: JsonValue;
+  /** Declared frontend cost/call conservatively settled before publication; consumption cannot charge it again. */
+  readonly prepaid?: true;
+  /** Port result identity, distinct from the runtime-owned checkpoint epoch digest. */
+  readonly externalDigest?: string;
+  readonly handoff?: { readonly path: readonly string[]; readonly sourcePermissions: readonly string[] };
+  readonly recording?: JsonObject;
+  readonly approvals?: readonly RecordedApproval[];
   readonly agent: { readonly id: string; readonly version: string; readonly digest: string };
   readonly scope: Scope;
   readonly permissions: readonly string[];
@@ -170,7 +191,9 @@ export function encodeBody(body: CheckpointBody): JsonObject {
 /** Read a stored body back, refusing anything malformed rather than resuming from it. */
 export function decodeBody(raw: JsonObject): CheckpointBody {
   const body = record(raw);
-  if (body['format'] !== 1) corrupt();
+  if (body['format'] !== 1 || (body['waitKind'] !== undefined && body['waitKind'] !== 'frontend')) corrupt();
+  if (body['waitKind'] === 'frontend' && (!Object.hasOwn(body, 'preparedInput') || body['prepaid'] !== true
+    || typeof body['externalDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(body['externalDigest']))) corrupt();
   const agent = record(body['agent']); const scope = record(body['scope']); const pending = record(body['pending']);
   const counts = record(body['counts']); const spent = record(body['spent']); const limits = record(body['limits']);
   if (!Array.isArray(body['permissions']) || (body['permissions'] as unknown[]).some(grant => typeof grant !== 'string')) corrupt();
@@ -180,7 +203,23 @@ export function decodeBody(raw: JsonObject): CheckpointBody {
   if (typeof spent['micros'] !== 'string' || !/^[0-9]{1,30}$/u.test(spent['micros'])) corrupt();
   const calls = (body['calls'] as unknown[]).map(decodeCall);
   if (calls.length === 0 || calls[0]!.id !== pending['callId']) corrupt();
+  const handoff = body['handoff'] === undefined ? undefined : record(body['handoff']);
+  if (handoff && (!Array.isArray(handoff['path']) || handoff['path'].length < 1 || handoff['path'].length > 64
+    || handoff['path'].some(id => !isIdentifier(id)) || !Array.isArray(handoff['sourcePermissions']) || handoff['sourcePermissions'].length > 4096
+    || handoff['sourcePermissions'].some(grant => typeof grant !== 'string' || !grant.length || grant.length > 256))) corrupt();
+  const recording = body['recording'] === undefined ? undefined : record(body['recording']) as JsonObject;
+  if (recording && new TextEncoder().encode(JSON.stringify(recording)).length > 4096) corrupt();
+  const approvals = body['approvals'];
+  if (approvals !== undefined && (!Array.isArray(approvals) || approvals.length > 4096 || approvals.some(raw => {
+    const approval = record(raw);
+    return typeof approval['callId'] !== 'string' || typeof approval['toolId'] !== 'string'
+      || !['approved', 'rejected', 'expired'].includes(approval['decision'] as string)
+      || (approval['actorId'] !== undefined && typeof approval['actorId'] !== 'string');
+  }))) corrupt();
   return {
+    ...(body['waitKind'] === 'frontend' ? { waitKind: 'frontend' as const, prepaid: true as const, externalDigest: body['externalDigest'] as string, preparedInput: jsonValue(body['preparedInput'] ?? null) } : {}),
+    ...(handoff ? { handoff: { path: handoff['path'] as string[], sourcePermissions: handoff['sourcePermissions'] as string[] } } : {}),
+    ...(recording ? { recording, approvals: (approvals ?? []) as unknown as readonly RecordedApproval[] } : {}),
     agent: { id: text(agent['id']), version: text(agent['version']), digest: text(agent['digest']) },
     scope: { principalId: text(scope['principalId']), projectId: text(scope['projectId']) },
     permissions: body['permissions'] as string[], limits: limits as Record<string, number>,

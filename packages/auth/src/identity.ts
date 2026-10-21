@@ -6,7 +6,7 @@ import { peekIssuer, type JwtClaims, type JwtHeader, type JwtVerifier } from './
 /** A permission Mayura's server knows. */
 export type ServerCapability = ServerIdentity['capabilities'][number];
 /** Every permission Mayura's server knows, for mapping tables and checks. */
-export const serverCapabilities: readonly ServerCapability[] = Object.freeze(['runs:read', 'runs:submit', 'runs:cancel', 'operations:read',
+export const serverCapabilities: readonly ServerCapability[] = Object.freeze(['runs:read', 'runs:submit', 'runs:cancel', 'runs:approve', 'runs:resume', 'threads:read', 'threads:write', 'threads:delete', 'threads:compact', 'threads:import', 'operations:read',
   'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate']);
 
 /** What a verified caller may do, as an identity mapping returns it; `expiresAtMs` defaults to the credential's expiry. */

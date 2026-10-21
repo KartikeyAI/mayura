@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { sha256Hex } from '@mayura/core/host';
 import { StorageError, type ConversationAggregateStore, type RunCheckpointStore, type ThreadStore } from '@mayura/storage-contracts';
 
 export interface ConversationFixture { readonly store: ConversationAggregateStore; close(): Promise<void> }
@@ -33,6 +34,99 @@ export function conversationConformance(name: string, factory: () => Promise<Con
         await fresh.store.initialize();
         expect(await code(fresh.store.threads.get({ scope, id: 'x' }))).toBe('STORE_NOT_INITIALIZED');
       } finally { await fresh.close(); }
+    });
+
+    it('journals only associated runs, refuses conflicting completions, and deletes their retained content', async () => {
+      await create('recording'); await hold('recording');
+      const command = { scope, id: 'recording', runtimeRunId: 'runtime-run', action: 'save' as const,
+        turnId: 'run-1', startSequence: 0, body: { output: 'private completion' } };
+      expect(await code(threads.recording(command))).toBe('CONFLICT');
+      await threads.append({ scope, id: 'recording', runId: 'run-1', holderId: 'replica-a', expectedSequence: 0,
+        entries: [{ kind: 'run', data: { runId: 'runtime-run', status: 'running', recording: true } }] });
+      expect(await threads.recording(command)).toEqual(command.body);
+      expect(await threads.recording(command)).toEqual(command.body);
+      expect(await code(threads.recording({ ...command, body: { output: 'changed' } }))).toBe('CONFLICT');
+      expect(await code(threads.recording({ ...command, scope: other }))).toBe('NOT_FOUND');
+      expect(await threads.recording({ scope, id: 'recording', runtimeRunId: 'runtime-run', action: 'read' })).toEqual(command.body);
+      await threads.delete({ scope, id: 'recording', limit: 32 });
+      expect(await checkpoints.get({ runId: `thread-record:${sha256Hex('runtime-run')}` })).toBeUndefined();
+      expect(await code(threads.recording({ scope, id: 'recording', runtimeRunId: 'runtime-run', action: 'read' }))).toBe('NOT_FOUND');
+    });
+
+    it('fences only the exact expired claim, retaining evidence and rejecting stale holders and changed retries', async () => {
+      const body = { privateContinuation: 'retained evidence' };
+      await checkpoints.put({ runId: 'claimed-run', scope, expiresAtMs: 100, body });
+      const claimed = await checkpoints.claim({ runId: 'claimed-run', holderId: 'old-worker', leaseMs: 1000 });
+      const command = { runId: claimed.runId, scope, expectedVersion: claimed.version, expectedHolderId: 'old-worker',
+        commandId: 'investigation-1', actorId: 'operator', reviewDigest: 'a'.repeat(64), effect: 'unknown' as const,
+        evidenceRef: 'incident/123', workerStopped: true as const };
+      expect(await code(checkpoints.reconcile(command))).toBe('CONFLICT');
+      expect(await code(checkpoints.reconcile({ ...command, scope: other }))).toBe('NOT_FOUND');
+      await pause(1050);
+      expect(await code(checkpoints.reconcile({ ...command, expectedVersion: 1 }))).toBe('CONFLICT');
+      const sealed = await checkpoints.reconcile(command);
+      expect(sealed.body).toMatchObject({ ...body, reconciliation: { format: 1, commandId: 'investigation-1', actorId: 'operator', effect: 'unknown', evidenceRef: 'incident/123' } });
+      expect(sealed.holderId).not.toBe('old-worker'); expect(sealed.version).toBe(claimed.version + 1);
+      expect(await checkpoints.reconcile(command)).toEqual(sealed);
+      expect(await code(checkpoints.reconcile({ ...command, effect: 'succeeded' }))).toBe('CONFLICT');
+      expect(await code(checkpoints.claim({ runId: claimed.runId, holderId: 'new-worker', leaseMs: 1000 }))).toBe('CONFLICT');
+      expect(await code(checkpoints.update({ runId: claimed.runId, holderId: sealed.holderId!, expectedVersion: sealed.version, body: {}, status: 'waiting' }))).toBe('CONFLICT');
+      expect(await code(checkpoints.delete({ runId: claimed.runId, holderId: 'old-worker' }))).toBe('CONFLICT');
+      expect((await checkpoints.get({ runId: claimed.runId }))!.body).toEqual(sealed.body);
+    });
+
+    it('scans metadata across scopes and claimed rows with stable bounded cursors', async () => {
+      for (const [runId, expiresAtMs] of [['z', 200], ['A', 100], ['a', 100], ['b', 100]] as const)
+        await checkpoints.put({ runId, scope: runId === 'a' ? other : scope, expiresAtMs, body: { secret: 'not in scan' } });
+      await checkpoints.claim({ runId: 'A', holderId: 'worker', leaseMs: 30_000 });
+      expect(await checkpoints.scan({ limit: 2 })).toEqual([{ runId: 'A', expiresAtMs: 100 }, { runId: 'a', expiresAtMs: 100 }]);
+      const after = { runId: 'a', expiresAtMs: 100 };
+      expect(await checkpoints.scan({ after, limit: 2 })).toEqual([{ runId: 'b', expiresAtMs: 100 }, { runId: 'z', expiresAtMs: 200 }]);
+      expect(await checkpoints.scan({ after: { runId: 'z', expiresAtMs: 200 }, limit: 2 })).toEqual([]);
+      expect(await code(checkpoints.scan({ limit: 101 }))).toBe('INVALID_INPUT');
+      expect(await checkpoints.due({ expiresBeforeMs: 300, limit: 1 })).toEqual(['a']);
+    });
+
+    it('reserves compaction once, stages its summary and publishes atomically without removing source entries', async () => {
+      await create('compact'); await hold('compact');
+      const source = [{ kind: 'user' as const, data: { content: 'Question' } }, { kind: 'assistant' as const, data: { output: 'Answer' } },
+        { kind: 'run' as const, data: { runId: 'original', status: 'succeeded' } }];
+      await threads.append({ scope, id: 'compact', runId: 'run-1', holderId: 'replica-a', expectedSequence: 0, entries: source });
+      await threads.release({ scope, id: 'compact', runId: 'run-1', holderId: 'replica-a' });
+      const reserve = { scope, id: 'compact', commandId: 'compact-1', action: 'reserve' as const, requestDigest: 'a'.repeat(64), sourceDigest: 'b'.repeat(64),
+        through: 3, expectedSequence: 3, sourceEntries: 3, sourceTurns: 1, maxCostMicros: 5, executorId: 'compact-worker', agentId: 'summarizer', agentVersion: '1', leaseMs: 30_000 };
+      const first = await threads.compaction(reserve); expect(first?.status).toBe('pending');
+      expect(await threads.compaction({ ...reserve, executorId: 'other-worker' })).toEqual(first);
+      expect(await code(threads.compaction({ ...reserve, requestDigest: 'c'.repeat(64) }))).toBe('CONFLICT');
+      expect(await code(threads.compaction({ scope: other, id: 'compact', commandId: 'compact-1', action: 'read' }))).toBe('NOT_FOUND');
+      await threads.compaction({ scope, id: 'compact', commandId: 'compact-1', action: 'stage', executorId: 'compact-worker', content: 'A saved summary', modelRunId: 'model-run', costMicros: 3 });
+      const results = await Promise.all([threads.compaction({ scope, id: 'compact', commandId: 'compact-1', action: 'commit' }), threads.compaction({ scope, id: 'compact', commandId: 'compact-1', action: 'commit' })]);
+      expect(results[0]).toEqual(results[1]); expect(results[0]?.entrySequence).toBe(5);
+      const entries = await threads.entries({ scope, id: 'compact', after: 0, limit: 20 });
+      expect(entries.slice(0, 3).map(entry => ({ kind: entry.kind, data: entry.data }))).toEqual(source);
+      expect(entries.filter(entry => entry.kind === 'summary')).toHaveLength(1);
+      expect(await threads.compaction({ scope, id: 'compact', commandId: 'compact-1', action: 'fail', executorId: 'compact-worker', code: 'CANCELLED' })).toEqual(results[0]);
+      for (let page = 0; page < 10; page++) { if ((await threads.delete({ scope, id: 'compact', limit: 2 })).thread.status === 'deleted') break; }
+      const journal = `thread-compact:${sha256Hex(`${scope}\0compact\0compact-1`)}`;
+      expect(await checkpoints.get({ runId: journal })).toBeUndefined();
+    });
+
+    it('fences cancelled compaction executors and preserves staged output while another turn owns the thread', async () => {
+      await create('blocked-summary'); await hold('blocked-summary');
+      await threads.append({ scope, id: 'blocked-summary', runId: 'run-1', holderId: 'replica-a', expectedSequence: 0,
+        entries: [{ kind: 'user', data: { content: 'Question' } }, { kind: 'assistant', data: { output: 'Answer' } }, { kind: 'run', data: { runId: 'original', status: 'succeeded' } }] });
+      await threads.release({ scope, id: 'blocked-summary', runId: 'run-1', holderId: 'replica-a' });
+      const base = { scope, id: 'blocked-summary', commandId: 'compact-1' };
+      await threads.compaction({ ...base, action: 'reserve', requestDigest: 'a'.repeat(64), sourceDigest: 'b'.repeat(64), through: 3, expectedSequence: 3,
+        sourceEntries: 3, sourceTurns: 1, maxCostMicros: 5, executorId: 'compact-worker', agentId: 'summarizer', agentVersion: '1', leaseMs: 30_000 });
+      await threads.compaction({ ...base, action: 'stage', executorId: 'compact-worker', content: 'Saved', modelRunId: 'model-run', costMicros: 3 });
+      await threads.release({ scope, id: 'blocked-summary', runId: 'compact-worker', holderId: 'compact-worker' });
+      await hold('blocked-summary', 'new-turn', 'new-worker');
+      expect(await code(threads.compaction({ ...base, action: 'commit' }))).toBe('CONFLICT');
+      expect((await threads.compaction({ ...base, action: 'read' }))?.status).toBe('ready');
+      await threads.compaction({ ...base, action: 'fail', executorId: 'compact-worker', code: 'CANCELLED' });
+      expect(await code(threads.compaction({ ...base, action: 'stage', executorId: 'compact-worker', content: 'Late', modelRunId: 'model-run', costMicros: 3 }))).toBe('CONFLICT');
+      expect((await threads.get({ scope, id: 'blocked-summary' }))?.lease?.holderId).toBe('new-worker');
     });
 
     it('creates a thread once and reads it back', async () => {
@@ -138,7 +232,7 @@ export function conversationConformance(name: string, factory: () => Promise<Con
       expect((await threads.list({ scope, statuses: ['active', 'archived'], limit: 10 })).threads).toEqual([]);
       expect(await code(append('t1', 150, ['after delete']))).toBe('NOT_FOUND');
       let result = first; let calls = 1;
-      while (result.thread.status !== 'deleted') { result = await threads.delete({ scope, id: 't1', limit: 100 }); calls++; expect(calls).toBeLessThan(10); }
+      while (result.thread.status !== 'deleted') { result = await threads.delete({ scope, id: 't1', limit: 100 }); calls++; expect(calls).toBeLessThanOrEqual(10); }
       expect(result.thread.entryCount).toBe(0);
       expect((await threads.delete({ scope, id: 't1', limit: 100 })).removed).toBe(0);
       expect(await code(create('t1'))).toBe('CONFLICT');

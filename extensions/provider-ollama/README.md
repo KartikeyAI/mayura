@@ -32,3 +32,7 @@ const agent = defineAgent({
 - The default time limit is 120 seconds, since a local model may need loading first.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+### RAG embeddings
+
+This provider exports `ollamaEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

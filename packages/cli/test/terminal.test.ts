@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { PassThrough, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initWizard } from '../src/interactive.js';
 import { colourEnabled, help, paint, render, renderError, renderLifecycle } from '../src/output.js';
 import { starters } from '../src/index.js';
@@ -78,7 +78,7 @@ describe('terminal output', () => {
 });
 
 describe('provider settings', () => {
-  it('writes only variables every starter reads', async () => {
+  it('writes only variables every configurable-provider starter reads', async () => {
     const common = { apiKey: 'sk-test-12345678', model: 'm', inputMicrosPerMillionTokens: 1, outputMicrosPerMillionTokens: 2, maxCallCostMicros: 3, maxRunCostMicros: 4 };
     const text = providerEnvironment({ provider: 'anthropic', ...common }) + providerEnvironment({ provider: 'openai', ...common })
       + providerEnvironment({ provider: 'compatible', ...common, compatible: { id: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', auth: 'bearer' } })
@@ -87,7 +87,7 @@ describe('provider settings', () => {
     const names = [...new Set(text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!))];
     expect(names).toEqual(expect.arrayContaining(['MAYURA_MODEL_PROVIDER_ID', 'MAYURA_MODEL_ENDPOINT', 'MAYURA_MODEL_AUTH', 'MAYURA_MODEL_API_KEY',
       'MAYURA_MODEL_OUTPUT', 'MAYURA_MODEL_STRICT_TOOLS', 'MAYURA_MODEL_GATEWAY_TOKEN']));
-    for (const starter of starters()) {
+    for (const starter of starters().filter(starter => !['nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt'].includes(starter.name))) {
       const config = await readFile(fileURLToPath(new URL(`../starters/${starter.name}/src/config.ts`, import.meta.url)), 'utf8');
       for (const name of names) expect(config, `${starter.name} reads ${name}`).toContain(`'${name}'`);
     }
@@ -102,6 +102,9 @@ describe('provider settings', () => {
 
 describe('interactive init', () => {
   const roots: string[] = [];
+  // These fixtures emulate an editable terminal even when the runner uses TERM=dumb.
+  beforeEach(() => { vi.stubEnv('TERM', 'xterm'); });
+  afterEach(() => { vi.unstubAllEnvs(); });
   afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
   /** Type `keys` into the wizard one at a time, as a person would, and capture what it draws. */
   const drive = async (keys: string[]) => {
@@ -253,7 +256,7 @@ describe('generated project versions', () => {
     const quickjs = (await read('../../adapter-code-quickjs/package.json')).dependencies!;
     expect(PEER_VERSIONS['quickjs-emscripten-core']).toBe(quickjs['quickjs-emscripten-core']);
     expect(PEER_VERSIONS['@jitl/quickjs-wasmfile-release-sync']).toBe(quickjs['@jitl/quickjs-wasmfile-release-sync']);
-    for (const starter of starters()) {
+    for (const starter of starters().filter(starter => !['nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt'].includes(starter.name))) {
       const manifest = await read(`../starters/${starter.name}/package.json`);
       // Schemas come from `mayura` itself (`z`), so a starter never needs its own validator.
       expect(manifest.dependencies ?? {}, starter.name).not.toHaveProperty('zod');

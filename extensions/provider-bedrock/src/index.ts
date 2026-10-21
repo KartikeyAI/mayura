@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelAdapter,
   type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
@@ -395,3 +395,30 @@ export function bedrock(options: BedrockProviderOptions): ModelProvider {
   });
 }
 
+
+export interface TitanEmbeddingsOptions {
+  readonly region:string; readonly credentials:BedrockAwsCredentials; readonly dimensions:256|512|1024;
+  readonly costMicros:number; readonly permissions:{readonly allow:readonly string[]}; readonly timeoutMs:number;
+  readonly fetch?:typeof globalThis.fetch;
+}
+/** Titan Text Embeddings V2: one input, explicit SigV4 credentials and no SDK retry or default credential chain. */
+export function titanEmbeddings(options:TitanEmbeddingsOptions):import('mayura/rag').RagEmbedder & {close():void} {
+  if(!/^[a-z]{2}(?:-[a-z]+)+-\d$/u.test(options.region)||!options.credentials||![256,512,1024].includes(options.dimensions)||!Number.isSafeInteger(options.costMicros)||options.costMicros<0||!Number.isSafeInteger(options.timeoutMs)||options.timeoutMs<1||options.timeoutMs>30_000)throw new MayuraError('INVALID_CONFIG','Titan embedding configuration is invalid.');
+  const client=new BedrockRuntimeClient({region:options.region,credentials:options.credentials,maxAttempts:1,retryMode:'standard',requestHandler:fetchHandler(()=>options.fetch??globalThis.fetch,4_194_304) as never});
+  let busy=false;let closed=false;
+  return Object.freeze({id:`bedrock.titan-embed-text-v2.${options.dimensions}`,dimensions:options.dimensions,maxBatch:1,location:'hosted',costMicros:options.costMicros,
+    async embed(texts:readonly string[],signal:AbortSignal) {
+      if(!options.permissions.allow.includes('rag:transport:bedrock-embeddings'))throw new MayuraError('PERMISSION_DENIED','Titan embedding permission required.');
+      if(closed||busy||signal.aborted)throw new MayuraError('CANCELLED','Titan embedding unavailable.');
+      if(texts.length!==1||typeof texts[0]!=='string'||!texts[0].trim()||texts[0].length>8000)throw new MayuraError('INVALID_INPUT','Titan embedding input is invalid.');
+      const control=new AbortController();const abort=()=>control.abort();signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();const timer=setTimeout(abort,options.timeoutMs);busy=true;
+      try {
+        const result=await client.send(new InvokeModelCommand({modelId:'amazon.titan-embed-text-v2:0',contentType:'application/json',accept:'application/json',body:new TextEncoder().encode(JSON.stringify({inputText:texts[0],dimensions:options.dimensions,normalize:true}))}),{abortSignal:control.signal});
+        if(control.signal.aborted||closed)throw new Error();const raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(result.body)) as {embedding:unknown};
+        if(!Array.isArray(raw.embedding)||raw.embedding.length!==options.dimensions||raw.embedding.some(value=>typeof value!=='number'||!Number.isFinite(value)))throw new Error();return [raw.embedding as number[]];
+      }catch{throw new MayuraError(control.signal.aborted?'CANCELLED':'MODEL_FAILED','Titan embedding failed; no automatic retry was performed.');}
+      finally{busy=false;clearTimeout(timer);signal.removeEventListener('abort',abort);}
+    },
+    close(){closed=true;client.destroy();},
+  });
+}

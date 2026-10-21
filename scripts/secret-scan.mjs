@@ -23,7 +23,7 @@ const patterns = [
 const allowed = [
   ['packages/server-node/test/fixtures/test-only-localhost.key', 'private key block'],
 ];
-const files = execFileSync('git', ['ls-files', '-z'], { cwd: workspace, encoding: 'utf8', maxBuffer: 64 * 1_048_576 }).split('\0').filter(Boolean);
+const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: workspace, encoding: 'utf8', maxBuffer: 64 * 1_048_576 }).split('\0').filter(Boolean);
 const findings = [];
 for (const file of files) {
   const path = resolve(workspace, file); let size;

@@ -35,7 +35,7 @@ export interface RunEvent {
   readonly runId: string;
   readonly sequence: number;
   readonly timestamp: string;
-  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
+  readonly type: 'run.started' | 'history.applied' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
     | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld' | 'approval.requested' | 'approval.resolved'
     | 'run.paused' | 'run.resumed';

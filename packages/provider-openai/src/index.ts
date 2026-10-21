@@ -1,5 +1,5 @@
 import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelDefinitionCheck, type ModelFailureReason, type JsonValue, type ModelAdapter, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelRequest, type ModelResponse, type ModelStreamEvent, type ModelToolCall } from '@mayura/core';
-import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema } from '@mayura/core/host';
+import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, readServerSentEvents, streamModelCall, strictJsonSchema, tokenCostMicros, type TokenPricing } from '@mayura/core/host';
 
 /**
  * How the adapter authenticates: with the provider's API key, or behind a gateway that holds it, with the gateway's
@@ -64,7 +64,9 @@ export interface OpenAICompatibleChatOptions {
    */
   readonly outputJsonSchema?: JsonObject;
   readonly maxCostMicros: number;
-  readonly pricing: { readonly inputMicrosPerMillionTokens: number; readonly outputMicrosPerMillionTokens: number };
+  readonly pricing: TokenPricing;
+  /** Optional gateway billing fields, in USD. Charge at least these amounts and the configured token prices. */
+  readonly reportedCost?: { readonly usageField?: string; readonly header?: string };
   readonly maxRequestBytes?: number;
   readonly maxResponseBytes?: number;
   readonly timeoutMs?: number;
@@ -99,6 +101,21 @@ export interface OpenAICompatibleChatOptions {
    * Without it, the adapter declares no media, and agents that accept media refuse it.
    */
   readonly media?: ModelMediaCapability;
+}
+/** Parse a nonnegative USD decimal without floating-point undercharging; always round up to whole micros. */
+function usdMicros(value: unknown): number {
+  if (typeof value !== 'string' && typeof value !== 'number') return failed();
+  const text = String(value);
+  const match = /^(\d{1,32})(?:\.(\d{1,64}))?(?:[eE]([+-]?\d{1,3}))?$/u.exec(text);
+  if (!match) return failed();
+  const coefficient = BigInt(`${match[1]}${match[2] ?? ''}`);
+  const exponent = Number(match[3] ?? 0) + 6 - (match[2]?.length ?? 0);
+  if (coefficient === 0n) return 0;
+  if (exponent > 32) return failed();
+  const divisor = exponent < 0 ? 10n ** BigInt(-exponent) : 1n;
+  const amount = exponent < 0 ? (coefficient + divisor - 1n) / divisor : coefficient * 10n ** BigInt(exponent);
+  if (amount > BigInt(Number.MAX_SAFE_INTEGER)) return failed();
+  return Number(amount);
 }
 /** Request fields the compatible adapter owns; `body` cannot set them. */
 const ownedFields = new Set(['model', 'messages', 'tools', 'tool_choice', 'parallel_tool_calls', 'stream', 'stream_options', 'response_format', 'max_tokens', 'max_completion_tokens', 'n']);
@@ -496,6 +513,12 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   if (remote !== undefined && options.apiKey === undefined && options.token === undefined && Object.keys(extraHeaders).length === 0) {
     throw new MayuraError('INVALID_CONFIG', 'Remote compatible providers require an apiKey, a token source, or a credential header (such as a gateway token in headers).');
   }
+  const billing = options.reportedCost;
+  if (billing !== undefined && (!billing || (billing.usageField === undefined && billing.header === undefined)
+    || (billing.usageField !== undefined && !/^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/u.test(billing.usageField))
+    || (billing.header !== undefined && !/^[a-zA-Z0-9-]{1,64}$/u.test(billing.header)))) {
+    throw new MayuraError('INVALID_CONFIG', 'Gateway billing needs bounded usage-field or header names.');
+  }
   const outputMode = options.output ?? 'json_schema';
   if (outputMode !== 'json_schema' && outputMode !== 'json_object') throw new MayuraError('INVALID_CONFIG', 'output must be "json_schema" or "json_object".');
   if (options.strictTools !== undefined && typeof options.strictTools !== 'boolean') throw new MayuraError('INVALID_CONFIG', 'strictTools must be true or false.');
@@ -522,6 +545,12 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
   };
   const inputPrice = options.pricing.inputMicrosPerMillionTokens; const outputPrice = options.pricing.outputMicrosPerMillionTokens;
   for (const amount of [options.maxCostMicros, inputPrice, outputPrice]) if (!Number.isSafeInteger(amount) || amount < 0) throw new MayuraError('INVALID_CONFIG', 'Configured costs must be non-negative safe integers.');
+  const long = options.pricing.longContext;
+  if (long && (!Number.isSafeInteger(long.aboveInputTokens) || long.aboveInputTokens < 1
+    || !Number.isSafeInteger(long.inputMicrosPerMillionTokens) || long.inputMicrosPerMillionTokens < inputPrice
+    || !Number.isSafeInteger(long.outputMicrosPerMillionTokens) || long.outputMicrosPerMillionTokens < outputPrice)) {
+    throw new MayuraError('INVALID_CONFIG', 'Long-context prices must be safe integers at least the standard prices.');
+  }
   const maxRequestBytes = options.maxRequestBytes ?? 1_048_576; const maxResponseBytes = options.maxResponseBytes ?? 1_048_576;
   const timeoutMs = options.timeoutMs ?? 30_000;
   assertPositiveInteger(maxRequestBytes, 'maxRequestBytes'); assertPositiveInteger(maxResponseBytes, 'maxResponseBytes'); assertPositiveInteger(timeoutMs, 'timeoutMs');
@@ -562,11 +591,21 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
         const headers: Record<string, string> = { ...extraHeaders, 'Content-Type': 'application/json' };
         const authorization = await credential(); if (authorization !== undefined) headers[authHeader] = authorization;
         const response = await abortable(transport(url, { method: 'POST', headers, body, signal, redirect: 'error' }).catch((): never => failed('unavailable')), signal);
-        const payload = onDelta ? await assembledCompletion(response, signal, onDelta) : await responseBody(response, maxResponseBytes, signal);
-        const usage = object(payload['usage']);
+        const reported = billing?.header === undefined ? null : response.headers.get(billing.header);
+        if (reported !== null) knownCost = usdMicros(reported);
+        // Settle usage before parsing output, including a stream that later fails. Never add alternative price sources.
+        const settle = (raw: JsonValue): void => {
+          const usage = object(raw);
+          if (billing?.usageField !== undefined && usage[billing.usageField] !== undefined && usage[billing.usageField] !== null) {
+            knownCost = Math.max(knownCost ?? 0, usdMicros(usage[billing.usageField]));
+          }
+          const cost = tokenCostMicros(options.pricing, integer(usage['prompt_tokens']), integer(usage['completion_tokens']));
+          if (cost === undefined) return failed();
+          knownCost = Math.max(knownCost ?? 0, cost);
+        };
+        const payload = onDelta ? await assembledCompletion(response, signal, onDelta, settle) : await responseBody(response, maxResponseBytes, signal);
+        const usage = object(payload['usage']); settle(usage);
         const inputTokens = integer(usage['prompt_tokens']); const outputTokens = integer(usage['completion_tokens']);
-        const cost = (BigInt(inputTokens) * BigInt(inputPrice) + BigInt(outputTokens) * BigInt(outputPrice) + 999_999n) / 1_000_000n;
-        if (cost > BigInt(Number.MAX_SAFE_INTEGER)) return failed(); knownCost = Number(cost);
         if (!Array.isArray(payload['choices']) || payload['choices'].length !== 1) return failed();
         const choice = object(payload['choices'][0]); const message = object(choice['message']);
         if (message['role'] !== 'assistant') return failed();
@@ -581,33 +620,33 @@ export function openAICompatibleChat(options: OpenAICompatibleChatOptions): Mode
           });
           // Keep this turn as the provider sent it (with any reasoning) for the next call of the run.
           const continuation = jsonValue({ provider: 'openai-compatible.chat.v1', model, endpoint: url, assistants: [...assistants, assistantTurn(message)] }, { maxBytes: maxRequestBytes });
-          return { type: 'tool_calls', calls, usage: { costMicros: knownCost, inputTokens, outputTokens }, continuation };
+          return { type: 'tool_calls', calls, usage: { costMicros: knownCost!, inputTokens, outputTokens }, continuation };
         }
         if (choice['finish_reason'] === 'length' || choice['finish_reason'] === 'content_filter' || typeof message['refusal'] === 'string') return failed('refused');
         if (choice['finish_reason'] === 'insufficient_system_resource' || choice['finish_reason'] === 'aborted') return failed('unavailable');
         if (choice['finish_reason'] !== 'stop' || typeof message['content'] !== 'string') return failed();
-        return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost, inputTokens, outputTokens } };
+        return { type: 'final', output: jsonValue(JSON.parse(message['content']), { maxBytes: maxResponseBytes }), usage: { costMicros: knownCost!, inputTokens, outputTokens } };
       } catch (error) {
-        if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost });
+        if (knownCost !== undefined) throw new ModelProviderError(reasonOf(error), { costMicros: knownCost, ...(error instanceof ModelProviderError && error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}) });
         if (request.signal.aborted || controller.signal.aborted || consumer?.aborted) throw new MayuraError('CANCELLED', 'Provider request was cancelled or timed out.');
         if (error instanceof ModelProviderError) throw error;
         // A schema the provider would refuse, or no output schema at all, is the agent's configuration.
         if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') return failed('configuration');
         return failed();
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); controller.abort(); }
   };
   /**
    * Rebuild the non-streamed completion from Chat Completions chunks: content deltas are reported as they arrive,
    * tool-call fragments are only assembled by index, and usage must arrive in a final chunk (`include_usage`).
    */
-  const assembledCompletion = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void): Promise<JsonObject> => {
+  const assembledCompletion = async (response: Response, signal: AbortSignal, onDelta: (text: string) => void, onUsage: (usage: JsonValue) => void): Promise<JsonObject> => {
     let content = ''; let reasoning = ''; let finish: JsonValue = null; let usage: JsonValue | undefined; let finished = false;
     const calls: { id?: JsonValue; name: string; arguments: string }[] = [];
     for await (const event of readServerSentEvents(response, { maxBytes: maxResponseBytes * 4, maxEventBytes: maxResponseBytes, signal })) {
       if (finished) return failed();
       if (event.data.trim() === '[DONE]') { finished = true; continue; }
       const chunk = object(jsonValue(JSON.parse(event.data), { maxBytes: maxResponseBytes }));
-      if (chunk['usage'] !== undefined && chunk['usage'] !== null) usage = chunk['usage'];
+      if (chunk['usage'] !== undefined && chunk['usage'] !== null) { usage = chunk['usage']; onUsage(usage); }
       const choices = chunk['choices'];
       if (!Array.isArray(choices) || choices.length > 1) return failed();
       if (choices.length === 0) continue;

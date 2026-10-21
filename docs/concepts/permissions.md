@@ -38,6 +38,7 @@ called.
 | Grant | Allows | Example |
 | --- | --- | --- |
 | `model:<adapter id>` | Calling that model adapter. Checked before every model call. | `model:openai.responses`, `model:anthropic.messages`, `model:scripted` |
+| `gateway:<id>:models` | Explicit bounded model discovery for a gateway provider. Does not grant inference or install prices. | `gateway:openrouter:models` |
 | `tool:<tool id>` | Calling that tool. | `tool:orders.lookup` |
 | `effect:read` | Calling tools with `effects: 'read'`. | |
 | `effect:write` | Calling tools with `effects: 'write'`. | |
@@ -153,3 +154,52 @@ gives each access token capabilities such as `runs:submit` and `workflows:read` 
 - [Outcomes and errors](./outcomes.md)
 - [Guardrails](../guides/guardrails.md)
 - [Security](../project/security.md)
+
+
+## Agent handoff authority
+
+A declared [handoff](../guides/agent-handoffs.md) requires the source grant `agent:<target id>`. Its host-owned edge
+contains the target's explicit permission list. Transfer replaces source authority with that list and keeps the same
+scope, budget, counters and deadline. The model cannot supply grants. This differs from child delegation: a child
+receives an intersection with its parent, while an authorized handoff enters a separate configured agent role.
+
+
+## Resource authorization
+
+[Fine-grained authorization](../guides/authorization.md) decides whether a verified principal may perform an action
+on a particular scoped resource. The host calls `authorizer.require` before its operation. The separate
+`authz:evaluate` grant admits bounded policy evaluation; policy action names do not mint execution grants. Built-in
+RBAC lives at `mayura/authz`. An allow decision still requires the operation's ordinary run grants, server capability,
+limits and approvals. No role membership is taken from model or request-body claims.
+
+`authz:audit` separately permits explicitly configured authorization audit delivery. The sink receives validated
+identity and resource identifiers, so configure a trusted destination. Missing this grant with `audit` configured
+fails construction; it does not silently enable delivery. Sink failures do not grant or revoke access. See
+[authorization audit events](../guides/authorization.md#authorization-audit-events).
+
+`authz:http` permits explicitly configured external authorization requests through `@mayurajs/authz-http`. It permits
+no protected operation itself, does not replace `authz:evaluate`, and does not admit audit delivery. Without it,
+remote checks deny before I/O. See [HTTP authorization policies](../integrations/authz-http.md).
+
+Runtime `authorization` and tool/batch invocation `authorization` accept a host-owned core authorizer. Scoped
+`agent/execute`, `run/execute` and `tool/execute` decisions add gates; they do not mint `model:*`, `tool:*`, effect,
+child or handoff grants. Approval does not override current execution policy. See
+[agent runs and tool execution](../guides/authorization.md#agent-runs-and-tool-execution).
+
+
+## Checkpointed frontend-result recovery
+
+[AG-UI frontend tools](../guides/ag-ui.md#safe-native-owner-recovery) require `ag-ui:frontend-recover` in the host's
+`nativeRecovery.permissions`, alongside a shared journal with `frontend-tools:store`. Browser recovery requests
+require the separate `runs:resume` capability and core `run/resume_tool` policy. This does not grant human approval
+or permit replaying browser writes. Trusted scanner recovery uses `conversations:recover` plus an explicit
+`kind: 'frontend'` policy decision. Existing tool/effect/model grants, continuing budgets and output guards remain
+in force. A consumed checkpoint is never recreated to repeat uncertain paid work.
+
+## Retrieval capabilities
+
+[RAG](../guides/rag.md) requires `rag:read` for retrieval, `rag:index` for ingestion/deletion, `rag:embed` for hosted
+embeddings, `rag:reconcile` for verified claim recovery and `rag:admin` for explicit SQL schema setup. Native
+transports require `rag:transport:<provider>`; expansion, reranking and contextualization require
+`rag:transform:<id>`, `rag:rerank:<id>` and `rag:contextualize:<id>`. HTML/PDF parser dispatch requires
+`rag:load:html` / `rag:load:pdf`. Capability grants do not replace per-document authorization or sensitivity limits.

@@ -1,0 +1,1 @@
+export default defineNuxtConfig({ compatibilityDate: '2026-10-20', css: ['~/../src/style.css'], devServer: { port: 3000 }, nitro: { preset: 'node-server', rollupConfig: { external: [/^mayura(?:\/|$)/, /^@mayura\//] }, externals: { external: ['mayura', /^mayura\//, /^@mayura\//, 'better-sqlite3', 'pg'] } } });

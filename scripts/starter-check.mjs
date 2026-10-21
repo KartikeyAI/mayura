@@ -19,6 +19,7 @@ import { gunzipSync } from 'node:zlib';
 import { compilerPlatform, createPacker, environment, inside, installedDirectory, run, workspace } from './local-packages.mjs';
 import { applyProjectPlan, planStarter, readProject, STARTER_NAMES } from '../packages/cli/dist/index.js';
 import { workDirectory } from './work-directory.mjs';
+import { isFramework, buildFramework, frameworkTests, bootFramework } from './framework-starters.mjs';
 
 const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
 const only = argument('--only'); const skipPacked = process.argv.includes('--skip-packed');
@@ -33,6 +34,12 @@ const freePort = () => new Promise((resolvePort, reject) => { const server = cre
 const reports = [];
 for (const starter of selected) {
   const directory = join(workspace, 'packages', 'cli', 'starters', starter); const started = performance.now();
+  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+  if (isFramework(manifest)) {
+    const tests = await frameworkTests(directory); await buildFramework(directory);
+    reports.push({ starter, framework: true, workspace: { tests: tests.stdout.trim().split(/\r?\n/u).at(-1) ?? '', web: 'built', boot: await bootFramework(starter, directory), ms: Math.round(performance.now() - started) } });
+    continue;
+  }
   const compiler = join(workspace, 'node_modules', 'typescript', 'bin', 'tsc');
   await run([compiler, '-p', join(directory, 'tsconfig.json'), '--pretty', 'false'], directory);
   const tests = await run(['--test', '--test-reporter=dot', 'dist/test/*.test.js'], directory, { timeout: 300_000 });
@@ -70,10 +77,14 @@ if (!skipPacked) {
     assert.equal(manifest.dependencies.mayura, cliVersion, `${starter} must pin mayura to the CLI's version.`);
     for (const field of ['dependencies', 'devDependencies']) for (const name of Object.keys(manifest[field] ?? {})) assert(!name.startsWith('@mayura/'), `${starter} still depends on ${name}.`);
     const source = join(workspace, 'packages', 'cli', 'starters', starter);
-    const development = Object.keys(manifest.devDependencies ?? {}).filter(name => packedDevelopment.has(name));
-    const allowed = await packClosure([...Object.keys(manifest.dependencies), ...development].map(name => [name, source]).concat([[compilerPlatform, join(workspace, 'node_modules', '.pnpm')]]));
+    // Framework web toolchains are built and booted above. As with existing Vite starters, packed qualification
+    // installs the generated server contract offline; it never silently fetches a framework toolchain from npm.
+    const framework = isFramework(manifest);
+    if (framework) manifest.dependencies = Object.fromEntries(Object.entries(manifest.dependencies).filter(([name]) => ['mayura', 'better-sqlite3', 'pg', '@mayurajs/storage-d1'].includes(name)));
+    const development = framework ? [] : Object.keys(manifest.devDependencies ?? {}).filter(name => packedDevelopment.has(name));
+    const allowed = await packClosure([...Object.keys(manifest.dependencies), ...development].map(name => [name, source]).concat(framework ? [] : [[compilerPlatform, join(workspace, 'node_modules', '.pnpm')]]));
     manifest.dependencies = Object.fromEntries(Object.keys(manifest.dependencies).map(name => [name, packages.get(name).archive]));
-    manifest.devDependencies = Object.fromEntries([...development, compilerPlatform].map(name => [name, packages.get(name).archive]));
+    manifest.devDependencies = Object.fromEntries([...development, ...(framework ? [] : [compilerPlatform])].map(name => [name, packages.get(name).archive]));
     manifest.overrides = Object.fromEntries([...allowed].map(name => [name, packages.get(name).archive]));
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const config = join(directory, 'empty.npmrc'); await writeFile(config, '');
@@ -87,6 +98,11 @@ if (!skipPacked) {
     const project = await realpath(directory);
     for (const name of installed) assert(inside(project, await realpath(join(directory, 'node_modules', name))), `${starter} dependency escaped its installation.`);
 
+    if (framework) {
+      const tests = await frameworkTests(directory);
+      report.packed = { dependencies: installed.size, tests: tests.stdout.trim().split(/\r?\n/u).at(-1) ?? '', serverContract: 'passed', frameworkBuild: 'workspace', ms: Math.round(performance.now() - started) };
+      continue;
+    }
     await run([join(directory, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(directory, 'tsconfig.json'), '--pretty', 'false'], directory);
     const tests = await run(['--test', '--test-reporter=dot', 'dist/test/*.test.js'], directory, { timeout: 300_000 });
     report.packed = { dependencies: installed.size, tests: tests.stdout.trim().split(/\r?\n/u).at(-1) ?? '', boot: await boot(starter, directory), ms: Math.round(performance.now() - started) };

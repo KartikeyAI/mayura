@@ -49,7 +49,8 @@
     "secret-scan": "node scripts/secret-scan.mjs",
     "sbom": "node scripts/sbom.mjs",
     "release:publish": "node scripts/publish-staged.mjs",
-    "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs"
+    "code-sandbox:promote": "node scripts/code-sandbox-promote.mjs",
+    "gateways:live-check": "node scripts/gateway-live-check.mjs"
   },
   "devDependencies": {
     "@better-auth/api-key": "1.7.7",
@@ -169,6 +170,8 @@
     "@mayurajs/voice-google": "workspace:*",
     "@mayurajs/voice-openai": "workspace:*",
     "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/resources": "2.9.0",
+    "@opentelemetry/sdk-trace-base": "2.9.0",
     "@smithy/signature-v4": "5.7.4",
     "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",
@@ -195,6 +198,27 @@
     "vite": "8.3.0",
     "vitest": "5.0.1",
     "workerd": "1.20260927.1",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@mayura/rag": "workspace:*",
+    "@mayurajs/authz-cedar": "workspace:*",
+    "@mayurajs/authz-http": "workspace:*",
+    "@mayurajs/authz-openfga": "workspace:*",
+    "@mayurajs/authz-oso": "workspace:*",
+    "@mayurajs/authz-permit": "workspace:*",
+    "@mayurajs/gateway-cloudflare": "workspace:*",
+    "@mayurajs/gateway-helicone": "workspace:*",
+    "@mayurajs/gateway-litellm": "workspace:*",
+    "@mayurajs/gateway-openrouter": "workspace:*",
+    "@mayurajs/gateway-portkey": "workspace:*",
+    "@mayurajs/gateway-vercel": "workspace:*",
+    "@mayurajs/reranker-cohere": "workspace:*",
+    "@mayurajs/reranker-jina": "workspace:*",
+    "@mayurajs/reranker-voyage": "workspace:*",
+    "@mayurajs/vector-chroma": "workspace:*",
+    "@mayurajs/vector-libsql": "workspace:*",
+    "@mayurajs/vector-pgvector": "workspace:*",
+    "@mayurajs/vector-pinecone": "workspace:*",
+    "@mayurajs/vector-qdrant": "workspace:*",
+    "@mayurajs/vector-weaviate": "workspace:*"
   }
 }

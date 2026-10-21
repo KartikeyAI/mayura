@@ -304,3 +304,5 @@ export function ollama(options: OllamaProviderOptions = {}): ModelProvider {
     },
   });
 }
+
+export { ollamaEmbeddings, type EmbeddingsOptions } from './embeddings.js';

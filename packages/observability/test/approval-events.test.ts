@@ -23,3 +23,15 @@ describe('approval events', () => {
     for (const event of bad) expect(() => eventSnapshot({ ...base, ...event }), JSON.stringify(event)).toThrow();
   });
 });
+
+
+it('accepts history counts and approval observer correlation while refusing content', () => {
+  const metadata = { entries: 2, omitted: 4, bytes: 100, scanTruncated: true };
+  expect(eventSnapshot({ ...base, type: 'history.applied', metadata }).metadata).toEqual(metadata);
+  expect(() => eventSnapshot({ ...base, type: 'history.applied', metadata: { ...metadata, messages: 'PRIVATE' } })).toThrow();
+  expect(() => eventSnapshot({ ...base, type: 'history.applied', metadata: { ...metadata, entries: -1 } })).toThrow();
+  const hook = { hookId: 'notify', hookVersion: '1', stage: 'onApprovalRequested', invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', step: 0, attempt: 1 };
+  expect(eventSnapshot({ ...base, type: 'hook.completed', metadata: { ...hook, status: 'continued' } }).metadata['stage']).toBe('onApprovalRequested');
+  expect(() => eventSnapshot({ ...base, type: 'hook.completed', metadata: { ...hook, status: 'continued', input: 'PRIVATE' } })).toThrow();
+  expect(eventSnapshot({ ...base, type: 'run.started', metadata: { profile: 'ephemeral', history: 2 } }).type).toBe('run.started');
+});

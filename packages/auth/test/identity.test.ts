@@ -19,7 +19,7 @@ describe('identity', () => {
   it('lists exactly the capabilities the server knows', () => {
     // Every listed capability is one the server type allows, and the list has them all.
     const typed: readonly ServerIdentity['capabilities'][number][] = serverCapabilities;
-    expect(new Set(typed).size).toBe(10);
+    expect(new Set(typed).size).toBe(17);
   });
 
   it('makes principal ids the server accepts, keeping subjects readable where it can', () => {

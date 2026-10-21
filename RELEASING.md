@@ -14,6 +14,13 @@ RAG and voice) are published as separate npm packages from the same release, in 
 dependencies must be listed there, reviewed, before a release accepts them. `pnpm test:bundle` also installs each
 extension offline next to the bundle and type-checks it, and `mayura` is published first.
 
+## V1.2 preparation
+
+The [V1.2 validation status](docs/guides/release-readiness.md) records completed local checks and remaining
+qualifications. Local reruns are not a replacement for the required CI matrix. Preserve the documented experimental
+AG-UI/RAG status and avoid claiming unqualified real-service or browser interoperability. Rebuild versioned release
+artifacts from the final reviewed commit; local qualification archives are not the publishable V1.2 release.
+
 ## How a release happens
 
 1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and

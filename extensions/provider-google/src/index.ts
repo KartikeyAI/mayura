@@ -305,3 +305,5 @@ export function google(options: GoogleProviderOptions): ModelProvider {
     },
   });
 }
+
+export { googleEmbeddings, type EmbeddingsOptions } from './embeddings.js';

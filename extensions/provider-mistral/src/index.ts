@@ -350,3 +350,5 @@ export function mistral(options: MistralProviderOptions): ModelProvider {
     },
   });
 }
+
+export { mistralEmbeddings, type EmbeddingsOptions } from './embeddings.js';

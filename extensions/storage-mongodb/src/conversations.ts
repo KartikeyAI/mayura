@@ -58,6 +58,7 @@ export function mongoConversationPersistence(db: Db, transaction: Transaction): 
       await checkpoints.createIndexes([
         { key: { runId: 1 }, name: 'mayura_run_checkpoints_id', unique: true },
         { key: { status: 1, expiresAtMs: 1 }, name: 'mayura_run_checkpoints_due' },
+        { key: { expiresAtMs: 1, runId: 1 }, name: 'mayura_run_checkpoints_scan', collation: { locale: 'simple' } },
       ]);
       await parts.createIndexes([{ key: { runId: 1, part: 1 }, name: 'mayura_run_checkpoint_parts_part', unique: true }]);
     },
@@ -116,6 +117,10 @@ export function mongoConversationRows(db: Db, session: ClientSession, skew: numb
       await parts.deleteMany({ runId: row.run_id }, { session });
       await checkpoints.deleteOne({ runId: row.run_id }, { session });
     },
+    scanCheckpoints: async (after, limit) => (await checkpoints.find(after ? { $or: [
+      { expiresAtMs: { $gt: after.expiresAtMs } }, { expiresAtMs: after.expiresAtMs, runId: { $gt: after.runId } },
+    ] } : {}, { projection: { _id: 0, runId: 1, expiresAtMs: 1 }, collation: { locale: 'simple' }, session }).sort({ expiresAtMs: 1, runId: 1 }).limit(limit).toArray())
+      .map(item => ({ runId: item.runId, expiresAtMs: item.expiresAtMs })),
     dueCheckpoints: async (expiresBeforeMs, limit) => (await checkpoints.find({ status: 'waiting', expiresAtMs: { $lt: expiresBeforeMs } },
       { projection: { _id: 0, runId: 1 }, session }).sort({ expiresAtMs: 1, runId: 1 }).limit(limit).toArray()).map(item => item.runId),
   };

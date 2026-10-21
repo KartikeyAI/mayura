@@ -277,3 +277,111 @@ describe('in-run approvals', () => {
     }
   });
 });
+
+
+it('notifies the approval observer with frozen metadata before publishing, without granting execution', async () => {
+  const seen: unknown[] = [];
+  const hook = defineHook({ id: 'notify', version: '1', stage: 'onApprovalRequested', handler: (event, context) => {
+    expect(Object.isFrozen(event)).toBe(true); expect(Object.isFrozen(context)).toBe(true);
+    expect(event).not.toHaveProperty('input'); expect(context).not.toHaveProperty('approve'); seen.push(event);
+  } });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('notify', 40), done('ok')]);
+  const engine = start({ permissions: grants(model) });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+  const pending = await requested(run); expect(execute).not.toHaveBeenCalled();
+  expect(seen).toEqual([{ stage: 'onApprovalRequested', callId: 'notify', toolId: tool.id, toolVersion: tool.version,
+    digest: pending.metadata['digest'], expiresAtMs: pending.metadata['expiresAtMs'] }]);
+  await engine.approve(run, { callId: 'notify', digest: String(pending.metadata['digest']), decision: 'approved', actorId: 'reviewer' });
+  expect((await run.result()).status).toBe('succeeded'); expect(execute).toHaveBeenCalledTimes(1);
+  const events = await eventsOf(run); const notified = events.findIndex(event => event.type === 'hook.completed' && event.metadata['stage'] === 'onApprovalRequested');
+  expect(notified).toBeLessThan(events.findIndex(event => event.type === 'approval.requested'));
+});
+
+it('blocks mandatory observer failure before creating a pending approval or writing a tool', async () => {
+  const hook = defineHook({ id: 'required-notification', version: '1', stage: 'onApprovalRequested', mandatory: true,
+    handler: () => { throw new Error('PRIVATE notification credential'); } });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('mandatory', 40)]);
+  const engine = start({ permissions: grants(model) });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+  expect(await run.result()).toMatchObject({ status: 'blocked', error: { code: 'GUARD_UNAVAILABLE' } });
+  expect(execute).not.toHaveBeenCalled(); expect(engine.inspect(run).approval).toBeUndefined();
+  const events = await eventsOf(run); expect(events.some(event => event.type === 'approval.requested')).toBe(false);
+  expect(JSON.stringify(events)).not.toContain('PRIVATE');
+});
+
+it('reports an optional observer failure and continues to require a human answer', async () => {
+  const hook = defineHook({ id: 'optional-notification', version: '1', stage: 'onApprovalRequested', handler: () => { throw new Error('PRIVATE'); } });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('optional', 40), done('declined')]);
+  const engine = start({ permissions: grants(model) });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+  const pending = await requested(run); expect(execute).not.toHaveBeenCalled();
+  await engine.approve(run, { callId: 'optional', digest: String(pending.metadata['digest']), decision: 'rejected', actorId: 'reviewer' });
+  expect((await run.result()).status).toBe('succeeded'); expect(execute).not.toHaveBeenCalled();
+  expect((await eventsOf(run)).some(event => event.type === 'hook.completed' && event.metadata['stage'] === 'onApprovalRequested' && event.metadata['status'] === 'failed')).toBe(true);
+});
+
+it('cancels an approval observer without publishing a pending request', async () => {
+  let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
+  const hook = defineHook({ id: 'cancel-notification', version: '1', stage: 'onApprovalRequested', mandatory: true,
+    handler: async (_event, { signal }) => { entered(); await new Promise<void>(resolve => {
+      if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true });
+    }); } });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('cancel-notification', 40)]);
+  const engine = start({ permissions: grants(model) });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+  await started; run.cancel(); expect((await run.result()).status).toBe('cancelled'); expect(execute).not.toHaveBeenCalled();
+  expect((await eventsOf(run)).some(event => event.type === 'approval.requested')).toBe(false);
+});
+
+it('does not notify an approval observer for a statically denied tool proposal', async () => {
+  const notified = vi.fn(); const hook = defineHook({ id: 'denied', version: '1', stage: 'onApprovalRequested', handler: notified });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('denied', 40)]);
+  const engine = start({ permissions: { allow: ['model:scripted'] } });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+  expect((await run.result()).status).toBe('blocked'); expect(notified).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+});
+
+
+it('bounds mandatory approval notification by its hook timeout before publishing', async () => {
+  vi.useFakeTimers();
+  try {
+    let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
+    const hook = defineHook({ id: 'notification-timeout', version: '1', stage: 'onApprovalRequested', mandatory: true, timeoutMs: 20,
+      handler: async (_event, { signal }) => { entered(); await new Promise<void>(resolve => {
+        if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true });
+      }); } });
+    const { tool, execute } = refundTool(); const model = scriptedModel([call('timeout-notification', 40)]);
+    const engine = start({ permissions: grants(model) });
+    const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+    await started; await vi.advanceTimersByTimeAsync(21);
+    expect(await run.result()).toMatchObject({ status: 'blocked', error: { code: 'GUARD_UNAVAILABLE' } });
+    expect(execute).not.toHaveBeenCalled(); expect((await eventsOf(run)).some(event => event.type === 'approval.requested')).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
+
+
+it('uses the candidate absolute expiry after observer time instead of granting another full waiting interval', async () => {
+  vi.useFakeTimers();
+  try {
+    const hook = defineHook({ id: 'delayed-notification', version: '1', stage: 'onApprovalRequested', handler: async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 5));
+    } });
+    const { tool, execute } = refundTool(); const model = scriptedModel([call('absolute-expiry', 40), done('expired')]);
+    const engine = start({ permissions: grants(model), approvals: { expiresInMs: 20 } });
+    const run = engine.submit(agentWith(model, [tool], { hooks: [hook] }), { input: { question: 'Refund' } });
+    await vi.advanceTimersByTimeAsync(21);
+    expect((await run.result()).status).toBe('succeeded'); expect(execute).not.toHaveBeenCalled();
+    expect((await eventsOf(run)).some(event => event.type === 'approval.resolved' && event.metadata['decision'] === 'expired')).toBe(true);
+  } finally { vi.useRealTimers(); }
+});
+
+
+it('applies the continuing hook-call allowance to approval observers', async () => {
+  const before = defineHook({ id: 'use-allowance', version: '1', stage: 'beforeExecution', tools: [], handler: () => ({ decision: 'continue' }) });
+  const notified = vi.fn(); const hook = defineHook({ id: 'limited-notification', version: '1', stage: 'onApprovalRequested', mandatory: true, handler: notified });
+  const { tool, execute } = refundTool(); const model = scriptedModel([call('limited-notification', 40)]);
+  const engine = start({ permissions: grants(model), limits: { maxHookCalls: 1 } });
+  const run = engine.submit(agentWith(model, [tool], { hooks: [before, hook] }), { input: { question: 'Refund' } });
+  expect(await run.result()).toMatchObject({ status: 'blocked', error: { code: 'GUARD_UNAVAILABLE' } });
+  expect(notified).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+});

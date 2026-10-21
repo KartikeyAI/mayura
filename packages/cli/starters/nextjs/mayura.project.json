@@ -1,0 +1,37 @@
+{
+  "format": "mayura.project.v1",
+  "name": "mayura-nextjs",
+  "template": "nextjs",
+  "definitions": [
+    {
+      "kind": "agent",
+      "id": "notebook.assistant",
+      "version": "1",
+      "source": "server/application.mjs"
+    },
+    {
+      "kind": "workflow",
+      "id": "notes.follow-up",
+      "version": "1",
+      "source": "server/workflows.mjs"
+    }
+  ],
+  "tools": [
+    {
+      "id": "notes.save",
+      "version": "1",
+      "effects": "write",
+      "capabilities": [
+        "notes:write"
+      ]
+    },
+    {
+      "id": "notes.index",
+      "version": "1",
+      "effects": "write",
+      "capabilities": [
+        "notes:index"
+      ]
+    }
+  ]
+}

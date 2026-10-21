@@ -49,7 +49,7 @@ export async function bundle(output) {
     assert(existsSync(join(directory, 'dist')), `Build @mayura/${name} first (pnpm build).`);
     // What this package publishes: its dist, sources for maps, and any assets its `files` name (templates, starters, image).
     const roots = new Set(['dist', 'src', ...(manifest.files ?? []).map(pattern => String(pattern).split('/')[0]).filter(item => item && !item.includes('*'))]);
-    const kept = path => { const parts = relative(directory, path).split(sep); return !parts.slice(1).some(part => ['node_modules', '.data', 'coverage', 'dist'].includes(part) || part.endsWith('.tsbuildinfo')); };
+    const kept = path => { const parts = relative(directory, path).split(sep); return !parts.slice(1).some(part => ['node_modules', '.data', 'coverage', 'dist'].includes(part) || part.endsWith('.tsbuildinfo') || parts[0] === 'starters' && (part.startsWith('.') || part === 'build')); };
     for (const item of [...roots].sort()) if (!['README.md', 'LICENSE', 'NOTICE', 'package.json'].includes(item) && existsSync(join(directory, item))) {
       await cp(join(directory, item), join(output, 'lib', name, item), { recursive: true, filter: kept });
     }

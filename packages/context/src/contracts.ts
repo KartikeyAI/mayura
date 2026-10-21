@@ -1,4 +1,4 @@
-import type { JsonValue, LifecycleControl, Scope } from '@mayura/core';
+import type { Authorizer, JsonValue, LifecycleControl, Scope } from '@mayura/core';
 
 export type ContextKind = 'evidence' | 'instruction' | 'hard_constraint' | 'pending_approval' | 'unresolved_blocker' | 'outstanding_task';
 export type ContextTrust = 'untrusted' | 'reviewed' | 'trusted';
@@ -46,6 +46,8 @@ export interface ContextBudget {
 /** Trusted local deterministic estimator, not a paid model call or a guaranteed tokenizer. */
 export interface TokenEstimator { readonly id: string; estimate(serialized: string): number }
 export interface AssembleContextOptions {
+  /** Host-owned core authorizer. Memory sources use memory/read; other sources use rag_document/read. */
+  readonly authorization?: Authorizer;
   readonly scope: Scope;
   readonly policyVersion: string;
   readonly candidates: readonly ContextCandidate[];
@@ -93,11 +95,11 @@ export interface ContextItem extends Omit<ContextCandidate, 'content' | 'pinned'
   readonly required: boolean;
   readonly contentDigest: string;
 }
-export type ExclusionReason = 'scope_mismatch' | 'sensitivity_denied' | 'source_missing' | 'source_deleted' | 'stale_revision' | 'not_yet_valid' | 'expired' | 'byte_budget' | 'token_budget';
+export type ExclusionReason = 'authorization_denied' | 'scope_mismatch' | 'sensitivity_denied' | 'source_missing' | 'source_deleted' | 'stale_revision' | 'not_yet_valid' | 'expired' | 'byte_budget' | 'token_budget';
 export interface ContextExclusion {
   readonly position: number;
   readonly reason: ExclusionReason;
-  /** Omitted for scope or sensitivity denials; excluded content is never returned. */
+  /** Omitted for scope, sensitivity or authorization denials; excluded content is never returned. */
   readonly candidateId?: string;
   readonly sourceId?: string;
   readonly revision?: string;

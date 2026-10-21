@@ -21,7 +21,9 @@ export function environment(extra = {}) {
   const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'COREPACK_HOME']);
   return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase()))),
     COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_ignore_scripts: 'true',
-    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false', ...extra };
+    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
+    // Keep offline qualification writes in the workspace, including the initial npm pack.
+    npm_config_cache: join(workspace, '.artifacts', 'npm-cache'), ...extra };
 }
 export async function run(args, cwd, { timeout = 120_000, env } = {}) {
   try { return await exec(process.execPath, args, { cwd, env: environment(env), timeout, windowsHide: true, maxBuffer: 16 * 1_048_576 }); }

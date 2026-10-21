@@ -1,34 +1,44 @@
+import { validHistoryEvent } from './history-event.js';
 /** Browser-safe wire values; this package has no privileged runtime or Node imports. */
+import { conversationMethods, approvalEvent, readApproval, approvalCommand, type ConversationClient, type RemoteApproval, type RunApprovalCommand } from './conversations.js';
+export type { ThreadCompactionInput, RemoteThreadCompaction, RemoteThreadCompactionResult, RemoteThreadCompactionCancellation, ConversationClient, RemoteThread, RemoteThreadEntry, RemoteThreadSummaryProvenance, RemoteThreadPage, ThreadListOptions, ThreadEntriesOptions, ThreadCreateInput, ThreadUpdateInput, RemoteApproval, RunApprovalCommand } from './conversations.js';
 import type { WorkflowViewFormat, WorkflowViewInput, WorkflowViewNodeKind, WorkflowViewRunStatus } from './workflows.js';
 
 export type ClientJson = null | boolean | number | string | readonly ClientJson[] | { readonly [key: string]: ClientJson };
 export interface ClientSchema<T> {
   readonly '~standard': { readonly version: 1; validate(value: unknown): { readonly value: T; readonly issues?: undefined } | { readonly issues: readonly unknown[] } | PromiseLike<{ readonly value: T; readonly issues?: undefined } | { readonly issues: readonly unknown[] }> };
 }
-export type RemoteStatus = 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type RemoteStatus = 'waiting' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 export type RemoteOutcome<T> = { readonly status: 'succeeded'; readonly output: T; readonly evidence: readonly RemoteReceipt[] }
-  | { readonly status: Exclude<RemoteStatus, 'running' | 'succeeded'>; readonly error: { readonly code: string }; readonly evidence: readonly RemoteReceipt[] };
+  | { readonly status: Exclude<RemoteStatus, 'running' | 'waiting' | 'succeeded'>; readonly error: { readonly code: string }; readonly evidence: readonly RemoteReceipt[] };
 export interface RemoteReceipt {
   readonly runId: string;
   readonly receipt: { readonly callId: string; readonly toolId: string; readonly execution: 'not_started' | 'succeeded' | 'failed' | 'unknown'; readonly disclosure: 'released' | 'withheld' };
 }
 export interface RemoteSnapshot {
   readonly id: string; readonly status: RemoteStatus;
+  readonly approval?: RemoteApproval;
+  /** External-result wait. It cannot be answered as a human approval. */
+  readonly toolWait?: RemoteApproval;
   readonly budget: { readonly spentMicros: number | string; readonly reservedMicros: number; readonly calls: number };
   readonly evidence: readonly RemoteReceipt[];
 }
 export interface ClientEvent {
   readonly runId: string; readonly sequence: number; readonly timestamp: string;
-  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
+  readonly type: 'run.started' | 'history.applied' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
-    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
+    | 'approval.requested' | 'approval.resolved' | 'run.paused' | 'run.resumed' | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RemoteRun {
   readonly id: string;
   inspect(options?: { readonly signal?: AbortSignal }): Promise<RemoteSnapshot>;
-  /** Returns undefined while running; terminal output requires a wire-output schema. No polling/retry is implicit. */
+  /** Returns undefined while running or waiting; terminal output requires a wire-output schema. No polling/retry is implicit. */
   result<T>(schema: ClientSchema<T>, options?: { readonly signal?: AbortSignal }): Promise<RemoteOutcome<T> | undefined>;
+  /** Answer the exact approval inspected by the caller. Never retried implicitly. */
+  approve(command: RunApprovalCommand, options?: { readonly signal?: AbortSignal }): Promise<void>;
+  /** Wake one checkpointed external tool wait; no result data or paid request is replayed. Never retried implicitly. */
+  resumeTool(command: { readonly callId: string; readonly digest: string }, options?: { readonly signal?: AbortSignal }): Promise<void>;
   cancel(options?: { readonly signal?: AbortSignal }): Promise<void>;
   /**
    * The run's metadata events from `after`. Reconnects transparently (see `EventOptions.reconnect`) until the run's
@@ -98,14 +108,14 @@ export interface ClientOptions {
 export interface RemoteSession {
   readonly scope: { readonly principalId: string; readonly projectId: string };
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond'
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'runs:approve' | 'runs:resume' | 'threads:read' | 'threads:write' | 'threads:delete' | 'threads:compact' | 'threads:import' | 'operations:read' | 'humans:read' | 'humans:respond'
     | 'workflows:read' | 'workflows:control' | 'workflows:fleet' | 'workflows:migrate')[];
   readonly expiresAtMs: number;
   /** Optional server APIs this token can use, by server option name, for example `workflowIndex` or `runRecords`. */
   readonly features: readonly RemoteFeature[];
 }
 export type RemoteFeature = 'humanRequests' | 'workflowIndex' | 'workflowViews' | 'workflowControls' | 'workflowSignals' | 'workflowResumes'
-  | 'workflowPauses' | 'workflowFleet' | 'workflowMigrations' | 'runRecords';
+  | 'workflowPauses' | 'workflowFleet' | 'workflowMigrations' | 'runRecords' | 'threads' | 'runApprovals' | 'toolContinuations' | 'threadCompaction' | 'authorization';
 /** Passed to `onReconnect` before an event stream reconnects. */
 export interface EventReconnect {
   /** Consecutive failed attempts so far (0 when the server simply ended a stream that made progress). */
@@ -126,7 +136,7 @@ export interface EventOptions {
   /** Called before each reconnect, for example to show a "reconnecting" state. Errors it throws are ignored. */
   readonly onReconnect?: (reconnect: EventReconnect) => void;
 }
-export interface MayuraClient {
+export interface MayuraClient extends ConversationClient {
   /** What the token may do: its scope, agents, capabilities, expiry and the optional APIs the server offers it. */
   session(options?: { readonly signal?: AbortSignal }): Promise<RemoteSession>;
   agents(options?: { readonly signal?: AbortSignal }): Promise<readonly { readonly id: string; readonly version: string }[]>;
@@ -134,7 +144,7 @@ export interface MayuraClient {
    * Start a run. `media` holds images or PDFs for an agent that accepts them: bytes (such as `media(...)` from mayura,
    * or a file's bytes), an https URL, or a stored artifact reference.
    */
-  submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[] }): Promise<RemoteRun>;
+  submit(agentId: string, input: unknown, options: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[]; readonly threadId?: string }): Promise<RemoteRun>;
   run(id: string): RemoteRun;
   humanRequests(options?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }): Promise<RemoteHumanRequestPage>;
   humanRequest(id: string, options?: { readonly signal?: AbortSignal }): Promise<RemoteHumanRequest>;
@@ -253,13 +263,13 @@ const clientMessages: Readonly<Record<string, string>> = Object.freeze({
 const serverErrorCodes: ReadonlySet<string> = new Set(['AUTH_REQUIRED', 'AUTH_INVALID', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT',
   'IDENTITY_INVALID', 'CAPABILITY_REQUIRED', 'ORIGIN_DENIED', 'PREFLIGHT_DENIED', 'INVALID_DESTINATION', 'INVALID_QUERY', 'INVALID_CURSOR',
   'INVALID_JSON', 'INVALID_REQUEST', 'INVALID_MEDIA', 'IDEMPOTENCY_KEY_REQUIRED', 'UNSUPPORTED_MEDIA_TYPE', 'BODY_TOO_LARGE', 'ROUTE_NOT_FOUND', 'METHOD_NOT_ALLOWED',
-  'NOT_ENABLED', 'AGENT_NOT_FOUND', 'RUN_NOT_FOUND', 'HUMAN_REQUEST_NOT_FOUND', 'WORKFLOW_RUN_NOT_FOUND', 'MIGRATION_NOT_FOUND', 'REQUEST_TIMEOUT',
+  'AUTHORIZATION_DENIED', 'THREAD_COMPACTION_NOT_FOUND', 'THREAD_COMPACTION_LIMIT', 'THREAD_COMPACTION_CANCELLED', 'THREAD_NOT_FOUND', 'THREAD_CONFLICT', 'CONVERSATION_UNAVAILABLE', 'APPROVAL_CONFLICT', 'TOOL_CONTINUATION_CONFLICT', 'NOT_ENABLED', 'AGENT_NOT_FOUND', 'RUN_NOT_FOUND', 'HUMAN_REQUEST_NOT_FOUND', 'WORKFLOW_RUN_NOT_FOUND', 'MIGRATION_NOT_FOUND', 'REQUEST_TIMEOUT',
   'IDEMPOTENCY_CONFLICT', 'SUBMISSION_IN_PROGRESS', 'SUBMISSION_OUTCOME_UNKNOWN', 'RUN_EXPIRED', 'WORKFLOW_CONFLICT', 'FLEET_CONFLICT',
   'MIGRATION_REFUSED', 'REQUEST_LIMIT', 'STREAM_LIMIT', 'RUN_LIMIT', 'RUNTIME_LIMIT', 'HUMAN_LIMIT', 'WORKFLOW_LIMIT', 'SERVER_CLOSED',
   'SERVICE_UNAVAILABLE', 'SUBMISSION_JOURNAL_UNAVAILABLE', 'RUN_RECORDS_UNAVAILABLE', 'HUMAN_UNAVAILABLE', 'HUMAN_TRANSPORT_INVALID',
   'WORKFLOW_UNAVAILABLE', 'WORKFLOW_TRANSPORT_INVALID', 'RESPONSE_TOO_LARGE', 'OBSERVATION_FAILED', 'INTERNAL_ERROR', 'HOST_UNAVAILABLE',
   'MISDIRECTED_REQUEST']);
-const capabilityNames: readonly string[] = ['runs:read', 'runs:submit', 'runs:cancel', 'operations:read', 'humans:read', 'humans:respond',
+const capabilityNames: readonly string[] = ['runs:read', 'runs:submit', 'runs:cancel', 'runs:approve', 'runs:resume', 'threads:read', 'threads:write', 'threads:delete', 'threads:compact', 'threads:import', 'operations:read', 'humans:read', 'humans:respond',
   'workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate'];
 /** A server error body `{ error: { code, message, ...details } }`, or null when it is not one. Nothing else is read from it. */
 function serverError(value: unknown, status: number, retryAfter: string | null): ClientError | null {
@@ -328,9 +338,9 @@ export function escapeHtmlText(value: string, maxBytes = 1_048_576): string {
   if (encoder.encode(value).length > maxBytes) throw new ClientError('RESPONSE_LIMIT');
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
-const statuses: readonly string[] = ['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
-const eventTypes: readonly string[] = ['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld'];
+const statuses: readonly string[] = ['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'];
+const eventTypes: readonly string[] = ['run.started', 'history.applied', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'approval.requested', 'approval.resolved', 'run.paused', 'run.resumed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld'];
 /** Streamed output is released text with an exact position; nothing else rides along. */
 function outputMetadata(metadata: Record<string, unknown>, delta: boolean): void {
   const required = delta ? ['step', 'modelCall', 'index', 'text'] : ['step', 'modelCall'];
@@ -342,7 +352,7 @@ function outputMetadata(metadata: Record<string, unknown>, delta: boolean): void
 }
 const hookFields = ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt'] as const;
 const hookStages: readonly string[] = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease',
-  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
+  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'onApprovalRequested', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
 const hookStatuses: readonly string[] = ['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'];
 /** Hook observations have an exact content-free schema; the browser never admits hook arguments or messages. */
 function hookMetadata(metadata: Record<string, unknown>, completed: boolean): void {
@@ -486,7 +496,7 @@ function workflowIndexEntry(value: unknown, settled = false): WorkflowIndexEntry
   return raw as unknown as WorkflowIndexEntry;
 }
 const featureNames: readonly string[] = ['humanRequests', 'workflowIndex', 'workflowViews', 'workflowControls', 'workflowSignals', 'workflowResumes',
-  'workflowPauses', 'workflowFleet', 'workflowMigrations', 'runRecords'];
+  'workflowPauses', 'workflowFleet', 'workflowMigrations', 'runRecords', 'threads', 'runApprovals', 'toolContinuations', 'threadCompaction', 'authorization'];
 /**
  * Stream failures worth another connection: the network, silence, a cut stream, a server that is busy, restarting or
  * briefly without storage, and an expired identity (the token callback may return a fresh one). Anything else, such as
@@ -525,7 +535,7 @@ export function createClient(options: ClientOptions): MayuraClient {
   if ([maxBytes, frameBytes, timeout, idleTimeout, reconnectDelay].some(value => !Number.isSafeInteger(value) || value < 1 || value > 16_777_216)
     || !Number.isSafeInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 1_000) throw new ClientError('INVALID_CONFIG');
 
-  const request = async (path: string, method: 'GET' | 'POST', signal: AbortSignal, body?: ClientJson, key?: string): Promise<Response> => {
+  const request = async (path: string, method: 'GET' | 'POST' | 'DELETE', signal: AbortSignal, body?: ClientJson, key?: string): Promise<Response> => {
     const credential = await race(Promise.resolve().then(() => { if (signal.aborted) throw stopped(signal); return token(); }), signal);
     if (typeof credential !== 'string' || !/^[\x21-\x7e]{1,8192}$/.test(credential)) throw new ClientError('INVALID_CREDENTIAL');
     const headers: Record<string, string> = { Authorization: `Bearer ${credential}` };
@@ -586,7 +596,7 @@ export function createClient(options: ClientOptions): MayuraClient {
     try { return record(json(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), maxBytes)); }
     catch { return fail(); }
   };
-  const command = async (path: string, method: 'GET' | 'POST', external?: AbortSignal, body?: ClientJson, key?: string) => {
+  const command = async (path: string, method: 'GET' | 'POST' | 'DELETE', external?: AbortSignal, body?: ClientJson, key?: string) => {
     const control = scope(external);
     try { return await readJson(await request(path, method, control.signal, body, key), control.signal); }
     finally { control.close(); }
@@ -601,7 +611,9 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!['not_started', 'succeeded', 'failed', 'unknown'].includes(String(receipt['execution'])) || !['released', 'withheld'].includes(String(receipt['disclosure']))) return fail();
       return Object.freeze({ runId: runId(entry['runId']), receipt: Object.freeze({ callId: text(receipt['callId']), toolId: text(receipt['toolId']), execution: receipt['execution'], disclosure: receipt['disclosure'] }) }) as RemoteReceipt;
     });
-    return Object.freeze({ id, status: raw['status'] as RemoteStatus, budget: Object.freeze({ spentMicros: spent as number | string, reservedMicros: natural(budget['reservedMicros']), calls: natural(budget['calls']) }), evidence: Object.freeze(evidence) });
+    if ((raw['approval'] !== undefined || raw['toolWait'] !== undefined) && raw['status'] !== 'waiting') return fail();
+    if (raw['approval'] !== undefined && raw['toolWait'] !== undefined) return fail();
+    return Object.freeze({ id, status: raw['status'] as RemoteStatus, ...(raw['approval'] === undefined ? {} : { approval: readApproval(raw['approval']) }), ...(raw['toolWait'] === undefined ? {} : { toolWait: readApproval(raw['toolWait']) }), budget: Object.freeze({ spentMicros: spent as number | string, reservedMicros: natural(budget['reservedMicros']), calls: natural(budget['calls']) }), evidence: Object.freeze(evidence) });
   };
   const human = (value: unknown): RemoteHumanRequest => {
     const item = record(value); const allowed = ['id', 'agentId', 'kind', 'schemaId', 'schemaDigest', 'prompt', 'digest', 'status', 'context', 'subjectDigest', 'deadlineAtMs'];
@@ -659,7 +671,7 @@ export function createClient(options: ClientOptions): MayuraClient {
             // Only a known server code and short printable message are taken from the error frame.
             let reported: ClientError | null = null;
             try { reported = serverError({ error: JSON.parse(data.join('\n')) }, 0, null); } catch { /* Not a Mayura error frame. */ }
-            throw reported && ['OBSERVATION_FAILED', 'RUN_RECORDS_UNAVAILABLE'].includes(reported.code)
+            throw reported && ['OBSERVATION_FAILED', 'RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED'].includes(reported.code)
               ? new ClientError(reported.code, undefined, { message: reported.message, details: reported.details }) : new ClientError('OBSERVATION_FAILED');
           }
           let raw: Record<string, unknown>;
@@ -668,6 +680,10 @@ export function createClient(options: ClientOptions): MayuraClient {
           if (!eventTypes.includes(event) || raw['type'] !== event || raw['runId'] !== id || String(sequence) !== eventId || sequence <= cursor) throw new ClientError('INVALID_STREAM');
           const metadata = record(raw['metadata']);
           if (Object.keys(metadata).length > 64 || Object.values(metadata).some(value => !['string', 'number', 'boolean'].includes(typeof value))) throw new ClientError('INVALID_STREAM');
+          if (event.startsWith('approval.') || event === 'run.paused' || event === 'run.resumed') {
+            try { approvalEvent(event, metadata); } catch { throw new ClientError('INVALID_STREAM'); }
+          }
+          if (event === 'history.applied' && !validHistoryEvent(metadata)) throw new ClientError('INVALID_STREAM');
           if (event === 'hook.started' || event === 'hook.completed') hookMetadata(metadata, event === 'hook.completed');
           if (event === 'output.delta' || event === 'output.withheld') outputMetadata(metadata, event === 'output.delta');
           if (event === 'events.gap') {
@@ -698,9 +714,9 @@ export function createClient(options: ClientOptions): MayuraClient {
       async inspect(settings?: { readonly signal?: AbortSignal }) { return snapshot(await command(path, 'GET', settings?.signal), id); },
       async result<T>(schema: ClientSchema<T>, settings?: { readonly signal?: AbortSignal }): Promise<RemoteOutcome<T> | undefined> {
         const raw = await command(path, 'GET', settings?.signal); const state = snapshot(raw, id);
-        if (state.status === 'running') return undefined;
+        if (state.status === 'running' || state.status === 'waiting') return undefined;
         const outcome = record(raw['outcome']); if (outcome['status'] !== state.status) return fail();
-        if (outcome['status'] !== 'succeeded') return Object.freeze({ status: state.status as Exclude<RemoteStatus, 'running' | 'succeeded'>, error: Object.freeze({ code: text(record(outcome['error'])['code'], 128) }), evidence: state.evidence });
+        if (outcome['status'] !== 'succeeded') return Object.freeze({ status: state.status as Exclude<RemoteStatus, 'running' | 'waiting' | 'succeeded'>, error: Object.freeze({ code: text(record(outcome['error'])['code'], 128) }), evidence: state.evidence });
         let validationStopped: ClientError | undefined;
         try {
           if (schema['~standard'].version !== 1) throw new Error();
@@ -712,6 +728,18 @@ export function createClient(options: ClientOptions): MayuraClient {
           } catch (error) { if (control.signal.aborted) validationStopped = stopped(control.signal); throw error; }
           finally { control.close(); }
         } catch { throw validationStopped ?? new ClientError('INVALID_OUTPUT'); }
+      },
+      async approve(answer: RunApprovalCommand, settings?: { readonly signal?: AbortSignal }) {
+        const value = await command(`${path}/approvals`, 'POST', settings?.signal, approvalCommand(answer));
+        if (value['id'] !== id || value['profile'] !== 'ephemeral') fail();
+      },
+      async resumeTool(input: { readonly callId: string; readonly digest: string }, settings?: { readonly signal?: AbortSignal }) {
+        let data: Record<string, unknown>;
+        try { data = record(json(input, 1024)); } catch { throw new ClientError('INVALID_REQUEST'); }
+        if (Object.keys(data).sort().join(',') !== 'callId,digest' || typeof data['callId'] !== 'string' || data['callId'].length < 1 || data['callId'].length > 128
+          || typeof data['digest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['digest'])) throw new ClientError('INVALID_REQUEST');
+        const value = await command(`${path}/tool-results/resume`, 'POST', settings?.signal, data as ClientJson);
+        if (value['id'] !== id || value['profile'] !== 'ephemeral') fail();
       },
       async cancel(settings?: { readonly signal?: AbortSignal }) {
         const value = await command(`${path}/cancel`, 'POST', settings?.signal);
@@ -743,7 +771,7 @@ export function createClient(options: ClientOptions): MayuraClient {
             delayMs = Math.max(failure.retryAfterMs ?? 0, Math.min(10_000, reconnectDelay * 2 ** (failures - 1)) * (0.8 + Math.random() * 0.4));
           } else if (!progressed) {
             // The server closed a stream that carried nothing: the run may already be over. If so, drain what is left once.
-            if ((await run(id).inspect({ ...(external ? { signal: external } : {}) })).status !== 'running') {
+            if (!['running', 'waiting'].includes((await run(id).inspect({ ...(external ? { signal: external } : {}) })).status)) {
               for await (const item of connection(id, path, cursor, external)) { cursor = item.sequence; yield item; if (item.type === 'run.completed') return; }
               return;
             }
@@ -758,6 +786,7 @@ export function createClient(options: ClientOptions): MayuraClient {
     });
   };
   return Object.freeze({
+    ...conversationMethods(command, json, maxBytes),
     run,
     async session(settings?: { readonly signal?: AbortSignal }) {
       const raw = await command('/v1/session', 'GET', settings?.signal); if (Object.keys(raw).length !== 1) return fail();
@@ -777,19 +806,21 @@ export function createClient(options: ClientOptions): MayuraClient {
       if (!Array.isArray(raw['agents']) || raw['agents'].length > 256) return fail();
       return Object.freeze(raw['agents'].map(value => { const item = record(value); return Object.freeze({ id: text(item['id']), version: text(item['version']) }); }));
     },
-    async submit(agentId: string, input: unknown, settings: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[] }) {
+    async submit(agentId: string, input: unknown, settings: { readonly idempotencyKey: string; readonly signal?: AbortSignal; readonly media?: readonly ClientMedia[]; readonly threadId?: string }) {
       if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(settings.idempotencyKey)) throw new ClientError('INVALID_IDEMPOTENCY_KEY');
       const media = settings.media === undefined || settings.media.length === 0 ? undefined : mediaBody(settings.media, maxMediaBytes);
-      const payload = media ? json({ agentId, input, media: media.body }, maxBytes + media.bytes) : json({ agentId, input }, maxBytes);
+      if (settings.threadId !== undefined && (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(settings.threadId) || media)) throw new ClientError('INVALID_REQUEST');
+      const binding = settings.threadId === undefined ? {} : { threadId: settings.threadId };
+      const payload = media ? json({ agentId, input, media: media.body }, maxBytes + media.bytes) : json({ agentId, input, ...binding }, maxBytes);
       const raw = await command('/v1/runs', 'POST', settings.signal, payload, settings.idempotencyKey);
       if (raw['profile'] !== 'ephemeral') return fail(); return run(runId(raw['id']));
     },
     async humanRequests(settings?: { readonly after?: string; readonly limit?: number; readonly signal?: AbortSignal }) {
       const after = settings?.after; const limit = settings?.limit ?? 50;
-      if ((after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new ClientError('INVALID_CURSOR');
+      if ((after !== undefined && !/^(?:[A-Za-z0-9._:-]{1,128}|authz1\.[A-Za-z0-9_-]{40,500})$/.test(after)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new ClientError('INVALID_CURSOR');
       const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }) });
       const raw = await command(`/v1/human-requests?${query}`, 'GET', settings?.signal);
-      if (!Array.isArray(raw['items']) || raw['items'].length > limit || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next'])))) return fail();
+      if (!Array.isArray(raw['items']) || raw['items'].length > limit || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^(?:[A-Za-z0-9._:-]{1,128}|authz1\.[A-Za-z0-9_-]{40,500})$/.test(raw['next'])))) return fail();
       const items = raw['items'].map(human); if (new Set(items.map(item => item.id)).size !== items.length) return fail();
       return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
     },
@@ -805,13 +836,13 @@ export function createClient(options: ClientOptions): MayuraClient {
     },
     async workflows(settings?: { readonly after?: string; readonly limit?: number; readonly view?: 'active' | 'settled'; readonly signal?: AbortSignal }) {
       const limit = settings?.limit ?? 20; const after = settings?.after; const view = settings?.view ?? 'active';
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (after !== undefined && !/^[A-Za-z0-9._:-]{1,128}$/.test(after))
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (after !== undefined && !/^(?:[A-Za-z0-9._:-]{1,128}|authz1\.[A-Za-z0-9_-]{40,500})$/.test(after))
         || (view !== 'active' && view !== 'settled')) throw new ClientError('INVALID_REQUEST');
       const settled = view === 'settled';
       const query = new URLSearchParams({ limit: String(limit), ...(after === undefined ? {} : { after }), ...(settled ? { view } : {}) });
       const raw = await command(`/v1/workflow-runs?${query}`, 'GET', settings?.signal); const keys = Object.keys(raw);
       if (keys.length !== 2 || !Object.hasOwn(raw, 'items') || !Object.hasOwn(raw, 'next') || !Array.isArray(raw['items']) || raw['items'].length > limit
-        || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next']) || raw['next'] === after))) return fail();
+        || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^(?:[A-Za-z0-9._:-]{1,128}|authz1\.[A-Za-z0-9_-]{40,500})$/.test(raw['next']) || raw['next'] === after))) return fail();
       const items = raw['items'].map(item => workflowIndexEntry(item, settled)); if (new Set(items.map(item => item.runId)).size !== items.length) return fail();
       return Object.freeze({ items: Object.freeze(items), next: raw['next'] as string | null });
     },
@@ -914,3 +945,5 @@ export function createClient(options: ClientOptions): MayuraClient {
     },
   });
 }
+
+export type { RemoteThreadMediaReference, ThreadAppendInput } from './conversations.js';

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonValue } from '@mayura/core';
 import type { ScheduledWorkflowAggregateStore, ScheduledWorkflowSnapshot, WorkflowManifestNode } from '@mayura/storage-contracts';
 
+// These stress cases perform hundreds of real transactions and persist near-limit aggregates.
+// Scale only the runner allowance on Windows CI; record, receipt, cost and lease bounds stay fixed.
+const stressTimeout = process.env['CI'] === 'true' && process.platform === 'win32' ? 180_000 : 60_000;
+
 /** Real storage-only admission tests: no model/tool callback is substituted for a database transaction. */
 export function scheduledBounds(name: string, factory: () => Promise<{ store: ScheduledWorkflowAggregateStore; cleanup(): Promise<void> }>): void {
   describe(`${name} scheduled output and history bounds`, () => {
@@ -79,7 +83,7 @@ export function scheduledBounds(name: string, factory: () => Promise<{ store: Sc
       expect(current.jobs.every(job => job.receipt?.execution === 'succeeded')).toBe(true);
       expect(current.jobs.some(job => job.state === 'blocked' && job.output === null && job.receipt?.disclosure === 'withheld')).toBe(true);
       expect(Buffer.byteLength(JSON.stringify(current.record.state))).toBeLessThanOrEqual(1_048_576);
-    },60_000);
+    },stressTimeout);
 
     it('fails final output admission rather than trapping already successful steps', async () => {
       await submit([node('first')],16); await finish('first','ok');
@@ -96,6 +100,6 @@ export function scheduledBounds(name: string, factory: () => Promise<{ store: Sc
       current = await fixture.store.workflows.finalize({...write(),validation:'passed',output:'z'.repeat(60_000)});
       expect(current.record.state).toMatchObject({status:'failed',output:null,spentMicros:17,reservedMicros:0});
       expect(current.jobs.every(job => job.receipt?.execution === 'succeeded' && job.receipt.disclosure === 'released')).toBe(true);
-    },60_000);
+    },stressTimeout);
   });
 }

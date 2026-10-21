@@ -1,3 +1,4 @@
+import { memoryAuthorization } from './authorization.js';
 import { MayuraError, jsonValue, type JsonObject, type Scope } from '@mayura/core';
 import { evaluateLifecycleControl, evaluateLifecycleObserver, fromBase64Url, snapshotHookOptions, toBase64Url } from '@mayura/core/host';
 import { StorageError, type StoredRecord } from '@mayura/storage-contracts';
@@ -78,6 +79,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
   const sensitivities = new Set(profile.map(value => sensitivity(value)));
   const { store } = options;
   const hooks = memoryWriteHooks(options.hooks);
+  const access = memoryAuthorization(scope, options.authorization);
   const scopeKey = sha256(`mayura:memory-scope:v1\n${JSON.stringify([scope.principalId, scope.projectId])}`);
   const profileHash = sha256(`mayura:memory-profile:v1\n${JSON.stringify([...sensitivities].sort())}`);
   const permission = (grant: string): void => { if (!grants.has(grant)) throw new MayuraError('PERMISSION_DENIED', 'The memory operation requires a capability that was not granted.'); };
@@ -109,11 +111,13 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
     const record = await adapter(() => store.read(scopeKey, aggregateId));
     return record ? { record, state: parse(record) } : { state: empty() };
   };
-  const mutate = async <T extends MemoryEntry>(allowCreate: boolean, operation: string, transform: (state: State) => T): Promise<T> => {
+  const mutate = async <T extends MemoryEntry>(allowCreate: boolean, operation: string, transform: (state: State) => T, admit: () => Promise<void>): Promise<T> => {
     for (let attempt = 0; attempt < 32; attempt++) {
+      await admit();
       let { record, state } = await read();
       if (!record) {
         if (!allowCreate) throw new MayuraError('NOT_FOUND', 'Memory record was not found in this scope.');
+        await admit();
         record = await adapter(async () => {
           const created = await store.create({ scope: scopeKey, id: aggregateId, idempotencyKey: aggregateId, definitionHash, state: serialize(empty()), events: [] });
           if (!created || typeof created !== 'object') throw new Error();
@@ -125,6 +129,7 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
       const persisted = serialize(state);
       try {
         const expectedVersion = record.version;
+        await admit();
         const updated = await adapter(async () => {
           const response = await store.update({ scope: scopeKey, id: aggregateId, expectedVersion, state: persisted, events: [{ type: operation, data: { memoryId: result.id, version: result.version } }] });
           if (!response || response.version !== expectedVersion + 1) throw new Error();
@@ -152,73 +157,87 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
       permission('memory:write');
       const source = object(input); allowedKeys(source, inputFields); const now = new Date().toISOString();
       const candidate = activeRecord(source, scope, 1, now, now); authorizeRecord(candidate);
+      const admit = async () => { await access.require(candidate.id, 'create'); await access.require(candidate.id, 'read'); };
+      await admit();
       await hooks.before({ operation: 'add', scope, id: candidate.id, candidate: candidateView(candidate) });
       const added = await mutate(true, 'memory.added', state => {
         if (state.records[candidate.id]) throw new MayuraError('CONFLICT', 'Memory ID already exists or is retained by a tombstone.');
         if (Object.keys(state.records).length >= MAX_RECORDS) throw new MayuraError('LIMIT_EXCEEDED', 'Experimental memory scopes support at most 128 lifetime record IDs.');
         state.records[candidate.id] = candidate; return candidate;
-      });
-      await hooks.after(committed('add', added)); return added;
+      }, admit);
+      await hooks.after(committed('add', added)); await admit(); return added;
     },
     correct: async input => {
       permission('memory:write'); const source = object(input); allowedKeys(source, [...inputFields, 'expectedVersion']);
       const id = memoryId(source['id']); const expectedVersion = integer(source['expectedVersion'], 'Expected memory version');
       // Validate the replacement before reading/mutating persistent state.
       const provisional = activeRecord(source, scope, 1, new Date().toISOString(), new Date().toISOString()); authorizeRecord(provisional);
+      const admit = async () => { await access.require(id, 'correct'); await access.require(id, 'read'); };
+      await admit();
       await hooks.before({ operation: 'correct', scope, id, expectedVersion, candidate: candidateView(provisional) });
       const corrected = await mutate(false, 'memory.corrected', state => {
         const current = currentActive(state, id, expectedVersion);
         const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt))).toISOString();
         const next = activeRecord(source, scope, nextVersion(current.version), current.createdAt, updatedAt);
         state.records[id] = next; return next;
-      });
-      await hooks.after(committed('correct', corrected)); return corrected;
+      }, admit);
+      await hooks.after(committed('correct', corrected)); await admit(); return corrected;
     },
     forget: async input => {
       permission('memory:delete'); const command = object(input, 1_024, 2); exactKeys(command, ['id', 'expectedVersion']);
       const id = memoryId(command['id']); const expectedVersion = integer(command['expectedVersion'], 'Expected memory version');
+      const admit = async () => { await access.require(id, 'delete'); await access.require(id, 'read'); };
+      await admit();
       await hooks.before({ operation: 'forget', scope, id, expectedVersion });
       const forgotten = await mutate(false, 'memory.forgotten', state => {
         const current = currentActive(state, id, expectedVersion);
         const deletedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt))).toISOString();
         const tombstone: MemoryTombstone = { id, version: nextVersion(current.version), status: 'deleted', scope: { ...scope }, sensitivity: current.sensitivity, createdAt: current.createdAt, updatedAt: deletedAt, deletedAt };
         state.records[id] = tombstone; return tombstone;
-      });
-      await hooks.after(committed('forget', forgotten)); return forgotten;
+      }, admit);
+      await hooks.after(committed('forget', forgotten)); await admit(); return forgotten;
     },
     get: async (id, query = {}) => {
       permission('memory:read'); memoryId(id); const request = object(query, 256, 2); allowedKeys(request, ['includeDeleted']);
       const includeDeleted = request['includeDeleted'] ?? false;
       if (typeof includeDeleted !== 'boolean') throw new MayuraError('INVALID_INPUT', 'includeDeleted must be boolean.');
-      const { state } = await read(); const entry = state.records[id];
+      await access.require(id, 'read');
+      const { state } = await read(); await access.require(id, 'read'); const entry = state.records[id];
       return entry && admitted(entry) && (includeDeleted || entry.status === 'active') ? immutable(entry) : undefined;
     },
     list: async (query: MemoryListOptions = {}) => {
       permission('memory:read'); const request = object(query, 2_048, 2); allowedKeys(request, ['limit', 'cursor', 'includeDeleted']);
       const limit = pageLimit(request['limit']); const includeDeleted = request['includeDeleted'] ?? false; const requestCursor = request['cursor'];
       if (typeof includeDeleted !== 'boolean') throw new MayuraError('INVALID_INPUT', 'includeDeleted must be boolean.');
+      await access.require('collection', 'list');
+      const decodedCursor = await access.open(requestCursor, `list:${includeDeleted}`);
       const { record, state } = await read(); const revision = record?.version ?? 0;
       let after = '';
-      if (requestCursor !== undefined) {
+      if (decodedCursor !== undefined) {
         try {
-          if (typeof requestCursor !== 'string' || requestCursor.length > 1_024 || !/^[A-Za-z0-9_-]+$/.test(requestCursor)) throw new Error();
-          const value = object(JSON.parse(new TextDecoder().decode(fromBase64Url(requestCursor) ?? new Uint8Array())), 1_024, 2);
+          if (typeof decodedCursor !== 'string' || decodedCursor.length > 1_024 || !/^[A-Za-z0-9_-]+$/.test(decodedCursor)) throw new Error();
+          const value = object(JSON.parse(new TextDecoder().decode(fromBase64Url(decodedCursor) ?? new Uint8Array())), 1_024, 2);
           exactKeys(value, ['format', 'scope', 'profile', 'revision', 'after', 'includeDeleted']);
           if (value['format'] !== 1 || value['scope'] !== scopeKey || value['profile'] !== profileHash || value['revision'] !== revision || value['includeDeleted'] !== includeDeleted) throw new Error();
           after = memoryId(value['after']);
         } catch { throw new MayuraError('CONFLICT', 'Memory cursor is invalid or its scoped snapshot has changed.'); }
       }
       const candidates = filtered(state, includeDeleted).filter(entry => entry.id > after);
-      const records = candidates.slice(0, limit);
-      const last = records.at(-1);
-      const nextCursor = last && candidates.length > records.length
+      const scanned = candidates.slice(0, limit);
+      const records: MemoryEntry[] = [];
+      for (const entry of scanned) if (await access.can(entry.id)) records.push(entry);
+      const last = scanned.at(-1);
+      const nextCursor = last && candidates.length > scanned.length
         ? toBase64Url(JSON.stringify({ format: 1, scope: scopeKey, profile: profileHash, revision, after: last.id, includeDeleted })) : undefined;
-      return immutable({ records, revision, ...(nextCursor ? { nextCursor } : {}) });
+      await access.require('collection', 'list');
+      const sealed = await access.seal(nextCursor, `list:${includeDeleted}`);
+      return immutable({ records, revision, ...(sealed ? { nextCursor: sealed } : {}) });
     },
     search: async (query, searchOptions = {}) => {
       permission('memory:read'); text(query, 'Search query', 512); const request = object(searchOptions, 128, 2); allowedKeys(request, ['limit']); const limit = pageLimit(request['limit']);
       const terms = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [])];
       if (terms.length === 0 || terms.length > 16) throw new MayuraError('INVALID_INPUT', 'Lexical search requires 1–16 query terms.');
+      await access.require('collection', 'search');
       const { record, state } = await read(); const now = Date.now();
       const hits = filtered(state, false).flatMap(entry => {
         if (entry.status !== 'active' || Date.parse(entry.validity.from) > now || (entry.validity.until !== null && Date.parse(entry.validity.until) <= now)) return [];
@@ -227,12 +246,17 @@ export function createMemoryStore(options: MemoryStoreOptions): MemoryStore {
         if (!terms.every(term => counts.has(term))) return [];
         return [{ record: entry, score: terms.reduce((score, term) => score + counts.get(term)!, 0), matchedTerms: terms }];
       }).sort((a, b) => b.score - a.score || (a.record.id < b.record.id ? -1 : a.record.id > b.record.id ? 1 : 0)).slice(0, limit);
-      return immutable({ mode: 'lexical', revision: record?.version ?? 0, hits });
+      const visible = []; for (const hit of hits) if (await access.can(hit.record.id)) visible.push(hit);
+      await access.require('collection', 'search');
+      return immutable({ mode: 'lexical', revision: record?.version ?? 0, hits: visible });
     },
     exportSnapshot: async () => {
       permission('memory:read'); permission('memory:export');
+      await access.require('collection', 'export');
       const { record, state } = await read();
-      return immutable({ format: 'mayura.memory.export.v1', scope: { ...scope }, revision: record?.version ?? 0, exportedAt: new Date().toISOString(), records: filtered(state, true) });
+      const records = []; for (const entry of filtered(state, true)) if (await access.can(entry.id)) records.push(entry);
+      await access.require('collection', 'export');
+      return immutable({ format: 'mayura.memory.export.v1', scope: { ...scope }, revision: record?.version ?? 0, exportedAt: new Date().toISOString(), records });
     },
   });
 }

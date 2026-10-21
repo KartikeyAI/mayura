@@ -21,10 +21,16 @@
       "path": "../adapter-mcp"
     },
     {
+      "path": "../ag-ui"
+    },
+    {
       "path": "../artifacts"
     },
     {
       "path": "../auth"
+    },
+    {
+      "path": "../authz"
     },
     {
       "path": "../browser"
@@ -79,6 +85,9 @@
     },
     {
       "path": "../provider-openai"
+    },
+    {
+      "path": "../rag"
     },
     {
       "path": "../runtime"

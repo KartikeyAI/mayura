@@ -1,3 +1,4 @@
+import { registerContinuationInput, claimPreparedToolInput, type PreparedToolInputBinding } from './continuation.js';
 import {
   assertPositiveInteger,
   assertSchema,
@@ -8,6 +9,7 @@ import {
   jsonValue,
   MayuraError,
   validate,
+  type Authorizer,
   type Effect,
   type ExecutionContext,
   type ExecutionReceipt,
@@ -92,6 +94,10 @@ export type ToolOutcome<T> = Outcome<T> & { readonly media?: readonly Media[] };
 export type AnyTool = ToolDefinition<Schema, Schema>;
 export type ToolOutput<T extends AnyTool> = InferOutput<T['output']>;
 export interface InvokeToolContext extends ExecutionContext {
+  /** Trusted one-use proof from a consumed external continuation checkpoint. */
+  readonly preparedInput?: PreparedToolInputBinding;
+  /** Optional host-owned core authorizer. Never exposed to executors or serialized in tool data. */
+  readonly authorization?: Authorizer;
   readonly permissions: Permissions;
   readonly budget: Budget;
   /** Trusted-host pre-reserved invocation; still subject to every ordinary broker admission check. */
@@ -133,7 +139,7 @@ function snapshotInvocation(value: InvokeToolContext): InvokeToolContext {
     if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
     const fields = Object.getOwnPropertyDescriptors(value);
     const required = ['runId', 'callId', 'scope', 'signal', 'permissions', 'budget'];
-    const optional = ['maxOutputBytes', 'maxMediaBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding', 'approvalBinding'];
+    const optional = ['authorization', 'maxOutputBytes', 'maxMediaBytes', 'contextBindings', 'acquireExecution', 'acquireCallback', 'beforeDispatch', 'onExecutionReceipt', 'budgetBinding', 'approvalBinding', 'preparedInput'];
     if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || ![...required, ...optional].includes(key))
       || required.some(key => !fields[key])) throw new Error();
     const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
@@ -272,6 +278,7 @@ export function defineTool<I extends Schema, O extends Schema>(options: ToolOpti
     inputGuards: snapshotGuards(options.guards?.input),
     outputGuards: snapshotGuards(options.guards?.output),
   });
+  registerContinuationInput(definition, definition.input, registrations.get(definition)!.inputGuards);
   return definition;
 }
 
@@ -344,6 +351,9 @@ export async function invokeTool<T extends AnyTool>(
     assertBudget(options.budget);
     if (!Array.isArray(options.permissions?.allow) || options.permissions.allow.length > 4096) throw new MayuraError('INVALID_CONFIG', 'Permissions must be a bounded grant list.');
     const grants = new Set(options.permissions.allow.map((grant) => { text(grant, 'grant', 384); return grant; }));
+    const authorization = options.authorization;
+    if (authorization !== undefined && (!authorization || typeof authorization.authorize !== 'function')) throw new MayuraError('INVALID_CONFIG', 'Tool authorization requires a core authorizer.');
+    const evaluateAuthorization = authorization?.authorize.bind(authorization);
     const budget = options.budget;
     const acquireExecution = options.acquireExecution;
     if (acquireExecution !== undefined && typeof acquireExecution !== 'function') throw new MayuraError('INVALID_CONFIG', 'acquireExecution must be a function.');
@@ -403,11 +413,6 @@ export async function invokeTool<T extends AnyTool>(
     let inputSnapshot: JsonValue;
     try { inputSnapshot = freezeJson(jsonValue(input)); }
     catch { throw new MayuraError('INVALID_INPUT', 'Tool input must be bounded plain JSON.'); }
-    // A call that needs a person's approval runs only with proof that this exact call was approved.
-    if (registration.approval?.(inputSnapshot)) {
-      claimToolApproval(options.approvalBinding, tool, { runId: options.runId, callId: options.callId, input: inputSnapshot });
-    }
-
     const bounded = new Promise<never>((_resolve, reject) => {
       rejectOnAbort = (): void => { reject(abortError()); };
       signal.addEventListener('abort', rejectOnAbort, { once: true });
@@ -455,10 +460,29 @@ export async function invokeTool<T extends AnyTool>(
       if (verdicts.includes('block')) throw new MayuraError('GUARD_BLOCKED', 'A required guard withheld this operation or output.');
     };
 
-    const work = async (): Promise<Outcome<ToolOutput<T>>> => {
-      const parsedInput = freezeJson(jsonValue(await callback(() => validate(tool.input, inputSnapshot, 'input'))));
+    const authorizeTool = async (): Promise<void> => {
       assertActive();
-      await barrier(registration.inputGuards, parsedInput, 'input');
+      if (evaluateAuthorization) {
+        let allowed = false;
+        try { allowed = (await evaluateAuthorization(executionContext.scope, 'execute', { kind: 'tool', id: tool.id, scope: executionContext.scope }, { signal })).effect === 'allow'; }
+        catch { /* Only a fixed refusal crosses the broker boundary. Core audit owns decision reporting. */ }
+        if (!allowed) throw new MayuraError('PERMISSION_DENIED', 'The tool execution is not authorized.');
+      }
+      assertActive();
+    };
+    const work = async (): Promise<Outcome<ToolOutput<T>>> => {
+      await authorizeTool();
+      // Approval is consumed only after authorization. An approval proof never grants tool execution rights.
+      if (registration.approval?.(inputSnapshot)) {
+        claimToolApproval(options.approvalBinding, tool, { runId: options.runId, callId: options.callId, input: inputSnapshot });
+      }
+
+      const prepared = options.preparedInput === undefined ? undefined
+        : claimPreparedToolInput(options.preparedInput, tool, inputSnapshot, { runId: options.runId, callId: options.callId, scope: executionContext.scope, signal: externalSignal! });
+      const prepaid = prepared?.prepaid === true;
+      const parsedInput = prepared ? prepared.input : freezeJson(jsonValue(await callback(() => validate(tool.input, inputSnapshot, 'input'))));
+      assertActive();
+      if (options.preparedInput === undefined) await barrier(registration.inputGuards, parsedInput, 'input');
       assertActive();
       let releaseExecution: (() => void) | undefined;
       if (acquireExecution) {
@@ -477,17 +501,19 @@ export async function invokeTool<T extends AnyTool>(
       let reservation;
       try {
         assertActive();
+        await authorizeTool();
         if (beforeDispatch) {
           try { await beforeDispatch(parsedInput); }
           catch { throw new MayuraError('PERMISSION_DENIED', 'Tool admission could not be verified against its current execution claim.'); }
           assertActive();
         }
-        reservation = startReservation ? startReservation() : budget.reserve(tool.costMicros);
+        await authorizeTool();
+        reservation = prepaid ? undefined : startReservation ? startReservation() : budget.reserve(tool.costMicros);
       }
       catch (error) { releaseExecution?.(); throw error; }
       dispatched = true;
       let settlement: ExecutionSettlement | undefined;
-      const usage = (): ExecutionSettlement => settlement ??= reportedUsage ?? Object.freeze(execution === 'unknown'
+      const usage = (): ExecutionSettlement => settlement ??= prepaid ? Object.freeze({ knownCostMicros: 0, unknownCostMicros: 0 }) : reportedUsage ?? Object.freeze(execution === 'unknown'
         ? { knownCostMicros: 0, unknownCostMicros: tool.costMicros }
         : { knownCostMicros: tool.costMicros, unknownCostMicros: 0 });
       const persistReceipt = async (): Promise<void> => {
@@ -510,7 +536,7 @@ export async function invokeTool<T extends AnyTool>(
           throw new MayuraError('OUTCOME_UNKNOWN', 'Reported usage contains unresolved external cost.');
         }
         execution = 'succeeded';
-        reservation.settle(usage().knownCostMicros);
+        reservation?.settle(usage().knownCostMicros);
       }
       catch (thrown) {
         handlerActive = false;
@@ -520,7 +546,7 @@ export async function invokeTool<T extends AnyTool>(
           refused = true; refusalReason = thrown.message; settlement = Object.freeze({ knownCostMicros: 0, unknownCostMicros: 0 });
         } else if (execution !== 'unknown') execution = changesNothing(tool.effects) ? 'failed' : 'unknown';
         const observed = usage();
-        reservation.settleUsage(observed.knownCostMicros, observed.unknownCostMicros);
+        reservation?.settleUsage(observed.knownCostMicros, observed.unknownCostMicros);
         await persistReceipt();
         assertActive();
         throw new MayuraError('TOOL_FAILED', 'The tool executor failed; raw exception details are withheld.');
@@ -542,6 +568,7 @@ export async function invokeTool<T extends AnyTool>(
       assertActive();
       await barrier(registration.outputGuards, parsedOutput, 'output');
       assertActive();
+      await authorizeTool();
       const successfulReceipt = receipt('released');
       return Object.freeze({ status: 'succeeded' as const, output: parsedOutput as ToolOutput<T>, ...(successfulReceipt ? { receipt: successfulReceipt } : {}),
         ...(returnedMedia.length > 0 ? { media: returnedMedia } : {}) });

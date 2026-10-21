@@ -1,0 +1,31 @@
+{
+  "name": "@mayurajs/gateway-openrouter",
+  "version": "1.1.0",
+  "private": true,
+  "description": "OpenRouter models for Mayura, with explicit credentials, bounded calls and gateway cost accounting.",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src/**/*.ts",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0 <23 || >=24.14.1 <25"
+  },
+  "peerDependencies": {
+    "mayura": "workspace:^"
+  },
+  "dependencies": {
+    "@mayurajs/provider-openai": "workspace:*"
+  },
+  "devDependencies": {
+    "mayura": "workspace:*"
+  }
+}

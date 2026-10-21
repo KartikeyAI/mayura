@@ -8,7 +8,7 @@ import type { DocumentSession } from './session.js';
 //   threads (scope):           `u`+updatedAt+id, one per active or archived thread, for listing newest first
 //   thread-idle (shard):       `u`+hour+scope+id, for retention; the hour moves rarely, so appends seldom touch it
 //   checkpoint (runId):        `r` the row, `p`+part the body's parts
-//   checkpoint-due (shard):    `d`+expiresAt+runId, one per waiting checkpoint
+//   checkpoint-due (shard):    `d`+expiresAt+runId, one per checkpoint, including claimed rows
 // The two global indexes are spread over 16 shards, so no single partition takes every write.
 const SHARDS = 16;
 const HOUR = 3_600_000;
@@ -49,9 +49,8 @@ export function documentConversationRows(session: DocumentSession): Conversation
     }
   };
   const dueIndex = async (row: CheckpointRow | undefined, previous: CheckpointRow | undefined) => {
-    const waiting = (item: CheckpointRow | undefined) => item?.status === 'waiting';
-    if (waiting(previous) && (!waiting(row) || dueKey(row!) !== dueKey(previous!))) await session.delete(place.due(previous!.run_id), dueKey(previous!));
-    if (waiting(row) && (!waiting(previous) || dueKey(row!) !== dueKey(previous!))) session.insert(place.due(row!.run_id), dueKey(row!), JSON.stringify({ runId: row!.run_id }));
+    if (previous && (!row || dueKey(row) !== dueKey(previous))) await session.delete(place.due(previous.run_id), dueKey(previous));
+    if (row && (!previous || dueKey(row) !== dueKey(previous))) session.insert(place.due(row.run_id), dueKey(row), JSON.stringify({ runId: row.run_id }));
   };
   return {
     clock: () => session.clock(),
@@ -125,14 +124,37 @@ export function documentConversationRows(session: DocumentSession): Conversation
       await session.delete(place.checkpoint(row.run_id), sort.record);
       await dueIndex(undefined, row);
     },
+    scanCheckpoints: async (after, limit) => {
+      const found: { at: string; runId: string; expiresAtMs: number }[] = [];
+      for (let index = 0; index < SHARDS; index++) {
+        const page = await session.query(key('checkpoint-due', index), { prefix: key('d'),
+          ...(after ? { after: key('d', after.expiresAtMs, after.runId) } : {}), limit });
+        for (const item of page) {
+          const runId = json<{ runId: string }>(item.body)!.runId;
+          const row = json<CheckpointRow>(await session.get(place.checkpoint(runId), sort.record));
+          if (row) found.push({ at: item.sort, runId, expiresAtMs: Number(row.expires_at_ms) });
+        }
+      }
+      return found.sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0).slice(0, limit).map(({ runId, expiresAtMs }) => ({ runId, expiresAtMs }));
+    },
     dueCheckpoints: async (expiresBeforeMs, limit) => {
       if (expiresBeforeMs <= 0) return [];
       // Strictly before `expiresBeforeMs`: every key under the last millisecond before it.
       const through = above(key('d', expiresBeforeMs - 1));
       const found: { at: string; runId: string }[] = [];
       for (let index = 0; index < SHARDS; index++) {
-        const page = await session.query(key('checkpoint-due', index), { prefix: key('d'), through, limit });
-        for (const item of page) found.push({ at: item.sort, runId: json<{ runId: string }>(item.body)!.runId });
+        let after: string | undefined; let waiting = 0;
+        // Claimed rows stay discoverable for host diagnostics. They must not hide later waiting rows from due().
+        for (;;) {
+          const page = await session.query(key('checkpoint-due', index), { prefix: key('d'), through, limit, ...(after ? { after } : {}) });
+          for (const item of page) {
+            const runId = json<{ runId: string }>(item.body)!.runId;
+            const row = json<CheckpointRow>(await session.get(place.checkpoint(runId), sort.record));
+            if (row?.status === 'waiting') { found.push({ at: item.sort, runId }); waiting++; }
+          }
+          if (waiting >= limit || page.length < limit) break;
+          after = page[page.length - 1]!.sort;
+        }
       }
       return found.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).slice(0, limit).map(item => item.runId);
     },

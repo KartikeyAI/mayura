@@ -30,3 +30,9 @@ const agent = defineAgent({
 - `catalog` holds OpenAI's list prices on its date, used only with `prices: 'catalog'`.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+The optional gateway packages share `gatewayProvider`, `gatewayCredential`, `GatewayOptions`, `GatewayBinding` and `GatewayProvider` from this extension. See [AI gateways](../../docs/guides/ai-gateways.md) for host prices, explicit discovery permissions and deferred qualification.
+
+### RAG embeddings
+
+This provider exports `openAIEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

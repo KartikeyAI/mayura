@@ -1,8 +1,8 @@
 import { ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Attributes, type Context, type Meter, type Span, type SpanOptions, type Tracer } from '@opentelemetry/api';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '@mayura/core';
+import type { AuthorizationAuditEvent, RunEvent } from '@mayura/core';
 import { agentRunTraceSpans, type OtlpTraceSpan } from '../src/index.js';
-import { createOpenTelemetryRunMetrics, createOpenTelemetryTraceBridge } from '../src/opentelemetry.js';
+import { createOpenTelemetryAuthorization, createOpenTelemetryRunMetrics, createOpenTelemetryTraceBridge } from '../src/opentelemetry.js';
 
 interface Started { readonly name: string; readonly options: SpanOptions; readonly parent?: string; readonly spanId: string; status?: unknown; end?: unknown }
 /** A tracer that records what it is asked to start; span ids count up, and parents are read from the context. */
@@ -133,5 +133,43 @@ describe('OpenTelemetry run metrics', () => {
     expect(caught).toMatchObject({ code: 'TOOL_FAILED' }); expect(JSON.stringify(caught) + String(caught)).not.toContain('SECRET');
     expect(() => createOpenTelemetryRunMetrics({} as never)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
     expect(() => createOpenTelemetryRunMetrics({ meter: { createHistogram: () => { throw new Error('SECRET'); }, createCounter: () => undefined } as unknown as Meter })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
+});
+
+const authorizationEvent: AuthorizationAuditEvent = {
+  type: 'authorization.decision', id: '11111111-1111-4111-8111-111111111111', timestamp: at(2), durationMs: 25,
+  request: { subject: { principalId: 'alice', projectId: 'shop' }, action: 'read', resource: { kind: 'thread', id: 'private-chat', scope: { principalId: 'alice', projectId: 'shop' } } },
+  decision: { effect: 'allow', reason: 'allowed', policyVersion: 'private-policy', ruleId: 'private-rule' },
+};
+describe('OpenTelemetry authorization', () => {
+  it('records fixed-name decision spans and metrics without identifiers by default', async () => {
+    const { tracer, started } = fakeTracer(); const { meter, recorded } = fakeMeter();
+    const telemetry = createOpenTelemetryAuthorization({ tracer, meter }); await telemetry.sink(authorizationEvent, { signal: signal() });
+    expect(started[0]?.name).toBe('authorization.decision'); expect(started[0]?.options.kind).toBe(SpanKind.INTERNAL);
+    expect(started[0]?.options.startTime).toBe(Date.parse(at(2)) - 25); expect(started[0]?.end).toBe(Date.parse(at(2)));
+    expect(recorded.map(item => [item.instrument, item.value])).toEqual([['mayura.authorization.decisions', 1], ['mayura.authorization.duration', 0.025]]);
+    for (const privateId of ['alice', 'shop', 'private-chat', 'private-policy', 'private-rule']) expect(JSON.stringify({ started, recorded })).not.toContain(privateId);
+    expect(recorded[0]?.attributes).not.toHaveProperty('mayura.authorization.action');
+  });
+  it('opts identifiers into spans only and treats denials as ordinary decisions', async () => {
+    const { tracer, started } = fakeTracer(); const { meter, recorded } = fakeMeter();
+    const parent = trace.setSpanContext(ROOT_CONTEXT, { traceId: 'b'.repeat(32), spanId: 'c'.repeat(16), traceFlags: 1 });
+    const telemetry = createOpenTelemetryAuthorization({ tracer, meter, includeIdentifiers: true, context: () => parent });
+    await telemetry.sink({ ...authorizationEvent, decision: { ...authorizationEvent.decision, effect: 'deny', reason: 'explicit_deny' } }, { signal: signal() });
+    expect(started[0]?.parent).toBe('c'.repeat(16)); expect(started[0]?.status).toEqual({ code: SpanStatusCode.UNSET });
+    expect(started[0]?.options.attributes).toMatchObject({ 'mayura.authorization.resource.id': 'private-chat' });
+    expect(JSON.stringify(recorded)).not.toContain('private-chat');
+    await telemetry.sink({ ...authorizationEvent, decision: { ...authorizationEvent.decision, effect: 'deny', reason: 'unavailable' } }, { signal: signal() });
+    expect(started[1]?.status).toEqual({ code: SpanStatusCode.ERROR });
+  });
+  it('refuses leaked fields, cancelled/closed deliveries and sanitizes SDK failures', async () => {
+    const { tracer, started } = fakeTracer(); const telemetry = createOpenTelemetryAuthorization({ tracer });
+    await expect(telemetry.sink({ ...authorizationEvent, prompt: 'SECRET' } as never, { signal: signal() })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    const abort = new AbortController(); abort.abort(); await expect(telemetry.sink(authorizationEvent, { signal: abort.signal })).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(started).toEqual([]); telemetry.close(); await expect(telemetry.sink(authorizationEvent, { signal: signal() })).rejects.toMatchObject({ code: 'CONFLICT' });
+    const failing = fakeTracer({ status: true });
+    const error = await Promise.resolve().then(() => createOpenTelemetryAuthorization({ tracer: failing.tracer }).sink(authorizationEvent, { signal: signal() })).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'TOOL_FAILED' }); expect(String(error)).not.toContain('SECRET'); expect(failing.started[0]?.end).toBeDefined();
+    expect(() => createOpenTelemetryAuthorization({})).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 });

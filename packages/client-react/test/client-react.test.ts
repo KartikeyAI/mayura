@@ -1,3 +1,7 @@
+import { StrictMode } from 'react';
+import { createClient } from '../../client/src/index.js';
+import { createHeadlessThreadStore, createHeadlessThreadsStore, createRunApprovalController } from '../../client/src/headless.js';
+import { useMayuraThread, useMayuraThreadActions, useMayuraThreads, useMayuraRunApprovalCommand } from '../src/index.js';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
@@ -22,7 +26,7 @@ afterEach(async () => { await act(async () => { root.unmount(); }); dom.window.c
   if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument); else Reflect.deleteProperty(globalThis, 'document'); });
 function snapshot(status: RemoteSnapshot['status'] = 'running'): RemoteSnapshot { return Object.freeze({ id, status,
   budget: Object.freeze({ spentMicros: 0, reservedMicros: 0, calls: 0 }), evidence: Object.freeze([]) }); }
-function remote(inspect: () => Promise<RemoteSnapshot>): RemoteRun { return Object.freeze({ id, inspect, cancel: async () => {}, result: async () => undefined, events: async function* () {} }); }
+function remote(inspect: () => Promise<RemoteSnapshot>): RemoteRun { return Object.freeze({ id, inspect, resumeTool: async () => {}, approve: async () => {}, cancel: async () => {}, result: async () => undefined, events: async function* () {} }); }
 
 describe('@mayura/client-react', () => {
   it('subscribes to a caller-owned store without implicit network work and keeps actions stable', async () => {
@@ -115,5 +119,37 @@ describe('@mayura/client-react', () => {
   it('rejects a forged workflow controller before subscribing', () => {
     function View(): ReactNode { useMayuraWorkflowCommand(Object.freeze({}) as never); return null; }
     expect(() => renderToString(createElement(View))).toThrowError(expect.objectContaining<Partial<MayuraReactError>>({ code: 'INVALID_WORKFLOW_CONTROLLER' }));
+  });
+});
+
+
+describe('conversation React bindings', () => {
+  it('subscribes in StrictMode and SSR without reading, deciding or disposing on mount/unmount', async () => {
+    let reads = 0; let decisions = 0;
+    const client = createClient({ baseUrl: 'https://mayura.test', token: () => 'test', fetch: async () => {
+      reads += 1; return new Response(JSON.stringify({ threads: [], cursor: null }), { headers: { 'content-type': 'application/json' } });
+    } });
+    const threads = createHeadlessThreadsStore({ client }); const thread = createHeadlessThreadStore({ client, threadId: 'chat' });
+    const approval = createRunApprovalController({ run: { approve: async () => { decisions += 1; } }, approval: {
+      callId: 'c1', toolId: 'refund', toolVersion: '1', input: {}, digest: 'a'.repeat(64), expiresAtMs: Date.now() + 60_000 } });
+    const actions: ReturnType<typeof useMayuraThreadActions>[] = [];
+    function View(): ReactNode {
+      const index = useMayuraThreads(threads); const conversation = useMayuraThread(thread); const decision = useMayuraRunApprovalCommand(approval);
+      actions.push(useMayuraThreadActions(thread)); return createElement('span', null, `${index.status}:${conversation.status}:${decision.status}`);
+    }
+    expect(renderToString(createElement(View))).toContain('idle:idle:idle'); expect(reads).toBe(0); expect(decisions).toBe(0);
+    await act(async () => { root.render(createElement(StrictMode, null, createElement(View))); }); const stable = actions.at(-1);
+    expect(reads).toBe(0); expect(decisions).toBe(0);
+    await act(async () => { await threads.refresh(); }); expect(element.textContent).toBe('ready:idle:idle'); expect(actions.at(-1)).toBe(stable);
+    await act(async () => { await approval.submit('rejected'); }); expect(element.textContent).toBe('ready:idle:succeeded'); expect(decisions).toBe(1);
+    await act(async () => { root.render(null); }); expect(threads.getSnapshot().status).toBe('ready'); expect(approval.getSnapshot().status).toBe('succeeded');
+    threads.dispose(); thread.dispose(); approval.dispose();
+  });
+
+  it('rejects forged conversation stores and approval controllers during render', () => {
+    for (const hook of [useMayuraThread, useMayuraThreadActions, useMayuraThreads, useMayuraRunApprovalCommand]) {
+      function View(): ReactNode { hook({} as never); return null; }
+      expect(() => renderToString(createElement(View))).toThrowError(MayuraReactError);
+    }
   });
 });

@@ -214,3 +214,7 @@ with credentials in it, `https://ollama.com` without `apiKey`, an empty key, a h
 - [Groq](provider-groq.md): the same gpt-oss models, hosted.
 - [Model routing](../guides/model-routing.md): failover, circuit breakers and accounting.
 - [Model providers](../guides/model-providers.md): `openAICompatibleChat`, which also reaches a local Ollama.
+
+### RAG embeddings
+
+This provider exports `ollamaEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Offline embedding tests passed locally with fake transports. Live embedding service behavior remains unqualified; see [release validation status](../guides/release-readiness.md).

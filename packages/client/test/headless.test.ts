@@ -9,7 +9,7 @@ function snapshot(status: RemoteSnapshot['status'] = 'running'): RemoteSnapshot 
   budget: Object.freeze({ spentMicros: 1, reservedMicros: 2, calls: 3 }), evidence: Object.freeze([]) }); }
 function event(sequence: number, type: ClientEvent['type'], metadata?: ClientEvent['metadata']): ClientEvent { return Object.freeze({ runId: id, sequence, type,
   timestamp: '2026-09-24T00:00:00.000Z', metadata: Object.freeze(metadata ?? (type === 'events.gap' ? { from: sequence - 1, to: sequence } : {})) }); }
-function run(overrides: Partial<RemoteRun> = {}): RemoteRun { return Object.freeze({ id, inspect: async () => snapshot(), cancel: async () => {},
+function run(overrides: Partial<RemoteRun> = {}): RemoteRun { return Object.freeze({ id, approve: async () => {}, resumeTool: async () => {}, inspect: async () => snapshot(), cancel: async () => {},
   result: async () => undefined, events: async function* () {}, ...overrides }); }
 
 describe('headless run UI store', () => {
@@ -28,6 +28,17 @@ describe('headless run UI store', () => {
     const store = createHeadlessRunStore({ run: remote, maxEvents: 3 }); const result = await store.observe();
     expect(result).toMatchObject({ connection: 'stopped', lastSequence: 5, hasGap: true, activity: { models: 0, tools: 0, hooks: 0 }, snapshot: { status: 'succeeded' } });
     expect(result.events.map(item => item.sequence)).toEqual([2, 4, 5]); expect(Object.isFrozen(result.events)).toBe(true);
+  });
+
+  it('preserves the external wait and sends one recovery request without retrying an uncertain reply', async () => {
+    const pending = deferred<void>(); const resumeTool = vi.fn(() => pending.promise);
+    const toolWait = Object.freeze({ callId: 'c1', toolId: 'ui.select', toolVersion: '1', input: Object.freeze({ item: 7 }), digest: 'a'.repeat(64), expiresAtMs: Date.now() + 60_000 });
+    const remote = run({ resumeTool, inspect: async () => Object.freeze({ ...snapshot('waiting'), toolWait }) });
+    const store = createHeadlessRunStore({ run: remote }); await store.refresh(); expect(store.getSnapshot().snapshot?.toolWait).toEqual(toolWait);
+    const first = store.resumeTool({ callId: toolWait.callId, digest: toolWait.digest });
+    await expect(store.resumeTool({ callId: toolWait.callId, digest: toolWait.digest })).rejects.toMatchObject({ code: 'VIEW_BUSY' });
+    pending.reject(new Error('PRIVATE resume uncertainty')); await expect(first).rejects.toMatchObject({ code: 'VIEW_FAILED' });
+    expect(resumeTool).toHaveBeenCalledTimes(1); store.dispose(); await expect(store.resumeTool(toolWait)).rejects.toMatchObject({ code: 'VIEW_DISPOSED' });
   });
 
   it('does not retry an ambiguous cancellation and blocks a concurrent duplicate', async () => {
@@ -146,4 +157,21 @@ describe('lifecycle catalog activity', () => {
       { id: 'hook:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', kind: 'hook', label: 'audit', status: 'completed' },
     ] });
   });
+});
+
+
+it('keeps immutable history counts in headless events without changing execution activity', async () => {
+  const metadata = { entries: 2, omitted: 3, bytes: 80, scanTruncated: true };
+  const store = createHeadlessRunStore({ run: run({ events: async function* () { yield event(1, 'history.applied', metadata); } }) });
+  const state = await store.observe();
+  expect(state.events[0]?.metadata).toEqual(metadata); expect(Object.isFrozen(state.events[0]?.metadata)).toBe(true);
+  expect(state.activity).toEqual({ models: 0, tools: 0, hooks: 0 }); store.dispose();
+});
+
+it('rejects forged headless history content before retaining the event', async () => {
+  const store = createHeadlessRunStore({ run: run({ events: async function* () {
+    yield event(1, 'history.applied', { entries: 1, omitted: 0, bytes: 80, scanTruncated: false, content: 'PRIVATE' });
+  } }) });
+  await expect(store.observe()).rejects.toMatchObject({ code: 'INVALID_VIEW_INPUT' });
+  expect(store.getSnapshot().events).toEqual([]); expect(JSON.stringify(store.getSnapshot())).not.toContain('PRIVATE'); store.dispose();
 });

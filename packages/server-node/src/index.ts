@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '@mayura/server';
-import { hardenServer, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
+import { hardenServer, normalizeNodeRequest, listen, serverTimeouts, shutdown, snapshotSettings, unavailable } from './hardening.js';
 
 export { listenProductionServer, type ProductionAgentServer, type ProductionServerOptions } from './production.js';
 /** The identity an application's `authenticate` callback returns, re-exported so hosts need not import @mayura/server. */
@@ -17,6 +17,11 @@ export interface LocalServerOptions extends Omit<AgentServerOptions, 'publicOrig
 }
 export interface LocalAgentServer {
   readonly origin: string;
+  inspectAuthorizationAudit: AgentServer['inspectAuthorizationAudit'];
+  flushAuthorizationAudit: AgentServer['flushAuthorizationAudit'];
+  recoverConversations: AgentServer['recoverConversations'];
+  inspectClaimedApproval: AgentServer['inspectClaimedApproval'];
+  reconcileClaimedApproval: AgentServer['reconcileClaimedApproval'];
   /** Stop listeners and request cancellation, retaining truthful unknown-effect semantics. */
   close(): Promise<void>;
 }
@@ -33,7 +38,7 @@ export async function listenAgentServer(options: LocalServerOptions): Promise<Lo
   let closing = false;
   const app = new Hono();
   app.onError(() => unavailable());
-  app.all('*', context => closing || !protocol ? unavailable() : protocol.fetch(context.req.raw));
+  app.all('*', context => closing || !protocol ? unavailable() : protocol.fetch(normalizeNodeRequest(context.req.raw)));
   const listener = getRequestListener(app.fetch, { overrideGlobalObjects: false, autoCleanupIncoming: true, errorHandler: () => unavailable() });
   const server = createServer(serverTimeouts, listener);
   const sockets = hardenServer(server, 128);
@@ -51,7 +56,11 @@ export async function listenAgentServer(options: LocalServerOptions): Promise<Lo
       return closingPromise;
     };
     server.on('error', () => { void close().catch(() => {}); });
-    return Object.freeze({ origin, close });
+    return Object.freeze({ origin, recoverConversations: (settings => protocol!.recoverConversations(settings)) as AgentServer['recoverConversations'],
+      inspectClaimedApproval: (request => protocol!.inspectClaimedApproval(request)) as AgentServer['inspectClaimedApproval'],
+      inspectAuthorizationAudit: () => protocol!.inspectAuthorizationAudit(),
+      flushAuthorizationAudit: () => protocol!.flushAuthorizationAudit(),
+      reconcileClaimedApproval: (request => protocol!.reconcileClaimedApproval(request)) as AgentServer['reconcileClaimedApproval'], close });
   } catch {
     closing = true; server.close(); server.closeAllConnections(); await protocol?.close();
     throw new Error('The local agent server could not start.');

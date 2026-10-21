@@ -1,3 +1,5 @@
+import { compactionId, threadCompaction } from './thread-compaction.js';
+import { sha256Hex } from '@mayura/core/host';
 import type { JsonObject, JsonValue } from '@mayura/core';
 import {
   CHECKPOINT_LIMITS, StorageError, runCheckpointCommand, threadCommand,
@@ -10,6 +12,7 @@ import type { SchedulerBackend } from './scheduler-database.js';
 function corrupt(): never { throw new StorageError('STORAGE_UNAVAILABLE', 'Stored conversation data failed integrity validation.'); }
 function missing(what: string): never { throw new StorageError('NOT_FOUND', `${what} was not found.`); }
 function conflict(message: string): never { throw new StorageError('CONFLICT', message); }
+const recordingId = (runId: string) => `thread-record:${sha256Hex(runId)}`;
 const tombstone = (status: string) => status === 'deleting' || status === 'deleted';
 const integer = (value: number | string | null) => value === null ? null : storedInteger(value);
 function parse(text: string): JsonValue { try { return JSON.parse(text) as JsonValue; } catch { return corrupt(); } }
@@ -95,6 +98,36 @@ export class ConversationDatabase {
       if (!row) missing('Thread');
       if (method === 'delete') return this.remove(tx, row, now, command['limit'] as number);
       if (tombstone(row.status)) missing('Thread');
+      if (method === 'compaction') return threadCompaction(tx, row, now, command);
+      if (method === 'recording') {
+        const runId = command['runtimeRunId'] as string;
+        const journalId = recordingId(runId);
+        await tx.lockCheckpoint(journalId);
+        const journal = await tx.checkpoint(journalId);
+        if (journal && journal.scope !== scope) conflict('The recording belongs to another scope.');
+        const saved = journal ? checkpointRecord(journal, await tx.checkpointParts(journalId)).body : undefined;
+        if (saved && saved['threadId'] !== id) conflict('The recording belongs to another thread.');
+        if (command['action'] === 'read') return saved?.['completion'];
+        if (command['action'] === 'delete') {
+          if (journal) await tx.deleteCheckpoint(journal);
+          return undefined;
+        }
+        const first = (await tx.entries(scope, id, { after: command['startSequence'] as number }, 1))[0];
+        const data = first ? parse(first.data) as JsonObject : undefined;
+        if (!first || storedInteger(first.sequence) !== (command['startSequence'] as number) + 1 || first.run_id !== command['turnId']
+          || first.kind !== 'run' || data?.['recording'] !== true || data['runId'] !== runId || data['status'] !== 'running') {
+          conflict('The recording has no matching persisted thread/run association.');
+        }
+        if (saved) {
+          if (JSON.stringify(saved['completion']) !== JSON.stringify(command['body'])) conflict('This run has a different terminal recording.');
+          return saved['completion'];
+        }
+        const parts = checkpointParts({ threadId: id, completion: command['body']! });
+        const created: CheckpointRow = { run_id: journalId, scope, version: 1, status: 'waiting', holder_id: null, lease_expires_at_ms: null,
+          created_at_ms: now, updated_at_ms: now, expires_at_ms: Number.MAX_SAFE_INTEGER, parts: parts.length };
+        await tx.insertCheckpoint(created, parts);
+        return command['body'];
+      }
       const write = async (next: ThreadRow) => { await tx.updateThread(next, row); return next; };
       const held = row.lease_run_id !== null && row.lease_expires_at_ms !== null && storedInteger(row.lease_expires_at_ms) > now;
       const mine = row.lease_run_id === command['runId'] && row.lease_holder_id === command['holderId'];
@@ -109,6 +142,13 @@ export class ConversationDatabase {
           }));
         }
         case 'acquire': case 'renew': {
+          if (!mine) {
+            const tail = (await tx.entries(scope, id, { before: storedInteger(row.last_sequence) + 1 }, 1))[0];
+            const data = tail ? parse(tail.data) as JsonObject : undefined;
+            if (tail?.kind === 'run' && data?.['recording'] === true && data['status'] === 'running') {
+              conflict('A persisted turn is unfinished; resume or recover it before starting another turn.');
+            }
+          }
           if (held && !mine) conflict('Another run holds this thread.');
           if (method === 'renew' && !mine) conflict('This run does not hold the thread.');
           return threadRecord(await write({
@@ -155,7 +195,25 @@ export class ConversationDatabase {
       await tx.updateThread(current, row);
     }
     if (current.status === 'deleted') return { thread: threadRecord(current), removed: 0 };
-    const removed = await tx.deleteEntries(row.scope, row.id, limit);
+    // Leave room for recording outbox parts and retained compaction journals within a document store's 100-action transaction.
+    const drainLimit = Math.min(limit, 16);
+    const removing = await tx.entries(row.scope, row.id, { after: 0 }, drainLimit);
+    for (const entry of removing) {
+      if (entry.kind !== 'run') continue;
+      const marker = parse(entry.data) as JsonObject; const compact = marker['compaction'];
+      if (compact && typeof compact === 'object' && !Array.isArray(compact) && compact['format'] === 1 && typeof compact['commandId'] === 'string') {
+        const journalId = compactionId(row.scope, row.id, compact['commandId']);
+        await tx.lockCheckpoint(journalId); const journal = await tx.checkpoint(journalId);
+        if (journal && journal.scope === row.scope) await tx.deleteCheckpoint(journal);
+      }
+      const data = parse(entry.data) as JsonObject;
+      if (data['recording'] !== true || typeof data['runId'] !== 'string') continue;
+      const journalId = recordingId(data['runId']);
+      await tx.lockCheckpoint(journalId);
+      const journal = await tx.checkpoint(journalId);
+      if (journal && journal.scope === row.scope) await tx.deleteCheckpoint(journal);
+    }
+    const removed = await tx.deleteEntries(row.scope, row.id, drainLimit);
     const remaining = Math.max(0, storedInteger(current.entry_count) - removed);
     const next: ThreadRow = { ...current, entry_count: remaining, status: remaining === 0 ? 'deleted' : 'deleting' };
     if (next.entry_count !== current.entry_count || next.status !== current.status) await tx.updateThread(next, current);
@@ -187,6 +245,7 @@ export class ConversationDatabase {
     const command = runCheckpointCommand(method, value);
     if (method === 'initialize') return this.initialize();
     this.ready();
+    if (method === 'scan') return this.persistence.transaction(tx => tx.scanCheckpoints(command['after'] as unknown as { expiresAtMs: number; runId: string } | undefined, command['limit'] as number));
     if (method === 'due') return this.persistence.transaction(tx => tx.dueCheckpoints(command['expiresBeforeMs'] as number, command['limit'] as number));
     const runId = command['runId'] as string;
     return this.persistence.transaction(async tx => {
@@ -204,12 +263,44 @@ export class ConversationDatabase {
       }
       if (method === 'delete') {
         if (!row) return false;
+        if (command['expectedVersion'] !== undefined) {
+          const body = checkpointRecord(row, await tx.checkpointParts(runId)).body; const pending = body['pending'];
+          if (row.status !== 'claimed' || row.holder_id !== command['holderId'] || row.lease_expires_at_ms === null
+            || storedInteger(row.lease_expires_at_ms) <= now || storedInteger(row.version) !== command['expectedVersion']
+            || !pending || typeof pending !== 'object' || Array.isArray(pending) || pending['digest'] !== command['expectedDigest']) return false;
+        }
         if (Object.hasOwn(command, 'holderId') && row.status === 'claimed' && row.holder_id !== command['holderId']) conflict('Another holder has claimed this checkpoint.');
         await tx.deleteCheckpoint(row); return true;
       }
       if (!row) missing('Checkpoint');
+      const bodyParts = method === 'reconcile' || method === 'claim' || method === 'update' ? await tx.checkpointParts(runId) : undefined;
+      const original = bodyParts ? checkpointRecord(row, bodyParts).body : undefined;
+      const sealed = original?.['reconciliation'];
+      if (method === 'reconcile') {
+        if (row.scope !== command['scope']) missing('Checkpoint');
+        const keys = ['expectedVersion', 'expectedHolderId', 'commandId', 'actorId', 'reviewDigest', 'effect', 'evidenceRef', 'workerStopped'];
+        if (sealed !== undefined) {
+          if (!sealed || typeof sealed !== 'object' || Array.isArray(sealed) || keys.some(key => sealed[key] !== command[key])) conflict('The checkpoint has a different reconciliation.');
+          return checkpointRecord(row, bodyParts!);
+        }
+        if (row.status !== 'claimed' || storedInteger(row.version) !== command['expectedVersion'] || row.holder_id !== command['expectedHolderId']
+          || row.lease_expires_at_ms === null || storedInteger(row.lease_expires_at_ms) >= now) conflict('Reconciliation requires the reviewed expired claim.');
+        const receipt: JsonObject = { format: 1, reconciledAtMs: now };
+        for (const key of keys) receipt[key] = command[key]!;
+        const parts = checkpointParts({ ...original!, reconciliation: receipt });
+        const next: CheckpointRow = { ...row, version: storedInteger(row.version) + 1, holder_id: `reconcile:${sha256Hex(`${row.scope}\0${runId}\0${command['commandId']}`)}`,
+          lease_expires_at_ms: now, updated_at_ms: now, parts: parts.length };
+        if (next.holder_id === row.holder_id) conflict('Reconciliation requires a fresh fence.');
+        await tx.updateCheckpoint(next, parts, row); return checkpointRecord(next, parts);
+      }
+      if (sealed !== undefined) conflict('A reconciled checkpoint cannot be claimed or rewritten.');
       const leaseLive = row.status === 'claimed' && row.lease_expires_at_ms !== null && storedInteger(row.lease_expires_at_ms) > now;
       if (method === 'claim') {
+        if (command['expectedDigest'] !== undefined) {
+          const pending = original?.['pending'];
+          if (original?.['waitKind'] !== 'frontend' || !pending || typeof pending !== 'object' || Array.isArray(pending)
+            || pending['digest'] !== command['expectedDigest']) conflict('The external checkpoint epoch changed before claim.');
+        }
         if (leaseLive && row.holder_id !== command['holderId']) conflict('Another holder has claimed this checkpoint.');
         const next: CheckpointRow = { ...row, version: storedInteger(row.version) + 1, status: 'claimed', holder_id: command['holderId'] as string,
           lease_expires_at_ms: now + (command['leaseMs'] as number), updated_at_ms: now };

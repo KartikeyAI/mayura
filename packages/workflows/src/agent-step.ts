@@ -1,4 +1,4 @@
-import { MayuraError, type Effect, type InferInput, type InferOutput, type Media, type RunHandle, type Schema } from '@mayura/core';
+import { MayuraError, type Authorizer, type Effect, type InferInput, type InferOutput, type Media, type RunHandle, type Schema } from '@mayura/core';
 import { assertAgent, createRuntime, type AgentDefinition, type RuntimeLimits } from '@mayura/runtime';
 import { defineTool, ToolRefusal, type AnyTool, type ToolDefinition, type ToolExecutionContext } from '@mayura/tools';
 
@@ -15,6 +15,8 @@ interface AgentStepCommon<SI extends Schema, SO extends Schema, AI, AO> {
    * The workflow's grants never widen them: the workflow grants the step, this grants the agent inside it.
    */
   readonly permissions: readonly string[];
+  /** Host-owned policy for the inner agent run and its tools; never exposed to step callbacks. */
+  readonly authorization?: Authorizer;
   /**
    * Limits of the agent's run. `maxCostMicros` is the step's ceiling: the run budget reserves it before the step
    * starts and is charged what the agent actually spent. Use 0 only for a model that costs nothing.
@@ -104,6 +106,7 @@ export function agentStep(agent: AgentDefinition | ((input: unknown, context: To
   if (!Array.isArray(grants) || grants.length > 4_096 || grants.some(grant => typeof grant !== 'string' || grant.length < 1 || grant.length > 384)) {
     throw new MayuraError('INVALID_CONFIG', `agentStep "${options.id}" needs permissions: an array of the grants its agent may use.`);
   }
+  const authorization = options.authorization;
   const permissions = Object.freeze({ allow: Object.freeze([...grants as string[]]) });
   const limits = Object.freeze({ ...options.limits });
   const ceiling = limits.maxCostMicros;
@@ -144,7 +147,7 @@ export function agentStep(agent: AgentDefinition | ((input: unknown, context: To
         }
       } catch { definition = undefined; }
       if (!definition) return refuse('could not prepare its agent');
-      const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions, limits });
+      const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions, limits, ...(authorization === undefined ? {} : { authorization }) });
       let run: RunHandle<unknown> | undefined; let reported = false;
       const spent = (): number => {
         if (!run) return 0;

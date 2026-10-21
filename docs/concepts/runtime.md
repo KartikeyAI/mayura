@@ -78,7 +78,8 @@ const followUp = runtime.submit(supportAgent, {
 | `scope` | `{ principalId: 'local', projectId: 'default' }` | Who runs act for. Tools, guards and hooks receive it. |
 | `limits` | see below | Ceilings for every run. |
 | `approvals` | none | `{ tools, expiresInMs, onExpired }`: tools whose calls need a person's approval, and how long a request waits. See [Approve a tool call](#approve-a-tool-call). |
-| `checkpoints` | none | `{ store, agents?, replicaId?, leaseMs? }`: save runs waiting for approval, so they survive a restart. See [Surviving a restart](#surviving-a-restart). |
+| `checkpoints` | none | `{ store, agents?, replicaId?, leaseMs?, autoExpire? }`: save runs waiting for approval, so they survive a restart. See [Surviving a restart](#surviving-a-restart). |
+| `recorder` | none | Host `RunRecorder` with idempotent `begin` and `complete` callbacks. For persisted conversation turns, use `threads.recorder`; the association and approval decisions survive checkpoints. See [Threads](../guides/threads.md#recording-across-restarts). |
 
 `ephemeral` means the runtime keeps everything in memory. Runs, events and costs are lost when the process exits, and
 a run interrupted by a crash is not resumed. For work that must survive restarts, use
@@ -94,6 +95,7 @@ and `maxConcurrentOperations` also apply to the runtime as a whole. Child runs c
 
 | Limit | Default | What it bounds |
 | --- | --- | --- |
+| `maxHandoffs` | `8` | Transfers within one root run; 0–64. History, budget and counters continue across targets. See [Agent handoffs](../guides/agent-handoffs.md). |
 | `maxSteps` | `16` | Model turns in one run. Reaching it fails the run with `LIMIT_EXCEEDED`. |
 | `maxModelCalls` | `16` | Model calls, including model-backed guards. |
 | `maxToolCalls` | `64` | Tool calls. `0` is allowed. |
@@ -250,7 +252,7 @@ setInterval(() => void runtime.expireApprovals(), 60_000);
 ```
 
 - **When a run is saved:** when it pauses at a safe point, with no child run still running and nothing reserved. It
-  emits `run.paused`, holds no concurrency slot and no timer, and its status is `waiting`. Otherwise, or if the store
+  emits `run.paused`, holds no concurrency slot or active-run deadline, and its status is `waiting`. Otherwise, or if the store
   cannot take it (it holds at most 3 MiB), it waits in memory.
 - **What is saved:** the conversation so far (with media), the paused batch's remaining calls, the provider
   continuation, its call counts, what it spent, its receipts, its permissions and limits, and the active time it had
@@ -265,11 +267,14 @@ setInterval(() => void runtime.expireApprovals(), 60_000);
 - **Never wider:** a resumed run keeps its own permissions and limits, narrowed to this runtime's. Its budget counts
   what it spent before the pause.
 - **Expiry:** a runtime continues the runs it paused when their request expires, while it lives.
-  `runtime.expireApprovals()` handles the rest of this scope's expired runs, as their policy says.
+  `runtime.expireApprovals()` handles the rest of this scope's expired runs, as their policy says. Set
+  `checkpoints.autoExpire: false` when a host owns expiry scheduling. `runtime.expireApproval(runId)` handles one saved
+  request and returns `not_due`, `cancelled`, or `{ status: 'resumed', run }`; observe and persist the returned handle.
+  Hosted servers use [conversation recovery](../guides/server-and-client.md#hosted-conversation-recovery) for this.
 - **Cancelling** a saved run removes its checkpoint first, so no other runtime continues it.
 - **Closing** the runtime leaves saved runs in the store. Their handles in this process settle only if this runtime
   continues them.
-- **Not yet in this release:** the server and client do not show approvals.
+- **Hosted approvals:** the [server and client](../guides/server-and-client.md) expose waiting calls and scoped decisions.
 
 ## Inspect a run
 
@@ -314,3 +319,42 @@ Call it when your process shuts down, or in a `finally` block in scripts and tes
 - [Permissions](./permissions.md)
 - [Costs and budgets](./costs-and-budgets.md)
 - [Observability](../guides/observability.md)
+
+## Run recording
+
+`RunRecorder`, `RunRecordingContext`, `RunRecording` and `RecordedApproval` describe an optional trusted host
+persistence seam. A submission's `recording` is a JSON object of identifiers, bounded to 4096 UTF-8 bytes; `begin`
+persists its association before execution. `complete` receives the run's released messages, retained approval
+decisions and final outcome before the handle settles. Configure the recorder on every replica that resumes a bound
+run. These callbacks are trusted storage code, not model tools or a sandbox.
+
+A recording failure reports `STORAGE_UNAVAILABLE` while retaining the original completion for
+`runtime.retryRecording(handle)`. This retries persistence only; it never reruns a model or tool, and does not change
+the handle's already-settled outcome. [Threads](../guides/threads.md#recording-across-restarts) add a durable terminal
+journal and recovery for this seam.
+
+`runtime.cancelSaved(runId)` cancels an approval checkpoint in this runtime's scope without dispatching its pending
+tool. It claims and deletes the checkpoint, and records the cancelled turn when a recorder is configured.
+
+## Fine-grained execution authorization
+
+Set `createRuntime({ authorization })` with a host-owned core authorizer to guard scoped root/child execution,
+handoffs, model dispatch, approvals and the common tool broker. `submit`/`spawn` retain synchronous handles; asynchronous
+admission can end a run as blocked before paid work. Existing static grants, target permissions, budgets and approvals
+remain independent. Standalone `invokeTool` and `invokeBatch` accept the same authorizer. See
+[agent runs and tool execution](../guides/authorization.md#agent-runs-and-tool-execution) for actions, audit lifecycle,
+receipt preservation and trusted-handle semantics.
+
+## History fitting metadata
+
+`runtime.submit(agent, { input, history })` accepts either the existing readonly message array or a `RunHistory`
+object with `messages`, `omittedTurns` and optional `scanTruncated`. The result of `threads.history(...)` fits this
+shape directly. Only messages are passed to models; metadata is bounded informational data, not authorization.
+Nonempty history still requires the adapter's `history` capability and counts toward `maxContextBytes`.
+
+A fresh admitted run emits `history.applied` with exactly `{ entries, omitted, bytes, scanTruncated }`, once after
+its input boundary succeeds. Entries count messages, omissions count known whole turns, and bytes measure the
+UTF-8 JSON representation. Empty supplied history reports `{ entries: 0, omitted: 0, bytes: 2, scanTruncated: false }`;
+a submission without history emits no such event. Resuming a checkpoint or handing off within the same run does not
+reapply history. See [threads](../guides/threads.md#history-application-events) and
+[approval observers](../guides/lifecycle-hooks.md#approval-request-observers).

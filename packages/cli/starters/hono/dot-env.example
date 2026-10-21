@@ -1,0 +1,7 @@
+MAYURA_PUBLIC_ORIGIN=http://localhost:3000
+MAYURA_PROJECT_ID=notebook
+# Explicit token SHA-256, principal and absolute expiry; never a browser-provided project/principal.
+MAYURA_SESSIONS_JSON=[]
+MAYURA_SQLITE_PATH=.data/notebook.sqlite
+# For replicas/serverless, replace SQLite with a shared persistent database:
+# DATABASE_URL=postgresql://...

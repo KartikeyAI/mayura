@@ -4,7 +4,258 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Validation status (2026-10-21)
+
+- Local Windows qualification: 5,296 unit tests passed; six conditional PostgreSQL cases skipped by the unit run
+  were exercised in the separate PostgreSQL journal profile (12 passed).
+- Integration qualification: 2,338 latest executed cases passed, with no unresolved failures after targeted serial
+  reruns. The original all-service run failed 54 cases and skipped 313; later executions clear the failures. This
+  result does not claim a clean first-pass full suite or qualification of skipped external profiles.
+- Builds, types, 451 documentation snippets, API compatibility reports, edge/runtime checks, offline consumers,
+  75 public package entry points, 105 extensions, 106 release archives, 11 starters, eight templates, 18 offline
+  examples, the website, secret scan and license/SBOM checks passed locally.
+- Full Linux/macOS and Node 22/24 CI qualification, paid provider/gateway checks, real authorization/vector service
+  interoperability, the AG-UI reference-client/browser flow and live deployments remain outstanding. AG-UI and RAG
+  retain their documented experimental status. No version bump, publication or release tag has been performed.
+- See [release validation status](docs/guides/release-readiness.md) for evidence scope and remaining release gates.
+
+### Fixed
+
+- Accept the complete bounded server capability catalog during identity admission, preserving capability and policy
+  enforcement for threads, approvals and compaction.
+- Snapshot workflow submission input before asynchronous authorization, so concurrent caller edits cannot change the
+  request bound to its idempotency key.
+- Preserve native memory validity when indexing and deleting RAG chunks, and keep memory export lookahead pages within
+  the storage contract's bounds.
+- Restore run-qualified execution receipts when inspecting saved approval and frontend-tool checkpoints after restart.
+- Keep SQLite worker modules external in framework production builds; update SvelteKit configuration, React Router
+  dependencies and CSS types, and the static UI gallery link.
+- Protect active qualification work directories from concurrent check cleanup, and refresh package closure, starter
+  catalog, API classification and terminal fixtures for the current release.
+
+### Dependency maintenance
+
+- Resolve workspace peer conflicts with OpenTelemetry 2.9 development peers and an exact-version pnpm metadata
+  patch giving Stagehand's legacy OpenAI 4 transport its own supported Zod 3 dependency. Keep Mayura on Zod 4
+  and strict peer checks enabled; frozen installation succeeds with lifecycle scripts disabled.
+
 ### Added
+
+- **RAG milestone.** Scoped retrieval and citations, inert HTML/PDF parser boundaries, parent/contextual retrieval,
+  durable content-hash ingestion and embedding claims, hybrid/query expansion, six vector extensions, three
+  rerankers, provider embeddings and offline evaluation. Offline regression tests, builds and package checks passed locally; real service qualification remains outstanding.
+
+- **Framework notebooks.** Six `mayura init --starter` applications for Next.js App Router, Hono, React Router,
+  TanStack Start, SvelteKit and Nuxt wire scoped persistent threads, exact note approvals, deterministic model fixtures,
+  effect-local idempotency and separate workflow permissions. React source is copied from the UI registry; Svelte/Vue
+  use native headless views. Hono includes Node/Bun/Deno and D1/Workers Cron source. Environment/deploy files, offline
+  regression cases and framework starter qualification passed locally. Browser, deployment and the full CI matrix remain outstanding.
+- **Framework starter packaging.** Bounded route filenames and server `.mjs` catalog entries are supported; generated
+  output, local secrets and state are excluded from bundled starter assets. The reviewed D1 extension is pinned to the
+  initializer's Mayura release alongside `mayura`.
+
+- **AI gateway providers.** Optional Vercel, Cloudflare, OpenRouter, Portkey, Helicone and LiteLLM packages add explicit
+  authentication, registry model identities, bounded permissioned discovery where supported, shared thread history,
+  tools and streaming. Compatible transport accounting takes the maximum of host token prices and gateway-reported
+  USD cost, preserves known usage on failures, and supports long-context prices. Fake-transport regression cases and
+  an explicit owner-run paid qualification harness are included. Offline tests, builds and package checks passed locally; the paid harness has not been run.
+
+- **AG-UI notebook and guarded projections.** Runnable offline chat source connects thread history, exact approvals,
+  shared state, durable browser results and native checkpoint recovery; optional guarded text, metadata CUSTOM
+  events and opaque image/PDF handles extend the adapter. Local adapter and native server tests passed. The reference SDK harness, browser notebook flow and actual client interoperability remain unqualified.
+- **Thread import and media references.** Explicit scoped import permission/capability, expected-sequence atomic
+  append and exact replay receipts add conversation import across service/HTTP/client/headless/React actions.
+  Durable media references retain opaque IDs and display metadata without bytes or signed URLs. No implicit
+  migration, synthetic approvals, automatic media fetching or write replay.
+- **Copy-in UI registry and gallery.** Versioned bundled source for chat, history, approvals, threads, run/workflow
+  status, tools, citations, browser/sandbox display and bounded voice recording. `mayura add ui` plans reviewed
+  writes, refuses incompatible installed Mayura, links and stale targets; existing 1.x UI APIs remain available.
+  Website previews and source views added. Local tests, builds and website link checks passed; rendered browser, visual and accessibility checks remain outstanding.
+
+- **Oso authorization adapter.** Optional `@mayurajs/authz-oso` implements native Oso Cloud single-check
+  authorization with explicit environment credentials, exact action mappings and full-scope typed actor/resource
+  identities. Permissioned bounded Fetch, retained cancellation capacity and strict boolean responses fail closed
+  without inline facts, policy/fact writes, retries or local decision caches. Core audit/OTel stay shared. Provisioning
+  helper, docs, offline regression cases and API metadata added; offline tests, types, docs and package checks passed locally; real provider/native engine interoperability remains unqualified. Host owns
+  policy/data deployment and revision consistency. All four planned provider adapter slices are now implemented.
+
+- **Permit.io authorization adapter.** Optional `@mayurajs/authz-permit` implements native PDP `/allowed` checks
+  with explicit environment credentials, exact action mappings, full-scope user/resource identities and project
+  tenants. Bounded Fetch, explicit provider permission, retained cancellation capacity and strict boolean decisions
+  fail closed without provisioning writes, retries or local allow caches. Core audit/OTel stay shared. Provisioning
+  helper, docs, offline regression cases and API metadata added; offline tests, types, docs and package checks passed locally; real provider/native engine interoperability remains unqualified. Native
+  environment/revision consistency is host-managed. Oso is implemented in a separate slice.
+
+- **Cedar authorization adapter.** Optional `@mayurajs/authz-cedar` connects host-supplied native Cedar evaluation
+  to core enforcement/audit/OTel with pinned static policies, schema and engine revision, exact action mappings,
+  scoped identities and trusted literal attributes. Explicit permission, bounded snapshots/deadlines and retained
+  concurrency fail closed, including native evaluation errors alongside allow. Docs, offline regression cases and
+  API metadata added; offline tests, types, docs and package checks passed locally; real provider/native engine interoperability remains unqualified. Oso is implemented in a separate slice; Amazon Verified
+  Permissions service integration is separate future work.
+
+- **OpenFGA authorization adapter.** Optional `@mayurajs/authz-openfga` maps exact resource/actions to native
+  OpenFGA Check tuples with pinned store/model IDs, full principal/project/namespace isolation and a stable
+  configuration fingerprint. Explicit transport permission, higher-consistency checks, HTTPS, deadlines, byte and
+  retained concurrency bounds fail closed without retries, relationship writes or a local decision cache. Core
+  enforcement/audit/OTel remain shared. Provisioning helper, docs, regression cases and metadata added; offline tests, types, docs and package checks passed locally; provider interoperability remains unqualified. Oso is implemented in a separate slice.
+
+- **Safe native-owner recovery for AG-UI frontend results.** Opt-in host permission parks a native continuation
+  before browser dispatch, retaining settled history, admitted input, budget/counters, remaining batch and thread
+  association. Scoped `runs:resume` commands and authorized frontend recovery scans consume authoritative outboxes
+  through an exact holder/lease/version/digest checkpoint fence. Completed models, tools, input guards and proposal
+  hooks are not replayed; uncertain post-consume work remains reconciliation-only. Human approvals cannot resume
+  frontend waits. Built-in stores, client/headless snapshots, docs and regression cases updated; local offline validation passed.
+
+- **Durable AG-UI frontend-tool claims and result outboxes.** An opt-in scoped aggregate journal removes HTTP
+  session affinity through stable call identities, permanent one-time claims, atomic immutable result acceptance
+  and bounded native-owner polling. Result retries are idempotent; delivery reservations never transfer or replay
+  browser writes. Authorized recovery metadata and retention redaction preserve non-executable tombstones.
+  Native-owner loss retains evidence for reconciliation without restarting paid execution. Process-local mode
+  remains available. Docs, regression cases and API metadata updated; local offline validation passed.
+
+- **Permissioned AG-UI frontend tools.** Host-registered native tools bridge to browser handlers through scoped,
+  one-shot claims. Exact advertised schemas, native frontend/effect grants and mandatory core frontend policy
+  checks constrain dispatch and result acceptance. Bounded JSON tool messages resume the same native run/budget,
+  retain native output validation/guards and support exact result-submission replay without rerunning handlers.
+  A browser executor normalizes failures, propagates cancellation and never retries uncertain claims or writes.
+  The process-local mode requires session affinity; process loss never redispatches pending browser effects.
+  Docs, offline regression cases and API metadata updated; local offline validation passed.
+
+- **AG-UI state snapshots and deltas.** Optional scoped, read-only host state sources require `ag-ui:state` and can
+  share the core `thread/read_state` authorizer/audit path. Each new or resumed stream receives an authoritative
+  snapshot, followed by revisioned RFC 6902 deltas at event boundaries/heartbeats, with full snapshot fallback for
+  patch bounds. Browser state echoes never become native input or writes. Source read limits, timeouts, retained
+  orphan slots and disclosure rechecks bound observation without replaying approvals or resetting run budgets.
+  Docs, offline regression cases and API metadata updated; local offline validation passed.
+
+- **Experimental AG-UI adapter.** `mayura/ag-ui` exposes a pinned AG-UI 1.0 Fetch profile over the scoped native
+  server: run/step events, authoritative bounded thread snapshots, final released text and sealed approval interrupts.
+  Resume answers retain the native run, budget and recording association, bind the exact call/digest and never retry
+  an approval write. Explicit serving permission, same-origin Bearer authentication, disclosure rechecks, observer
+  bounds and cancellation cleanup preserve native policy/audit enforcement. State patches and frontend tools are included. Offline regression tests passed locally; reference SDK conformance remains unqualified.
+
+- **History application events and approval observers.** Fresh agent runs emit content-free `history.applied`
+  metadata with exact message/omitted-turn counts, UTF-8 byte size and scan truncation. `RunHistory` accepts fitted
+  thread history directly; models receive only its messages. `onApprovalRequested` extends bounded metadata-only
+  lifecycle observers before pending/checkpoint publication, with mandatory failures blocking and saved-candidate
+  continuations avoiding duplicate notification. Client/headless admission, durable run records and telemetry support
+  the new event/stage. Docs, regression cases and API metadata updated; local offline validation passed.
+
+- **Thread, approval and compaction authorization.** Scoped thread services accept shared core authorizers and
+  cancellation, guard storage/disclosure and seal filtered-list continuations. Bound agent approval and expiration
+  paths authorize the thread before claiming checkpoints. Claimed-approval terminal controls use core run/thread
+  checks alongside existing service authority. Compaction guards source, paid dispatch and publication while
+  preserving ready paid summaries for retries without another model call. Existing terminal recording settlement
+  retains its durable association after revocation. Server forwarding, audit integration, docs, regression cases and
+  API metadata updated; local offline validation passed.
+
+- **Workflow and child-workflow execution authorization.** Conservative, scheduled, graph, tree and lifecycle
+  engines accept shared core authorizers; loops, sagas and fleet coordinators propagate execution authority.
+  Definition/run admission, child delegation, queued tool dispatch and output publication recheck live policy
+  using existing audit/OTel delivery. Child budgets and static permissions remain separate; known receipts and costs
+  survive revoked disclosure without replaying writes. Inner agent phases accept their own policy instance.
+  Documentation, API metadata and regression cases updated; local offline validation passed.
+
+- **Agent-run and tool authorization.** Runtime and tool/batch invocation accept host-owned core authorizers, and
+  scoped servers forward their owned instance into execution, including compaction summarizers. Root/child admission, handoffs, approvals, model and
+  managed-guard dispatch, queued tool writes and output disclosure recheck current policy alongside static grants,
+  budgets and approval proofs. Known execution evidence and settled costs survive withheld output; no denied call
+  automatically replays a write. Existing core audit/OTel sinks receive metadata-only decisions. Local offline validation passed.
+
+- **Memory and document authorization.** Optional shared core authorizers guard aggregate/native memory operations,
+  graph endpoints, imports/exports, embedding admission and remote index calls while emitting existing audit events.
+  Retrieval filters denied records and seals scanned continuations. Context assembly checks memory/document source
+  identities before selection, withholds denied evidence metadata and bypasses cached authorization decisions.
+  Local offline validation passed.
+
+- **External HTTP authorization policy.** `@mayurajs/authz-http` implements a scoped, version-pinned and correlated
+  decision protocol with explicit `authz:http` admission, bounded HTTPS transport and fail-closed responses. Core
+  authorizer, scoped server and audit/OTel wiring share the existing contract; timeouts, cancellations and failures
+  never retry protected operations or emit duplicate audit receipts. Core decision validation also refuses non-string
+  denial reasons without invoking coercion hooks. Local offline validation passed.
+
+- **Authorization audit and OpenTelemetry.** Explicit `authz:audit` permits bounded, isolated decision receipt delivery,
+  counters and flush controls, including host-only methods on fetch and Node servers. The optional OpenTelemetry
+  adapter uses application tracers/meters, omits identifiers by default and keeps metric labels to closed enumerations.
+  Sink failures do not change access decisions or replay operations. Local offline validation passed.
+
+- **Scoped server authorization.** Fetch and Node hosts opt into core/RBAC policy enforcement alongside token
+  capabilities and scoped adapters. Resource reads, commands, idempotent replay, catalog/list rows and event streams
+  fail closed; command/view responses and revision hints cannot bypass read policies. Filtered continuation cursors
+  are sealed to scope, policy and view, with an optional replica-shared key. Clients preserve terminal authorization
+  denials, and server shutdown cancels policy work. Core resource kinds add server operations and human requests.
+
+- **Core authorization and built-in RBAC.** Versioned policy contracts and explicit `authorize`/`require` helpers
+  validate immutable scoped requests and fail closed on denied grants, malformed decisions, cancellation, deadline
+  expiry and policy failure. `mayura/authz` compiles bounded role inheritance and principal/project bindings with
+  explicit-deny precedence, exact action/resource matching and optional trusted ownership conditions. Host enforcement
+  is explicit and supplements existing run grants; no server or provider dependency enters the core contract.
+
+- **Agent handoffs.** Immutable host-declared target edges expose `handoff.<agent>` proposals gated by `agent:<id>`.
+  Transfers keep one run, thread transcript, recorder, scope, deadline and budget while replacing active agent grants,
+  models, tools, guards and hooks. `maxHandoffs` and existing call/step ceilings bound transfer chains. Approval
+  checkpoints pin the complete target policy and resume the active target without replaying prior models or writes.
+  The original output contract remains enforced; this slice supports buffered text-only non-speculative root runs.
+
+- **React thread compaction.** Subscription/action hooks and an accessible compaction control review the captured
+  thread and command, require inspection after uncertain submission, publish durably staged summaries without another
+  model call, and support cancellation during submission. Saved summaries render as bounded plain text; the application
+  owns controller lifetime and history refresh. Headless snapshots expose their immutable thread/command binding.
+
+- **Hosted thread compaction.** Opt-in scoped start, inspection and cancellation routes pin the summarizer and
+  cost/source limits on the host. The separate `threads:compact` capability, agent allowlists and durable command
+  journal prevent cross-scope access and duplicate paid dispatch. Client methods and a headless controller expose
+  immutable receipts and safe cancellation feedback, including during submission.
+
+- **Permissioned thread compaction.** `threads.compact` journals an explicitly budgeted, single-call summarizer,
+  retains original conversation entries, and publishes a summary with source/model/cost provenance atomically.
+  Pending commands never dispatch another paid call automatically; staged/committed retries reuse saved output,
+  cancellation fences late publication, and deletion removes associated journals. History replaces covered prefixes
+  with tagged untrusted summary data, preserves whole recent turns, and reports bounded scan truncation.
+  Client readers accept and validate compaction provenance. An offline example demonstrates the complete flow.
+
+- **Safe claimed-approval reconciliation.** Separate service authorization exposes host-only inspection and explicit
+  close controls on Fetch and Node hosts. An exact expired-claim fence retains immutable operator findings and evidence;
+  closure records `outcome_unknown` once, releases the thread and never runs models/tools or invents their results.
+  Identical commands repair interrupted persistence, stale reviews/holders are refused, and known terminal outcomes win.
+  Checkpoint adapters add atomic `reconcile`; thread/client run entries accept bounded reconciliation receipts.
+
+- **Hosted conversation recovery.** An opt-in service grant and per-scope policy authorize bounded recovery pages
+  for expired approvals and interrupted terminal recordings. Fetch and Node hosts expose `recoverConversations`;
+  background hosts can schedule sweeps, while request hosts use a trusted job. Resumed handles persist events and
+  outcomes, journal repair never reruns tools, and claimed checkpoints remain available for reconciliation.
+  Storage adapters expose ordered metadata scans; `runtime.expireApproval` and `checkpoints.autoExpire` let hosts own expiry.
+
+- **Runnable thread chat example.** A loopback React app connects thread history and approval controls to a
+  deterministic note agent, SQLite storage and durable run records. It supports approval/rejection, cancellation,
+  page-reload recovery, paging and explicit idempotent recovery of an uncertain send. CI builds the UI and runs
+  the offline flow; component integration tests exercise the same app/session against in-process Fetch.
+
+- **React conversation components.** `MayuraThreadHistory` renders bounded, text-only history with explicit paging
+  intents and omitted-content markers. `MayuraRunApprovalControl` reviews a captured tool call and submits explicit
+  approve/reject decisions with optional reasons. Accessible pending/expiry/conflict/failure feedback prevents
+  duplicate decisions; truncated input cannot be approved. Both reuse caller-owned stores without I/O on mount.
+
+- **Browser conversation APIs and React hooks.** The client exposes scoped thread CRUD, paged history,
+  thread-bound submissions, waiting snapshots and digest-bound run approvals. Headless thread/index stores and
+  approval controllers provide bounded immutable state, cancellation and conflict feedback. React hooks subscribe
+  without requests or decisions on mount. Run stores and activity projections follow approval pauses/resumes;
+  quiet waiting SSE streams remain observable until completion.
+
+- **Scoped conversation HTTP routes and agent approvals.** `threads: { store }` enables thread creation, listing,
+  reads, entries, updates, archive/restore, deletion, and thread-bound run submissions. New explicit capabilities are
+  `threads:read`, `threads:write`, `threads:delete` and `runs:approve`. Approval answers use the authenticated actor;
+  checkpoints support cross-replica inspection, resumption and cancellation (`runtime.cancelSaved`). Durable run
+  records preserve `waiting`, transfer ownership only inside a checkpoint claim through `resume`, and keep a
+  monotonic SSE sequence after resumption. Request-mode responses can end at a durable approval wait.
+
+- **Thread turns are recorded across approval restarts.** `recorder: threads.recorder` persists the thread/run
+  association before execution, carries it and approval decisions through checkpoints, and records terminal turns
+  once with sequence-checked chunks. A durable completion journal supports `threads.recoverRun(threadId, runId)`
+  after interrupted recording; `runtime.retryRecording(handle)` retries in-process failures without re-execution.
+  Unfinished turns remain fenced after lease expiry, and deletion removes journal content. The host seam exports
+  `RunRecorder`, `RunRecordingContext`, `RunRecording` and `RecordedApproval`; conversation storage adds the bounded
+  `ThreadRecordingCommand` and `ThreadStore.recording` operation on the existing persistence seam.
 
 - **Runs take a conversation history.**
   - `runtime.submit(agent, { input, history })` sends the earlier turns, oldest first, before the run's own messages on every model call.
@@ -31,6 +282,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - A run id can be saved again after its checkpoint is deleted, as a run that pauses twice needs (a new storage conformance case).
 
 ### Fixed
+
+- Node hosts preserve `threads` and `runExecution` when snapshotting server configuration, enabling checkpoint-backed
+  conversations through both local and production listeners. Zero-byte HTTP request streams are normalized so
+  body-free cancellation and thread commands work through the Node transport.
 
 - `@mayurajs/provider-google`: when Gemini gives a call no id, the id made up for it no longer repeats an earlier call's id in the run, which the runtime refused as a conflict.
 - **Thread and run-checkpoint storage on every store.** Two new storage contracts, the base that conversation threads and runs paused for approval will build on:
@@ -110,7 +365,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - **`@mayurajs/deploy-cloudflare`**: Cloudflare as a `mayura deploy` target, with `wrangler`, in two runtimes. Containers (the default) run the app module: `wrangler.jsonc` with a server container class spread across `maxInstances` and a worker container class from a second image whose command is `worker`, both on Durable Objects, and a Worker that sends `/v1/*` to a server container, gives both containers `DATABASE_URL` and the names in `env` from its secrets, and on a cron every minute keeps the worker container awake; a release builds and migrates from your machine, then runs `wrangler deploy`. Workers run the serverless module at the edge: a Worker whose `fetch` calls `handle(request, env)` and whose cron advances workflows, with `nodejs_compat`; a release runs `wrangler deploy`. No dependencies.
 - **Sandboxes.** `mayura/sandbox` gives agents isolated Linux machines to run commands and handle files in. `createSandboxes(provider, { maxSandboxes, maxLifetimeMs })` bounds how many are alive, how long each lives, how long commands run and how much they return, and checks every path, option and provider result. A sandbox has `exec` (argument lists, `cwd`, `env`, `stdin`, a timeout that stops the command and everything it started), `readFile`, `writeFile`, `listFiles`, `removeFile`, `url(port)` and, on providers that have one, a `desktop`. Sandboxes reach no network unless `createSandboxes` was given permission for `'all'` or a domain allowlist. `sandboxTools(sandbox, { name })` makes agent tools that only read by default; `exec`, `write`, `ports` and `desktop` are each enabled separately and need `sandbox:<name>:<power>`. `sandboxPerRun` gives each run its own sandbox, released from an `onFinally` hook. Provider packages implement `SandboxProvider`, and `mayura/sandbox/testing` exports `sandboxConformance` to test one against a real sandbox.
 - `mayura/sandbox/docker` (Node only): `dockerSandboxes({ image })` runs sandboxes as Docker containers through the `docker` CLI or, with `engine: 'api'`, the Engine API on its local socket. Containers have no network unless allowed (ports published on 127.0.0.1 only), drop every capability, cannot escalate privileges, run as a non-root user on a read-only image with an in-memory working directory, have bounded CPUs, memory and processes, and are removed when released or at the end of their lifetime. Images are never pulled. Environment variables reach commands through a file in the container, not the container's configuration or the host's command lines.
-- **Browsers.** `mayura/browser` gives agents real browsers over the Chrome DevTools Protocol, with its own CDP client and no dependency. `createBrowsers(provider, { maxBrowsers, maxLifetimeMs, origins })` bounds how many are open and how long each lives, and keeps pages to the origins allowed (nothing by default): every request — navigations, redirects, frames, subresources, and dedicated, shared and service workers — is checked in the browser before it leaves (for the whole browser when it is this one's alone, so pages any client opens are covered from their first request), and a target that cannot be checked never runs. `browser.cdp` gives the browser's CDP endpoint, for another client such as Stagehand to drive it alongside; it is absent where a provider marks its endpoint `joinable: false`, as each connection starts a browser of its own. Downloads are refused, file pickers stay closed and dialogs are dismissed and reported. A browser reads pages as snapshots, outlines with `[ref=eN]` marks, and clicks, fills, presses keys, chooses options, scrolls, takes screenshots, evaluates JavaScript and manages tabs. `browserTools` makes permission-gated tools (`browser:<name>:read`, `:act`, `:evaluate`), `browserPerRun` opens one browser per run, and `cdpBrowsers({ endpoint })` reaches any browser with a CDP endpoint in a browser context of its own.
+- **Browsers.** `mayura/browser` gives agents real browsers over the Chrome DevTools Protocol, with its own CDP client and no dependency. `createBrowsers(provider, { maxBrowsers, maxLifetimeMs, origins })` bounds how many are open and how long each lives, and keeps pages to the origins allowed (nothing by default): every request â€” navigations, redirects, frames, subresources, and dedicated, shared and service workers â€” is checked in the browser before it leaves (for the whole browser when it is this one's alone, so pages any client opens are covered from their first request), and a target that cannot be checked never runs. `browser.cdp` gives the browser's CDP endpoint, for another client such as Stagehand to drive it alongside; it is absent where a provider marks its endpoint `joinable: false`, as each connection starts a browser of its own. Downloads are refused, file pickers stay closed and dialogs are dismissed and reported. A browser reads pages as snapshots, outlines with `[ref=eN]` marks, and clicks, fills, presses keys, chooses options, scrolls, takes screenshots, evaluates JavaScript and manages tabs. `browserTools` makes permission-gated tools (`browser:<name>:read`, `:act`, `:evaluate`), `browserPerRun` opens one browser per run, and `cdpBrowsers({ endpoint })` reaches any browser with a CDP endpoint in a browser context of its own.
 - `mayura/browser/local` (Node only): `localBrowsers({ channel })` launches the Chrome, Chromium or Edge installed on the machine, headless with a new profile per browser, never downloading one; `serveBrowserFixtures()` serves the conformance pages. `mayura/browser/testing` holds `browserConformance`, run against real Chrome and Edge.
 - `originPolicy(origins)` from `mayura/browser` checks a URL against an origins list as `createBrowsers` takes it, for tools of your own that fetch pages.
 - **`@mayurajs/browser-browserbase`**: Browserbase sessions for `mayura/browser` (`browserbaseBrowsers({ apiKey })`), over its sessions API with fetch, from any runtime. Sessions are not kept alive (they end with their connection), get the browser's lifetime as their timeout, and have captcha solving, recording and logs off, though Browserbase's defaults are on; a session that already ended counts as released. The live view is Browserbase's debugger URL.
@@ -235,7 +490,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   - An offline-built server/worker container image and compose profile.
   - SQLite online backup and verified restore, and a PostgreSQL dump/restore drill.
 - **Workflow control.**
-  - Operator pause across workflow formats 2–5.
+  - Operator pause across workflow formats 2â€“5.
   - Durable fleet hold with sweep.
   - Authenticated pause and fleet routes, with client, CLI and React bindings.
   - A cross-format definition-version inventory and deploy gate (`inventoryWorkflowVersions`, `assertWorkflowVersionsRetained`).
@@ -298,7 +553,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - **Release engineering.**
   - Secret scan, CycloneDX SBOM, a tag-gated release workflow with npm provenance, and Dependabot.
   - The `upgrade:compat` cross-version resume check.
-  - The `api:report` public-surface gate and the `perf` suite for the plan §21.3 targets.
+  - The `api:report` public-surface gate and the `perf` suite for the plan Â§21.3 targets.
   - A threat model, and a stable API, support and deprecation policy.
 - **Documentation for people and AI coding assistants.**
   - New public documentation in `docs/`: introduction, quickstart, concepts, guides, CLI, entry-point reference and project policies.

@@ -89,6 +89,123 @@ Each operation needs a permission in `permissions.allow`:
 `allowedSensitivities` (default `public` and `internal`) limits which records the instance can see or write. A
 `confidential` record is invisible to an instance that does not allow it.
 
+## Fine-grained memory and document access
+
+Pass an optional, host-owned core `Authorizer` as `authorization` to `createMemoryStore`, `createNativeMemory`,
+`createRemoteMemoryBridge`, and `assembleContext`. Existing static capabilities, scope checks, sensitivity profiles,
+validity checks and lifecycle hooks still apply. Leaving the option unset retains the existing capability-based API.
+The host owns the authorizer's policy, audit sink, flush and shutdown; these services neither close it nor create a
+second audit pipeline. Built-in RBAC and external policies work through the same core contract.
+
+```ts
+import { createRbacAuthorizer } from 'mayura/authz';
+import { createNativeMemory, type NativeMemoryOptions } from 'mayura/memory';
+import type { AuthorizationAuditSink } from 'mayura';
+
+declare const store: NativeMemoryOptions['store'];
+declare const auditSink: AuthorizationAuditSink;
+const scope = { principalId: 'alice', projectId: 'shop' };
+const authorization = createRbacAuthorizer({
+  policy: {
+    version: 'knowledge-v1',
+    roles: [{ id: 'reader', rules: [
+      { id: 'query-memory', effect: 'allow', actions: ['list', 'search'], resource: { kind: 'memory', id: 'collection' } },
+      { id: 'read-memory', effect: 'allow', actions: ['read'], resource: { kind: 'memory', id: '*' } },
+      { id: 'read-documents', effect: 'allow', actions: ['read'], resource: { kind: 'rag_document', id: '*' } },
+      { id: 'private-memory', effect: 'deny', actions: ['read'], resource: { kind: 'memory', id: 'private-note' } },
+    ] }],
+    bindings: [{ subject: scope, roles: ['reader'] }],
+  },
+  permissions: { allow: ['authz:evaluate', 'authz:audit'] },
+  audit: { sink: auditSink },
+});
+const memory = createNativeMemory({ store, scope, permissions: { allow: ['memory:read'] }, authorization });
+try { const result = await memory.search('release plan'); }
+finally { await authorization.flushAudit(); authorization.close(); }
+```
+
+All operations use resource kind `memory` and the service's verified principal/project scope. Record ownership is
+the scoped principal, never a value from record metadata or provenance. Use the following exact policy actions:
+
+| Operation | Resource ID | Required policy actions |
+| --- | --- | --- |
+| `get` and returned records | Record ID | `read` |
+| `add` | New record ID | `create`, `read` |
+| `correct` | Record ID | `correct`, `read` |
+| `forget` | Record ID | `delete`, `read` |
+| `list` | `collection`, then each returned record | `list`, then `read` |
+| Lexical, semantic and hybrid search | `collection`, then each returned record | `search`, then `read` |
+| Snapshot/page export | `collection`, then records and graph endpoints | `export`, then `read`; edges also need `read_edge` |
+| `supersede` | Original and replacement IDs | Original `supersede`, `read`; replacement `create`, `read` |
+| `relate` | Edge ID and endpoint IDs | Edge `relate`, `read_edge`; endpoints `link`, `read` |
+| `forgetEdge` | Edge ID and endpoint IDs | Edge `unrelate`, `read_edge`; endpoints `link`, `read` |
+| Neighbors and traversal | Root, visited records and edges | Records `read`; edges `read_edge` |
+| `index` | `collection`, then each embedded record | Collection `index`; records `index`, `read` |
+| `importSnapshot` | `collection`, every imported record/edge and endpoint | Collection `import`; records `import`, `read`; edges `import_edge`; endpoints `link` |
+| `changes` | `collection`, then feed rows and edge endpoints | Collection `changes`; records/endpoints `read`; edges `read_edge` |
+| Remote `publish` | Canonical record ID | `publish`, `read` |
+| Remote `remove` | Canonical tombstone ID | `remove_remote`; the canonical store retains its own read gates |
+| Remote `search` | `collection`, then canonical candidates | `search_remote`, then `read` |
+
+Direct reads and mutation admission check access before storage or write hooks. Mutations recheck immediately before
+writes, including aggregate CAS retries; responses carrying records require read access. Imports preflight every
+resource before any write, including records merge might skip. Existing import and supersession operations retain
+their documented sequence of writes; an authorization change can refuse a later step after an earlier commit.
+A refusal after a write or hook does not mean rollback occurred: inspect canonical state before any explicit retry.
+No authorization refusal automatically replays a write.
+
+Queries filter a bounded candidate page rather than scanning repeatedly to fill a result. A page may be empty while
+its `nextCursor` still advances. Guarded memory list/export cursors are sealed, expire after five minutes, and belong
+to that service instance and view. They hide the scanned row ID, reject legacy/tampered or cross-instance cursors,
+and are not portable across service recreation. Continue with the same service instance, or start pagination again.
+Scope revision/sequence and ranking metadata remain collection-level information authorized by the collection action.
+Whole native snapshots cap guarded scanning at 32 pages; use `exportPage` for larger exports.
+
+Graph traversal never expands through denied endpoints, and no returned graph edge may name a denied endpoint.
+Embedding admission filters records before their content reaches an embedder. Collection `index` also permits
+scope-wide vector-index maintenance; it is a privileged service action. Denied result rows never appear in exports
+or retrieval hits. Policy unavailability, deadlines and cancellation refuse the operation; they do not become an
+empty successful result or an unguarded lexical fallback. The change feed has no separate continuation field, so a
+page containing any denied row fails as a whole, preserving its existing sequence-advancement contract.
+
+Remote bridges require the same authorizer separately: a guarded canonical store alone cannot prevent disclosure of
+a search query to a remote index. Bridge admission runs before remote search/publication, and canonical lookup,
+namespace, version and digest checks still apply. Denied candidates are omitted without their references or an
+additional per-ID rejection report. Configure host-owned service credentials and existing provider limits as before.
+
+### Document evidence in context
+
+The existing document-evidence boundary is `assembleContext`; this does not introduce a new document store or RAG
+indexing API. With `authorization` configured, source kind `memory` uses `memory/read` on the canonical `source.id`.
+Every other source kind uses `rag_document/read` on `source.id`, so changing a chunk's source-kind label cannot avoid
+document authorization. All chunks of one document share the same resource identity. Host-created source IDs and
+scopes must match the authoritative resource, and must satisfy the core's bounded identifier contract.
+
+```ts
+import { assembleContext, type AssembleContextOptions } from 'mayura/context';
+import type { Authorizer } from 'mayura';
+
+declare const input: Omit<AssembleContextOptions, 'authorization'>;
+declare const authorization: Authorizer;
+const result = await assembleContext({ ...input, authorization });
+```
+
+Optional denied evidence is omitted with `authorization_denied` and its input position only: no candidate/source ID,
+revision, content, digest or citation appears in the result. A required/pinned denied item fails the assembly.
+Authorization runs before content hashing, token estimation and selection, and selected sources are rechecked after
+hooks before disclosure. Existing scope/sensitivity/validity/source-revision requirements remain independent gates.
+Host retrieval adapters must also enforce read access before fetching document bodies or making paid retrieval calls;
+context assembly protects the final disclosure boundary, not an upstream service it does not invoke.
+
+`createContextCache` bypasses stored assemblies whenever `authorization` is supplied and declines guarded prefetch.
+Each foreground call reevaluates current membership even if source revisions and policy-version strings are unchanged.
+This prevents a previously allowed cached assembly from bypassing a later revocation.
+
+The shared core authorizer emits audit receipts for each actual check, including filtering and rechecks. Receipts
+contain resource metadata, never memory/document content, search queries, embeddings or provider responses. Audit
+delivery remains bounded and best effort; use [authorization audit events](authorization.md#authorization-audit-events)
+and [OpenTelemetry authorization](authorization.md#opentelemetry-authorization) for configuration and lifecycle.
+
 ## Search
 
 | Method | How it ranks | Needs |

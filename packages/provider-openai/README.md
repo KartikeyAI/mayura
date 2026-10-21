@@ -7,3 +7,5 @@ Explicit OpenAI Responses and OpenAI-compatible Chat Completions adapters for Ma
 Both adapters take a conversation history (`capabilities.history`) and send it before the run's own messages on every call, in the API's own message form: earlier tool calls without reasoning, which history does not carry, and an earlier final answer as assistant text holding its JSON.
 
 Neither adapter retries, follows redirects, selects models or prices, grants tool authority, or performs a network call during import/construction. All proposed tool calls still pass through Mayura's broker.
+
+Compatible Chat Completions supports host-configured long-context prices and optional USD gateway cost fields via `reportedCost`, retaining the maximum charge source even when output parsing fails. See [AI gateways](../../docs/guides/ai-gateways.md).

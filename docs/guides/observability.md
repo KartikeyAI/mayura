@@ -313,3 +313,12 @@ starter wires both up in `src/telemetry.ts`.
 - [Durable workflows](durable-workflows.md)
 - [Operator console](operator-console.md)
 - [Deployment](deployment.md)
+
+## Authorization decisions
+
+[Fine-grained authorization](authorization.md#authorization-audit-events) has an optional, separately permissioned
+`authz:audit` sink with bounded isolated delivery and gap counters. It emits validated decision receipts rather than
+run events; authorization may happen before a run exists. `createOpenTelemetryAuthorization` from
+`mayura/exporter-otlp/opentelemetry` connects those receipts to your existing tracer and meter. It records fixed-name
+spans and metrics with closed metric labels, omitting identifiers from spans by default. See
+[OpenTelemetry authorization](authorization.md#opentelemetry-authorization) for configuration and lifecycle.

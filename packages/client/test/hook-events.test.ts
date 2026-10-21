@@ -5,7 +5,7 @@ const runId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const invocationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const base = { hookId: 'policy.check', hookVersion: 'v1.0/review', stage: 'beforeExecution', invocationId, step: 0, attempt: 1 };
 const states = ['continued', 'blocked', 'failed', 'cancelled', 'outcome_unknown'] as const;
-const stages = ['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease'] as const;
+const stages = ['beforeExecution', 'beforeModelCall', 'beforeToolCall', 'beforeOutputRelease', 'onApprovalRequested'] as const;
 
 function event(sequence: number, type: string, metadata: Record<string, unknown>) {
   return { runId, sequence, type, timestamp: '2026-09-20T00:00:00.000Z', metadata };
@@ -21,7 +21,7 @@ async function receive(values: readonly ReturnType<typeof event>[]): Promise<Cli
 }
 
 describe('browser hook event compatibility', () => {
-  it('accepts all four stages and five completion statuses as immutable metadata only', async () => {
+  it('accepts the supported stages and five completion statuses as immutable metadata only', async () => {
     const values = stages.flatMap((stage, index) => {
       const metadata = { ...base, stage, step: index };
       return [event(index * 6 + 1, 'hook.started', metadata),
@@ -78,4 +78,15 @@ describe('lifecycle catalog stream events', () => {
       event(5, 'step.completed', { step: 0, result: 'final' })]);
     expect(received.map(item => item.type)).toEqual(['step.started', 'delegate.started', 'hook.started', 'delegate.completed', 'step.completed']);
   });
+});
+
+
+it('admits exact history metadata over SSE and rejects conversation content or invalid counts', async () => {
+  const metadata = { entries: 2, omitted: 3, bytes: 80, scanTruncated: true };
+  expect(await receive([event(1, 'history.applied', metadata)])).toEqual([event(1, 'history.applied', metadata)]);
+  for (const bad of [{ ...metadata, content: 'PRIVATE' }, { ...metadata, entries: -1 }, { ...metadata, entries: 2049 },
+    { ...metadata, omitted: 0.5 }, { ...metadata, bytes: 1 }, { ...metadata, scanTruncated: 'yes' },
+    { entries: 0, omitted: 0, bytes: 100, scanTruncated: false }]) {
+    await expect(receive([event(1, 'history.applied', bad)])).rejects.toMatchObject({ code: 'INVALID_STREAM' });
+  }
 });

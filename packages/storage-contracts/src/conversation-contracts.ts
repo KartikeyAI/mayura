@@ -35,8 +35,35 @@ export interface ThreadEntries extends ThreadKey { readonly after?: number; read
 export interface ThreadDelete extends ThreadKey { readonly limit: number }
 export interface ThreadExpire { readonly idleBeforeMs: number; readonly limit: number }
 
+/** A completion journal, stored atomically with verification of its thread/run association. */
+export type ThreadRecordingCommand = ThreadKey & { readonly runtimeRunId: string } & (
+  | { readonly action: 'read' | 'delete' }
+  | { readonly action: 'save'; readonly turnId: string; readonly startSequence: number; readonly body: JsonObject }
+);
+
+/** Durable compaction journal. Pending commands are never automatically billed a second time. */
+export interface ThreadCompactionRecord {
+  readonly format: 1; readonly threadId: string; readonly commandId: string; readonly requestDigest: string;
+  readonly sourceDigest: string; readonly covers: { readonly from: number; readonly to: number };
+  readonly sourceEntries: number; readonly sourceTurns: number; readonly maxCostMicros: number; readonly snapshotSequence: number;
+  readonly executorId: string; readonly agentId: string; readonly agentVersion: string;
+  readonly status: 'pending' | 'ready' | 'committed' | 'failed';
+  readonly content: string | null; readonly modelRunId: string | null; readonly costMicros: number | string | null;
+  readonly errorCode: string | null; readonly entrySequence: number | null; readonly committedAtMs: number | null;
+}
+export type ThreadCompactionCommand = ThreadKey & { readonly commandId: string } & (
+  | { readonly action: 'read' | 'commit' }
+  | { readonly action: 'reserve'; readonly requestDigest: string; readonly sourceDigest: string;
+      readonly through: number; readonly expectedSequence: number; readonly sourceEntries: number; readonly sourceTurns: number; readonly maxCostMicros: number;
+      readonly executorId: string; readonly agentId: string; readonly agentVersion: string; readonly leaseMs: number }
+  | { readonly action: 'stage'; readonly executorId: string; readonly content: string; readonly modelRunId: string; readonly costMicros: number | string }
+  | { readonly action: 'fail'; readonly executorId: string; readonly code: string }
+);
+
 export interface ThreadStore {
   initialize(): Promise<void>;
+  /** Reserve, stage and atomically publish a non-destructive summary, or terminate its reservation. */
+  compaction(command: ThreadCompactionCommand): Promise<ThreadCompactionRecord | undefined>;
   create(command: ThreadCreate): Promise<{ readonly thread: ThreadRecord; readonly created: boolean }>;
   get(command: ThreadKey): Promise<ThreadRecord | undefined>;
   list(command: ThreadList): Promise<{ readonly threads: readonly ThreadRecord[]; readonly cursor: string | null }>;
@@ -48,6 +75,8 @@ export interface ThreadStore {
   entries(command: ThreadEntries): Promise<readonly ThreadEntry[]>;
   delete(command: ThreadDelete): Promise<{ readonly thread: ThreadRecord; readonly removed: number }>;
   expire(command: ThreadExpire): Promise<readonly ThreadKey[]>;
+  /** Save/read/clear a terminal recording outbox. Content is removed along with the owning thread. */
+  recording(command: ThreadRecordingCommand): Promise<JsonObject | undefined>;
 }
 
 export type RunCheckpointStatus = 'waiting' | 'claimed';
@@ -59,13 +88,31 @@ export interface RunCheckpoint {
 }
 export interface RunCheckpointPut { readonly runId: string; readonly scope: string; readonly expiresAtMs: number; readonly body: JsonObject }
 export interface RunCheckpointKey { readonly runId: string }
-export interface RunCheckpointClaim extends RunCheckpointKey { readonly holderId: string; readonly leaseMs: number }
+export interface RunCheckpointClaim extends RunCheckpointKey {
+  readonly holderId: string; readonly leaseMs: number;
+  /** Optional external-continuation epoch fence; checked atomically before ownership can transfer. */
+  readonly expectedDigest?: string;
+}
 export interface RunCheckpointUpdate extends RunCheckpointKey {
   readonly holderId: string; readonly expectedVersion: number; readonly body: JsonObject; readonly status: RunCheckpointStatus;
 }
-export interface RunCheckpointDelete extends RunCheckpointKey { readonly holderId?: string }
+export interface RunCheckpointDelete extends RunCheckpointKey {
+  readonly holderId?: string;
+  /** Paired one-shot continuation fence. Requires a live claimed checkpoint with this version and pending digest. */
+  readonly expectedVersion?: number; readonly expectedDigest?: string;
+}
 export interface RunCheckpointDue { readonly expiresBeforeMs: number; readonly limit: number }
 
+/** Stable recovery cursor ordered by expiry then ASCII run id. Start a fresh sweep after reaching the end. */
+export interface RunCheckpointCursor { readonly expiresAtMs: number; readonly runId: string }
+export interface RunCheckpointScan { readonly after?: RunCheckpointCursor; readonly limit: number }
+/** Operator-attested facts. This closes execution; it never approves or retries a tool. */
+export interface RunCheckpointReconcile extends RunCheckpointKey {
+  readonly scope: string; readonly expectedVersion: number; readonly expectedHolderId: string;
+  readonly commandId: string; readonly actorId: string; readonly reviewDigest: string;
+  readonly effect: 'not_started' | 'succeeded' | 'failed' | 'unknown'; readonly evidenceRef: string;
+  readonly workerStopped: true;
+}
 export interface RunCheckpointStore {
   initialize(): Promise<void>;
   put(command: RunCheckpointPut): Promise<RunCheckpoint>;
@@ -73,6 +120,10 @@ export interface RunCheckpointStore {
   claim(command: RunCheckpointClaim): Promise<RunCheckpoint>;
   update(command: RunCheckpointUpdate): Promise<RunCheckpoint>;
   delete(command: RunCheckpointDelete): Promise<boolean>;
+  /** Atomically fence an expired claimed checkpoint and retain an immutable reconciliation receipt. */
+  reconcile(command: RunCheckpointReconcile): Promise<RunCheckpoint>;
+  /** Administrative bounded discovery, including completion journals and claimed checkpoints. No bodies are returned. */
+  scan(command: RunCheckpointScan): Promise<readonly RunCheckpointCursor[]>;
   due(command: RunCheckpointDue): Promise<readonly string[]>;
 }
 
@@ -92,8 +143,8 @@ export const THREAD_LIMITS = Object.freeze({
 export const CHECKPOINT_LIMITS = Object.freeze({ bodyBytes: 3_145_728, partBytes: 262_144, dueLimit: 100, maxLeaseMs: 3_600_000 });
 
 const kinds = new Set<ThreadEntryKind>(['user', 'assistant', 'tool_calls', 'tool_result', 'approval', 'summary', 'run']);
-const threadMethods = new Set<ThreadMethod>(['initialize', 'create', 'get', 'list', 'update', 'acquire', 'renew', 'release', 'append', 'entries', 'delete', 'expire']);
-const checkpointMethods = new Set<RunCheckpointMethod>(['initialize', 'put', 'get', 'claim', 'update', 'delete', 'due']);
+const threadMethods = new Set<ThreadMethod>(['initialize', 'create', 'get', 'list', 'update', 'acquire', 'renew', 'release', 'append', 'entries', 'delete', 'expire', 'recording', 'compaction']);
+const checkpointMethods = new Set<RunCheckpointMethod>(['initialize', 'put', 'get', 'claim', 'update', 'delete', 'due', 'scan', 'reconcile']);
 const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const cursorPattern = /^[0-9]{1,16}:[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const encoder = new TextEncoder();
@@ -145,8 +196,36 @@ function entryInput(raw: unknown): ThreadEntryInput {
 /** An owned, bounded snapshot of a thread command, taken before any asynchronous transport. */
 export function threadCommand(method: ThreadMethod, raw: unknown): JsonObject {
   if (!threadMethods.has(method)) invalid();
-  const value = capture(raw, method === 'append' ? THREAD_LIMITS.appendBytes + 65_536 : 65_536);
+  const value = capture(raw, method === 'compaction' ? THREAD_LIMITS.entryBytes + 65_536 : method === 'recording' ? CHECKPOINT_LIMITS.bodyBytes + 65_536 : method === 'append' ? THREAD_LIMITS.appendBytes + 65_536 : 65_536);
   switch (method) {
+    case 'compaction': {
+      const base = ['scope', 'id', 'commandId', 'action']; scope(value['scope']); id(value['id']); id(value['commandId']);
+      if (value['action'] === 'reserve') {
+        fields(value, [...base, 'requestDigest', 'sourceDigest', 'through', 'expectedSequence', 'sourceEntries', 'sourceTurns', 'maxCostMicros', 'executorId', 'agentId', 'agentVersion', 'leaseMs']);
+        for (const key of ['requestDigest', 'sourceDigest']) if (typeof value[key] !== 'string' || !/^[a-f0-9]{64}$/u.test(value[key] as string)) invalid();
+        integer(value['through'], 1, THREAD_LIMITS.maxSequence); integer(value['expectedSequence'], value['through'] as number, THREAD_LIMITS.maxSequence - 3);
+        integer(value['sourceEntries'], 1, 10_000); integer(value['sourceTurns'], 1, THREAD_LIMITS.maxSequence); integer(value['maxCostMicros']);
+        for (const key of ['executorId', 'agentId', 'agentVersion']) id(value[key]); integer(value['leaseMs'], 1_000, THREAD_LIMITS.maxLeaseMs);
+      } else if (value['action'] === 'stage') {
+        fields(value, [...base, 'executorId', 'content', 'modelRunId', 'costMicros']); id(value['executorId']); id(value['modelRunId']);
+        if (typeof value['content'] !== 'string' || !value['content'].trim() || bytes(value['content']) > 65_536) invalid();
+        if (typeof value['costMicros'] === 'string') { if (!/^[0-9]{1,30}$/u.test(value['costMicros'])) invalid(); }
+        else integer(value['costMicros']);
+      } else if (value['action'] === 'fail') {
+        fields(value, [...base, 'executorId', 'code']); id(value['executorId']); id(value['code']);
+      } else { fields(value, base); if (value['action'] !== 'read' && value['action'] !== 'commit') invalid(); }
+      break;
+    }
+    case 'recording':
+      if (value['action'] === 'save') {
+        fields(value, ['scope', 'id', 'runtimeRunId', 'action', 'turnId', 'startSequence', 'body']);
+        id(value['turnId']); integer(value['startSequence'], 0, THREAD_LIMITS.maxSequence);
+        if (bytes(object(value['body'])) > CHECKPOINT_LIMITS.bodyBytes) tooLarge();
+      } else {
+        fields(value, ['scope', 'id', 'runtimeRunId', 'action']);
+        if (value['action'] !== 'read' && value['action'] !== 'delete') invalid();
+      }
+      scope(value['scope']); id(value['id']); id(value['runtimeRunId']); break;
     case 'initialize': fields(value, []); break;
     case 'create': fields(value, ['scope', 'id', 'agentId', 'title', 'metadata']); scope(value['scope']); id(value['id']);
       if (value['agentId'] !== null) id(value['agentId']); title(value['title']); metadata(value['metadata']); break;
@@ -228,6 +307,37 @@ export function threadResult<M extends ThreadMethod>(method: M, raw: unknown, co
   try {
     const key = { scope: command['scope'] as string, id: command['id'] as string };
     switch (method) {
+      case 'compaction': {
+        if (raw === undefined) { if (command['action'] !== 'read') invalid(); return undefined as R; }
+        const result = object(raw);
+        fields(result, ['format', 'threadId', 'commandId', 'requestDigest', 'sourceDigest', 'covers', 'sourceEntries', 'sourceTurns', 'maxCostMicros', 'snapshotSequence',
+          'executorId', 'agentId', 'agentVersion', 'status', 'content', 'modelRunId', 'costMicros', 'errorCode', 'entrySequence', 'committedAtMs']);
+        if (result['format'] !== 1 || result['threadId'] !== command['id'] || result['commandId'] !== command['commandId']) invalid();
+        const reserve = { scope: command['scope'], id: command['id'], commandId: command['commandId'], action: 'reserve',
+          requestDigest: result['requestDigest'], sourceDigest: result['sourceDigest'], through: object(result['covers'])['to'], expectedSequence: result['snapshotSequence'],
+          sourceEntries: result['sourceEntries'], sourceTurns: result['sourceTurns'], maxCostMicros: result['maxCostMicros'], executorId: result['executorId'], agentId: result['agentId'], agentVersion: result['agentVersion'], leaseMs: 1000 };
+        threadCommand('compaction', reserve); fields(object(result['covers']), ['from', 'to']); if (object(result['covers'])['from'] !== 1) invalid();
+        if (!['pending', 'ready', 'committed', 'failed'].includes(result['status'] as string)) invalid();
+        if (result['content'] !== null) threadCommand('compaction', { scope: command['scope'], id: command['id'], commandId: command['commandId'], action: 'stage',
+          executorId: result['executorId'], content: result['content'], modelRunId: result['modelRunId'], costMicros: result['costMicros'] });
+        else if (result['modelRunId'] !== null || result['costMicros'] !== null || ['ready', 'committed'].includes(result['status'] as string)) invalid();
+        if (result['errorCode'] !== null) id(result['errorCode']);
+        if ((result['status'] === 'failed') !== (result['errorCode'] !== null)) invalid();
+        if (result['status'] === 'committed') { integer(result['entrySequence'], (result['snapshotSequence'] as number) + 2); integer(result['committedAtMs']); }
+        else if (result['entrySequence'] !== null || result['committedAtMs'] !== null) invalid();
+        if (command['action'] === 'reserve' && ['requestDigest', 'sourceDigest', 'sourceEntries', 'sourceTurns', 'maxCostMicros', 'agentId', 'agentVersion'].some(key => result[key] !== command[key])) invalid();
+        if (command['action'] === 'stage' && (!['ready', 'committed'].includes(result['status'] as string)
+          || ['executorId', 'content', 'modelRunId', 'costMicros'].some(key => result[key] !== command[key]))) invalid();
+        if (command['action'] === 'fail' && (!['failed', 'committed'].includes(result['status'] as string) || result['executorId'] !== command['executorId'])) invalid();
+        if (command['action'] === 'commit' && result['status'] !== 'committed') invalid();
+        return immutable(result) as R;
+      }
+      case 'recording': {
+        if (raw === undefined) { if (command['action'] === 'save') invalid(); return undefined as R; }
+        const body = capture(raw, CHECKPOINT_LIMITS.bodyBytes);
+        if (command['action'] === 'save' && JSON.stringify(body) !== JSON.stringify(command['body'])) invalid();
+        return immutable(body) as R;
+      }
       case 'initialize': if (raw !== undefined) invalid(); return undefined as R;
       case 'get': return (raw === undefined ? undefined : immutable(threadRecord(raw, key) as unknown as JsonValue)) as R;
       case 'create': {
@@ -312,12 +422,33 @@ export function runCheckpointCommand(method: RunCheckpointMethod, raw: unknown):
   switch (method) {
     case 'initialize': fields(value, []); break;
     case 'put': fields(value, ['runId', 'scope', 'expiresAtMs', 'body']); id(value['runId']); scope(value['scope']); integer(value['expiresAtMs'], 1); body(); break;
+    case 'reconcile':
+      fields(value, ['runId', 'scope', 'expectedVersion', 'expectedHolderId', 'commandId', 'actorId', 'reviewDigest', 'effect', 'evidenceRef', 'workerStopped']);
+      id(value['runId']); scope(value['scope']); integer(value['expectedVersion'], 1); id(value['expectedHolderId']); id(value['commandId']);
+      id(value['actorId']); id(value['evidenceRef']);
+      if (typeof value['reviewDigest'] !== 'string' || !/^[a-f0-9]{64}$/u.test(value['reviewDigest'])
+        || !['not_started', 'succeeded', 'failed', 'unknown'].includes(value['effect'] as string) || value['workerStopped'] !== true) invalid();
+      break;
     case 'get': fields(value, ['runId']); id(value['runId']); break;
-    case 'claim': fields(value, ['runId', 'holderId', 'leaseMs']); id(value['runId']); id(value['holderId']); integer(value['leaseMs'], 1_000, CHECKPOINT_LIMITS.maxLeaseMs); break;
+    case 'claim':
+      fields(value, ['runId', 'holderId', 'leaseMs'], ['expectedDigest']); id(value['runId']); id(value['holderId']); integer(value['leaseMs'], 1_000, CHECKPOINT_LIMITS.maxLeaseMs);
+      if (value['expectedDigest'] !== undefined && (typeof value['expectedDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(value['expectedDigest']))) invalid();
+      break;
     case 'update':
       fields(value, ['runId', 'holderId', 'expectedVersion', 'body', 'status']); id(value['runId']); id(value['holderId']); integer(value['expectedVersion'], 1);
       if (value['status'] !== 'waiting' && value['status'] !== 'claimed') invalid(); body(); break;
-    case 'delete': fields(value, ['runId'], ['holderId']); id(value['runId']); if (Object.hasOwn(value, 'holderId')) id(value['holderId']); break;
+    case 'delete':
+      fields(value, ['runId'], ['holderId', 'expectedVersion', 'expectedDigest']); id(value['runId']); if (Object.hasOwn(value, 'holderId')) id(value['holderId']);
+      if (value['expectedVersion'] !== undefined || value['expectedDigest'] !== undefined) {
+        id(value['holderId']); integer(value['expectedVersion'], 1);
+        if (typeof value['expectedDigest'] !== 'string' || !/^[a-f0-9]{64}$/u.test(value['expectedDigest'])) invalid();
+      }
+      break;
+    case 'scan': {
+      fields(value, ['limit'], ['after']); integer(value['limit'], 1, CHECKPOINT_LIMITS.dueLimit);
+      if (value['after'] !== undefined) { const after = object(value['after']); fields(after, ['expiresAtMs', 'runId']); integer(after['expiresAtMs'], 1); id(after['runId']); }
+      break;
+    }
     case 'due': fields(value, ['expiresBeforeMs', 'limit']); integer(value['expiresBeforeMs'], 0); integer(value['limit'], 1, CHECKPOINT_LIMITS.dueLimit); break;
   }
   return immutable(value);
@@ -353,6 +484,13 @@ export function runCheckpointResult<M extends RunCheckpointMethod>(method: M, ra
           || JSON.stringify(checkpoint.body) !== JSON.stringify(command['body'])) invalid();
         return immutable(checkpoint as unknown as JsonValue) as R;
       }
+      case 'reconcile': {
+        const checkpoint = runCheckpointRecord(raw, runId); const receipt = object(checkpoint.body['reconciliation']);
+        if (checkpoint.status !== 'claimed' || checkpoint.scope !== command['scope'] || checkpoint.version !== (command['expectedVersion'] as number) + 1
+          || checkpoint.holderId === command['expectedHolderId'] || receipt['format'] !== 1 || !Number.isSafeInteger(receipt['reconciledAtMs'])
+          || ['expectedVersion', 'expectedHolderId', 'commandId', 'actorId', 'reviewDigest', 'effect', 'evidenceRef', 'workerStopped'].some(key => receipt[key] !== command[key])) invalid();
+        return immutable(checkpoint as unknown as JsonValue) as R;
+      }
       case 'claim': {
         const checkpoint = runCheckpointRecord(raw, runId); if (checkpoint.status !== 'claimed' || checkpoint.holderId !== command['holderId']) invalid();
         return immutable(checkpoint as unknown as JsonValue) as R;
@@ -365,6 +503,15 @@ export function runCheckpointResult<M extends RunCheckpointMethod>(method: M, ra
         return immutable(checkpoint as unknown as JsonValue) as R;
       }
       case 'delete': if (typeof raw !== 'boolean') invalid(); return raw as R;
+      case 'scan': {
+        if (!Array.isArray(raw) || raw.length > (command['limit'] as number)) invalid();
+        let previous = command['after'] as unknown as RunCheckpointCursor | undefined;
+        for (const item of raw) { const cursor = object(item); fields(cursor, ['expiresAtMs', 'runId']); integer(cursor['expiresAtMs'], 1); id(cursor['runId']);
+          const next = cursor as unknown as RunCheckpointCursor;
+          if (previous && (next.expiresAtMs < previous.expiresAtMs || (next.expiresAtMs === previous.expiresAtMs && next.runId <= previous.runId))) invalid(); previous = next;
+        }
+        return immutable(raw as JsonValue) as R;
+      }
       case 'due': {
         if (!Array.isArray(raw) || raw.length > (command['limit'] as number) || new Set(raw).size !== raw.length) invalid();
         raw.forEach(id); return immutable(raw as JsonValue) as R;
@@ -382,9 +529,9 @@ export function threadFacade(request: (method: ThreadMethod, input: JsonObject) 
     return threadResult(method, await request(method, command), command) as never;
   };
   return Object.freeze({
-    initialize: () => call('initialize', {}), create: value => call('create', value), get: value => call('get', value), list: value => call('list', value),
+    initialize: () => call('initialize', {}), compaction: value => call('compaction', value), create: value => call('create', value), get: value => call('get', value), list: value => call('list', value),
     update: value => call('update', value), acquire: value => call('acquire', value), renew: value => call('renew', value), release: value => call('release', value),
-    append: value => call('append', value), entries: value => call('entries', value), delete: value => call('delete', value), expire: value => call('expire', value),
+    append: value => call('append', value), entries: value => call('entries', value), delete: value => call('delete', value), expire: value => call('expire', value), recording: value => call('recording', value),
   } satisfies ThreadStore);
 }
 export function runCheckpointFacade(request: (method: RunCheckpointMethod, input: JsonObject) => Promise<unknown>): RunCheckpointStore {
@@ -394,6 +541,6 @@ export function runCheckpointFacade(request: (method: RunCheckpointMethod, input
   };
   return Object.freeze({
     initialize: () => call('initialize', {}), put: value => call('put', value), get: value => call('get', value), claim: value => call('claim', value),
-    update: value => call('update', value), delete: value => call('delete', value), due: value => call('due', value),
+    update: value => call('update', value), delete: value => call('delete', value), due: value => call('due', value), scan: value => call('scan', value), reconcile: value => call('reconcile', value),
   } satisfies RunCheckpointStore);
 }

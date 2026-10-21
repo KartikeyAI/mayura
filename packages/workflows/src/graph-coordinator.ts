@@ -131,7 +131,7 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
   let workerId: string; let leaseMs: number; let maxConcurrentJobs: number; let storageTimeoutMs: number; let maxPendingStorageOperations: number;
   try {
     descriptors = fields(options, ['store', 'definitions', 'scope', 'permissions', 'policyVersion', 'maxCostMicros', 'maxOutputBytes',
-      'approvalTtlMs', 'workerId', 'leaseMs', 'maxConcurrentJobs', 'storageTimeoutMs', 'maxPendingStorageOperations', 'hold'],
+      'approvalTtlMs', 'workerId', 'leaseMs', 'maxConcurrentJobs', 'storageTimeoutMs', 'maxPendingStorageOperations', 'hold', 'authorization'],
     ['store', 'definitions', 'scope', 'permissions', 'policyVersion', 'maxCostMicros', 'workerId']);
     definitions = catalog(descriptors['definitions']!.value);
     const raw = jsonValue({ scope: descriptors['scope']!.value, permissions: descriptors['permissions']!.value,
@@ -148,7 +148,7 @@ export function createWorkflowGraphCoordinator(options: WorkflowGraphCoordinator
     maxPendingStorageOperations = positive(descriptors['maxPendingStorageOperations']?.value, 64, 1_024);
   } catch { throw invalidConfig(); }
   const store = captureStore(descriptors['store']!.value);
-  const shared = { store, scope: policy.scope, permissions: { allow: policy.permissions }, policyVersion: policy.policyVersion,
+  const shared = { store, ...(descriptors['authorization']?.value === undefined ? {} : { authorization: descriptors['authorization'].value as NonNullable<WorkflowGraphRuntimeOptions['authorization']> }), scope: policy.scope, permissions: { allow: policy.permissions }, policyVersion: policy.policyVersion,
     maxCostMicros: policy.maxCostMicros, maxOutputBytes: policy.maxOutputBytes, approvalTtlMs: policy.approvalTtlMs,
     storageTimeoutMs, maxPendingStorageOperations };
   const hold = descriptors['hold']?.value as WorkflowFleetHoldReader | undefined;

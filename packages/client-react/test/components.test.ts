@@ -23,7 +23,7 @@ afterEach(async () => { await act(async () => { root.unmount(); }); dom.window.c
   if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument); else Reflect.deleteProperty(globalThis, 'document');
   if (originalFormData) Object.defineProperty(globalThis, 'FormData', originalFormData); else Reflect.deleteProperty(globalThis, 'FormData'); });
 function snapshot(): RemoteSnapshot { return Object.freeze({ id, status: 'running', budget: Object.freeze({ spentMicros: 0, reservedMicros: 0, calls: 0 }), evidence: Object.freeze([]) }); }
-function remote(inspect: () => Promise<RemoteSnapshot>): RemoteRun { return Object.freeze({ id, inspect, cancel: async () => {}, result: async () => undefined, events: async function* () {} }); }
+function remote(inspect: () => Promise<RemoteSnapshot>): RemoteRun { return Object.freeze({ id, inspect, resumeTool: async () => {}, approve: async () => {}, cancel: async () => {}, result: async () => undefined, events: async function* () {} }); }
 const request = (overrides: Partial<RemoteHumanRequest> = {}): RemoteHumanRequest => Object.freeze({ id: 'review', agentId: 'agent', kind: 'information', schemaId: 'answer-v1',
   schemaDigest: 'a'.repeat(64), prompt: '<img src=x onerror=alert(1)>', digest: 'b'.repeat(64), status: 'waiting', deadlineAtMs: 2_000, ...overrides });
 const graph = Object.freeze({ format: 4 as const, definitionId: 'workflow', definitionVersion: '1', runId: 'a'.repeat(64), revision: 1, status: 'running' as const,

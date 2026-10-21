@@ -283,3 +283,20 @@ and each request or answer is at most 3.5 KiB.
 - [Operations commands](../cli/operations.md)
 - [React](react.md)
 - [Operator console](operator-console.md)
+
+## Core policy for thread-bound approvals
+
+A runtime configured with core `authorization` requires `approve` on a run and on its recorded thread, when bound,
+before consuming the pending answer or claiming a saved checkpoint. Verified scope supplies the subject; an answer's
+`actorId` only records attribution. Existing execution/tool permissions, digests and expiration rules still apply.
+Denied approvals leave the checkpoint waiting. Claimed approvals use separate terminal reconciliation controls with
+`inspect_approval` and `reconcile_approval` actions on run/thread resources; those controls never replay tool writes.
+See [threads, approvals and compaction authorization](authorization.md#threads-approvals-and-compaction).
+
+## Observing new approval requests
+
+An agent's `onApprovalRequested` observer receives call/tool IDs, version, digest and expiry before a candidate is
+published or saved. It uses the existing bounded `defineHook` observer contract: no arguments, no tools or approval
+capability, optional failure visible through hook events, and `mandatory: true` failure blocking before a pending
+request is created. Restarted approval continuations do not notify again for the same candidate. See
+[approval-request observers](lifecycle-hooks.md#approval-request-observers) for cancellation and delivery semantics.

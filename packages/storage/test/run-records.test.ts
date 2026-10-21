@@ -42,7 +42,7 @@ for (const [name, factory, enabled] of [['SQLite', durableBudgetSqliteFixture, t
       await expect(records.claim({ owner, key: 'bad key', digest: digest('a'), replicaId: 'r', nowMs: 1 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     }));
 
-    it('accepts a run waiting for approval, stores its approval events, and reads it as running until it ends', () => withStore(async fixture => {
+    it('accepts a run waiting for approval, stores its approval events, and preserves its waiting status until it ends', () => withStore(async fixture => {
       const records = createAggregateRunRecords(fixture.store);
       await records.claim({ owner, key: 'w', digest: digest('a'), replicaId: 'owner', nowMs: 1 });
       await records.start({ owner, key: 'w', runId, agentId: 'agent', replicaId: 'owner', leaseExpiresAtMs: 5_000, snapshot: snapshot() });
@@ -50,8 +50,8 @@ for (const [name, factory, enabled] of [['SQLite', durableBudgetSqliteFixture, t
       const answered = event(2, 'approval.resolved', { callId: 'c1', toolId: 'orders.refund', decision: 'approved', actorId: 'manager-2' });
       expect(await records.update({ owner, runId, replicaId: 'owner', events: [asked], snapshot: snapshot('waiting'), leaseExpiresAtMs: 6_000 }))
         .toEqual({ status: 'written', cancelRequested: false });
-      // Readers (the server, its clients) see a live run as running; `waiting` reaches them with the server's approval API.
-      expect(await records.read({ owner, runId })).toMatchObject({ status: 'running', snapshot: { status: 'running' } });
+      // Waiting records remain resumable when the owner stops renewing its lease.
+      expect(await records.read({ owner, runId })).toMatchObject({ status: 'waiting', snapshot: { status: 'waiting' } });
       await records.update({ owner, runId, replicaId: 'owner', events: [answered], snapshot: snapshot(), leaseExpiresAtMs: 6_000 });
       expect((await records.events({ owner, runId, after: 0, limit: 10 })).map(item => item.type)).toEqual(['approval.requested', 'approval.resolved']);
       await expect(records.update({ owner, runId, replicaId: 'owner', events: [], snapshot: snapshot('paused'), leaseExpiresAtMs: 6_000 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });

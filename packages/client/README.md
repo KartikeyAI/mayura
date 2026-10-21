@@ -17,3 +17,12 @@ The same subpath exposes `createWorkflowCommandController` for caller-owned, ine
 `cancelWorkflow` and `approveWorkflow` send one explicit revision-bound command with a caller-owned stable command ID. They never retry; the configured server adapter remains responsible for durable command journaling and conflict semantics.
 
 The dependency-free `mayura/client/forms` subpath captures a finite schema-driven human-response form and validates a frozen browser draft into a typed value bound to the exact authenticated request ID and digest. Its optional caller-owned response controller provides explicit single-flight pending/success/conflict/failure state around the authenticated client command. Construction performs no work and submission never retries automatically.
+
+
+History application events are admitted as exact counts-only `history.applied` metadata (`entries`, `omitted`, `bytes`,
+`scanTruncated`). Hook events accept the metadata-only `onApprovalRequested` stage. Headless stores retain history
+counts without changing model/tool activity counters; content-bearing history events are refused before disclosure.
+
+Checkpointed external-result waits appear as `snapshot.toolWait`, separately from human approvals. `client.run(id).resumeTool({ callId, digest })` sends one scoped command without implicit retry or browser result data. It requires `runs:resume` and run/thread read plus thread write capabilities. Headless snapshots preserve the distinct wait. See [AG-UI recovery](../../docs/guides/ag-ui.md#safe-native-owner-recovery).
+
+The headless run store also exposes `store.resumeTool({ callId, digest })` as an explicit one-shot command. It blocks concurrent local submissions, propagates disposal/cancellation and sanitizes errors. Refresh or observe the existing run separately; transport uncertainty never triggers a retry.

@@ -1,10 +1,11 @@
+import { workflowAuthorization } from './authorization.js';
 import { freezeJson, jsonValue, MayuraError, validate, type InferInput, type JsonObject, type JsonValue } from '@mayura/core';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowSagaStateMatchesManifest, initialWorkflowSagaState, workflowSagaState,
   type StoredRecord, type WorkflowSagaState, type WorkflowSagaStatus, type WorkflowSagaStepState } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
 import { createSubmission, workflowStorageFailure } from './storage-failure.js';
-import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
+import { createWorkflowLifecycleRuntime, runWorkflowLifecycleChild, submitWorkflowLifecycleChild, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
   type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowSaga, sagaManifest, type AnyWorkflowSaga, type WorkflowSagaStep } from './saga-definition.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
@@ -107,6 +108,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
   if (!Number.isSafeInteger(maxPendingCallbacks) || maxPendingCallbacks < 1 || maxPendingCallbacks > 128) {
     throw new MayuraError('INVALID_CONFIG', 'maxPendingCallbacks must be an integer from 1 through 128.');
   }
+  const auth = workflowAuthorization(options.authorization, scope);
   const lifecycle = createWorkflowLifecycleRuntime(options);
   const scopeKey = digest('mayura:scope:v1', scope);
   // Index n of `settings` and of `policies` is the same policy the lifecycle runtime knows at index n.
@@ -182,16 +184,24 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
   const submitChild = async (runId: string, step: WorkflowSagaStep, phase: 'forward' | 'compensation',
     state: WorkflowSagaState): Promise<WorkflowLifecycleSnapshot> => {
     const workflow = phase === 'forward' ? step.forward : step.compensation!.workflow;
+    await auth.require('run', runId, 'execute');
+    await auth.require('workflow', workflow.digest, 'delegate');
     const binding = phase === 'forward' ? step.input : step.compensation!.input;
     const input = resolveBinding(binding, state.input, outputs(state));
-    return submitWorkflowLifecycleUnder(lifecycle, pinnedIndex(state), workflow, { input, idempotencyKey: childKey(runId, step.id, phase) });
+    return submitWorkflowLifecycleChild(lifecycle, pinnedIndex(state), workflow, { input, idempotencyKey: childKey(runId, step.id, phase) }, async signal => {
+      await auth.execute(state.definition, runId, signal);
+      await auth.require('workflow', workflow.digest, 'delegate', signal);
+    });
   };
 
   const run = async (definition: AnyWorkflowSaga, id: string): Promise<WorkflowSagaSnapshot> => {
+      const checkedSnapshot = async (record: StoredRecord) => { await auth.execute(definition.digest, id); return snapshot(record); };
+
     assertWorkflowSaga(definition);
     for (let wave = 0; wave < definition.steps.length * 2 + 4; wave++) {
+      await auth.execute(definition.digest, id);
       let record = await load(id); let state = decoded(record); verify(definition, record, state);
-      if (terminalSagaStatuses.has(state.status) || state.status === 'paused') return snapshot(record);
+      if (terminalSagaStatuses.has(state.status) || state.status === 'paused') return checkedSnapshot(record);
       if (state.status === 'running' || state.status === 'waiting') {
         const index = state.cursor; const step = definition.steps[index];
         if (!step) {
@@ -204,7 +214,8 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
             await save(record, state, 'saga.output.rejected'); continue;
           }
           state.output = output; state.status = 'succeeded';
-          record = await save(record, state, 'saga.run.succeeded'); return snapshot(record);
+          await auth.execute(definition.digest, id);
+          record = await save(record, state, 'saga.run.succeeded'); return checkedSnapshot(record);
         }
         const persisted = state.steps[step.id]!;
         let child: WorkflowLifecycleSnapshot;
@@ -227,14 +238,21 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
           }, 'saga.forward.linked', { stepId: step.id, childRunId: child.id });
           state = decoded(record); child = await lifecycle.inspect(state.steps[step.id]!.forwardRunId!);
         } else child = await lifecycle.inspect(persisted.forwardRunId);
-        child = await lifecycle.runUntilSettled(step.forward, child.id);
+        await auth.execute(definition.digest, id);
+        await auth.require('workflow', step.forward.digest, 'delegate');
+        child = await runWorkflowLifecycleChild(lifecycle, step.forward, child.id, async signal => {
+          await auth.execute(definition.digest, id, signal);
+          await auth.require('workflow', step.forward.digest, 'delegate', signal);
+        });
+        await auth.execute(definition.digest, id);
+        await auth.require('workflow', step.forward.digest, 'delegate');
         if (!terminalChild(child)) {
           record = await mutate(id, current => { const target = current.steps[step.id]!;
             if (target.forwardRunId !== child.id || terminalSagaStatuses.has(current.status)) return false;
             recordChild(current, step.id, 'forward', child); target.status = 'forward_waiting';
             current.status = child.status === 'waiting' ? 'waiting' : 'running'; return true;
           }, 'saga.forward.waiting', { stepId: step.id, childRunId: child.id });
-          return snapshot(record);
+          return checkedSnapshot(record);
         }
         if (successfulChild(child)) {
           record = await mutate(id, current => { const target = current.steps[step.id]!;
@@ -264,7 +282,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
           const compensated = Object.values(state.steps).some(step => step.status === 'compensated');
           state.status = compensated ? 'compensated' : 'failed'; state.cursor = 0;
           record = await save(record, state, compensated ? 'saga.run.compensated' : 'saga.run.failed');
-          return snapshot(record);
+          return checkedSnapshot(record);
         }
         const step = definition.steps[index]!; const persisted = state.steps[step.id]!;
         let child: WorkflowLifecycleSnapshot;
@@ -276,7 +294,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
               if (target.status !== 'succeeded') return false;
               target.status = 'compensation_failed'; current.status = 'compensation_failed'; current.cursor = index; return true;
             }, 'saga.compensation.rejected', { stepId: step.id });
-            return snapshot(record);
+            return checkedSnapshot(record);
           }
           record = await mutate(id, current => { const target = current.steps[step.id]!;
             if (target.compensationRunId !== null) return false;
@@ -285,14 +303,21 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
           }, 'saga.compensation.linked', { stepId: step.id, childRunId: child.id });
           state = decoded(record); child = await lifecycle.inspect(state.steps[step.id]!.compensationRunId!);
         } else child = await lifecycle.inspect(persisted.compensationRunId);
-        child = await lifecycle.runUntilSettled(step.compensation!.workflow, child.id);
+        await auth.execute(definition.digest, id);
+        await auth.require('workflow', step.compensation!.workflow.digest, 'delegate');
+        child = await runWorkflowLifecycleChild(lifecycle, step.compensation!.workflow, child.id, async signal => {
+          await auth.execute(definition.digest, id, signal);
+          await auth.require('workflow', step.compensation!.workflow.digest, 'delegate', signal);
+        });
+        await auth.execute(definition.digest, id);
+        await auth.require('workflow', step.compensation!.workflow.digest, 'delegate');
         if (!terminalChild(child)) {
           record = await mutate(id, current => { const target = current.steps[step.id]!;
             if (target.compensationRunId !== child.id || terminalSagaStatuses.has(current.status)) return false;
             recordChild(current, step.id, 'compensation', child); target.status = 'compensation_waiting';
             current.status = 'compensating'; current.cursor = index + 1; return true;
           }, 'saga.compensation.waiting', { stepId: step.id, childRunId: child.id });
-          return snapshot(record);
+          return checkedSnapshot(record);
         }
         if (successfulChild(child)) {
           await mutate(id, current => { const target = current.steps[step.id]!;
@@ -307,10 +332,10 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
           recordChild(current, step.id, 'compensation', child); target.status = 'compensation_failed';
           current.status = 'compensation_failed'; current.cursor = index; return true;
         }, 'saga.compensation.failed', { stepId: step.id, childRunId: child.id, childStatus: child.status });
-        return snapshot(record);
+        return checkedSnapshot(record);
       }
     }
-    return snapshot(await load(id));
+    return checkedSnapshot(await load(id));
   };
 
   return Object.freeze<WorkflowSagaRuntime>({
@@ -322,9 +347,12 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
         throw new MayuraError('INVALID_INPUT', 'A bounded saga submission key is required.');
       }
       const raw = freezeJson(jsonValue(command.input, { maxBytes: maxOutputBytes }));
+      const admittedId = digest('mayura:workflow-saga-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+      await auth.execute(definition.digest, admittedId);
       const input = await boundedValidate(definition.input, raw, 'input');
       const state = initialWorkflowSagaState(sagaManifest(definition), input, definition.digest, policy, options.maxCostMicros);
       const id = digest('mayura:workflow-saga-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+      await auth.execute(definition.digest, id);
       const created = await createSubmission(() => store.create({ scope: scopeKey, id,
         idempotencyKey: `saga:${command.idempotencyKey}`, definitionHash: definition.digest,
         state: jsonValue(state) as JsonObject, events: [{ type: 'saga.run.created', data: {} }] }), 'workflow saga run');
@@ -338,11 +366,14 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       if (terminalSagaStatuses.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal saga cannot be paused.');
       state.status = 'paused'; return true;
     }, 'saga.run.paused', {}, true)),
-    resume: async id => snapshot(await mutate(id, state => {
+    resume: async id => {
+      await auth.require('run', id, 'resume');
+      return snapshot(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused saga can be resumed.');
       const compensating = Object.values(state.steps).some(step => ['failed', 'compensation_waiting', 'compensated', 'compensation_failed'].includes(step.status));
       state.status = compensating ? 'compensating' : 'running'; return true;
-    }, 'saga.run.resumed', {}, true)),
+    }, 'saga.run.resumed', {}, true));
+    },
     migrate: async (migration, command) => {
       ensureOpen(); assertWorkflowMigration(migration); assertWorkflowSaga(migration.from); assertWorkflowSaga(migration.to);
       const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
@@ -410,7 +441,7 @@ export function createWorkflowSagaRuntime(options: WorkflowSagaRuntimeOptions): 
       }, 'saga.run.cancelled', {}, true);
       return snapshot(record);
     },
-    close: () => { if (!closed) { closed = true; lifecycle.close(); } },
-    drain: async options => { const report = await lifecycle.drain(options); closed = true; return report; },
+    close: () => { if (!closed) { closed = true; auth.close(); lifecycle.close(); } },
+    drain: async options => { const report = await lifecycle.drain(options); closed = true; auth.close(); return report; },
   });
 }

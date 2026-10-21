@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    env_file: .env
+    environment:
+      MAYURA_SQLITE_PATH: /app/.data/notebook.sqlite
+    volumes: ["notebook:/app/.data"]
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    environment:
+      MAYURA_SQLITE_PATH: /app/.data/notebook.sqlite
+    volumes: ["notebook:/app/.data"]
+    restart: unless-stopped
+volumes:
+  notebook:

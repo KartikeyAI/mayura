@@ -21,3 +21,8 @@ const observer = createObserver({ sink: exporter.sink });
 `agentRunTraceSpans(events, { parent })` projects one agent run's admitted events into deterministic run, `model.call` and `tool:<id>` spans, optionally nested under a parent such as a workflow step (`workflowStepTraceContext` in `mayura/workflows`, whose `createWorkflowTraceExport` exports durable workflow runs through this exporter). See the workspace guide *Trace durable workflow runs*.
 
 Requests and responses are bounded, delivery is single-flight, response bodies are never exposed, and signal-specific partial OTLP rejection is counted separately. Observer `sinkDelivered` means the callback settled successfully; use each exporter’s `inspect()` for remote accepted/dropped counts. These adapters are not durable audit, delivery-once storage, automatic tracing/aggregation, or a substitute for a local OpenTelemetry Collector.
+
+`createOpenTelemetryAuthorization` from `mayura/exporter-otlp/opentelemetry` accepts your existing tracer and/or meter
+and exposes an authorization audit sink. Decision spans omit identifiers by default; metrics use only closed effect,
+reason and resource-kind labels. Attach it through `audit: { sink: telemetry.sink }` with explicit `authz:audit` grants.
+It installs no exporter or sampler, opens no network connection and leaves SDK lifecycle to the application.

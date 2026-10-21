@@ -45,6 +45,7 @@ export interface ConversationTransaction {
   updateCheckpoint(row: CheckpointRow, parts: readonly string[] | undefined, previous: CheckpointRow): Promise<void>;
   deleteCheckpoint(row: CheckpointRow): Promise<void>;
   /** Waiting checkpoints that expired before `expiresBeforeMs`, earliest first. */
+  scanCheckpoints(after: { expiresAtMs: number; runId: string } | undefined, limit: number): Promise<{ expiresAtMs: number; runId: string }[]>;
   dueCheckpoints(expiresBeforeMs: number, limit: number): Promise<string[]>;
 }
 export interface ConversationPersistence {
@@ -128,6 +129,13 @@ export function sqlConversationPersistence(backend: SchedulerBackend): Conversat
       await tx.query(`DELETE FROM ${t('run_checkpoint_parts')} WHERE run_id = ?`, [row.run_id]);
       await tx.query(`DELETE FROM ${t('run_checkpoints')} WHERE run_id = ?`, [row.run_id]);
     },
+    scanCheckpoints: async (after, limit) => {
+      const ordered = `run_id COLLATE ${binaryCollation(backend)}`;
+      const rows = await tx.query<{ run_id: string; expires_at_ms: number | string }>(`SELECT run_id,expires_at_ms FROM ${t('run_checkpoints')}
+        ${after ? `WHERE (expires_at_ms > ? OR (expires_at_ms = ? AND ${ordered} > ?))` : ''}
+        ORDER BY expires_at_ms, ${ordered} LIMIT ?`, [...(after ? [after.expiresAtMs, after.expiresAtMs, after.runId] : []), limit]);
+      return rows.map(row => ({ runId: row.run_id, expiresAtMs: Number(row.expires_at_ms) }));
+    },
     dueCheckpoints: async (expiresBeforeMs, limit) => (await tx.query<{ run_id: string }>(`SELECT run_id FROM ${t('run_checkpoints')}
       WHERE status = 'waiting' AND expires_at_ms < ? ORDER BY expires_at_ms, run_id LIMIT ?`, [expiresBeforeMs, limit])).map(row => row.run_id),
   });
@@ -150,6 +158,7 @@ export function sqlConversationPersistence(backend: SchedulerBackend): Conversat
         holder_id TEXT, lease_expires_at_ms ${big}, created_at_ms ${big} NOT NULL, updated_at_ms ${big} NOT NULL, expires_at_ms ${big} NOT NULL,
         parts INTEGER NOT NULL, PRIMARY KEY(run_id))`);
       await tx.query(`CREATE INDEX IF NOT EXISTS ${i('run_checkpoints_due')} ON ${t('run_checkpoints')} (status, expires_at_ms)`);
+      await tx.query(`CREATE INDEX IF NOT EXISTS ${i('run_checkpoints_scan')} ON ${t('run_checkpoints')} (expires_at_ms, run_id COLLATE ${binaryCollation(backend)})`);
       await tx.query(`CREATE TABLE IF NOT EXISTS ${t('run_checkpoint_parts')} (
         run_id TEXT NOT NULL, part INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(run_id, part))`);
     }),

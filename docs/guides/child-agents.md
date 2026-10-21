@@ -156,3 +156,10 @@ if (result.status === 'promoted') console.log(result.branchId, result.output);
 - [Costs and budgets](../concepts/costs-and-budgets.md)
 - [Workflow composition](workflow-composition.md)
 - [Testing](testing.md)
+
+
+## Handing off instead of delegating
+
+Use [agent handoffs](agent-handoffs.md) when the next agent should take over the same conversation and the source
+should stop making model turns. A handoff keeps one run, budget and thread recording, and installs separately declared
+target permissions. It is available only to non-speculative root runs; child agents cannot use it to widen authority.

@@ -1,3 +1,4 @@
+import { createAuthorizer } from '@mayura/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,13 +8,13 @@ import { defineTool } from '@mayura/tools';
 import { scriptedModel } from '@mayura/testing';
 import { createSqliteStore } from '@mayura/storage-sqlite';
 import type { ModelAdapter, ModelRequest, ModelResponse, RunEvent, RunHandle } from '@mayura/core';
-import { createRuntime, defineAgent, type RunCheckpointPort, type Runtime, type RuntimeOptions } from '../src/index.js';
+import { createRuntime, defineAgent, defineHook, type RunCheckpointPort, type Runtime, type RuntimeOptions } from '../src/index.js';
 
 type Store = ReturnType<typeof createSqliteStore>;
 let directory: string; let store: Store; const runtimes: Runtime[] = [];
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'mayura-checkpoints-'));
-  store = createSqliteStore({ filename: join(directory, 'runs.sqlite') });
+  store = createSqliteStore({ filename: join(directory, 'runs.sqlite') }); store = { ...store, threads: { ...store.threads }, runCheckpoints: { ...store.runCheckpoints } };
   await store.initialize(); await store.runCheckpoints.initialize();
 });
 afterEach(async () => {
@@ -206,6 +207,19 @@ describe('runs paused to a checkpoint store', () => {
     expect((await run.result()).status).toBe('succeeded');
     expect(execute).toHaveBeenCalledOnce();
     expect(await typesOf(run)).not.toContain('run.paused');
+  });
+
+  it('lets the host own expiry and returns the resumed handle for event persistence', async () => {
+    const { tool, execute } = refundTool(); const agent = agentWith(priced([call('c1', 40), done('expired')]), [tool]);
+    const engine = runtime({ approvals: { expiresInMs: 30 }, checkpoints: { store: store.runCheckpoints, agents: [agent], autoExpire: false } });
+    const run = engine.submit(agent, { input: { question: 'Refund' } }); await until(run, 'run.paused');
+    expect(await engine.expireApproval(run.id)).toEqual({ status: 'not_due' });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(engine.inspect(run).status).toBe('waiting');
+    const result = await engine.expireApproval(run.id); expect(result.status).toBe('resumed');
+    if (result.status !== 'resumed') throw new Error('Missing resumed handle');
+    expect(result.run).toBe(run); expect((await result.run.result()).status).toBe('succeeded');
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('continues an expired request as its policy says while the process lives', async () => {
@@ -414,3 +428,66 @@ function bound(port: RunCheckpointPort): RunCheckpointPort {
   return { put: command => port.put(command), get: command => port.get(command), claim: command => port.claim(command),
     delete: command => port.delete(command), due: command => port.due(command) };
 }
+
+it('keeps a saved approval unclaimed when current tool authorization is revoked, including after restart', async () => {
+  let allowed = true;
+  const authorization = createAuthorizer({ policy: { version: 'v1', authorize: request => request.resource.kind === 'tool' && !allowed
+    ? { effect: 'deny', reason: 'explicit_deny', policyVersion: 'v1', ruleId: null } : { effect: 'allow', reason: 'allowed', policyVersion: 'v1', ruleId: null } }, permissions: { allow: ['authz:evaluate'] } });
+  try {
+    const { tool, execute } = refundTool(); const agent = agentWith(priced([call('authz-call', 40), done('ok')]), [tool]);
+    const engine = runtime({ authorization, agents: [agent] }); const run = engine.submit(agent, { input: { question: 'Refund' } }); await until(run, 'run.paused');
+    const pending = engine.inspect(run).approval!; const claim = vi.spyOn(store.runCheckpoints, 'claim'); allowed = false;
+    const restarted = runtime({ authorization, agents: [agent] });
+    await expect(restarted.approve(run.id, { callId: pending.callId, digest: pending.digest, decision: 'approved', actorId: 'human' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(claim).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled(); expect((await store.runCheckpoints.get({ runId: run.id }))?.status).toBe('waiting');
+    allowed = true; const resumed = await restarted.approve(run.id, { callId: pending.callId, digest: pending.digest, decision: 'approved', actorId: 'human' });
+    expect(await resumed.result()).toMatchObject({ status: 'succeeded' }); expect(execute).toHaveBeenCalledTimes(1);
+  } finally { authorization.close(); }
+});
+
+
+it('does not repeat history application or approval notification when an existing candidate resumes', async () => {
+  const notified = vi.fn();
+  const hook = defineHook({ id: 'checkpoint-notification', version: '1', stage: 'onApprovalRequested', handler: notified });
+  const { tool, execute } = refundTool(); const model = priced([call('notify-once', 40), done('ok')]);
+  const agent = defineAgent({ id: 'support', version: '1', instructions: 'Handle refunds.', model, tools: [tool], hooks: [hook],
+    input: z.object({ question: z.string() }), output: z.object({ reply: z.string() }) });
+  const first = runtime({ agents: [agent] });
+  const history = { messages: [{ role: 'user' as const, content: 'Earlier' }, { role: 'assistant' as const, output: 'Answer' }], omittedTurns: 2 };
+  const run = first.submit(agent, { input: { question: 'Refund' }, history });
+  const pending = await until(run, 'approval.requested'); await until(run, 'run.paused');
+  const saved = await store.runCheckpoints.get({ runId: run.id });
+  expect(saved?.body['counts']).toMatchObject({ hookCalls: 1 }); expect(notified).toHaveBeenCalledTimes(1);
+  const initial: RunEvent[] = []; for await (const event of run.observe()) { initial.push(event); if (event.type === 'run.paused') break; }
+  expect(initial.filter(event => event.type === 'history.applied')).toHaveLength(1);
+  await first.close(); const restarted = runtime({ agents: [agent] });
+  const resumed = await restarted.approve(run.id, { callId: 'notify-once', digest: String(pending.metadata['digest']), decision: 'approved', actorId: 'reviewer' });
+  expect((await resumed.result()).status).toBe('succeeded'); expect(execute).toHaveBeenCalledTimes(1); expect(notified).toHaveBeenCalledTimes(1);
+  const later: RunEvent[] = []; for await (const event of resumed.observe()) later.push(event);
+  expect(later.some(event => event.type === 'history.applied')).toBe(false);
+});
+
+it('does not persist a waiting checkpoint after mandatory approval notification fails', async () => {
+  const hook = defineHook({ id: 'no-checkpoint', version: '1', stage: 'onApprovalRequested', mandatory: true, handler: () => { throw new Error('PRIVATE'); } });
+  const { tool, execute } = refundTool(); const model = priced([call('blocked-notify', 40)]);
+  const agent = defineAgent({ id: 'support', version: '1', instructions: 'Handle refunds.', model, tools: [tool], hooks: [hook],
+    input: z.object({ question: z.string() }), output: z.object({ reply: z.string() }) });
+  const put = vi.spyOn(store.runCheckpoints, 'put'); const engine = runtime({ agents: [agent] });
+  const run = engine.submit(agent, { input: { question: 'Refund' } });
+  expect(await run.result()).toMatchObject({ status: 'blocked', error: { code: 'GUARD_UNAVAILABLE' } });
+  expect(put).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+});
+
+
+it('notifies only once when checkpoint persistence falls back to an in-memory approval', async () => {
+  const notified = vi.fn(); const hook = defineHook({ id: 'fallback-notification', version: '1', stage: 'onApprovalRequested', handler: notified });
+  const { tool, execute } = refundTool(); const model = priced([call('fallback-notify', 40), done('ok')]);
+  const agent = defineAgent({ id: 'support', version: '1', instructions: 'Handle refunds.', model, tools: [tool], hooks: [hook],
+    input: z.object({ question: z.string() }), output: z.object({ reply: z.string() }) });
+  const put = vi.fn(async () => { throw new Error('PRIVATE storage failure'); });
+  const engine = runtime({ agents: [agent], checkpointStore: { ...store.runCheckpoints, put } });
+  const run = engine.submit(agent, { input: { question: 'Refund' } }); const pending = await until(run, 'approval.requested');
+  expect(notified).toHaveBeenCalledTimes(1); expect(put).toHaveBeenCalledTimes(1);
+  await engine.approve(run, { callId: 'fallback-notify', digest: String(pending.metadata['digest']), decision: 'approved', actorId: 'reviewer' });
+  expect((await run.result()).status).toBe('succeeded'); expect(execute).toHaveBeenCalledTimes(1); expect(notified).toHaveBeenCalledTimes(1);
+});

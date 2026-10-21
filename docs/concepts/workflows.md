@@ -132,3 +132,11 @@ to the new version with a reviewed migration. See [Operating workflows](../guide
 - [Approvals and human input](../guides/approvals-and-human-input.md)
 - [Sagas and loops](../guides/sagas-and-loops.md)
 - [Operating workflows](../guides/workflow-operations.md)
+
+## Execution authorization
+
+Durable workflow runtimes accept a host-owned core `authorization` instance alongside their static grants and
+budget limits. It gates workflow/run execution, tools and child delegation, including loop and saga children.
+Revoked execution never authorizes replay of a dispatched effect; known receipts and charges remain durable while
+output can be withheld. See the [authorization guide](../guides/authorization.md#workflow-execution-and-child-workflows)
+for resource IDs, actions, audit delivery and the boundary between workers and HTTP operator controls.

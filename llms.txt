@@ -17,6 +17,7 @@ Rules that matter when writing Mayura code:
 - [Introduction](docs/introduction.md): What Mayura is, the ideas behind it, and how its parts fit together.
 - [Quickstart](docs/quickstart.md): Create a Mayura project in one command, or add a first agent to your own project and run it offline or on a real model.
 - [Installation](docs/installation.md): Requirements, the optional packages each part of Mayura needs, and TypeScript settings.
+- [V1.2 release validation status](docs/guides/release-readiness.md): Completed local qualification, experimental surfaces and the checks still required before releasing Mayura V1.2.
 - [Using Mayura with AI coding agents](docs/ai-agents.md): Point Claude Code, Cursor, Codex and other coding assistants at documentation that matches your installed Mayura version.
 
 ## Concepts
@@ -28,16 +29,20 @@ Rules that matter when writing Mayura code:
 - [Permissions](docs/concepts/permissions.md): Explicit allow-lists decide which models, tools, effects and capabilities a run may use. Nothing is allowed by default.
 - [Costs and budgets](docs/concepts/costs-and-budgets.md): Cap what a run can spend: costs in micros, per-call ceilings, the run cost limit, tool costs and shared budgets.
 - [Workflows](docs/concepts/workflows.md): What a Mayura workflow is, when to use one instead of a single agent run, and which workflow entry point to start with.
+- [Framework starters](docs/guides/framework-starters.md): Generate Next.js, Hono, React Router, TanStack Start, SvelteKit or Nuxt notebooks with scoped threads and in-run approvals.
+- [Retrieval augmented generation](docs/guides/rag.md): Scoped retrieval tools, durable content-addressed ingestion, vector adapters, citations and bounded reranking.
 
 ## Agents and models
 
 - [Model providers](docs/guides/model-providers.md): Connect an agent to OpenAI, Anthropic or any OpenAI-compatible endpoint, with explicit keys, prices and a per-call cost limit.
 - [Model registry](docs/guides/model-registry.md): Name models as provider/model from @mayurajs provider packages, with explicit or catalog prices, a per-call cost bound, safe retries and fallback chains.
+- [AI gateways](docs/guides/ai-gateways.md): Registry providers for Vercel, Cloudflare, OpenRouter, Portkey, Helicone and LiteLLM, with explicit credentials and bounded billing.
 - [Model routing](docs/guides/model-routing.md): Fail over between model providers with createModelRouter: priority order, a circuit breaker and conservative cost accounting.
 - [Streaming](docs/guides/streaming.md): Stream one text field of an agent's answer as the model writes it, with guards on every batch and the final output still checked.
 - [Vision: images and PDFs](docs/guides/vision.md): Agents that see: send images and PDFs with an agent's input, return screenshots from tools, and keep media checked, limited and out of logs.
 - [Voice](docs/guides/voice.md): Transcribe speech and speak text through voice providers, with explicit prices, a per-call cost bound and voice:<id> permissions.
 - [Child agents](docs/guides/child-agents.md): Let one agent call another as a tool, spawn child runs from your code, or race speculative branches, under one shared budget.
+- [Agent handoffs](docs/guides/agent-handoffs.md): Transfer a conversation to another agent with one run, one budget and separate target permissions.
 - [Skills](docs/guides/skills.md): Give an agent SKILL.md folders of task instructions that it loads only when a task needs them.
 - [MCP tools](docs/guides/mcp.md): Wrap one operation of a Model Context Protocol server as a Mayura tool, with the effects, permissions and cost you declare.
 - [Terminal](docs/guides/terminal.md): Chat with an agent in the terminal, or turn it into a one-shot command, with a person confirming actions and answering questions.
@@ -57,6 +62,7 @@ Rules that matter when writing Mayura code:
 - [Storage](docs/guides/storage.md): Persist durable workflows, memory, budgets and jobs in SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, D1 or DynamoDB; run migrations, and back the store up.
 - [Threads](docs/guides/threads.md): Keep a user's conversations with an agent in your store, run each new message as a turn with the conversation so far, and delete them for good.
 - [Memory and context](docs/guides/memory-and-context.md): Give agents scoped long-term memory with lexical, semantic and hybrid search, and assemble prompt context within a budget.
+- [Fine-grained authorization](docs/guides/authorization.md): Authorize scoped resources with the core policy contract and built-in role-based access control.
 - [Guardrails](docs/guides/guardrails.md): Check, redact or block what goes into and comes out of an agent with local guards, processor pipelines and model-backed moderation.
 - [Lifecycle hooks](docs/guides/lifecycle-hooks.md): Run your own checks and observers at fixed points of an agent run: before model and tool calls, before output release, and at the end.
 - [Artifacts](docs/guides/artifacts.md): Store files your agents produce on local disk or in S3, R2 and other file stores, with verified content, per-tenant isolation, safe downloads, audits and backups.
@@ -69,8 +75,10 @@ Rules that matter when writing Mayura code:
 ## Serve, observe and deploy
 
 - [Server and client](docs/guides/server-and-client.md): Serve agents over authenticated HTTP with mayura/server and mayura/server-node, and call them from browsers or Node with mayura/client.
+- [AG-UI adapter](docs/guides/ag-ui.md): Expose scoped run events, stored messages, state snapshots/deltas, durable frontend-tool claims/outboxes and approval interrupts through an AG-UI 1.0 Fetch adapter.
 - [Authentication and API keys](docs/guides/authentication.md): Who may call Mayura's server: tokens from identity providers verified with their published keys, and API keys issued and checked on your own storage, each mapped explicitly to what the caller may do.
 - [React and UI bindings](docs/guides/react.md): Show live agent runs, workflow progress and human response forms in React, or in any UI framework through headless stores.
+- [Copy-in UI components](docs/guides/copy-in-ui.md): Install versioned React source components with reviewed file plans, explicit controls and caller-owned Mayura stores.
 - [Observability](docs/guides/observability.md): Watch agent runs through their metadata events, keep run summaries, and export logs, traces and metrics to OpenTelemetry.
 - [Operator console](docs/guides/operator-console.md): A built-in web console for operators: health, agents and tools, workflow runs, approvals, human requests, fleet control and migrations.
 - [Deployment](docs/guides/deployment.md): Run a Mayura app in production: on containers, Kubernetes, managed platforms, virtual machines, serverless functions or inside an app you already run.
@@ -83,6 +91,30 @@ Rules that matter when writing Mayura code:
 - [Serve, worker and migrate](docs/cli/run.md): Run your application in production with mayura serve, mayura worker and mayura migrate, and write the module they load.
 - [Deploy with mayura deploy](docs/cli/deploy.md): Write a target's deployment files, plan a release and run it with the tools you already use: Docker, Docker Compose, Kubernetes, or a platform package.
 - [Operate a server](docs/cli/operations.md): Inspect and control a running Mayura server from the CLI: health, tools, runs, human requests, workflows and the fleet.
+
+## Integrations: vector stores
+
+- [Chroma vectors](docs/integrations/vector-chroma.md): Scoped native vector storage for chroma.
+- [Libsql vectors](docs/integrations/vector-libsql.md): Scoped native vector storage for libsql.
+- [Pgvector vectors](docs/integrations/vector-pgvector.md): Scoped native vector storage for pgvector.
+- [Pinecone vectors](docs/integrations/vector-pinecone.md): Scoped native vector storage for pinecone.
+- [Qdrant vectors](docs/integrations/vector-qdrant.md): Scoped native vector storage for qdrant.
+- [Weaviate vectors](docs/integrations/vector-weaviate.md): Scoped native vector storage for weaviate.
+
+## Integrations: rerankers
+
+- [Cohere reranking](docs/integrations/reranker-cohere.md): Bounded indexed-result reranking with cohere.
+- [Jina reranking](docs/integrations/reranker-jina.md): Bounded indexed-result reranking with jina.
+- [Voyage reranking](docs/integrations/reranker-voyage.md): Bounded indexed-result reranking with voyage.
+
+## Integrations: ai gateways
+
+- [Cloudflare AI Gateway](docs/integrations/gateway-cloudflare.md): Use Cloudflare AI Gateway as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
+- [Helicone](docs/integrations/gateway-helicone.md): Use Helicone as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
+- [LiteLLM](docs/integrations/gateway-litellm.md): Use LiteLLM as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
+- [OpenRouter](docs/integrations/gateway-openrouter.md): Use OpenRouter as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
+- [Portkey](docs/integrations/gateway-portkey.md): Use Portkey as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
+- [Vercel AI Gateway](docs/integrations/gateway-vercel.md): Use Vercel AI Gateway as a bounded Mayura model-registry provider with explicit credentials and gateway billing.
 
 ## Integrations: model providers
 
@@ -166,6 +198,14 @@ Rules that matter when writing Mayura code:
 - [Stagehand tools](docs/integrations/browser-stagehand.md): Give agents Stagehand 3's extract, observe and act on a Mayura browser with @mayurajs/browser-stagehand: setup, model, permissions, costs and limits.
 - [Steel browsers](docs/integrations/browser-steel.md): Drive Steel's hosted Chromium sessions from agents with @mayurajs/browser-steel: setup, options, session lifetimes, live view and errors.
 
+## Integrations: authorization policies
+
+- [Cedar authorization](docs/integrations/authz-cedar.md): Local Cedar evaluation with scoped identities, pinned policies and schema, trusted attributes and core audit events.
+- [HTTP authorization policies](docs/integrations/authz-http.md): External scoped authorization through a bounded HTTP policy protocol with core enforcement and audit receipts.
+- [OpenFGA authorization](docs/integrations/authz-openfga.md): Native OpenFGA checks with pinned models, explicit scoped relation mappings and core authorization audit events.
+- [Oso authorization](docs/integrations/authz-oso.md): Native Oso Cloud authorization checks with scoped typed identities, explicit credentials, bounded transport and core audit events.
+- [Permit.io authorization](docs/integrations/authz-permit.md): Native Permit.io PDP checks with explicit scoped identities, instance keys, environment credentials and core audit events.
+
 ## Integrations: sign-in providers
 
 - [Amazon Cognito tokens](docs/integrations/auth-cognito.md): Accept Amazon Cognito user pool access or ID tokens on Mayura's server with @mayurajs/auth-cognito: checks, app clients, machines and errors.
@@ -202,7 +242,7 @@ Rules that matter when writing Mayura code:
 ## Reference
 
 - [Entry points](docs/reference/entry-points.md): Every public entry point of the mayura package: what it is for, its key exports and the optional packages it needs.
-- [Integration packages](docs/reference/integrations.md): Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, sign-in, API keys and deploy targets.
+- [Integration packages](docs/reference/integrations.md): Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets.
 
 ## Project
 

@@ -23,7 +23,7 @@ function environment() {
     'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'COREPACK_HOME']);
   return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase()))),
     COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_ignore_scripts: 'true',
-    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false' };
+    npm_config_cache: join(workspace, '.artifacts', 'npm-cache'), npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false' };
 }
 
 

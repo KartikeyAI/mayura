@@ -36,3 +36,7 @@ const agent = defineAgent({
   listed at the price announced from January 1, 2027, so a budget never undercounts.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+### RAG embeddings
+
+This provider exports `googleEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

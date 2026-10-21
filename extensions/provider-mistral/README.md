@@ -31,3 +31,7 @@ const agent = defineAgent({
 - `catalog` holds Mistral's list prices on its date for dated model versions, used only with `prices: 'catalog'`. A `-latest` alias moves to newer models, so give its price yourself.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+### RAG embeddings
+
+This provider exports `mistralEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

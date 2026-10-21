@@ -7,6 +7,17 @@ export const unavailable = (): Response => new Response(JSON.stringify({ error: 
   status: 503, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Retry-After': '1' },
 });
 
+/**
+ * Hono exposes a stream even for a zero-byte HTTP POST/DELETE. Restore Fetch's absent-body representation only
+ * when Node's HTTP framing guarantees no bytes (no transfer encoding and absent/zero Content-Length).
+ * This adapter is for requests already parsed by the Node host, not untrusted synthetic Fetch requests.
+ */
+export function normalizeNodeRequest(request: Request): Request {
+  if (request.body === null || request.headers.has('transfer-encoding')
+    || (request.headers.has('content-length') && request.headers.get('content-length') !== '0')) return request;
+  return new Request(request.url, { method: request.method, headers: request.headers, signal: request.signal });
+}
+
 /** Snapshot and freeze every trusted option before a socket opens; no mutable caller reference is retained. */
 export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin' | 'mounted'>): Omit<AgentServerOptions, 'publicOrigin' | 'mounted'> {
   return {
@@ -14,6 +25,13 @@ export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin
       permissions: Object.freeze({ allow: Object.freeze([...config.permissions.allow]) }),
       ...(config.limits === undefined ? {} : { limits: Object.freeze({ ...config.limits }) }),
     }))), authenticate: options.authenticate,
+    ...(options.authorization === undefined ? {} : { authorization: Object.freeze({
+      ...(options.authorization.cursorKey === undefined ? {} : { cursorKey: new Uint8Array(options.authorization.cursorKey) }),
+      ...(options.authorization.audit === undefined ? {} : { audit: Object.freeze({ ...options.authorization.audit }) }),
+      policy: Object.freeze({ version: options.authorization.policy.version, authorize: options.authorization.policy.authorize.bind(options.authorization.policy) }),
+      ...(options.authorization.permissions === undefined ? {} : { permissions: Object.freeze({ allow: Object.freeze([...options.authorization.permissions.allow]) }) }),
+      ...(options.authorization.limits === undefined ? {} : { limits: Object.freeze({ ...options.authorization.limits }) }),
+    }) }),
     ...(options.publicLiveness === undefined ? {} : { publicLiveness: options.publicLiveness }),
     ...(options.inspector === undefined ? {} : { inspector: options.inspector }),
     ...(options.healthChecks === undefined ? {} : { healthChecks: Object.freeze(options.healthChecks.map(check => Object.freeze({ id: check.id, check: check.check }))) }),
@@ -27,7 +45,14 @@ export function snapshotSettings(options: Omit<AgentServerOptions, 'publicOrigin
     ...(options.workflowFleet === undefined ? {} : { workflowFleet: options.workflowFleet }),
     ...(options.workflowMigrations === undefined ? {} : { workflowMigrations: options.workflowMigrations }),
     ...(options.submissionJournal === undefined ? {} : { submissionJournal: options.submissionJournal }),
+    ...(options.conversationRecovery === undefined ? {} : { conversationRecovery: Object.freeze({ ...options.conversationRecovery, permissions: Object.freeze({ allow: Object.freeze([...options.conversationRecovery.permissions.allow]) }) }) }),
+    ...(options.approvalReconciliation === undefined ? {} : { approvalReconciliation: Object.freeze({ ...options.approvalReconciliation, permissions: Object.freeze({ allow: Object.freeze([...options.approvalReconciliation.permissions.allow]) }) }) }),
     ...(options.runRecords === undefined ? {} : { runRecords: options.runRecords }),
+    ...(options.threadCompaction === undefined ? {} : { threadCompaction: Object.freeze({ ...options.threadCompaction,
+      agentIds: Object.freeze([...options.threadCompaction.agentIds]),
+      permissions: Object.freeze({ allow: Object.freeze([...options.threadCompaction.permissions.allow]) }) }) }),
+    ...(options.threads === undefined ? {} : { threads: Object.freeze({ store: options.threads.store }) }),
+    ...(options.runExecution === undefined ? {} : { runExecution: options.runExecution }),
     ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: Object.freeze([...options.allowedOrigins]) }),
     ...(options.limits === undefined ? {} : { limits: Object.freeze({ ...options.limits }) }),
   };
