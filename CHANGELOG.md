@@ -21,6 +21,9 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Allow durable adapter round trips within the key-manager rate-limit conformance window, then wait for the returned
+  retry deadline before checking that requests resume; refusal and window-reset assertions remain unchanged.
+
 - Observe real adapter commit acknowledgements through bounded barriers in concurrency and late-evidence fixtures,
   avoiding polling contention while retaining persisted execution, exclusion and accounting assertions. Keep slow-runner
   fixture admission windows long enough to test approval expiry after preparation rather than before it, and retain
