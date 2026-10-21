@@ -17,7 +17,7 @@ Rules that matter when writing Mayura code:
 - [Introduction](docs/introduction.md): What Mayura is, the ideas behind it, and how its parts fit together.
 - [Quickstart](docs/quickstart.md): Create a Mayura project in one command, or add a first agent to your own project and run it offline or on a real model.
 - [Installation](docs/installation.md): Requirements, the optional packages each part of Mayura needs, and TypeScript settings.
-- [V1.2 release validation status](docs/guides/release-readiness.md): Completed local qualification, experimental surfaces and the checks still required before releasing Mayura V1.2.
+- [V1.2 release validation status](docs/guides/release-readiness.md): Completed local and CI qualification, experimental surfaces and the checks still required before releasing Mayura V1.2.
 - [Using Mayura with AI coding agents](docs/ai-agents.md): Point Claude Code, Cursor, Codex and other coding assistants at documentation that matches your installed Mayura version.
 
 ## Concepts

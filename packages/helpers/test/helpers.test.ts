@@ -211,4 +211,18 @@ describe('environment validation errors', () => {
     expect(error).toMatchObject({ code: 'INVALID_INPUT', message: 'Invalid environment variables: PORT, APP_SECRET.' });
     expect(String(error.message)).not.toContain('PRIVATE');
   });
+
+  it('name empty and oversized variables, never their values', async () => {
+    const schema: Schema<unknown, Record<string, string>> = { '~standard': { version: 1, vendor: 'env-test', validate: value => ({ value: value as Record<string, string> }) } };
+    const fields = { origins: 'APP_ALLOWED_ORIGINS', token: 'APP_TOKEN', name: 'APP_NAME', note: 'APP_NOTE' };
+    // A `NAME=` line copied from an .env example arrives as an empty string.
+    await expect(validatedEnvironment({ schema, fields, source: { APP_ALLOWED_ORIGINS: '', APP_NAME: 'ok' } })).rejects
+      .toMatchObject({ code: 'INVALID_CONFIG', message: 'Empty environment variable: APP_ALLOWED_ORIGINS. Set a value or leave it unset.' });
+    const both = await validatedEnvironment({ schema, fields, source: { APP_ALLOWED_ORIGINS: '', APP_TOKEN: '', APP_NOTE: `PRIVATE${'x'.repeat(16_384)}` } }).catch(value => value);
+    expect(both).toBeInstanceOf(MayuraError);
+    expect(both).toMatchObject({ code: 'INVALID_CONFIG',
+      message: 'Empty environment variables: APP_ALLOWED_ORIGINS, APP_TOKEN. Set a value or leave it unset. Environment variable over 16384 characters: APP_NOTE.' });
+    expect(String(both.message)).not.toContain('PRIVATE');
+    await expect(validatedEnvironment({ schema, fields, source: { APP_ALLOWED_ORIGINS: '' }, allowEmpty: true })).resolves.toEqual({ origins: '' });
+  });
 });

@@ -1,13 +1,35 @@
 ---
 title: "V1.2 release validation status"
-description: "Completed local qualification, experimental surfaces and the checks still required before releasing Mayura V1.2."
+description: "Completed local and CI qualification, experimental surfaces and the checks still required before releasing Mayura V1.2."
 ---
 
-V1.2 is unreleased. This status records local qualification completed on **2026-10-21** on Windows x64, using
-Node 24.14.1 for core checks and Node 24.15.0 for framework starter qualification. It does not replace the full
-release CI matrix or establish compatibility with real external services.
+V1.2 is unreleased. The full release-branch qualification matrix passed on **2026-10-21** at commit
+`f443c76e822eef27b143d318d748ed513599e00c`. The local qualification snapshot below is retained separately;
+neither result establishes compatibility with unqualified real external services.
+
+## Completed CI qualification
+
+The **Mayura qualification** workflow, run `39576846216`, completed successfully on `release-1.2` at the commit
+above. All **13 configured jobs passed**, with zero failed jobs:
+
+| Job group | Result |
+| --- | --- |
+| Consumers: Linux, Windows and macOS, each on Node 22.23.2 and 24.14.1 | All six passed |
+| Database integration: two shards on each Node version | All four passed |
+| Runtime compatibility: Node, Bun, Deno, workerd and Vercel Edge | Passed |
+| Container qualification: Node 22 and 24 | Both passed |
+
+The consumer jobs include unit tests, packed consumers, runnable examples, templates, starters, package bundles,
+documentation, API/version checks, release archives and SBOM checks. Earlier failed or canceled attempts remain
+historical evidence; this result is a complete successful run on the recorded commit.
+
+This documentation follow-up also incorporates newer `main` changes. The updated branch and the pull-request
+merge commit require their own qualification; the earlier green run is not evidence for those later commits.
 
 ## Completed local qualification
+
+The local snapshot was completed on **2026-10-21** on Windows x64, using Node 24.14.1 for core checks and
+Node 24.15.0 for framework starter qualification.
 
 | Check | Result |
 | --- | --- |
@@ -36,12 +58,12 @@ The integration result combines the latest execution of each case. The original 
 and 313 skipped cases. Focused reruns cleared all executed failures, including a final serial run of 107 cases
 that cleared the remaining 52 failures. Filtered skips never overwrite an executed result. This is not a claim that
 the original full run passed or that skipped external profiles were qualified. Database stress cases passed without
-concurrent builds and unit-suite load. The final commit still needs a clean required CI run.
+concurrent builds and unit-suite load. The subsequent complete CI pass is recorded separately above.
 
 ## Remaining qualifications and limitations
 
-- **Release CI:** the full Linux, Windows and macOS matrix with Node 22/24 and required database profiles must pass
-  on the final source. Local Windows reruns do not replace that gate.
+- **Merge CI:** the release-branch matrix passed at the recorded commit. Require green checks for the updated
+  branch and pull-request merge commit, then qualify `main`, the only publishing branch, before releasing.
 - **Providers and gateways:** offline transports and the provider harness dry run passed. Paid inference, real
   embedding endpoints, gateway accounting and remote discovery behavior have not been qualified.
 - **Authorization:** OpenFGA, Cedar, Permit.io and Oso passed offline tests and package checks. Real provider/native
@@ -65,13 +87,15 @@ sufficient evidence for that claim.
 
 ## Release preparation
 
-1. Review and commit the complete V1.2 implementation, validation fixes and documentation on `release-1.2`.
-2. Run the required qualification workflow against the reviewed commit and resolve required failures or skips.
+1. Review the complete V1.2 implementation, validation fixes and updated documentation in the merge pull request
+   from `release-1.2` into `main`.
+2. Require the documentation follow-up and merge commit to pass qualification; the earlier release-branch CI gate
+   is complete at the commit recorded above.
 3. Merge through the reviewed path into `main`, the only publishing branch, and require its qualification to pass.
 4. Verify npm credentials or trusted publishing for the core package and extensions, the protected release
    environment, and the publishing enablement setting.
 5. Dry-run the release workflow for **1.2.0** to regenerate versioned archives, checksums, SBOM and release notes from
    the final source. Publish and tag only through the approved release workflow.
 
-Source manifests remain at 1.1.0 until the release workflow applies the coordinated version bump. Local validation
-has not pushed, tagged, published or deployed V1.2.
+Source manifests remain at 1.1.0 until the release workflow applies the coordinated version bump. The release branch
+has been pushed for review; V1.2 has not been tagged, published or deployed.

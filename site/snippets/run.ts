@@ -6,7 +6,7 @@ import { agent } from './agent.js';
 const runtime = createRuntime({
   profile: 'ephemeral',
   permissions: {
-    allow: ['model:openai/gpt-5-mini',
+    allow: ['model:openai.responses',
       'tool:weather.get', 'effect:read'],
   },
   limits: { maxCostMicros: 100_000 },

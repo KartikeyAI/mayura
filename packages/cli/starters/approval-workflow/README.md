@@ -86,7 +86,7 @@ existing runs when they choose, after reviewing a plan that shows what happens t
 3. Run `npm run migrate` before new code serves traffic, then `npm run serve` and `npm run worker` as separate
    processes. Scale both horizontally; one worker leads at a time.
 4. Terminate TLS in front of the server and set `MAYURA_PUBLIC_ORIGIN` to the exact `https://` origin. The server
-   refuses requests for any other host. `/healthz` and `/readyz` are unauthenticated and content-free, for your load
+   refuses requests for any other host. `/livez` and `/readyz` are unauthenticated and content-free, for your load
    balancer; the worker serves its own on port 9090.
 
 `docker compose up --build` runs this shape locally (PostgreSQL, migrate, server, worker) from `.env`. The image builds

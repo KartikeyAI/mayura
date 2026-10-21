@@ -9,7 +9,7 @@ PORT=8080
 MAYURA_BIND=0.0.0.0
 # Comma-separated browser origins allowed to call the API. Not needed when the chat UI is served from
 # MAYURA_PUBLIC_ORIGIN itself (same origin); list the UI's origin here if it lives elsewhere.
-MAYURA_ALLOWED_ORIGINS=
+# MAYURA_ALLOWED_ORIGINS=https://app.example.com
 
 # Storage: PostgreSQL when DATABASE_URL is set, otherwise SQLite at MAYURA_SQLITE_PATH (single node only).
 # compose.yaml sets DATABASE_URL from POSTGRES_PASSWORD.

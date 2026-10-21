@@ -16,8 +16,10 @@ extension offline next to the bundle and type-checks it, and `mayura` is publish
 
 ## V1.2 preparation
 
-The [V1.2 validation status](docs/guides/release-readiness.md) records completed local checks and remaining
-qualifications. Local reruns are not a replacement for the required CI matrix. Preserve the documented experimental
+The [V1.2 validation status](docs/guides/release-readiness.md) records completed local checks and the successful
+[13-job release-branch qualification](https://github.com/KartikeyAI/mayura/actions/runs/39576846216) at
+`f443c76e822eef27b143d318d748ed513599e00c`. The documentation follow-up, newer `main` changes and merge commit
+require their own green checks; publishing still requires qualification on `main`. Preserve the documented experimental
 AG-UI/RAG status and avoid claiming unqualified real-service or browser interoperability. Rebuild versioned release
 artifacts from the final reviewed commit; local qualification archives are not the publishable V1.2 release.
 

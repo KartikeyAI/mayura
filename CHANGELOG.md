@@ -6,6 +6,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Validation status (2026-10-21)
 
+- Full release-branch CI passed: all 13 jobs in [qualification run 39576846216](https://github.com/KartikeyAI/mayura/actions/runs/39576846216)
+  succeeded at `f443c76e822eef27b143d318d748ed513599e00c`, covering six Linux/macOS/Windows Node 22/24 consumers,
+  four database shards, runtime compatibility and both container jobs. The documentation follow-up, newer `main`
+  changes and pull-request merge commit require their own green checks before release.
 - Local Windows qualification: 5,296 unit tests passed; six conditional PostgreSQL cases skipped by the unit run
   were exercised in the separate PostgreSQL journal profile (12 passed).
 - Integration qualification: 2,338 latest executed cases passed, with no unresolved failures after targeted serial
@@ -14,12 +18,15 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - Builds, types, 451 documentation snippets, API compatibility reports, edge/runtime checks, offline consumers,
   75 public package entry points, 105 extensions, 106 release archives, 11 starters, eight templates, 18 offline
   examples, the website, secret scan and license/SBOM checks passed locally.
-- Full Linux/macOS and Node 22/24 CI qualification, paid provider/gateway checks, real authorization/vector service
-  interoperability, the AG-UI reference-client/browser flow and live deployments remain outstanding. AG-UI and RAG
+- Paid provider/gateway checks, real authorization/vector service interoperability, the AG-UI reference-client/browser
+  flow and live deployments remain outstanding. AG-UI and RAG
   retain their documented experimental status. No version bump, publication or release tag has been performed.
 - See [release validation status](docs/guides/release-readiness.md) for evidence scope and remaining release gates.
 
 ### Fixed
+
+- The server starters' production flow works out of the box again. `docker compose up` failed in `migrate`, and `npm run dev` failed at startup once `.env.example` was copied to `.env`, with "Environment values must satisfy configured bounds." because each `.env.example` (approval-workflow, event-automation, research-team, support-agent) shipped an empty `MAYURA_ALLOWED_ORIGINS=` line, and an empty variable is refused. The optional line is now commented out, so the only empty lines are the values the README asks you to fill in; each starter's tests load its `.env.example` with just those filled in and check that production configuration succeeds. The event-automation compose file also says to fill in `TRACKER_MCP_TOKEN`, which it requires.
+- `validatedEnvironment` from `mayura/helpers` names the empty or oversized variables it refuses (`Empty environment variable: MAYURA_ALLOWED_ORIGINS. Set a value or leave it unset.`), never their values, as its schema errors already did. The error code stays `INVALID_CONFIG`.
 
 - Allow durable adapter round trips within the key-manager rate-limit conformance window, then wait for the returned
   retry deadline before checking that requests resume; refusal and window-reset assertions remain unchanged.
@@ -64,7 +71,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   TanStack Start, SvelteKit and Nuxt wire scoped persistent threads, exact note approvals, deterministic model fixtures,
   effect-local idempotency and separate workflow permissions. React source is copied from the UI registry; Svelte/Vue
   use native headless views. Hono includes Node/Bun/Deno and D1/Workers Cron source. Environment/deploy files, offline
-  regression cases and framework starter qualification passed locally. Browser, deployment and the full CI matrix remain outstanding.
+  regression cases and framework starter qualification passed locally and in the recorded full CI run. Browser and deployment qualification remain outstanding.
 - **Framework starter packaging.** Bounded route filenames and server `.mjs` catalog entries are supported; generated
   output, local secrets and state are excluded from bundled starter assets. The reviewed D1 extension is pinned to the
   initializer's Mayura release alongside `mayura`.

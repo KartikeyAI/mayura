@@ -28,7 +28,7 @@ const Tick = ({ ok = true }: { ok?: boolean }) => (
 export function RunPreview() {
   const steps = [
     { label: 'input', body: '{ "question": "Do I need an umbrella?" }', note: 'matches input schema' },
-    { label: 'model', body: 'calls weather.get { "city": "Paris" }', note: 'openai/gpt-5-mini · $0.0009' },
+    { label: 'model', body: 'calls weather.get { "city": "Paris" }', note: 'openai.responses · gpt-5-mini · $0.0009' },
     { label: 'tool', body: 'weather.get → { "celsius": 21 }', note: 'effect: read · granted' },
     { label: 'output', body: '{ "reply": "No umbrella needed." }', note: 'matches output schema' },
   ];
@@ -53,7 +53,7 @@ export function RunPreview() {
 /** The allow-list at work: grants, a refused tool and the run's budget. */
 export function PolicyPreview() {
   const grants = [
-    { name: 'model:openai/gpt-5-mini', ok: true },
+    { name: 'model:openai.responses', ok: true },
     { name: 'tool:weather.get', ok: true },
     { name: 'effect:read', ok: true },
     { name: 'tool:orders.refund', ok: false },

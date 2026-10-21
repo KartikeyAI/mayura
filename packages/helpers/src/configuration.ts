@@ -54,6 +54,7 @@ export async function validatedEnvironment<S extends Schema>(options: Environmen
   if (entries.length === 0 || entries.length > 128) throw new MayuraError('INVALID_CONFIG', 'Environment configuration requires 1–128 explicit fields.');
   const value: JsonObject = {};
   const outputNames = new Set<string>(); const sourceNames = new Set<string>();
+  const empty: string[] = []; const oversized: string[] = [];
   for (const [outputName, sourceName] of entries) {
     if (!identifier.test(outputName) || !/^[A-Z][A-Z0-9_]{0,127}$/u.test(sourceName)
       || outputNames.has(outputName) || sourceNames.has(sourceName)) {
@@ -61,12 +62,19 @@ export async function validatedEnvironment<S extends Schema>(options: Environmen
     }
     outputNames.add(outputName); sourceNames.add(sourceName);
     const selected = options.source[sourceName];
-    if (selected !== undefined) {
-      if ((!options.allowEmpty && selected.length === 0) || selected.length > 16_384) {
-        throw new MayuraError('INVALID_CONFIG', 'Environment values must satisfy configured bounds.');
-      }
-      value[outputName] = selected;
-    }
+    if (selected === undefined) continue;
+    if (!options.allowEmpty && selected.length === 0) empty.push(sourceName);
+    else if (selected.length > 16_384) oversized.push(sourceName);
+    else value[outputName] = selected;
+  }
+  // Name the variables at fault, never their values, as the schema check below does. A `NAME=` line left in an .env
+  // file is the usual cause of an empty one.
+  if (empty.length > 0 || oversized.length > 0) {
+    const variables = (names: string[]) => names.length === 1 ? 'variable' : 'variables';
+    throw new MayuraError('INVALID_CONFIG', [
+      ...(empty.length > 0 ? [`Empty environment ${variables(empty)}: ${empty.join(', ')}. Set a value or leave it unset.`] : []),
+      ...(oversized.length > 0 ? [`Environment ${variables(oversized)} over 16384 characters: ${oversized.join(', ')}.`] : []),
+    ].join(' '));
   }
   try { return await validatedConfig(options.schema, value, options.limits); }
   catch (error) {

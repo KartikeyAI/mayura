@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readdir, mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readdir, readFile, mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { parseEnv } from 'node:util';
 import { createClient } from 'mayura/client';
 import { newToken, tokenDigest } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
@@ -267,5 +269,20 @@ describe('configuration', () => {
     await assert.rejects(loadConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: 'https://collector.example.com', OTEL_EXPORTER_OTLP_HEADERS: 'no-value' }), /OTEL_EXPORTER_OTLP_HEADERS/u);
     assert.equal((await loadConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: 'https://collector.example.com/otlp/' })).telemetry?.tracesEndpoint, 'https://collector.example.com/otlp/v1/traces');
     assert.equal((await loadConfig({ DATABASE_URL: 'postgres://research@db/research' })).storage.kind, 'postgres');
+  });
+});
+
+describe('.env.example', () => {
+  it('configures production once the values it asks for are filled in', async () => {
+    // `cp .env.example .env` then `docker compose up`: compose hands every line to the app, so a `NAME=` line arrives as an
+    // empty value, which is refused. The only empty lines are the ones to fill in; optional settings are commented out.
+    // A generated project has .env.example; the Mayura repository stores it as dot-env.example so that npm packs it.
+    const file = ['.env.example', 'dot-env.example'].map(name => new URL(`../../${name}`, import.meta.url)).find(url => existsSync(url))!;
+    const example = parseEnv(await readFile(file, 'utf8')) as Record<string, string>;
+    const filled = { MAYURA_OPERATOR_TOKEN_SHA256: tokenDigest(newToken()), MAYURA_DESK_TOKEN_SHA256: tokenDigest(newToken()) };
+    assert.deepEqual(Object.keys(example).filter(name => example[name] === '').sort(), Object.keys(filled).sort());
+    // What compose.yaml adds on top of .env.
+    const config = await loadConfig({ ...example, ...filled, DATABASE_URL: 'postgres://research:change-me@postgres:5432/research', RESEARCH_ARTIFACTS_DIR: '/data/artifacts' });
+    assert.equal(config.environment, 'production'); assert.equal(config.storage.kind, 'postgres');
   });
 });

@@ -11,7 +11,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Introduction](introduction.md): what Mayura is and how its parts fit together.
 - [Quickstart](quickstart.md): create a project, or add a first agent to your own.
 - [Installation](installation.md): requirements, optional packages and TypeScript settings.
-- [V1.2 release validation status](guides/release-readiness.md): completed local checks, limitations and remaining release gates.
+- [V1.2 release validation status](guides/release-readiness.md): completed local and CI checks, limitations and remaining release gates.
 - [Using Mayura with AI coding agents](ai-agents.md): documentation your assistant can read offline.
 
 ## Concepts

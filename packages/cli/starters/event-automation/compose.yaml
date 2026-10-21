@@ -3,7 +3,7 @@
 # MCP server and delete the `tracker` service when you have one.
 # Put the TLS proxy of your choice in front of `server`: port 8080 with the public origin's Host for the API and the
 # console, and port 8081 for the tracker's webhooks.
-#   cp .env.example .env   # then fill in the token digest and WEBHOOK_SECRET
+#   cp .env.example .env   # then fill in the token digest, WEBHOOK_SECRET and TRACKER_MCP_TOKEN
 #   docker compose up --build
 services:
   postgres:

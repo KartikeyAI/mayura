@@ -91,4 +91,4 @@ check yet" are tested with fakes and local emulators only.
 
 ## Governance and support
 
-Governance and release ownership are defined in [GOVERNANCE.md](GOVERNANCE.md); support terms in [SUPPORT.md](SUPPORT.md); security reporting in [SECURITY.md](SECURITY.md). No external support SLA is promised for pre-releases.
+Governance and release ownership are defined in [GOVERNANCE.md](GOVERNANCE.md); support terms in [SUPPORT.md](SUPPORT.md); security reporting in [SECURITY.md](SECURITY.md). Support is best-effort, with no response-time commitment.
