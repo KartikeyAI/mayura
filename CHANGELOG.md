@@ -25,6 +25,17 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Make the Mistral conformance transport reject requests whose signals aborted before listener registration,
+  matching real fetch cancellation; cover the delayed-subscription path deterministically through the adapter.
+- Control the checkpoint host-expiry test clock at the deadline boundary so slow persistence cannot expire
+  the approval before the not-due assertion; retain the real checkpoint store and execution assertions.
+- Give the coordinator reopen conformance fixture a bounded ten-second lease so delayed claim delivery
+  does not unintentionally test expiry; preserve immutable resource plans and exactly-once execution checks.
+- Retry scheduled-workflow fixture removal within a bounded window after closing native database handles,
+  allowing Windows WAL/SHM locks to settle while continuing to fail persistent cleanup errors.
+- Admit the workflow-tree capacity fixture through real SQLite before its handler timeout, and observe
+  actual capacity release after settlement while retaining exclusion and exactly-once execution assertions.
+
 - Resolve the website gallery's shared UI source against the site's own React installation and declarations,
   so clean site-only installs type-check and build without workspace dependencies or duplicate React runtimes.
 
