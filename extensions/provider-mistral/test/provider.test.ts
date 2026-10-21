@@ -26,7 +26,13 @@ function transport(scenario: ModelScenario | { kind: 'raw'; body: unknown; statu
       case 'raw': return json(scenario.body, scenario.status ?? 200);
       case 'events': return sse(scenario.events);
       case 'network': throw new TypeError('fetch failed');
-      case 'hang': return new Promise<Response>((_resolve, reject) => request.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+      case 'hang': return new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(new DOMException('aborted', 'AbortError'));
+        // Real fetch rejects an already-aborted request too. SDK/body preparation may
+        // finish after cancellation, before this fake transport subscribes to the signal.
+        if (request.signal.aborted) abort();
+        else request.signal.addEventListener('abort', abort, { once: true });
+      });
       case 'http': return json({ object: 'error', message: scenario.detail, type: 'invalid_request_error' }, scenario.status);
       case 'invalid': return json(completion({ content: `not json: ${scenario.detail}` }, 'stop', usage(1, 1)));
       case 'refusal': return json(completion({ content: '{"answer":' }, 'length', usage(5, 1)));
@@ -54,6 +60,22 @@ afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('@mayurajs/provider-mistral keeps the model adapter contract', () => {
   for (const test of modelAdapterConformance) it(test.name, async () => { expect(await test.run(harness)).toBe('passed'); });
+
+  it('honors cancellation before the fake transport installs its abort listener', async () => {
+    const cancellation = modelAdapterConformance.find(test => test.name === 'stops when the caller cancels')!;
+    const delayed: ModelAdapterHarness = {
+      adapter: (scenario, settings) => mistral({ apiKey: 'fixture-not-a-real-key', fetch: async (input, init) => {
+        const request = input as Request;
+        // Reproduce slow SDK/body preparation without racing a second wall-clock timer:
+        // the transport resumes only after the caller's real cancellation has arrived.
+        if (!request.signal.aborted) await new Promise<void>(resolve => {
+          request.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        return transport(scenario)(input, init);
+      } }).model('model-1', settings),
+    };
+    expect(await cancellation.run(delayed)).toBe('passed');
+  });
 });
 
 describe('@mayurajs/provider-mistral', () => {

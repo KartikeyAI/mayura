@@ -25,6 +25,9 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Make the Mistral conformance transport reject requests whose signals aborted before listener registration,
+  matching real fetch cancellation; cover the delayed-subscription path deterministically through the adapter.
+
 - Resolve the website gallery's shared UI source against the site's own React installation and declarations,
   so clean site-only installs type-check and build without workspace dependencies or duplicate React runtimes.
 
