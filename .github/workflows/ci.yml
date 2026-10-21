@@ -64,7 +64,10 @@ jobs:
         node: [22.23.2, 24.14.1]
         # The integration suite runs every store's conformance against its service: over 20 minutes in one job.
         shard: [1, 2]
-    runs-on: ubuntu-latest
+    # The pinned MongoDB build refuses Linux >=6.19 (SERVER-121912). Keep a compatible runner until its replacement
+    # image is qualified; ubuntu-latest/24.04 runners can already receive the incompatible kernel.
+    # https://jira.mongodb.org/browse/SERVER-121912
+    runs-on: ubuntu-22.04
     timeout-minutes: 35
     services:
       postgres:
@@ -137,6 +140,7 @@ jobs:
             exit "$status"
           }
           trap diagnostics ERR
+          uname -r
           wait_mongo() {
             for attempt in $(seq 1 30); do
               [ "$(docker inspect --format '{{.State.Running}}' mongodb)" = "true" ] || return 1
