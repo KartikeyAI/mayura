@@ -29,6 +29,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   matching real fetch cancellation; cover the delayed-subscription path deterministically through the adapter.
 - Control the checkpoint host-expiry test clock at the deadline boundary so slow persistence cannot expire
   the approval before the not-due assertion; retain the real checkpoint store and execution assertions.
+- Give the coordinator reopen conformance fixture a bounded ten-second lease so delayed claim delivery
+  does not unintentionally test expiry; preserve immutable resource plans and exactly-once execution checks.
 
 - Resolve the website gallery's shared UI source against the site's own React installation and declarations,
   so clean site-only installs type-check and build without workspace dependencies or duplicate React runtimes.

@@ -83,11 +83,13 @@ export function graphCoordinatorConformance(name: string, factory: () => Promise
       const initial = coordinator([{ definition: first, resources: firstResources }, { definition: second, resources: secondResources }]);
       await initial.close(); await store.close(); store = await reopen();
       const entries = [{ definition: first, resources: { write: ['first-resource'] } }, { definition: second, resources: { write: ['second-resource'] } }];
-      const client = coordinator(entries); entries[0]!.resources.write[0] = 'mutated-after-registration';
+      // This checks reopened definitions and resource plans, rather than claim expiry.
+      // Busy document adapters can consume the default lease before delivering a claim.
+      const client = coordinator(entries, { leaseMs: 10_000 }); entries[0]!.resources.write[0] = 'mutated-after-registration';
       const report = await client.runPage();
       expect(report.status).toBe('completed'); expect(report.examined).toBe(2);
       expect(report.outcomes.map(item => item.reference.runId)).toEqual([a.id, b.id]);
-      expect(report.outcomes.every(item => item.kind === 'observed' && item.status === 'succeeded')).toBe(true);
+      expect(report.outcomes, JSON.stringify(report)).toMatchObject([{ kind: 'observed', status: 'succeeded' }, { kind: 'observed', status: 'succeeded' }]);
       expect(effects).toEqual([1, 1]); expect(Object.isFrozen(report)).toBe(true); expect(Object.isFrozen(report.outcomes)).toBe(true);
       expect(report.outcomes.every(item => Object.isFrozen(item) && Object.isFrozen(item.reference))).toBe(true);
       expect(JSON.stringify(report)).not.toMatch(/SECRET|receipt|budget|resourceKeys|candidateHash/);
