@@ -14,6 +14,9 @@ const origin = (process.env['SITE_ORIGIN'] ?? 'https://mayurajs.com').replace(/\
 
 export default defineConfig({
   base,
+  // The gallery compiles ../packages/cli/ui source. Resolve its React imports from this site's installation,
+  // matching tsconfig's type paths, without depending on workspace packages or loading a second React instance.
+  resolve: { dedupe: ['react', 'react-dom'] },
   define: {
     'import.meta.env.SITE_ORIGIN': JSON.stringify(origin),
     'import.meta.env.MAYURA_VERSION': JSON.stringify(version),
