@@ -52,6 +52,7 @@ list to let the model use it.
 | `costMicros` | `0` | The most one call can cost, in micros (millionths of a dollar). |
 | `timeoutMs` | `30000` | How long one call may take before it is stopped. |
 | `guards` | none | `{ input, output }` lists of guards that allow or block this tool's input and output. |
+| `approval` | none | `'required'`, or a function of the proposed input returning `true` when a call needs approval. A person must approve such a call before it runs; a function that throws asks for approval. See [Approve a tool call](./runtime.md#approve-a-tool-call). |
 | `execute` | required | `(input, context)` returning the output or a promise of it. |
 
 ## Input schemas for real models

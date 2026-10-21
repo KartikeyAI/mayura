@@ -61,6 +61,7 @@ Observer stages see metadata only, never content, and return nothing.
 | `afterToolCall` | After each tool call | `callId`, `toolId`, `status`, `execution`, `disclosure` |
 | `afterDelegate` | After a child agent finishes (on the parent's hooks) | `childRunId`, `childAgentId`, `status` |
 | `onViolation` | When a guard, hook or permission check refuses something | `source`, `boundary`, `code` |
+| `onApprovalRequested` | Before a new approval candidate is published or checkpointed | `callId`, `toolId`, `toolVersion`, `digest`, `expiresAtMs` |
 | `afterExecution`, `onError`, `onCancel`, `onBlocked` | Once at the end, depending on the outcome | `status`, `error.code` |
 | `onFinally` | Once at the very end, always | `status`, `error.code` |
 
@@ -185,3 +186,36 @@ They never include content, action inputs or error messages. See [observability]
 - [Permissions](../concepts/permissions.md)
 - [Observability](observability.md)
 - [Durable workflows](durable-workflows.md)
+
+## Approval-request observers
+
+Register `onApprovalRequested` with `defineHook` and include it in an agent's `hooks`. The frozen event contains only
+call/tool identities, the candidate digest and its absolute expiry. The hook receives no input arguments, tool
+approval proof or function for answering the request. Existing verified scope, run/agent identities, step and abort
+signal are available through `context`.
+
+```ts
+import { defineHook } from 'mayura';
+
+const approvalObserver = defineHook({
+  id: 'approval-notification', version: '1', stage: 'onApprovalRequested', timeoutMs: 1000,
+  handler: (event, context) => {
+    // Forward these metadata fields to your trusted, bounded notification adapter if needed.
+    const notification = { runId: context.runId, callId: event.callId, digest: event.digest, expiresAtMs: event.expiresAtMs };
+    void notification;
+  },
+});
+void approvalObserver;
+```
+
+This is an awaited observer, with the normal hook-call/concurrency limits and its own finite timeout. Its time
+counts as active execution. It takes no tools, requests no actions and returns nothing. An optional observer failure
+is reported by `hook.completed` and execution can still ask the human; `mandatory: true` blocks with
+`GUARD_UNAVAILABLE` before any pending approval, checkpoint or tool dispatch is created. Cancellation stops
+publication. A candidate that expires during notification is refused before publication.
+
+The observer runs once for a newly created candidate. Checkpoint persistence falling back to an in-memory wait does
+not repeat it. Approving or expiring the saved candidate after a restart does not repeat it either; persisted hook
+counts still consume the continuing run's allowance. This is process-local observation, not a durable notification
+outbox or an exactly-once external-delivery guarantee. Trusted callback closures must honor cancellation and bound
+their own external side effects. Approval answers still use the runtime's normal authorization and digest checks.

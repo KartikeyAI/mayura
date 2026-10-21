@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createModels, createRuntime, defineAgent, z, type JsonObject, type ModelRequest } from 'mayura';
+import { createModels, createRuntime, defineAgent, z, type JsonObject, type ModelHistoryMessage, type ModelRequest } from 'mayura';
 import { conformanceTools, modelAdapterConformance, type ModelAdapterHarness, type ModelScenario } from 'mayura/testing';
 import { catalog, google } from '../src/index.js';
 
@@ -98,6 +98,65 @@ describe('@mayurajs/provider-google', () => {
     expect(contents[2]).toEqual({ role: 'user', parts: [{ functionResponse: { id: 'fc-1', name: 'orders_lookup', response: { output: { status: 'shipped' } } } }] });
     await expect(google({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'x' }, inputTokens: 1, outputTokens: 1 }) }).model('gemini-other', settings)
       .generate(request({ continuation: first.continuation! }))).rejects.toMatchObject({ reason: 'invalid_response' });
+  });
+
+  describe('a conversation history', () => {
+    const history: ModelHistoryMessage[] = [
+      { role: 'user', content: { message: 'Where is A-1?' } },
+      { role: 'assistant', calls: [{ id: 'call-1', toolId: 'orders.lookup', input: { orderId: 'A-1' } }, { id: 'h/2', toolId: 'orders.cancel', input: { orderId: 'A-1' } }] },
+      { role: 'tool', callId: 'call-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool', callId: 'h/2', toolId: 'orders.cancel', result: 'too late' },
+      { role: 'assistant', output: { answer: 'It has shipped.' } },
+      { role: 'assistant', output: 'Anything else?' },
+    ];
+    const rendered = [
+      { role: 'user', parts: [{ text: '{"message":"Where is A-1?"}' }] },
+      { role: 'model', parts: [{ functionCall: { id: 'call-1', name: 'orders_lookup', args: { orderId: 'A-1' } } }, { functionCall: { id: 'h/2', name: 'orders_cancel', args: { orderId: 'A-1' } } }] },
+      { role: 'user', parts: [{ functionResponse: { id: 'call-1', name: 'orders_lookup', response: { output: { status: 'shipped' } } } },
+        { functionResponse: { id: 'h/2', name: 'orders_cancel', response: { output: 'too late' } } }] },
+      // Two earlier answers in a row share one model turn; a string output is still JSON.
+      { role: 'model', parts: [{ text: '{"answer":"It has shipped."}' }, { text: '"Anything else?"' }] },
+    ];
+    const run = (seen: Seen, scenario: Parameters<typeof transport>[0], overrides: Partial<ModelRequest>) =>
+      google({ apiKey: 'fixture-key', fetch: transport(scenario, seen) }).model('gemini-test', settings).generate(request({ tools, history, ...overrides }));
+
+    it('declares the capability and sends every kind of history message first, in order, then the run', async () => {
+      expect(google({ apiKey: 'fixture-key' }).model('gemini-test', settings).capabilities.history).toBe(true);
+      const seen: Seen = [];
+      await run(seen, { kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, { messages: [{ role: 'user', content: 'And when?' }] });
+      expect(seen[0]!.body['contents']).toEqual([...rendered, { role: 'user', parts: [{ text: '"And when?"' }] }]);
+      // Only this run's tools are declared; a tool only the history used is named in it, and never offered.
+      expect(((seen[0]!.body['tools'] as JsonObject[])[0]!['functionDeclarations'] as JsonObject[]).map(tool => tool['name'])).toEqual(['orders_lookup']);
+    });
+
+    it('keeps Gemini\'s turn order: a history that ends with results or starts with an answer still alternates', async () => {
+      const seen: Seen = [];
+      await run(seen, { kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, { history: [history[4]!, ...history.slice(0, 4)] });
+      expect(seen[0]!.body['contents']).toEqual([
+        { role: 'user', parts: [{ text: 'null' }] }, { role: 'model', parts: [{ text: '{"answer":"It has shipped."}' }] },
+        { ...rendered[0]!, parts: [...rendered[0]!.parts] }, rendered[1],
+        { role: 'user', parts: [...rendered[2]!.parts, { text: '"hi"' }] },
+      ]);
+    });
+
+    it('sends the history first on the next call of a tool loop, with the run\'s thought signatures, and new call ids skip the history\'s', async () => {
+      const parts = [{ text: 'Look it up.', thought: true }, { functionCall: { name: 'orders_lookup', args: { orderId: 'A-2' } }, thoughtSignature: 'c2lnbmF0dXJl' },
+        { functionCall: { id: 'h/2', name: 'orders_lookup', args: { orderId: 'A-3' } } }];
+      const first = await run([], { kind: 'raw', body: answer(parts, 'STOP', usage(10, 5)) }, {});
+      // Gemini gave no id for the first call and an id the history already has for the second: neither repeats one.
+      expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call-1-2', input: { orderId: 'A-2' } }, { id: 'call-2', input: { orderId: 'A-3' } }] });
+      const seen: Seen = [];
+      await run(seen, { kind: 'final', output: { answer: 'Shipped.' }, inputTokens: 1, outputTokens: 1 }, {
+        continuation: first.continuation!,
+        messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', calls: first.type === 'tool_calls' ? first.calls : [] },
+          { role: 'tool', callId: 'call-1-2', toolId: 'orders.lookup', result: { status: 'shipped' } }, { role: 'tool', callId: 'call-2', toolId: 'orders.lookup', result: { status: 'new' } }],
+      });
+      expect(seen[0]!.body['contents']).toEqual([...rendered, { role: 'user', parts: [{ text: '"hi"' }] }, { role: 'model', parts },
+        { role: 'user', parts: [{ functionResponse: { name: 'orders_lookup', response: { output: { status: 'shipped' } } } }, { functionResponse: { name: 'orders_lookup', response: { output: { status: 'new' } } } }] }]);
+      // The continuation still counts this run's own turns alone.
+      await expect(run([], { kind: 'final', output: { answer: 'x' }, inputTokens: 1, outputTokens: 1 }, { continuation: first.continuation! }))
+        .rejects.toMatchObject({ reason: 'invalid_response' });
+    });
   });
 
   it('reports a blocked prompt as refused, and refuses configuration it cannot use', async () => {

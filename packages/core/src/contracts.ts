@@ -35,9 +35,10 @@ export interface RunEvent {
   readonly runId: string;
   readonly sequence: number;
   readonly timestamp: string;
-  readonly type: 'run.started' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
+  readonly type: 'run.started' | 'history.applied' | 'model.started' | 'model.completed' | 'tool.started' | 'tool.completed'
     | 'hook.started' | 'hook.completed' | 'step.started' | 'step.completed' | 'delegate.started' | 'delegate.completed'
-    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld';
+    | 'run.completed' | 'events.gap' | 'output.delta' | 'output.withheld' | 'approval.requested' | 'approval.resolved'
+    | 'run.paused' | 'run.resumed';
   readonly metadata: Readonly<Record<string, string | number | boolean>>;
 }
 export interface RunHandle<T> {
@@ -72,6 +73,11 @@ export type ModelMessage =
   | { readonly role: 'assistant'; readonly calls: readonly ModelToolCall[] }
   | { readonly role: 'tool'; readonly callId: string; readonly toolId: string; readonly result: JsonValue; readonly media?: readonly Media[] };
 export interface ModelToolCall { readonly id: string; readonly toolId: string; readonly input: JsonValue }
+/**
+ * One message of an earlier conversation: what a run's history holds. Besides the messages of a run, an earlier run's
+ * final answer appears as `{ role: 'assistant', output }`. History is whole turns: every tool call has its result.
+ */
+export type ModelHistoryMessage = ModelMessage | { readonly role: 'assistant'; readonly output: JsonValue };
 export interface ModelRequest {
   readonly instructions: string;
   readonly messages: readonly ModelMessage[];
@@ -80,6 +86,11 @@ export interface ModelRequest {
   readonly maxOutputTokens: number;
   /** Opaque bounded provider protocol state; private to this run and never a public output. */
   readonly continuation?: JsonValue;
+  /**
+   * The conversation before this run, oldest first, to put before `messages`. Present only for runs given a history,
+   * and only sent to adapters that declare `capabilities.history`.
+   */
+  readonly history?: readonly ModelHistoryMessage[];
   /**
    * The agent's output as JSON Schema: what the final answer must look like. The runtime sends it when the agent has
    * one (given, or generated from its output validator); an adapter configured with its own output schema uses that.
@@ -166,8 +177,11 @@ export type ModelStreamEvent =
   | { readonly type: 'response'; readonly response: ModelResponse };
 export interface ModelAdapter {
   readonly id: string;
-  /** What the model can do. Without `media`, it cannot see images or PDFs, and agents that accept media refuse it. */
-  readonly capabilities: { readonly tools: boolean; readonly structuredOutput: boolean; readonly media?: ModelMediaCapability };
+  /**
+   * What the model can do. Without `media`, it cannot see images or PDFs, and agents that accept media refuse it.
+   * Without `history`, it is never sent `ModelRequest.history`, and a run given a history refuses it.
+   */
+  readonly capabilities: { readonly tools: boolean; readonly structuredOutput: boolean; readonly media?: ModelMediaCapability; readonly history?: boolean };
   readonly maxCostMicros: number;
   generate(request: ModelRequest): Promise<ModelResponse>;
   /** Optional streamed form of `generate`, used only for agents that opt into streaming. */

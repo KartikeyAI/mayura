@@ -7,3 +7,7 @@ export { MEDIA_TYPES, media, mediaUrl, mediaFromBase64, mediaSummary, sniffMedia
 export * from './budget.js';
 export type { ManagedGuardDefinition, ManagedModerationVerdict } from './managed-guards.js';
 export { LIFECYCLE_STAGES, type LifecycleStage, type LifecycleDecision, type LifecycleHookContext, type LifecycleControl, type LifecycleObserver } from './lifecycle.js';
+
+export { AUTHORIZATION_RESOURCE_KINDS, authorizationRequest, createAuthorizer, type AuthorizationResourceKind, type AuthorizationSubject, type AuthorizationResource, type AuthorizationRequest, type AuthorizationDenyReason, type AuthorizationDecision, type AuthorizationPolicy, type AuthorizerOptions, type Authorizer } from './authorization.js';
+
+export { snapshotAuthorizationAuditEvent, type AuthorizationAuditEvent, type AuthorizationAuditSink, type AuthorizationAuditOptions, type AuthorizationAuditSnapshot } from './authorization-audit.js';

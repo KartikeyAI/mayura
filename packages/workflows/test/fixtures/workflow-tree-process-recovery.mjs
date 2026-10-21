@@ -77,9 +77,9 @@ const leaf=defineWorkflow({id:`tree-process.leaf.${scenario}`,version:'1',input:
 const definition = childScenario ? defineWorkflowTree({
   id:`tree-process.${scenario}`,version:'1',input:value,output:value,nodes:[{kind:'child',id:'child',workflow:leaf,input:{kind:'input',path:[]},policy:{permissions:['tool:tree-process.write','effect:write'],maxCostMicros:1,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:120_000},resources:{write:[]}}],result:{kind:'step',stepId:'child',path:[]},
 }) : defineWorkflowTree({id:`tree-process.${scenario}`,version:'1',input:value,output:value,nodes:[{kind:'tool',id:'write',tool,input:{kind:'input',path:[]},approval:approvalScenario}],result:{kind:'step',stepId:'write',path:[]}});
-// Long enough that a slow CI runner never loses the lease mid-dispatch (a lost lease correctly withholds the result),
-// short enough that the expiry scenario below can wait it out.
-const leaseMs = 3_000;
+// These cases test process death at committed boundaries, not a three-second dispatch race on a loaded runner.
+// Keep the local lease tight; Windows CI gets transaction headroom. Recovery still waits for the real lease below.
+const leaseMs = process.env.CI === 'true' && process.platform === 'win32' ? 10_000 : 3_000;
 const runtime = createWorkflowTreeRuntime({
   store, scope: { principalId: 'test-operator', projectId: 'tree-process-recovery' },
   permissions: { allow: ['tool:tree-process.write', 'effect:write'] }, policyVersion: 'tree-process-policy-1',

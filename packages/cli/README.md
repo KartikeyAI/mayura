@@ -33,3 +33,14 @@ Operational commands accept credentials only from piped stdin, never a command-l
 
 `mayura serve --app ./app.mjs` and `mayura worker --app ./app.mjs [--probe-port 9090] [--probe-host 0.0.0.0] [--drain-timeout-ms 30000]` import exactly the named regular `.js`/`.mjs` module. Its default export (see `defineMayuraApplication`) provides `server()` returning a running host such as `listenProductionServer(...)`, `worker()` returning a worker such as `createWorkflowWorker(...)`, and an optional `shutdown()` that closes storage. The application wires everything with its own installed Mayura packages; the CLI adds no dependency and owns only the process lifecycle: structured JSON status lines, worker `/livez` and `/readyz` probes (served by the application's own installed `mayura/server-node`, so the CLI itself opens no listener), and graceful shutdown on `SIGINT`/`SIGTERM` (server close, or worker drain then lease release, followed by `shutdown()`). A second signal forces exit.
 
+
+
+`mayura add ui --list` lists bundled copy-in React components. `mayura add ui chat approval --directory ./app` plans source files; add `--apply` to write, and `--confirm <plan digest>` for reviewed replacements. Requires installed Mayura 1.2; no dependency installs or registry downloads. See [copy-in UI](../../docs/guides/copy-in-ui.md).
+
+## Framework notebooks (1.2)
+
+`mayura init --starter nextjs|hono|react-router|tanstack-start|sveltekit|nuxt` generates a scoped persistent chat flow
+with exact in-run note approvals, local model fixtures, worker/Cron source, environment examples and deployment files.
+React variants own copied registry controls; SvelteKit/Nuxt use headless stores with native views. Initializer and
+bundler filters omit generated output, dependencies and local secret/state files. See
+[Framework starters](../../docs/guides/framework-starters.md). Local offline validation passed; see [release validation status](../../docs/guides/release-readiness.md) for remaining qualifications.

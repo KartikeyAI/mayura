@@ -1,0 +1,22 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import { applyProjectPlan, planStarter, readProject, type StarterName } from '../src/index.js';
+const directories: string[] = [];
+afterEach(async () => { for (const directory of directories.splice(0)) { if (!resolve(directory).startsWith(`${resolve(tmpdir())}${sep}mayura-framework-`)) throw new Error('Unsafe temporary path.'); await rm(directory, { recursive: true, force: true }); } });
+const routes: Partial<Record<StarterName, string>> = { nextjs: 'app/api/mayura/[[...path]]/route.ts', hono: 'server/worker-edge.mjs', 'react-router': 'app/routes/api.ts', 'tanstack-start': 'src/routes/api.mayura.$.ts', sveltekit: 'src/routes/api/mayura/[...path]/+server.ts', nuxt: 'server/routes/api/mayura/[...path].ts' };
+for (const [starter, route] of Object.entries(routes)) it(`plans ${starter} source including framework file names and applies a pinned offline project`, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mayura-framework-')); directories.push(directory);
+  const target = join(directory, 'notebook'); const plan = await planStarter(starter as StarterName, target);
+  expect(plan.changes.map(change => change.path)).toEqual(expect.arrayContaining([route, 'server/application.mjs', 'server/auth.mjs', 'server/workflows.mjs', 'server/worker.mjs', '.env.example', 'Dockerfile', 'compose.yaml', 'test/server.test.mjs', 'AGENTS.md']));
+  await expect(readFile(join(target, 'package.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await applyProjectPlan(plan);
+  expect((await readProject(join(target, 'mayura.project.json'))).definitions).toContainEqual({ kind: 'agent', id: 'notebook.assistant', version: '1', source: 'server/application.mjs' });
+  const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'));
+  const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
+  expect(manifest.dependencies.mayura).toBe(version); if (starter === 'hono') expect(manifest.dependencies['@mayurajs/storage-d1']).toBe(version);
+  if (!['sveltekit', 'nuxt'].includes(starter)) expect(plan.changes.map(change => change.path)).toContain('src/components/mayura/approval.tsx');
+  const replace = await planStarter(starter as StarterName, target); await writeFile(join(target, route), 'changed after plan');
+  await expect(applyProjectPlan(replace)).rejects.toMatchObject({ code: 'CONFLICT' });
+});

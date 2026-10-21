@@ -181,3 +181,7 @@ export function MayuraHumanResponseForm({ request, definition, nowMs, label: sup
     feedback === null ? null : createElement('p', { role: 'status', 'aria-live': 'polite', 'data-command-status': commandStatus }, feedback),
     errorCode === null ? null : createElement('p', { role: 'alert', 'data-error-code': errorCode }, 'Response values are invalid'));
 }
+
+export { MayuraThreadHistory, MayuraRunApprovalControl, type MayuraThreadHistoryProps, type MayuraRunApprovalControlProps } from './conversation-components.js';
+
+export { MayuraThreadCompactionControl, type MayuraThreadCompactionControlProps } from './compaction-components.js';

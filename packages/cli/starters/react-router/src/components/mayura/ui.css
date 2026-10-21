@@ -1,0 +1,14 @@
+.mayura-ui { --ui-paper: #faf8f1; --ui-ink: #253329; --ui-muted: #526357; --ui-line: #c7cfc1; --ui-accent: #28583b; color: var(--ui-ink); background: var(--ui-paper); font: 1rem/1.6 Georgia, serif; padding: clamp(1rem,3vw,2rem); overflow-wrap: anywhere; }
+.mayura-ui :where(h2,h3,p) { margin: 0 0 .75rem; }
+.mayura-ui :where(button,textarea,input) { font: inherit; color: inherit; }
+.mayura-ui button { border: 1px solid var(--ui-line); padding: .5rem .9rem; background: transparent; cursor: pointer; }
+.mayura-ui button:disabled { opacity: .55; cursor: default; }
+.mayura-ui :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 4px; }
+.mayura-ui textarea { width: 100%; min-height: 6rem; box-sizing: border-box; background: transparent; border: 1px solid var(--ui-line); padding: .7rem; resize: vertical; }
+.mayura-ui pre { white-space: pre-wrap; max-height: 20rem; overflow: auto; }
+.mayura-ui [role=log] { max-height: 32rem; overflow: auto; }
+.mayura-ui a { color: var(--ui-accent); text-decoration-thickness: .1em; text-underline-offset: .2em; }
+.mayura-ui small { color: var(--ui-muted); }
+.mayura-ui .ui-row { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.mayura-ui li { margin-block: .6rem; }
+.mayura-ui [role=alert] { border-block: 1px solid var(--ui-line); padding-block: .5rem; }

@@ -1,5 +1,8 @@
+import { workflowAuthorization } from './authorization.js';
+import type { Authorizer } from '@mayura/core';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 import { abandoned, dispatchedAt } from './abandoned.js';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowStateMatchesManifest, workflowState, workflowOutputs, mergeWorkflowReceipt,
@@ -20,6 +23,8 @@ export interface WorkflowSnapshot {
 export interface VerifiedHuman { readonly id: string; readonly projectId: string; readonly canApprove: boolean }
 export interface WorkflowRuntimeOptions {
   readonly store: AggregateStore; readonly scope: Scope; readonly permissions: Permissions;
+  /** Host-owned core authorizer; decisions and audit delivery use its existing limits and lifecycle. */
+  readonly authorization?: Authorizer;
   readonly policyVersion: string; readonly maxCostMicros: number;
   readonly approvalTtlMs?: number; readonly maxOutputBytes?: number;
   /** Trusted identity boundary. Credentials are opaque to the workflow and never persisted. */
@@ -79,6 +84,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
   const maxOutputBytes = options.maxOutputBytes ?? 1_048_576;
   assertPositiveInteger(approvalTtlMs, 'approvalTtlMs'); assertPositiveInteger(maxOutputBytes, 'maxOutputBytes');
   const verifyHuman = options.verifyHuman;
+  const auth = workflowAuthorization(options.authorization, scope);
   const scopeKey = digest('mayura:scope:v1', scope);
   const policy = digest('mayura:policy:v1', { scope, permissions: [...permissions.allow].sort(), policyVersion: options.policyVersion, maxCostMicros, maxOutputBytes, approvalTtlMs });
   const active = new Map<string, AbortController>();
@@ -108,6 +114,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
 
   async function executeNode(id: string, node: WorkflowNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
+    await auth.execute(state.definition, id);
     if (!step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status)) return;
     // A dispatching step that no call in this process owns, past the tool's timeout and a margin, belongs to a process
     // that stopped: settle it as recoverAbandoned would, and never run the effect again.
@@ -139,6 +146,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       try { await save(record, state, 'step.blocked', { nodeId: node.id, code: 'PERMISSION_DENIED' }); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
+    await auth.require('tool', node.tool.id, 'execute');
     let input: JsonValue;
     try { input = jsonValue(await bounded(() => validate(node.tool.input, resolveBinding(node.input, state.input, outputs(state)), 'input'), node.tool.timeoutMs), { maxBytes: maxOutputBytes }); }
     catch {
@@ -147,6 +155,8 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
+    await auth.execute(state.definition, id);
+    await auth.require('tool', node.tool.id, 'execute');
     const previousExpiry = step.approval?.expiresAt ?? 0;
     const reviewExpiry = node.approval ? (previousExpiry > Date.now() ? previousExpiry : Date.now() + approvalTtlMs) : null;
     const candidateHash = candidate(node, input, id, reviewExpiry);
@@ -161,6 +171,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
+    await auth.execute(state.definition, id);
     step.status = 'dispatching'; step.candidateHash = candidateHash; step.costReserved = node.tool.costMicros;
     state.reservedMicros += node.tool.costMicros; state.status = 'running';
     try { await save(record, state, 'step.dispatching', { nodeId: node.id, callId: step.callId }); }
@@ -172,8 +183,12 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     }
     const controller = new AbortController(); const activeKey = `${id}/${node.id}`; active.set(activeKey, controller);
     try {
-      const result = await invokeTool(node.tool, resolveBinding(node.input, state.input, outputs(state)), {
-        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions,
+      const raw = resolveBinding(node.input, state.input, outputs(state));
+      // A step that needs approval reaches here only approved; the tool's own approval rule then accepts the call.
+      const approvalBinding = node.approval ? bindToolApproval(node.tool, { runId: id, callId: `${id}/${step.callId}`, input: raw }) : undefined;
+      const result = await invokeTool(node.tool, raw, {
+        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions, ...(approvalBinding ? { approvalBinding } : {}),
+        ...auth.toolContext(state.definition, id),
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes,
         beforeDispatch: async processed => {
           const current = stateFrom(await load(id));
@@ -215,19 +230,26 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       assertWorkflow(definition);
       const idempotencyKey = command.idempotencyKey;
       if (typeof idempotencyKey !== 'string' || !idempotencyKey.length || idempotencyKey.length > 128) throw new MayuraError('INVALID_INPUT', 'A bounded submission key is required.');
+      const admittedId = digest('mayura:run-id:v1', { scope: scopeKey, submissionKey: idempotencyKey });
       const inputSnapshot = freezeJson(jsonValue(command.input, { maxBytes: maxOutputBytes }));
+      await auth.execute(definition.digest, admittedId);
       const input = jsonValue(await bounded(() => validate(definition.input, inputSnapshot, 'input'), 30_000), { maxBytes: maxOutputBytes });
       const state = initialState(definition, input, policy, maxCostMicros);
       const id = digest('mayura:run-id:v1', { scope: scopeKey, submissionKey: idempotencyKey });
+      await auth.execute(definition.digest, id);
       const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey, definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'run.created', data: {} }] }), 'workflow run');
       return snapshot(created.record);
     },
     inspect: async (id: string): Promise<WorkflowSnapshot> => snapshot(await load(id)),
     events: (id: string, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     async runUntilSettled(definition: AnyWorkflow, id: string): Promise<WorkflowSnapshot> {
+      const checkedSnapshot = async (record: StoredRecord) => { await auth.execute(definition.digest, id); return snapshot(record); };
+
       ensureOpen(); if (gate.draining) throw new MayuraError('CANCELLED', 'Workflow runtime is draining.');
       assertWorkflow(definition);
+      await auth.execute(definition.digest, id);
       for (let wave = 0; wave <= definition.nodes.length + 1; wave++) {
+        await auth.execute(definition.digest, id);
         const before = await load(id); const state = stateFrom(before);
         if (state.definition !== definition.digest || before.definitionHash !== definition.digest || state.policy !== policy || state.maxCostMicros !== maxCostMicros) throw new MayuraError('CONFLICT', 'Definition or policy changed; explicit migration/review is required.');
         if (Object.keys(state.steps).length !== definition.nodes.length || definition.nodes.some(node => !Object.hasOwn(state.steps, node.id))) throw new MayuraError('CONFLICT', 'Stored steps do not match the pinned definition.');
@@ -235,34 +257,40 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
           const step = state.steps[node.id]!;
           if (step.kind !== node.kind || (node.kind === 'tool' && step.receipt && step.receipt.toolId !== node.tool.id) || (step.status === 'succeeded' && (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded'))) throw new MayuraError('CONFLICT', 'Stored step evidence does not match the pinned graph.');
         }
-        if (state.status === 'paused' || state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return snapshot(before);
+        if (state.status === 'paused' || state.status === 'cancelled' || ['succeeded','failed','blocked','outcome_unknown'].includes(state.status)) return checkedSnapshot(before);
         // Each wave holds one drain admission until its effects and receipts settle.
-        const release = gate.enter(); if (!release) return snapshot(before);
-        try { await Promise.all(definition.nodes.map(node => executeNode(id, node))); } finally { release(); }
+        const release = gate.enter(); if (!release) return checkedSnapshot(before);
+        try {
+          const results = await Promise.allSettled(definition.nodes.map(node => executeNode(id, node)));
+          const failure = results.find(result => result.status === 'rejected');
+          if (failure?.status === 'rejected') throw failure.reason;
+        } finally { release(); }
         let after = await load(id); const next = stateFrom(after); const steps = Object.values(next.steps);
-        if (next.status === 'paused' || next.status === 'cancelled') return snapshot(after);
+        if (next.status === 'paused' || next.status === 'cancelled') return checkedSnapshot(after);
         if (steps.every(item => terminalSteps.has(item.status))) {
           if (steps.every(item => item.status === 'succeeded')) {
             try { next.output = jsonValue(await bounded(() => validate(definition.output, resolveBinding(definition.result, next.input, outputs(next)), 'output'), 30_000), { maxBytes: maxOutputBytes }); next.status = 'succeeded'; }
             catch { next.status = 'failed'; }
           } else next.status = steps.some(item => item.status === 'unknown') ? 'outcome_unknown' : steps.some(item => item.status === 'blocked') ? 'blocked' : 'failed';
+          await auth.execute(definition.digest, id);
           try { after = await save(after, next, 'run.completed', { status: next.status }); }
           catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
-          return snapshot(after);
+          return checkedSnapshot(after);
         }
         if (after.version === before.version) {
           if (steps.some(item => item.status === 'waiting') && !steps.some(item => item.status === 'dispatching') && next.status !== 'waiting') {
             next.status = 'waiting';
             try { after = await save(after, next, 'run.waiting'); } catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           }
-          return snapshot(after);
+          return checkedSnapshot(after);
         }
       }
-      return snapshot(await load(id));
+      return checkedSnapshot(await load(id));
     },
     async approve(command: { id: string; nodeId: string; digest: string; credential: unknown }): Promise<WorkflowSnapshot> {
       ensureOpen();
       const { id, nodeId, digest: approvalDigest, credential } = command;
+      await auth.require('run', id, 'approve');
       if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id) || typeof nodeId !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(nodeId) || typeof approvalDigest !== 'string' || !/^[a-f0-9]{64}$/.test(approvalDigest)) throw new MayuraError('INVALID_INPUT', 'Approval requires exact run, node and candidate identifiers.');
       if (!verifyHuman) throw new MayuraError('PERMISSION_DENIED', 'A trusted human identity verifier is required.');
       let human: VerifiedHuman;
@@ -271,6 +299,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         human = { id: verified.id, projectId: verified.projectId, canApprove: verified.canApprove };
         if (typeof human.id !== 'string' || !human.id.length || human.id.length > 256 || human.projectId !== scope.projectId || human.canApprove !== true) throw new Error();
       } catch { throw new MayuraError('PERMISSION_DENIED', 'Human identity verification failed.'); }
+      await auth.require('run', id, 'approve');
       return snapshot(await mutate(id, state => {
         const step = state.steps[nodeId];
         if (state.status === 'cancelled' || state.policy !== policy || !step || step.status !== 'waiting' || !step.approval || step.approval.digest !== approvalDigest || step.approval.expiresAt <= Date.now()) throw new MayuraError('CONFLICT', 'Approval request is stale, expired or mismatched.');
@@ -324,6 +353,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
     },
     /** Resume scheduling only; unresolved waits remain waiting and grant no authority. */
     async resume(id: string): Promise<WorkflowSnapshot> {
+      await auth.require('run', id, 'resume');
       return snapshot(await mutate(id, state => {
         if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused workflow can be resumed.');
         state.status = Object.values(state.steps).some(step => step.status === 'waiting') ? 'waiting' : 'running'; return true;
@@ -345,10 +375,10 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         return changed;
       }, 'run.recovery_required'));
     },
-    close(): void { closed = true; for (const controller of active.values()) controller.abort(); },
+    close(): void { closed = true; auth.close(); for (const controller of active.values()) controller.abort(); },
     /** Admit no new wave, let admitted effects settle within the deadline, then close. */
     drain(options?: WorkflowDrainOptions): Promise<WorkflowDrainReport> {
-      return gate.drain(options, () => { closed = true; for (const controller of active.values()) controller.abort(); });
+      return gate.drain(options, () => { closed = true; auth.close(); for (const controller of active.values()) controller.abort(); });
     },
   };
 }

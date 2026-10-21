@@ -294,6 +294,9 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
   const parentSignal = options.signal;
   const beforeDispatch = options.beforeDispatch;
   const onExecutionReceipt = options.onExecutionReceipt;
+  const authorization = options.authorization;
+  if (authorization !== undefined && (!authorization || typeof authorization.authorize !== 'function')) throw new MayuraError('INVALID_CONFIG', 'Batch authorization requires a core authorizer.');
+  const evaluateAuthorization = authorization?.authorize.bind(authorization);
   const contextBindings = snapshotToolContextBindings(options.contextBindings);
   const acquireExecution = options.acquireExecution;
   const admitCall = options.admitCall;
@@ -362,6 +365,13 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
       });
       timer = setTimeout(() => { timedOut = true; controller.abort(); }, preflightTimeoutMs);
       const preflight = async (): Promise<void> => {
+        // Like static capability preflight, a denied graph is rejected before any schema callback or handler.
+        if (evaluateAuthorization) for (const call of prepared) {
+          assertActive(); let allowed = false;
+          try { allowed = (await evaluateAuthorization(scope, 'execute', { kind: 'tool', id: call.tool.id, scope }, { signal: controller.signal })).effect === 'allow'; }
+          catch { /* Raw policy diagnostics are never batch errors. */ }
+          assertActive(); if (!allowed) throw new MayuraError('PERMISSION_DENIED', 'Batch tool execution is not authorized.');
+        }
         for (const call of prepared) {
           assertActive();
           if (!call.dynamic) call.candidate = canonical(freezeJson(jsonValue(await validate(call.tool.input, call.input, 'input'))));
@@ -420,6 +430,7 @@ export async function invokeBatch(calls: readonly BatchCall[], options: InvokeBa
         }
         return invokeTool(call.tool, input, {
         runId, callId: call.id, scope, permissions, budget, signal: controller.signal, maxOutputBytes,
+        ...(authorization === undefined ? {} : { authorization }),
         ...(onExecutionReceipt ? { onExecutionReceipt } : {}),
         contextBindings,
         ...(acquireExecution ? { acquireExecution } : {}),

@@ -1,6 +1,9 @@
+import { workflowAuthorization } from './authorization.js';
+import type { Authorizer } from '@mayura/core';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate,
   type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 import { abandoned, dispatchedAt } from './abandoned.js';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLifecycleStateMatchesManifest, initialWorkflowLifecycleState,
@@ -49,7 +52,7 @@ export interface WorkflowLifecycleSignalCommand {
   readonly id: string;
   /** The signal node's `name` (its id unless it names one). */
   readonly name: string;
-  /** 1–128 letters, digits, `.`, `_`, `/` or `-`, starting with a letter or digit. */
+  /** 1ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ128 letters, digits, `.`, `_`, `/` or `-`, starting with a letter or digit. */
   readonly signalId: string;
   readonly payload: unknown;
   /** Who sent it, recorded in the run's event log. */
@@ -83,6 +86,8 @@ export interface WorkflowLifecyclePolicy {
 
 export interface WorkflowLifecycleRuntimeOptions {
   readonly store: AggregateStore;
+  /** Host-owned core authorizer; decisions and audit delivery use its existing limits and lifecycle. */
+  readonly authorization?: Authorizer;
   readonly scope: Scope;
   readonly permissions: Permissions;
   readonly policyVersion: string;
@@ -242,6 +247,27 @@ export function unknownWorkflowPolicy(): MayuraError {
     + 'List those settings in previousPolicies to let it continue, or migrate it.');
 }
 
+type ParentExecution = (signal: AbortSignal) => Promise<void>;
+const parentSubmissions = new WeakMap<WorkflowLifecycleRuntime, (policy: number, definition: AnyWorkflowLifecycle,
+  command: { readonly input: unknown; readonly idempotencyKey: string }, parent: ParentExecution) => Promise<WorkflowLifecycleSnapshot>>();
+/** Internal admission seam, including parent rechecks after the child's input schema completes. */
+export function submitWorkflowLifecycleChild(runtime: WorkflowLifecycleRuntime, policy: number, definition: AnyWorkflowLifecycle,
+  command: { readonly input: unknown; readonly idempotencyKey: string }, parent: ParentExecution): Promise<WorkflowLifecycleSnapshot> {
+  const submit = parentSubmissions.get(runtime);
+  if (!submit) throw new MayuraError('INVALID_CONFIG', 'A genuine lifecycle runtime is required.');
+  return submit(policy, definition, command, parent);
+}
+const parentExecutions = new WeakMap<WorkflowLifecycleRuntime, Map<string, ParentExecution>>();
+/** Internal composite driver seam: parent admission is live only while driving its lifecycle child. */
+export async function runWorkflowLifecycleChild(runtime: WorkflowLifecycleRuntime, definition: AnyWorkflowLifecycle,
+  id: string, parent: ParentExecution): Promise<WorkflowLifecycleSnapshot> {
+  const parents = parentExecutions.get(runtime);
+  if (!parents || parents.has(id)) throw new MayuraError('CONFLICT', 'Lifecycle child already has an active parent driver.');
+  parents.set(id, parent);
+  try { return await runtime.runUntilSettled(definition, id); }
+  finally { parents.delete(id); }
+}
+
 type LifecycleSubmission = Parameters<WorkflowLifecycleRuntime['submit']>;
 const pinnedSubmissions = new WeakMap<WorkflowLifecycleRuntime, (policy: number, ...submission: LifecycleSubmission) => Promise<WorkflowLifecycleSnapshot>>();
 
@@ -285,6 +311,8 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new MayuraError('STORAGE_UNAVAILABLE', 'The trusted lifecycle clock returned an invalid timestamp.');
     return value;
   };
+  const parents = new Map<string, ParentExecution>();
+  const auth = workflowAuthorization(options.authorization, scope, async (id, signal) => { await parents.get(id)?.(signal); });
   const scopeKey = digest('mayura:scope:v1', scope);
   type Pinned = WorkflowPolicySettings & { readonly digest: string };
   const policies: readonly Pinned[] = settings.map(entry =>
@@ -366,6 +394,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
 
   async function executeNode(id: string, definition: AnyWorkflowLifecycle, node: WorkflowLifecycleNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
+    await auth.execute(definition.digest, id);
     // Every limit and grant below comes from the run's own policy, never from the current one.
     const run = pinnedTo(state);
     if (!step || step.kind !== node.kind || !run || !schedulable(state)) return;
@@ -508,6 +537,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
+    await auth.require('tool', node.tool.id, 'execute');
     let input: JsonValue;
     try { input = jsonValue(await controlled(() => validate(node.tool.input,
       resolveBinding(node.input, state.input, outputs(state)), 'input'), node.tool.timeoutMs), { maxBytes: maxOutputBytes }); }
@@ -517,6 +547,8 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; }
       return;
     }
+    await auth.execute(definition.digest, id);
+    await auth.require('tool', node.tool.id, 'execute');
     const observedAtMs = now(); const previousExpiry = step.approval?.expiresAt ?? 0;
     const reviewExpiry = node.approval ? (previousExpiry > observedAtMs ? previousExpiry : observedAtMs + approvalTtlMs) : null;
     const candidateHash = approvalCandidate(node, input, id, reviewExpiry, run.digest);
@@ -537,6 +569,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       }, 'lifecycle.step.blocked', { nodeId: node.id, code: 'BUDGET_EXCEEDED' });
       return;
     }
+    await auth.execute(definition.digest, id);
     step.status = 'dispatching'; step.candidateHash = candidateHash; step.costReserved = node.tool.costMicros;
     state.reservedMicros += node.tool.costMicros; state.status = 'running';
     try { await save(record, state, 'lifecycle.step.dispatching', { nodeId: node.id, callId: step.callId }); }
@@ -546,10 +579,15 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     }
     const controller = new AbortController(); const activeKey = `${id}/${node.id}`; active.set(activeKey, controller);
     try {
-      const result = await invokeTool(node.tool, resolveBinding(node.input, state.input, outputs(state)), {
-        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions,
+      const raw = resolveBinding(node.input, state.input, outputs(state));
+      // A step that needs approval reaches here only approved; the tool's own approval rule then accepts the call.
+      const approvalBinding = node.approval ? bindToolApproval(node.tool, { runId: id, callId: `${id}/${step.callId}`, input: raw }) : undefined;
+      const result = await invokeTool(node.tool, raw, {
+        runId: id, callId: `${id}/${step.callId}`, scope, signal: controller.signal, permissions, ...(approvalBinding ? { approvalBinding } : {}),
+        ...auth.toolContext(definition.digest, id),
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes,
         beforeDispatch: async processed => {
+          await auth.execute(definition.digest, id, controller.signal);
           const current = stateFrom(await load(id)); const target = current.steps[node.id];
           if (!target || target.kind !== 'tool' || current.status !== 'running' || current.policy !== run.digest
             || target.status !== 'dispatching' || approvalCandidate(node, processed, id,
@@ -652,10 +690,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     if (typeof command.idempotencyKey !== 'string' || command.idempotencyKey.length < 1 || command.idempotencyKey.length > 128) {
       throw new MayuraError('INVALID_INPUT', 'A bounded lifecycle submission key is required.');
     }
+    const admittedId = digest('mayura:workflow-lifecycle-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+    await auth.execute(definition.digest, admittedId);
     const inputSnapshot = freezeJson(jsonValue(command.input, { maxBytes: under.maxOutputBytes }));
     const input = jsonValue(await controlled(() => validate(definition.input, inputSnapshot, 'input')), { maxBytes: under.maxOutputBytes });
     const state = initialWorkflowLifecycleState(lifecycleManifest(definition), input, definition.digest, under.digest, under.maxCostMicros);
     const id = digest('mayura:workflow-lifecycle-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+    await auth.execute(definition.digest, id);
     const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey: `lifecycle:${command.idempotencyKey}`,
       definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'lifecycle.run.created', data: {} }] }), 'workflow lifecycle run');
     verifyDefinition(definition, created.record, stateFrom(created.record)); return publicSnapshot(created.record);
@@ -699,16 +740,24 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
     },
     events: (id, after = 0) => { ensureOpen(); return storageCall(() => store.events(scopeKey, id, after)); },
     runUntilSettled: async (definition, id) => {
+      const checkedSnapshot = async (record: StoredRecord) => { await auth.execute(definition.digest, id); return publicSnapshot(record); };
+
       ensureOpen(); if (gate.draining) throw new MayuraError('CANCELLED', 'Workflow lifecycle runtime is draining.'); assertWorkflowLifecycle(definition);
+      await auth.execute(definition.digest, id);
       for (let wave = 0; wave <= definition.nodes.length + 2; wave++) {
+        await auth.execute(definition.digest, id);
         const before = await load(id); const state = stateFrom(before); verifyDefinition(definition, before, state);
-        if (state.status === 'paused' || finalRunStatuses.has(state.status)) return publicSnapshot(before);
+        if (state.status === 'paused' || finalRunStatuses.has(state.status)) return checkedSnapshot(before);
         // Each wave holds one drain admission until its effects and receipts settle.
-        const release = gate.enter(); if (!release) return publicSnapshot(before);
-        try { await Promise.all(definition.nodes.map(node => executeNode(id, definition, node))); } finally { release(); }
+        const release = gate.enter(); if (!release) return checkedSnapshot(before);
+        try {
+          const results = await Promise.allSettled(definition.nodes.map(node => executeNode(id, definition, node)));
+          const failure = results.find(result => result.status === 'rejected');
+          if (failure?.status === 'rejected') throw failure.reason;
+        } finally { release(); }
         let after = await load(id); const next = stateFrom(after); const run = verifyDefinition(definition, after, next);
         const steps = Object.values(next.steps);
-        if (!schedulable(next)) return publicSnapshot(after);
+        if (!schedulable(next)) return checkedSnapshot(after);
         if (steps.every(step => terminalStepStatuses.has(step.status))) {
           if (steps.every(step => satisfiedStepStatuses.has(step.status))) {
             try { next.output = jsonValue(await controlled(() => validate(definition.output,
@@ -716,9 +765,10 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
             catch { next.status = 'failed'; }
           } else next.status = steps.some(step => step.status === 'unknown') ? 'outcome_unknown'
             : steps.some(step => step.status === 'blocked') ? 'blocked' : 'failed';
+          await auth.execute(definition.digest, id);
           try { after = await save(after, next, 'lifecycle.run.completed', { status: next.status }); }
           catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
-          return publicSnapshot(after);
+          return checkedSnapshot(after);
         }
         if (after.version === before.version) {
           const waiting = steps.some(step => step.status === 'waiting');
@@ -727,17 +777,19 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
             try { after = await save(after, next, 'lifecycle.run.waiting'); }
             catch (error) { if (!(error instanceof StorageError) || error.storageCode !== 'CONFLICT') throw error; after = await load(id); }
           }
-          return publicSnapshot(after);
+          return checkedSnapshot(after);
         }
       }
-      return publicSnapshot(await load(id));
+      return checkedSnapshot(await load(id));
     },
     approve: async command => {
       ensureOpen();
       if (!hashPattern.test(command.id) || !nodePattern.test(command.nodeId) || !hashPattern.test(command.digest)) {
         throw new MayuraError('INVALID_INPUT', 'Approval requires exact run, node and candidate identifiers.');
       }
+      await auth.require('run', command.id, 'approve');
       const human = await checkedHuman(command.credential, true); const observedAtMs = now();
+      await auth.require('run', command.id, 'approve');
       return publicSnapshot(await mutate(command.id, state => {
         const step = state.steps[command.nodeId];
         // The digest binds the run's own policy; a run under an unlisted policy has nothing approvable.
@@ -765,7 +817,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       if (!command || typeof command.id !== 'string' || !hashPattern.test(command.id) || typeof command.name !== 'string' || !signalPattern.test(command.name)
         || typeof command.signalId !== 'string' || !signalPattern.test(command.signalId)
         || (command.actorId !== undefined && (typeof command.actorId !== 'string' || command.actorId.length < 1 || command.actorId.length > 256))) {
-        throw new MayuraError('INVALID_INPUT', 'A signal needs a run id, a signal name and a signal id (1–128 letters, digits, ".", "_", "/" or "-").');
+        throw new MayuraError('INVALID_INPUT', 'A signal needs a run id, a signal name and a signal id (1ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ128 letters, digits, ".", "_", "/" or "-").');
       }
       const node = definition.nodes.find(candidate => candidate.kind === 'signal' && candidate.name === command.name);
       if (!node || node.kind !== 'signal') throw new MayuraError('NOT_FOUND', `This workflow has no signal step named "${command.name}".`);
@@ -851,10 +903,13 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       verifyDefinition(migration.to, migrated, stateFrom(migrated));
       return freezeJson(jsonValue({ plan, snapshot: publicSnapshot(migrated) })) as unknown as WorkflowMigrationResult<WorkflowLifecycleSnapshot>;
     },
-    resume: async id => publicSnapshot(await mutate(id, state => {
+    resume: async id => {
+      await auth.require('run', id, 'resume');
+      return publicSnapshot(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused lifecycle workflow can be resumed.');
       state.status = Object.values(state.steps).some(step => step.status === 'waiting') ? 'waiting' : 'running'; return true;
-    }, 'lifecycle.run.resumed')),
+    }, 'lifecycle.run.resumed'));
+    },
     cancel: async id => {
       const record = await mutate(id, state => {
         if (finalRunStatuses.has(state.status)) return false;
@@ -871,9 +926,19 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
       }
       if (changed && state.status !== 'cancelled') state.status = 'running'; return changed;
     }, 'lifecycle.run.recovery_required')),
-    close: () => { closed = true; for (const controller of active.values()) controller.abort(); },
-    drain: options => gate.drain(options, () => { closed = true; for (const controller of active.values()) controller.abort(); }),
+    close: () => { closed = true; auth.close(); for (const controller of active.values()) controller.abort(); },
+    drain: options => gate.drain(options, () => { closed = true; auth.close(); for (const controller of active.values()) controller.abort(); }),
   });
+  parentSubmissions.set(runtime, async (index, definition, command, parent) => {
+    const under = policies[index];
+    if (!Number.isSafeInteger(index) || !under) throw new MayuraError('INVALID_INPUT', 'The requested lifecycle policy is not configured.');
+    const id = digest('mayura:workflow-lifecycle-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+    if (parents.has(id)) throw new MayuraError('CONFLICT', 'Lifecycle child already has an active parent driver.');
+    parents.set(id, parent);
+    try { return await submitUnder(under, definition, command); }
+    finally { parents.delete(id); }
+  });
+  parentExecutions.set(runtime, parents);
   pinnedSubmissions.set(runtime, (index, definition, command) => {
     const under = policies[index];
     if (!Number.isSafeInteger(index) || !under) throw new MayuraError('INVALID_INPUT', 'The requested lifecycle policy is not configured.');

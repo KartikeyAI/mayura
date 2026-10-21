@@ -1,3 +1,10 @@
+import { validHistoryEvent } from './history-event.js';
+export { createThreadCompactionController, type ThreadCompactionState, type ThreadCompactionController, type ThreadCompactionControllerOptions } from './thread-compaction-store.js';
+import { approvalEvent, readApproval } from './conversations.js';
+export { createHeadlessThreadStore, createHeadlessThreadsStore, createRunApprovalController,
+  type HeadlessThreadState, type HeadlessThreadStore, type HeadlessThreadStoreOptions, type HeadlessThreadsState,
+  type HeadlessThreadsStore, type HeadlessThreadsStoreOptions, type RunApprovalCommandState, type RunApprovalController,
+  type RunApprovalControllerOptions } from './conversation-stores.js';
 import { ClientError, type ClientEvent, type RemoteHumanRequest, type RemoteRun, type RemoteSnapshot } from './index.js';
 
 /** `reconnecting`: the event stream failed and is being reopened from the last sequence; `errorCode` says why. */
@@ -25,6 +32,8 @@ export interface HeadlessRunStore {
   refresh(options?: { readonly signal?: AbortSignal }): Promise<HeadlessRunState>;
   /** Follow the run's events until `run.completed`, reconnecting from the last sequence as needed, then read its snapshot. */
   observe(options?: { readonly signal?: AbortSignal }): Promise<HeadlessRunState>;
+  /** Explicit one-shot continuation command; observe or refresh separately after acceptance. */
+  resumeTool(command: { readonly callId: string; readonly digest: string }, options?: { readonly signal?: AbortSignal }): Promise<void>;
   cancel(options?: { readonly signal?: AbortSignal }): Promise<void>;
   dispose(): void;
 }
@@ -34,7 +43,7 @@ export interface HumanRequestView {
   readonly statusText: string; readonly actionText: string | null; readonly deadlineAtMs: number | null;
 }
 export type RunActivityKind = 'run' | 'step' | 'model' | 'tool' | 'hook' | 'delegate';
-export type RunActivityStatus = 'active' | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown' | 'unknown';
+export type RunActivityStatus = 'active' | 'waiting' | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown' | 'unknown';
 export interface RunActivityItem {
   readonly id: string; readonly kind: RunActivityKind; readonly label: string; readonly status: RunActivityStatus;
   readonly startedSequence: number | null; readonly completedSequence: number | null;
@@ -44,9 +53,9 @@ export interface RunActivityProjection {
   readonly revision: number; readonly complete: boolean; readonly items: readonly RunActivityItem[];
 }
 
-const runStatuses = new Set(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld']);
+const runStatuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const eventTypes = new Set(['run.started', 'history.applied', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'approval.requested', 'approval.resolved', 'run.paused', 'run.resumed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld']);
 type StreamedOutput = HeadlessRunState['streamedOutput'];
 /** Append one streamed event to the provisional output; a new model call starts over. */
 function streamed(current: StreamedOutput, item: ClientEvent, gap: boolean, maxChars: number): StreamedOutput {
@@ -63,7 +72,9 @@ function viewError(error: unknown): ClientError { return error instanceof Client
 function snapshot(value: RemoteSnapshot, id: string): RemoteSnapshot {
   if (!value || !Object.isFrozen(value)) throw new ClientError('INVALID_VIEW_INPUT');
   const fields = Object.getOwnPropertyDescriptors(value);
-  if (Reflect.ownKeys(fields).length !== 4 || ['id', 'status', 'budget', 'evidence'].some(key => !fields[key] || !('value' in fields[key]!))) throw new ClientError('INVALID_VIEW_INPUT');
+  const required = ['id', 'status', 'budget', 'evidence'];
+  if (Reflect.ownKeys(fields).some(key => typeof key !== 'string' || (!required.includes(key) && key !== 'approval' && key !== 'toolWait') || !('value' in fields[key]!))
+    || required.some(key => !fields[key])) throw new ClientError('INVALID_VIEW_INPUT');
   const observedId = fields['id']!.value; const status = fields['status']!.value; const observedBudget: unknown = fields['budget']!.value; const observedEvidence: unknown = fields['evidence']!.value;
   if (observedId !== id || typeof status !== 'string' || !runStatuses.has(status) || !observedBudget || typeof observedBudget !== 'object' || !Object.isFrozen(observedBudget)
     || !Array.isArray(observedEvidence) || !Object.isFrozen(observedEvidence) || observedEvidence.length > 4_096) throw new ClientError('INVALID_VIEW_INPUT');
@@ -79,6 +90,10 @@ function snapshot(value: RemoteSnapshot, id: string): RemoteSnapshot {
     const receipt = Object.getOwnPropertyDescriptors(rawReceipt); if (Reflect.ownKeys(receipt).length !== 4 || ['callId', 'toolId', 'execution', 'disclosure'].some(key => !receipt[key] || !('value' in receipt[key]!))) throw new ClientError('INVALID_VIEW_INPUT');
     if (typeof receipt['callId']!.value !== 'string' || receipt['callId']!.value.length > 256 || typeof receipt['toolId']!.value !== 'string' || receipt['toolId']!.value.length > 256
       || !['not_started', 'succeeded', 'failed', 'unknown'].includes(String(receipt['execution']!.value)) || !['released', 'withheld'].includes(String(receipt['disclosure']!.value))) throw new ClientError('INVALID_VIEW_INPUT'); }
+  if (fields['toolWait']) { if (status !== 'waiting' || fields['approval']) throw new ClientError('INVALID_VIEW_INPUT');
+    try { return Object.freeze({ ...value, toolWait: readApproval(fields['toolWait'].value) }); } catch { throw new ClientError('INVALID_VIEW_INPUT'); } }
+  if (fields['approval']) { if (status !== 'waiting') throw new ClientError('INVALID_VIEW_INPUT');
+    try { return Object.freeze({ ...value, approval: readApproval(fields['approval'].value) }); } catch { throw new ClientError('INVALID_VIEW_INPUT'); } }
   return value;
 }
 function event(value: ClientEvent, id: string, after: number): ClientEvent {
@@ -93,6 +108,10 @@ function event(value: ClientEvent, id: string, after: number): ClientEvent {
   if (keys.length > 64 || keys.some(key => typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key)
       || !('value' in metadata[key]!) || !['string', 'number', 'boolean'].includes(typeof metadata[key]!.value)
       || (typeof metadata[key]!.value === 'number' && !Number.isFinite(metadata[key]!.value)))) throw new ClientError('INVALID_VIEW_INPUT');
+  if (type === 'history.applied' && !validHistoryEvent(observedMetadata as Record<string, unknown>)) throw new ClientError('INVALID_VIEW_INPUT');
+  if (type.startsWith('approval.') || type === 'run.paused' || type === 'run.resumed') {
+    try { approvalEvent(type, observedMetadata); } catch { throw new ClientError('INVALID_VIEW_INPUT'); }
+  }
   if (type === 'events.gap' && (metadata['from']?.value !== after + 1 || metadata['to']?.value !== sequence)) throw new ClientError('INVALID_VIEW_INPUT');
   if (type === 'output.delta' || type === 'output.withheld') {
     const required = type === 'output.delta' ? ['step', 'modelCall', 'index', 'text'] : ['step', 'modelCall'];
@@ -114,7 +133,7 @@ export function createHeadlessRunStore(options: HeadlessRunStoreOptions): Headle
   if (!Number.isSafeInteger(maxStreamedChars) || maxStreamedChars < 1 || maxStreamedChars > 1_048_576) throw new ClientError('INVALID_VIEW_CONFIG');
   if (!Number.isSafeInteger(maxEvents) || maxEvents < 1 || maxEvents > 1_024 || !Number.isSafeInteger(maxSubscribers) || maxSubscribers < 1 || maxSubscribers > 256) throw new ClientError('INVALID_VIEW_CONFIG');
   const run = options.run; const subscribers = new Set<() => void>(); const controllers = new Set<AbortController>();
-  let observing = false; let cancelling = false; let disposed = false; let refreshGeneration = 0;
+  let observing = false; let cancelling = false; let resumingTool = false; let disposed = false; let refreshGeneration = 0;
   let state = frozen({ revision: 0, connection: 'idle', snapshot: null, events: [], lastSequence: 0, hasGap: false,
     activity: { models: 0, tools: 0, hooks: 0 }, errorCode: null, streamedOutput: null });
   const publish = (change: Partial<Omit<HeadlessRunState, 'revision'>>): HeadlessRunState => {
@@ -166,12 +185,18 @@ export function createHeadlessRunStore(options: HeadlessRunStoreOptions): Headle
             : item.type === 'events.gap' && state.streamedOutput ? { streamedOutput: Object.freeze({ ...state.streamedOutput, complete: false }) } : {};
           publish({ events: [...state.events, item].slice(-maxEvents), lastSequence: item.sequence, hasGap: gap, activity, ...output,
             ...(state.connection === 'reconnecting' ? { connection: 'observing' as const, errorCode: null } : {}) });
+          if (item.type === 'run.paused' || item.type === 'run.resumed' || item.type === 'events.gap') await refresh({ signal: control.signal });
         }
         const current = snapshot(await run.inspect({ signal: control.signal }), run.id);
         return publish({ snapshot: current, connection: 'stopped', errorCode: null,
           ...(terminal.has(current.status) ? { activity: { models: 0, tools: 0, hooks: 0 } } : {}) });
       } catch (error) { if (disposed) return state; observing = false; throw fail(error, 'error'); }
       finally { observing = false; control.close(); }
+    },
+    resumeTool: async (command, settings) => {
+      if (disposed) throw new ClientError('VIEW_DISPOSED'); if (resumingTool || cancelling) throw new ClientError('VIEW_BUSY'); resumingTool = true;
+      const control = operation(settings?.signal); try { await run.resumeTool(command, { signal: control.signal }); } catch (error) { throw fail(error); }
+      finally { resumingTool = false; control.close(); }
     },
     cancel: async settings => { if (disposed) throw new ClientError('VIEW_DISPOSED'); if (cancelling) throw new ClientError('VIEW_BUSY'); cancelling = true;
       const control = operation(settings?.signal); try { await run.cancel({ signal: control.signal }); } catch (error) { throw fail(error); }
@@ -251,10 +276,16 @@ export function createRunActivityProjection(state: HeadlessRunState): RunActivit
     if ((prior === 0 && item.sequence !== 1) || (prior !== 0 && item.sequence !== prior + 1)) complete = false;
     prior = item.sequence; if (item.type === 'events.gap') { complete = false; continue; }
     // Streamed output is text, not activity; `streamedOutput` carries it.
-    if (item.type === 'output.delta' || item.type === 'output.withheld') continue;
+    if (item.type === 'output.delta' || item.type === 'output.withheld' || item.type.startsWith('approval.')) continue;
     const identity = keyFor(item); if (!identity) throw new ClientError('INVALID_VIEW_INPUT'); const started = item.type.endsWith('.started');
     if (item.type === 'run.completed') terminalSeen = true;
     const existing = items.get(identity.key);
+    if (item.type === 'run.paused' || item.type === 'run.resumed') {
+      const status = item.type === 'run.paused' ? 'waiting' as const : 'active' as const;
+      if (existing) existing.status = status;
+      else { complete = false; items.set('run', { id: 'run', kind: 'run', label: 'Run', status, startedSequence: null, completedSequence: null, startedAt: null, completedAt: null }); }
+      continue;
+    }
     if (started) {
       if (!existing) items.set(identity.key, { id: identity.key, kind: identity.kind, label: identity.label, status: 'active',
         startedSequence: item.sequence, completedSequence: null, startedAt: item.timestamp, completedAt: null });
@@ -262,10 +293,12 @@ export function createRunActivityProjection(state: HeadlessRunState): RunActivit
       continue;
     }
     const status = activityStatus(item.metadata['status']) ?? (item.metadata['decision'] === 'block' ? 'blocked' : 'completed');
-    if (existing && existing.status === 'active') { existing.status = status; existing.completedSequence = item.sequence; existing.completedAt = item.timestamp; }
+    if (existing && (existing.status === 'active' || existing.status === 'waiting')) { existing.status = status; existing.completedSequence = item.sequence; existing.completedAt = item.timestamp; }
     else { complete = false; items.set(`${identity.key}:completed:${item.sequence}`, { id: `${identity.key}:completed:${item.sequence}`, kind: identity.kind,
       label: identity.label, status, startedSequence: null, completedSequence: item.sequence, startedAt: null, completedAt: item.timestamp }); }
   }
   const result = [...items.values()].map(item => Object.freeze({ ...item, ...(item.status === 'active' && (!complete || terminalSeen) ? { status: 'unknown' as const } : {}) }));
   return Object.freeze({ revision: state.revision, complete, items: Object.freeze(result) });
 }
+
+export type { ThreadAppendInput, RemoteThreadMediaReference } from './conversations.js';

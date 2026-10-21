@@ -1,10 +1,11 @@
+import { workflowAuthorization } from './authorization.js';
 import { freezeJson, jsonValue, MayuraError, validate, type InferInput, type JsonObject, type JsonValue } from '@mayura/core';
 import type { WorkflowDrainOptions, WorkflowDrainReport } from './drain.js';
 import { StorageError, assertWorkflowLoopStateMatchesManifest, initialWorkflowLoopState, workflowLoopState,
   type StoredRecord, type WorkflowLoopBinding, type WorkflowLoopState, type WorkflowLoopStatus } from '@mayura/storage-contracts';
 import { digest, resolveBinding } from './definition.js';
 import { createSubmission, workflowStorageFailure } from './storage-failure.js';
-import { createWorkflowLifecycleRuntime, submitWorkflowLifecycleUnder, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
+import { createWorkflowLifecycleRuntime, runWorkflowLifecycleChild, submitWorkflowLifecycleChild, unknownWorkflowPolicy, workflowPolicyDigest, workflowPolicySettings,
   type WorkflowLifecycleRuntime, type WorkflowLifecycleRuntimeOptions, type WorkflowLifecycleSnapshot } from './lifecycle-runtime.js';
 import { assertWorkflowLoop, loopManifest, type AnyWorkflowLoop } from './loop-definition.js';
 import { assertMigrationAllowed, assertWorkflowMigration, migrationCommand, migrationEvent, nodeFingerprint, planWorkflowMigration,
@@ -85,6 +86,7 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
     || !Number.isSafeInteger(maxPendingCallbacks) || maxPendingCallbacks < 1 || maxPendingCallbacks > 128) {
     throw new MayuraError('INVALID_CONFIG', 'Workflow loop callback limits are invalid.');
   }
+  const auth = workflowAuthorization(options.authorization, scope);
   const lifecycle = createWorkflowLifecycleRuntime(options); const scopeKey = digest('mayura:scope:v1', scope);
   // Index n of `settings` and of `policies` is the same policy the lifecycle runtime knows at index n.
   const settings = workflowPolicySettings(options);
@@ -138,15 +140,18 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
   };
 
   const run = async (definition: AnyWorkflowLoop, id: string): Promise<WorkflowLoopSnapshot> => {
+      const checkedSnapshot = async (record: StoredRecord) => { await auth.execute(definition.digest, id); return view(record); };
+
     assertWorkflowLoop(definition);
     for (let wave = 0; wave < definition.maxIterations * 2 + 4; wave++) {
+      await auth.execute(definition.digest, id);
       let record = await load(id); let state = decoded(record); verify(definition, record, state);
-      if (terminal.has(state.status) || state.status === 'paused') return view(record);
+      if (terminal.has(state.status) || state.status === 'paused') return checkedSnapshot(record);
       if (state.childRunId === null && state.iteration > 0) {
         let again: boolean;
         try { const condition = loopValue(definition.continueWhen, state.input, state.current);
           if (typeof condition !== 'boolean') throw new MayuraError('INVALID_OUTPUT', 'Loop continuation must resolve to a boolean.'); again = condition; }
-        catch { state.status = 'failed'; record = await save(record, state, 'loop.condition.rejected'); return view(record); }
+        catch { state.status = 'failed'; record = await save(record, state, 'loop.condition.rejected'); return checkedSnapshot(record); }
         if (!again) {
           try { state.output = await checked(definition.output, loopValue(definition.result, state.input, state.current), 'output',
             settings[pinnedIndex(state)]!.maxOutputBytes); state.status = 'succeeded'; }
@@ -154,21 +159,27 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
             if (!(error instanceof MayuraError) || !['INVALID_INPUT', 'INVALID_OUTPUT'].includes(error.code)) throw error;
             state.status = 'failed';
           }
-          record = await save(record, state, state.status === 'succeeded' ? 'loop.run.succeeded' : 'loop.output.rejected'); return view(record);
+          await auth.execute(definition.digest, id);
+          record = await save(record, state, state.status === 'succeeded' ? 'loop.run.succeeded' : 'loop.output.rejected'); return checkedSnapshot(record);
         }
-        if (state.iteration >= state.maxIterations) { state.status = 'limit_exceeded'; record = await save(record, state, 'loop.limit.exceeded'); return view(record); }
+        if (state.iteration >= state.maxIterations) { state.status = 'limit_exceeded'; record = await save(record, state, 'loop.limit.exceeded'); return checkedSnapshot(record); }
       }
       if (state.childRunId === null) {
         let input: JsonValue;
         try { input = state.iteration === 0 ? resolveBinding(definition.initial, state.input, {})
           : loopValue(definition.next, state.input, state.current); }
-        catch { state.status = 'failed'; record = await save(record, state, 'loop.input.rejected'); return view(record); }
+        catch { state.status = 'failed'; record = await save(record, state, 'loop.input.rejected'); return checkedSnapshot(record); }
+        await auth.execute(definition.digest, id);
+        await auth.require('workflow', definition.body.digest, 'delegate');
         let child: WorkflowLifecycleSnapshot;
-        try { child = await submitWorkflowLifecycleUnder(lifecycle, pinnedIndex(state), definition.body, { input,
-          idempotencyKey: digest('mayura:workflow-loop-child:v1', { loopRunId: id, iteration: state.iteration }) }); }
+        try { child = await submitWorkflowLifecycleChild(lifecycle, pinnedIndex(state), definition.body, { input,
+          idempotencyKey: digest('mayura:workflow-loop-child:v1', { loopRunId: id, iteration: state.iteration }) }, async signal => {
+            await auth.execute(definition.digest, id, signal);
+            await auth.require('workflow', definition.body.digest, 'delegate', signal);
+          }); }
         catch (error) {
           if (!(error instanceof MayuraError) || !['INVALID_INPUT', 'INVALID_OUTPUT'].includes(error.code)) throw error;
-          state.status = 'failed'; record = await save(record, state, 'loop.child.rejected'); return view(record);
+          state.status = 'failed'; record = await save(record, state, 'loop.child.rejected'); return checkedSnapshot(record);
         }
         record = await mutate(id, current => { if (current.childRunId !== null || current.iteration !== state.iteration) return false;
           current.childRunId = child.id; current.status = 'running'; return true;
@@ -176,25 +187,32 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
         state = decoded(record);
       }
       const childId = state.childRunId!; let child = await lifecycle.inspect(childId);
-      child = await lifecycle.runUntilSettled(definition.body, child.id);
+      await auth.execute(definition.digest, id);
+      await auth.require('workflow', definition.body.digest, 'delegate');
+      child = await runWorkflowLifecycleChild(lifecycle, definition.body, child.id, async signal => {
+        await auth.execute(definition.digest, id, signal);
+        await auth.require('workflow', definition.body.digest, 'delegate', signal);
+      });
+      await auth.execute(definition.digest, id);
+      await auth.require('workflow', definition.body.digest, 'delegate');
       if (!childTerminal(child)) {
         record = await mutate(id, current => { if (current.childRunId !== child.id || terminal.has(current.status)) return false;
           account(current, child, false); current.status = child.status === 'waiting' ? 'waiting' : 'running'; return true;
         }, 'loop.child.waiting', { iteration: state.iteration, childRunId: child.id });
-        return view(record);
+        return checkedSnapshot(record);
       }
       if (child.status !== 'succeeded') {
         record = await mutate(id, current => { if (current.childRunId !== child.id || terminal.has(current.status)) return false;
           account(current, child, false); current.status = 'failed'; return true;
         }, 'loop.child.failed', { iteration: state.iteration, childRunId: child.id, childStatus: child.status });
-        return view(record);
+        return checkedSnapshot(record);
       }
       await mutate(id, current => { if (current.childRunId !== child.id) return false;
         account(current, child, true); current.current = child.output; current.iteration += 1;
         current.childRunId = null; current.status = 'running'; return true;
       }, 'loop.iteration.succeeded', { iteration: state.iteration, childRunId: child.id });
     }
-    return view(await load(id));
+    return checkedSnapshot(await load(id));
   };
 
   return Object.freeze<WorkflowLoopRuntime>({ profile: 'loop-v1', lifecycle,
@@ -202,9 +220,12 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       ensureOpen(); assertWorkflowLoop(definition);
       if (definition.maxCostMicros > options.maxCostMicros) throw new MayuraError('LIMIT_EXCEEDED', 'Loop static cost exceeds its runtime ceiling.');
       if (typeof command.idempotencyKey !== 'string' || command.idempotencyKey.length < 1 || command.idempotencyKey.length > 128) throw new MayuraError('INVALID_INPUT', 'A bounded loop submission key is required.');
+      const admittedId = digest('mayura:workflow-loop-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+      await auth.execute(definition.digest, admittedId);
       const input = await checked(definition.input, freezeJson(jsonValue(command.input, { maxBytes: maxOutputBytes })), 'input');
       const state = initialWorkflowLoopState(loopManifest(definition), input, definition.digest, policy, options.maxCostMicros);
       const id = digest('mayura:workflow-loop-run-id:v1', { scope: scopeKey, submissionKey: command.idempotencyKey });
+      await auth.execute(definition.digest, id);
       const created = await createSubmission(() => store.create({ scope: scopeKey, id, idempotencyKey: `loop:${command.idempotencyKey}`,
         definitionHash: definition.digest, state: jsonValue(state) as JsonObject, events: [{ type: 'loop.run.created', data: {} }] }), 'workflow loop run');
       verify(definition, created.record, decoded(created.record)); return view(created.record);
@@ -217,10 +238,13 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
       if (terminal.has(state.status)) throw new MayuraError('CONFLICT', 'A terminal loop cannot be paused.');
       state.status = 'paused'; return true;
     }, 'loop.run.paused', {}, true)),
-    resume: async id => view(await mutate(id, state => {
+    resume: async id => {
+      await auth.require('run', id, 'resume');
+      return view(await mutate(id, state => {
       if (state.status !== 'paused') throw new MayuraError('CONFLICT', 'Only a paused loop can be resumed.');
       state.status = 'running'; return true;
-    }, 'loop.run.resumed', {}, true)),
+    }, 'loop.run.resumed', {}, true));
+    },
     migrate: async (migration, command) => {
       ensureOpen(); assertWorkflowMigration(migration); assertWorkflowLoop(migration.from); assertWorkflowLoop(migration.to);
       const { id, actorId, commandId, dryRun = false } = migrationCommand(command);
@@ -263,7 +287,7 @@ export function createWorkflowLoopRuntime(options: WorkflowLoopRuntimeOptions): 
         if (child && current.childRunId === child.id) account(current, child, false);
         current.status = 'cancelled'; return true;
       }, 'loop.run.cancelled', {}, true); return view(record); },
-    close: () => { if (!closed) { closed = true; lifecycle.close(); } },
-    drain: async options => { const report = await lifecycle.drain(options); closed = true; return report; },
+    close: () => { if (!closed) { closed = true; auth.close(); lifecycle.close(); } },
+    drain: async options => { const report = await lifecycle.drain(options); closed = true; auth.close(); return report; },
   });
 }

@@ -11,6 +11,7 @@ import {
   type ModelMediaCapability,
   type ModelDefinitionCheck,
   type ModelFailureReason,
+  type ModelHistoryMessage,
   type ModelMessage,
   type ModelRequest,
   type ModelResponse,
@@ -198,6 +199,56 @@ function messagesForAnthropic(messages: readonly ModelMessage[], aliases: Readon
   });
 }
 
+/** Anthropic takes only these characters in a `tool_use` id; Mayura call ids may also hold `.` and `/`. */
+const ANTHROPIC_ID = /^[A-Za-z0-9_-]+$/u;
+
+/**
+ * The conversation before this run as Anthropic messages, rendered the same way on every call of the run so the
+ * prefix before this run's own (possibly thinking) turns never changes.
+ *
+ * - A user message, a tool call turn and a tool result are rendered as the adapter renders this run's own. Earlier tool
+ *   call turns have no thinking blocks: history carries none, and Anthropic needs thinking back only within the
+ *   current tool-use turn, which is this run's.
+ * - An earlier final answer is an assistant text block holding the answer's JSON text.
+ * - A call id with characters Anthropic refuses gets a safe, unique stand-in, used by its call and its result alike.
+ * - Anthropic refuses `tool_use` and `tool_result` blocks in a request that defines no tools. When this run offers
+ *   none, earlier calls and results are therefore stated as JSON text instead, the closest form it accepts.
+ */
+function historyForAnthropic(history: readonly ModelHistoryMessage[], names: ReadonlyMap<string, string>, withTools: boolean): JsonValue[] {
+  const ids = historyIdMap(history);
+  return history.map((message): JsonValue => {
+    if (message.role === 'user') return { role: 'user', content: [{ type: 'text', text: JSON.stringify(message.content) }] };
+    if (message.role === 'tool') {
+      return { role: 'user', content: [withTools ? { type: 'tool_result', tool_use_id: ids.get(message.callId) ?? failed(), content: JSON.stringify(message.result) }
+        : { type: 'text', text: JSON.stringify({ tool_result: { call_id: message.callId, tool: message.toolId, result: message.result } }) }] };
+    }
+    if ('output' in message) return { role: 'assistant', content: [{ type: 'text', text: JSON.stringify(message.output) }] };
+    if (!withTools) return { role: 'assistant', content: [{ type: 'text', text: JSON.stringify({ tool_calls: message.calls.map(call => ({ call_id: call.id, tool: call.toolId, input: call.input })) }) }] };
+    return { role: 'assistant', content: message.calls.map(call => ({ type: 'tool_use', id: ids.get(call.id) ?? failed(), name: names.get(call.toolId) ?? failed(), input: call.input })) };
+  });
+}
+/** Each history call id as sent to Anthropic: itself when Anthropic takes it, otherwise a safe stand-in no other call uses. */
+function historyIdMap(history: readonly ModelHistoryMessage[]): ReadonlyMap<string, string> {
+  const calls = history.flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls : []);
+  const taken = new Set(calls.map(call => call.id).filter(id => ANTHROPIC_ID.test(id)));
+  const sent = new Map<string, string>();
+  for (const { id } of calls) {
+    if (ANTHROPIC_ID.test(id)) { sent.set(id, id); continue; }
+    const base = id.replace(/[^A-Za-z0-9_-]/gu, '_'); let safe = base;
+    for (let suffix = 2; taken.has(safe); suffix++) safe = `${base}_${suffix}`;
+    taken.add(safe); sent.set(id, safe);
+  }
+  return sent;
+}
+/** Names for every tool a request mentions: this run's tools first, so their names never change, then any only the history calls. */
+function conversationToolNames(request: ModelRequest): ReadonlyMap<string, string> {
+  const ids = request.tools.map(tool => tool.id); const named = new Set(ids);
+  for (const message of request.history ?? []) {
+    if (message.role === 'assistant' && 'calls' in message) for (const call of message.calls) if (!named.has(call.toolId)) { named.add(call.toolId); ids.push(call.toolId); }
+  }
+  return modelToolNames(ids);
+}
+
 /** Explicit Anthropic Messages adapter with fixed destination and conservative accounting. */
 export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapter {
   if (typeof options.model !== 'string' || !options.model.trim() || options.model.length > 128) {
@@ -262,7 +313,9 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
           model,
           max_tokens: request.maxOutputTokens,
           system: request.instructions,
-          messages: messagesForAnthropic(request.messages, aliases, assistants),
+          // The conversation before this run goes first; this run's own turns, and the continuation's count of them, follow.
+          messages: [...(request.history === undefined ? [] : historyForAnthropic(request.history, conversationToolNames(request), tools.length > 0)),
+            ...messagesForAnthropic(request.messages, aliases, assistants)],
           stream: onDelta !== undefined,
           output_config: { format: { type: 'json_schema', schema: outputSchema } },
         };
@@ -296,7 +349,9 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
         const accounting = { costMicros: knownCost, inputTokens: Number(totalInputTokens), outputTokens };
         if (payload['stop_reason'] === 'tool_use') {
           const calls: ModelToolCall[] = [];
-          const seen = new Set<string>();
+          // A call of this run may not reuse an id the history already uses, as sent or as Mayura recorded it.
+          const earlier = request.history === undefined ? new Map<string, string>() : historyIdMap(request.history);
+          const seen = new Set<string>([...earlier.keys(), ...earlier.values()]);
           for (const raw of payload['content']) {
             const block = object(raw);
             // Claude often says what it is about to do before calling a tool. That text is narration, not an answer:
@@ -386,7 +441,7 @@ export function anthropicMessages(options: AnthropicMessagesOptions): ModelAdapt
   };
   return Object.freeze({
     id: 'anthropic.messages',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media: Object.freeze({ types: Object.freeze([...media.types]), urls: media.urls }) } : {}) }),
+    capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media: Object.freeze({ types: Object.freeze([...media.types]), urls: media.urls }) } : {}) }),
     maxCostMicros,
     checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition, fixedOutput),
     generate: (request: ModelRequest): Promise<ModelResponse> => call(request),

@@ -73,3 +73,5 @@ export function azure(options: AzureProviderOptions): ModelProvider {
     ...(deployed ? { catalog: deployed } : {}),
   });
 }
+
+export { azureEmbeddings, type EmbeddingsOptions } from './embeddings.js';

@@ -190,3 +190,15 @@ starter or template name, `source` paths under `src/` ending in `.ts`, and no du
 - [Develop with mayura dev](dev.md)
 - [Model providers](../guides/model-providers.md)
 - [Quickstart](../quickstart.md)
+
+## Framework applications
+
+`mayura init --starter` also accepts `nextjs`, `hono`, `react-router`, `tanstack-start`, `sveltekit` and `nuxt`.
+These produce complete scoped notebook applications with persistent threads, exact approval UI, offline model
+fixtures, environment examples, deployment files and a separate worker or Cron path. See
+[Framework starters](../guides/framework-starters.md) for local setup, runtime boundaries and remaining qualifications.
+
+The project catalog can name definitions under `server/` as `.mjs`, as well as `src/` TypeScript sources.
+Initializer plans remain content-bound: no install scripts run, paths cannot escape the destination, and replacing
+files requires the displayed digest. Framework route filenames may include bounded `+`, `$` and bracket characters.
+The initializer pins the Hono starter's reviewed D1 extension to the same Mayura release.

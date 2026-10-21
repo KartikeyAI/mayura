@@ -1,4 +1,5 @@
-import { MayuraError, type JsonObject, type Scope } from '@mayura/core';
+import { memoryAuthorization } from './authorization.js';
+import { MayuraError, type Authorizer, type JsonObject, type Scope } from '@mayura/core';
 import { evaluateLifecycleControl, evaluateLifecycleObserver, fromBase64Url, snapshotHookOptions, toBase64Url } from '@mayura/core/host';
 import { StorageError, type MemoryChange, type MemoryEdgeRow, type MemoryIndexStore, type MemoryRow, type MemoryRowSensitivity } from '@mayura/storage-contracts';
 import type {
@@ -49,6 +50,8 @@ export interface MemoryExportPage {
 export interface MemoryImportReport { readonly imported: number; readonly skipped: number; readonly edges: number }
 
 export interface NativeMemoryOptions {
+  /** Optional host-owned core authorization and audit boundary. */
+  readonly authorization?: Authorizer;
   readonly store: { readonly memory: MemoryIndexStore };
   readonly scope: Scope;
   readonly permissions: { readonly allow: readonly string[] };
@@ -119,6 +122,7 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
   if (!Array.isArray(options.permissions?.allow) || options.permissions.allow.length > 4_096) throw new MayuraError('INVALID_CONFIG', 'Memory permissions require a bounded grant list.');
   const grants = new Set(options.permissions.allow.map(grant => text(grant, 'Grant', 384)));
   const profile = [...new Set((options.allowedSensitivities ?? ['public', 'internal']).map(value => sensitivity(value)))];
+  const access = memoryAuthorization(scope, options.authorization);
   const embedder = options.embedder;
   if (embedder !== undefined && (typeof embedder.embed !== 'function' || !relationPattern.test(embedder.id) || !Number.isSafeInteger(embedder.dimensions)
     || embedder.dimensions < 1 || embedder.dimensions > 4_096 || !Number.isSafeInteger(embedder.maxBatch) || embedder.maxBatch < 1 || !['local', 'hosted'].includes(embedder.location))) {
@@ -183,7 +187,8 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
     return rows;
   };
   const current = async (id: string): Promise<MemoryRow | undefined> => (await readRows([id])).get(id);
-  const write = async (entry: MemoryRecord | MemorySupersededRecord | MemoryTombstone, expectedVersion: number): Promise<void> => {
+  const write = async (entry: MemoryRecord | MemorySupersededRecord | MemoryTombstone, expectedVersion: number, action = 'correct'): Promise<void> => {
+    await access.require(entry.id, action); await access.require(entry.id, 'read');
     await storage(() => database.putRecord({ scope: key, record: toRow(entry), expectedVersion, terms: entry.status === 'active' ? termsOf(entry.content) : [] }));
   };
   const later = (previous: string): string => new Date(Math.max(Date.parse(clock()), Date.parse(previous))).toISOString();
@@ -195,25 +200,33 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
   };
   const candidate = (record: MemoryRecord): NonNullable<BeforeMemoryWriteEvent['candidate']> =>
     ({ content: record.content, category: record.category, sensitivity: record.sensitivity, provenance: record.provenance, validity: record.validity, metadata: record.metadata });
-  const visibleRecords = async (ids: readonly string[]): Promise<MemoryRecord[]> => {
+  const visibleRecords = async (ids: readonly string[], signal?: AbortSignal): Promise<MemoryRecord[]> => {
     const rows = await readRows(ids); const now = Date.parse(clock());
-    return ids.flatMap(id => {
+    const visible: MemoryRecord[] = [];
+    for (const id of ids) {
       const row = rows.get(id);
-      if (!row || row.status !== 'active' || !admitted(row.sensitivity)) return [];
+      if (!row || row.status !== 'active' || !admitted(row.sensitivity) || !await access.can(id, 'read', signal)) continue;
       const record = fromRow(row) as MemoryRecord;
-      if (Date.parse(record.validity.from) > now || (record.validity.until !== null && Date.parse(record.validity.until) <= now)) return [];
-      return [record];
-    });
+      if (Date.parse(record.validity.from) > now || (record.validity.until !== null && Date.parse(record.validity.until) <= now)) continue;
+      visible.push(record);
+    }
+    return visible;
   };
 
+  const visibleEdges = async (rows: readonly MemoryEdgeRow[]): Promise<MemoryEdgeRow[]> => {
+    const visible: MemoryEdgeRow[] = [];
+    for (const row of rows) if (await access.can(row.id, 'read_edge') && await access.can(row.from) && await access.can(row.to)) visible.push(row);
+    return visible;
+  };
   const addRecord = async (input: MemoryInput, hooked = true): Promise<MemoryRecord> => {
     const source = object(input); allowedKeys(source, inputFields); const now = clock();
     const record = activeRecord(source, scope, 1, now, now);
     if (!admitted(record.sensitivity)) throw new MayuraError('PERMISSION_DENIED', 'The memory record exceeds the permitted sensitivity profile.');
+    await access.require(record.id, 'create'); await access.require(record.id, 'read');
     if (hooked) await before({ operation: 'add', scope, id: record.id, candidate: candidate(record) });
-    await write(record, 0);
+    await write(record, 0, 'create');
     if (hooked) await after({ operation: 'add', scope, id: record.id, version: 1, status: 'active' });
-    return immutable(record);
+    await access.require(record.id, 'read'); return immutable(record);
   };
 
   const lexical = async (query: string, limit: number): Promise<{ id: string; score: number }[]> => {
@@ -223,13 +236,16 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
     return result.hits.map(hit => ({ id: hit.id, score: hit.score }));
   };
 
-  const embed = async (texts: readonly string[], signal: AbortSignal): Promise<number[][]> => {
+  const embed = async (texts: readonly string[], signal: AbortSignal, beforeBatch?: (offset: number, count: number) => Promise<void>): Promise<number[][]> => {
     const vectors: number[][] = [];
     for (let index = 0; index < texts.length; index += embedder!.maxBatch) {
       const batch = texts.slice(index, index + embedder!.maxBatch);
+      if (signal.aborted) throw new MayuraError('CANCELLED', 'Embedding was cancelled.');
+      await beforeBatch?.(index, batch.length);
       let raw: unknown;
       try { raw = await embedder!.embed(batch, signal); }
       catch { if (signal.aborted) throw new MayuraError('CANCELLED', 'Embedding was cancelled.'); throw new MayuraError('MODEL_FAILED', 'The embedder failed; semantic retrieval is unavailable.'); }
+      if (signal.aborted) throw new MayuraError('CANCELLED', 'Embedding was cancelled.');
       vectors.push(...admitEmbeddings(raw, batch.length, embedder!.dimensions));
     }
     return vectors;
@@ -291,7 +307,8 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       cursor = page.length === 5_000 ? page.at(-1)!.recordId : undefined;
     } while (cursor);
     scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
-    const top = scored.slice(0, limit); const records = new Map((await visibleRecords(top.map(hit => hit.id))).map(record => [record.id, record]));
+    const top = scored.slice(0, limit); const records = new Map((await visibleRecords(top.map(hit => hit.id), signal)).map(record => [record.id, record]));
+    await access.require('collection', 'search', signal);
     return immutable({ mode: lists ? 'ivf' : 'exact', hits: top.flatMap(hit => records.has(hit.id) ? [{ record: records.get(hit.id)!, score: hit.score }] : []) });
   };
 
@@ -308,7 +325,7 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       if (mode === 'replace-empty') throw new MayuraError('CONFLICT', 'replace-empty import requires an empty scope.');
       return false;
     }
-    await write(entry, existing?.version ?? 0);
+    await write(entry, existing?.version ?? 0, 'import');
     return true;
   };
 
@@ -319,50 +336,60 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       const id = memoryId(source['id']); const expectedVersion = integer(source['expectedVersion'], 'Expected memory version');
       const provisional = activeRecord(source, scope, 1, clock(), clock());
       if (!admitted(provisional.sensitivity)) throw new MayuraError('PERMISSION_DENIED', 'The memory record exceeds the permitted sensitivity profile.');
+      await access.require(id, 'correct'); await access.require(id, 'read');
       await before({ operation: 'correct', scope, id, expectedVersion, candidate: candidate(provisional) });
       const existing = liveRecord(await current(id), expectedVersion);
       const next = activeRecord(source, scope, nextVersion(existing.version), existing.createdAt, later(existing.updatedAt));
       await write(next, expectedVersion);
       await after({ operation: 'correct', scope, id, version: next.version, status: 'active' });
-      return immutable(next);
+      await access.require(id, 'read'); return immutable(next);
     },
     forget: async (input: ForgetMemoryInput) => {
       permission('memory:delete'); const command = object(input, 1_024, 2); exactKeys(command, ['id', 'expectedVersion']);
       const id = memoryId(command['id']); const expectedVersion = integer(command['expectedVersion'], 'Expected memory version');
+      await access.require(id, 'delete'); await access.require(id, 'read');
       await before({ operation: 'forget', scope, id, expectedVersion });
       const row = await current(id);
       if (!row || !admitted(row.sensitivity)) throw new MayuraError('NOT_FOUND', 'Memory record was not found in this scope.');
       if (row.status === 'deleted' || row.version !== expectedVersion) throw new MayuraError('CONFLICT', 'Memory was changed or deleted; refresh its current version.');
       const deletedAt = later(row.updatedAt);
       const tombstone: MemoryTombstone = { id, version: nextVersion(row.version), status: 'deleted', scope: { ...scope }, sensitivity: row.sensitivity, createdAt: row.createdAt, updatedAt: deletedAt, deletedAt };
-      await write(tombstone, expectedVersion);
+      await write(tombstone, expectedVersion, 'delete');
       await after({ operation: 'forget', scope, id, version: tombstone.version, status: 'deleted' });
-      return immutable(tombstone);
+      await access.require(id, 'read'); return immutable(tombstone);
     },
     get: async (id, query = {}) => {
       permission('memory:read'); memoryId(id); const request = object(query, 256, 2); allowedKeys(request, ['includeDeleted']);
       const includeDeleted = request['includeDeleted'] ?? false;
       if (typeof includeDeleted !== 'boolean') throw new MayuraError('INVALID_INPUT', 'includeDeleted must be boolean.');
-      const row = await current(id);
+      await access.require(id, 'read');
+      const row = await current(id); await access.require(id, 'read');
       return row && admitted(row.sensitivity) && (includeDeleted || row.status !== 'deleted') ? immutable(fromRow(row)) : undefined;
     },
     list: async (query: MemoryListOptions = {}) => {
       permission('memory:read'); const request = object(query, 2_048, 2); allowedKeys(request, ['limit', 'cursor', 'includeDeleted']);
       const limit = limitOf(request['limit'], 20, 50); const includeDeleted = request['includeDeleted'] ?? false;
       if (typeof includeDeleted !== 'boolean') throw new MayuraError('INVALID_INPUT', 'includeDeleted must be boolean.');
-      const cursor = request['cursor'] === undefined ? undefined : memoryId(request['cursor']);
+      await access.require('collection', 'list');
+      const rawCursor = await access.open(request['cursor'], `list:${includeDeleted}`);
+      const cursor = rawCursor === undefined ? undefined : memoryId(rawCursor);
       const rows = await storage(() => database.listRecords({ scope: key, limit: limit + 1, statuses: includeDeleted ? ['active', 'superseded', 'deleted'] : ['active'],
         sensitivities: profile as MemoryRowSensitivity[], ...(cursor ? { after: cursor } : {}) }));
-      const records = rows.slice(0, limit).map(fromRow) as MemoryEntry[];
+      const records: MemoryEntry[] = [];
+      for (const row of rows.slice(0, limit)) if (await access.can(row.id)) records.push(fromRow(row));
       const stats = await storage(() => database.stats({ scope: key }));
-      return immutable<MemoryPage>({ records, revision: stats.sequence, ...(rows.length > limit ? { nextCursor: records.at(-1)!.id } : {}) });
+      const nextCursor = await access.seal(rows.length > limit ? rows[limit - 1]!.id : undefined, `list:${includeDeleted}`);
+      await access.require('collection', 'list');
+      return immutable<MemoryPage>({ records, revision: stats.sequence, ...(nextCursor ? { nextCursor } : {}) });
     },
     search: async (query, searchOptions = {}) => {
       permission('memory:read'); const request = object(searchOptions, 128, 2); allowedKeys(request, ['limit']);
+      await access.require('collection', 'search');
       const ranked = await lexical(query, limitOf(request['limit'], 20, 50));
       const records = new Map((await visibleRecords(ranked.map(hit => hit.id))).map(record => [record.id, record]));
       const terms = [...new Set(tokens(query))];
       const stats = await storage(() => database.stats({ scope: key }));
+      await access.require('collection', 'search');
       return immutable<MemorySearchResult>({ mode: 'lexical', revision: stats.sequence, hits: ranked.flatMap(hit => {
         const record = records.get(hit.id); if (!record) return [];
         const words = new Set(tokens(record.content)); return [{ record, score: hit.score, matchedTerms: terms.filter(term => words.has(term)) }];
@@ -370,26 +397,34 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
     },
     exportSnapshot: async () => {
       permission('memory:read'); permission('memory:export');
-      const records: NativeMemoryEntry[] = []; let cursor: string | undefined;
+      await access.require('collection', 'export');
+      const records: NativeMemoryEntry[] = []; let cursor: string | undefined; let pages = 0;
       do {
+        if (access.enabled && ++pages > 32) throw new MayuraError('LIMIT_EXCEEDED', 'Use exportPage for a larger authorized memory export.');
         const page = await self.exportPage({ limit: 1_000, ...(cursor ? { cursor } : {}) });
         records.push(...page.records); cursor = page.nextCursor;
         if (records.length > 10_000) throw new MayuraError('LIMIT_EXCEEDED', 'Use exportPage for scopes larger than 10,000 records.');
       } while (cursor);
       const stats = await storage(() => database.stats({ scope: key }));
+      const visible: NativeMemoryEntry[] = []; for (const entry of records) if (await access.can(entry.id)) visible.push(entry);
+      await access.require('collection', 'export');
       return immutable<MemoryExport>({ format: 'mayura.memory.export.v1', scope: { ...scope }, revision: stats.sequence, exportedAt: clock(),
-        records: records.filter(entry => entry.status !== 'superseded') as MemoryEntry[] });
+        records: visible.filter(entry => entry.status !== 'superseded') as MemoryEntry[] });
     },
     supersede: async input => {
       permission('memory:write'); const command = object(input, 262_144, 12); exactKeys(command, ['id', 'expectedVersion', 'replacement']);
       const id = memoryId(command['id']); const expectedVersion = integer(command['expectedVersion'], 'Expected memory version');
+      await access.require(id, 'supersede'); await access.require(id, 'read');
+      const replacementId = memoryId(object(command['replacement'], 262_144)['id']);
+      await access.require(replacementId, 'create'); await access.require(replacementId, 'read');
       const existing = liveRecord(await current(id), expectedVersion);
       if (object(command['replacement'], 262_144)['id'] === id) throw new MayuraError('INVALID_INPUT', 'A replacement needs a new id.');
       await before({ operation: 'supersede', scope, id, expectedVersion, candidate: candidate(existing) });
       const replacement = await addRecord(command['replacement'] as unknown as MemoryInput);
       const superseded: MemorySupersededRecord = { ...existing, version: nextVersion(existing.version), status: 'superseded', supersededBy: replacement.id, updatedAt: later(existing.updatedAt) };
-      await write(superseded, expectedVersion);
+      await write(superseded, expectedVersion, 'supersede');
       await after({ operation: 'supersede', scope, id, version: superseded.version, status: 'superseded' });
+      await access.require(id, 'read'); await access.require(replacement.id, 'read');
       return immutable({ superseded, replacement });
     },
     relate: async input => {
@@ -401,41 +436,51 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new MayuraError('INVALID_INPUT', 'Edge confidence must be 0–1.');
       const edgeProvenance = provenance(source['provenance']); const interval = validity(source['validity'], edgeProvenance.observedAt);
       const metadata = object(source['metadata'] ?? {}, 2_048, 8);
+      const admitEdge = async () => { await access.require(id, 'relate'); await access.require(id, 'read_edge'); await access.require(from, 'link'); await access.require(to, 'link'); };
+      await admitEdge();
       const endpoints = await visibleRecords([from, to]);
       if (endpoints.length !== 2) throw new MayuraError('NOT_FOUND', 'Both edge endpoints must be current records in this scope.');
       await before({ operation: 'relate', scope, id });
       const now = clock();
       const row: MemoryEdgeRow = { id, version: 1, status: 'active', from, to, relation, body: { confidence, provenance: edgeProvenance as unknown as JsonObject,
         validity: interval as unknown as JsonObject, metadata }, validFrom: interval.from, validUntil: interval.until, createdAt: now, updatedAt: now };
+      await admitEdge();
       await storage(() => database.putEdge({ scope: key, edge: row, expectedVersion: 0 }));
       await after({ operation: 'relate', scope, id, version: 1, status: 'active' });
+      await access.require(id, 'read_edge'); await access.require(from, 'read'); await access.require(to, 'read');
       return immutable(edgeFromRow(row) as MemoryEdge);
     },
     forgetEdge: async input => {
       permission('memory:delete'); const command = object(input, 1_024, 2); exactKeys(command, ['id', 'expectedVersion']);
       const id = memoryId(command['id']); const expectedVersion = integer(command['expectedVersion'], 'Expected edge version');
+      await access.require(id, 'unrelate'); await access.require(id, 'read_edge');
       const existing = await storage(() => database.getEdge({ scope: key, id }));
       if (!existing) throw new MayuraError('NOT_FOUND', 'Memory edge was not found in this scope.');
       if (existing.status !== 'active' || existing.version !== expectedVersion) throw new MayuraError('CONFLICT', 'Memory edge was changed or deleted; refresh its current version.');
+      await access.require(existing.from, 'link'); await access.require(existing.to, 'link'); await access.require(existing.from, 'read'); await access.require(existing.to, 'read');
       await before({ operation: 'unrelate', scope, id, expectedVersion });
       const row: MemoryEdgeRow = { ...existing, version: nextVersion(existing.version), status: 'deleted', body: null, validFrom: null, validUntil: null, updatedAt: later(existing.updatedAt) };
+      await access.require(id, 'unrelate'); await access.require(existing.from, 'link'); await access.require(existing.to, 'link'); await access.require(existing.from, 'read'); await access.require(existing.to, 'read');
       await storage(() => database.putEdge({ scope: key, edge: row, expectedVersion }));
       await after({ operation: 'unrelate', scope, id, version: row.version, status: 'deleted' });
+      await access.require(id, 'read_edge'); await access.require(existing.from, 'read'); await access.require(existing.to, 'read');
       return immutable(edgeFromRow(row) as MemoryEdgeTombstone);
     },
     neighbors: async (id, request = {}) => {
-      permission('memory:read'); memoryId(id); const settings = object(request, 4_096, 3); allowedKeys(settings, ['direction', 'relations', 'limit']);
+      permission('memory:read'); memoryId(id); await access.require(id, 'read'); const settings = object(request, 4_096, 3); allowedKeys(settings, ['direction', 'relations', 'limit']);
       const direction = settings['direction'] ?? 'both';
       if (!['out', 'in', 'both'].includes(direction as string)) throw new MayuraError('INVALID_INPUT', 'direction must be out, in or both.');
       const relations = settings['relations'] as string[] | undefined; const limit = limitOf(settings['limit'], 50, 1_000);
       if ((await visibleRecords([id])).length !== 1) return immutable<MemorySubgraph>({ records: [], edges: [], truncated: false });
       const rows = await storage(() => database.edges({ scope: key, recordIds: [id], direction: direction as 'out', limit: limit + 1, ...filter(), ...(relations ? { relations } : {}) }));
-      const edges = rows.slice(0, limit).map(edgeFromRow) as MemoryEdge[];
+      const edges = (await visibleEdges(rows.slice(0, limit))).map(edgeFromRow) as MemoryEdge[];
       const records = await visibleRecords([...new Set(edges.flatMap(edge => [edge.from, edge.to]).filter(other => other !== id))]);
-      return immutable<MemorySubgraph>({ records, edges, truncated: rows.length > limit });
+      await access.require(id, 'read');
+      const disclosed = new Set([id, ...records.map(record => record.id)]);
+      return immutable<MemorySubgraph>({ records, edges: edges.filter(edge => disclosed.has(edge.from) && disclosed.has(edge.to)), truncated: rows.length > limit });
     },
     traverse: async (id, request = {}) => {
-      permission('memory:read'); memoryId(id); const settings = object(request, 4_096, 3); allowedKeys(settings, ['maxDepth', 'maxNodes', 'relations']);
+      permission('memory:read'); memoryId(id); await access.require(id, 'read'); const settings = object(request, 4_096, 3); allowedKeys(settings, ['maxDepth', 'maxNodes', 'relations']);
       const maxDepth = limitOf(settings['maxDepth'], 2, 4); const maxNodes = limitOf(settings['maxNodes'], 64, 256);
       const relations = settings['relations'] as string[] | undefined;
       const start = await visibleRecords([id]);
@@ -444,7 +489,7 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
         const rows = await storage(() => database.edges({ scope: key, recordIds: frontier, direction: 'both', limit: 10_000, ...filter(), ...(relations ? { relations } : {}) }));
         const next: string[] = [];
-        for (const edge of rows.map(edgeFromRow) as MemoryEdge[]) {
+        for (const edge of (await visibleEdges(rows)).map(edgeFromRow) as MemoryEdge[]) {
           for (const node of [edge.from, edge.to]) {
             if (nodes.has(node)) continue;
             if (nodes.size >= maxNodes) { truncated = true; continue; }
@@ -456,40 +501,52 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       }
       if (frontier.length > 0) truncated = true;
       const records = await visibleRecords([...nodes]);
-      return immutable<MemorySubgraph>({ records, edges: [...edges.values()].sort((a, b) => (a.id < b.id ? -1 : 1)), truncated });
+      await access.require(id, 'read'); const disclosed = new Set(records.map(record => record.id));
+      return immutable<MemorySubgraph>({ records, edges: [...edges.values()].filter(edge => disclosed.has(edge.from) && disclosed.has(edge.to)).sort((a, b) => (a.id < b.id ? -1 : 1)), truncated });
     },
     index: async (request = {}) => {
       permission('memory:index');
+      await access.require('collection', 'index', request.signal);
       if (!embedder) throw new MayuraError('INVALID_CONFIG', 'Semantic indexing requires an embedder.');
       const { signal: requested, ...rest } = request; const settings = object(rest, 256, 2); allowedKeys(settings, ['limit']); const limit = limitOf(settings['limit'], 500, 999);
       const signal = requested ?? new AbortController().signal;
       const missing = embedProfile.length === 0 ? [] : await storage(() => database.missingVectors({ scope: key, embedderId: embedder.id, sensitivities: embedProfile as MemoryRowSensitivity[], limit: limit + 1 }));
       const batch = missing.slice(0, limit); const rows = await readRows(batch.map(entry => entry.id));
-      const records = batch.flatMap(entry => { const row = rows.get(entry.id); return row && row.status === 'active' && row.version === entry.version ? [fromRow(row) as MemoryRecord] : []; });
-      const vectors = records.length === 0 ? [] : await embed(records.map(record => record.content), signal);
+      const candidates = batch.flatMap(entry => { const row = rows.get(entry.id); return row && row.status === 'active' && row.version === entry.version ? [fromRow(row) as MemoryRecord] : []; });
+      const records: MemoryRecord[] = [];
+      for (const record of candidates) if (await access.can(record.id, 'index', signal) && await access.can(record.id, 'read', signal)) records.push(record);
+      await access.require('collection', 'index', signal);
+      for (const record of records) { await access.require(record.id, 'index', signal); await access.require(record.id, 'read', signal); }
+      const vectors = records.length === 0 ? [] : await embed(records.map(record => record.content), signal, async (offset, count) => {
+        await access.require('collection', 'index', signal);
+        for (const record of records.slice(offset, offset + count)) { await access.require(record.id, 'index', signal); await access.require(record.id, 'read', signal); }
+      });
       let embedded = 0; let stale = batch.length - records.length;
       for (let index = 0; index < records.length; index += 1_000) {
+        for (const record of records.slice(index, index + 1_000)) await access.require(record.id, 'index', signal);
         const result = await storage(() => database.putVectors({ scope: key, embedderId: embedder.id, dimensions: embedder.dimensions,
           entries: records.slice(index, index + 1_000).map((record, offset) => ({ recordId: record.id, recordVersion: record.version, vector: encodeVector(vectors[index + offset]!), list: null })) }));
         embedded += result.written; stale += result.stale.length;
       }
+      await access.require('collection', 'index', signal);
       const lists = await maintain();
       return immutable({ embedded, stale, remaining: missing.length > limit, lists });
     },
     semanticSearch: async (query, request = {}) => {
-      permission('memory:read');
+      permission('memory:read'); await access.require('collection', 'search', request.signal);
       const { signal: _signal, ...rest } = request; void _signal; const settings = object(rest, 256, 2); allowedKeys(settings, ['limit', 'nprobe', 'minScore']);
       const limit = limitOf(settings['limit'], 10, 50); const nprobe = limitOf(settings['nprobe'], 8, 1_024);
       const minScore = settings['minScore'] ?? -1;
       if (typeof minScore !== 'number' || minScore < -1 || minScore > 1) throw new MayuraError('INVALID_INPUT', 'minScore must be -1–1.');
       if (!embedder || (embedder.location === 'hosted' && !grants.has('memory:index'))) {
         const ranked = await lexical(query, limit); const records = new Map((await visibleRecords(ranked.map(hit => hit.id))).map(record => [record.id, record]));
+        await access.require('collection', 'search', request.signal);
         return immutable<SemanticSearchResult>({ mode: 'lexical', limitation: 'semantic_unavailable', hits: ranked.flatMap(hit => records.has(hit.id) ? [{ record: records.get(hit.id)!, score: hit.score }] : []) });
       }
       return semantic(query, limit, nprobe, minScore, request.signal ?? new AbortController().signal);
     },
     hybridSearch: async (query, request = {}) => {
-      permission('memory:read');
+      permission('memory:read'); await access.require('collection', 'search', request.signal);
       const limit = limitOf(request.limit, 10, 50);
       const lexicalHits = await lexical(query, limit * 4);
       let semanticResult: SemanticSearchResult | undefined;
@@ -498,16 +555,20 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       }
       const fused = reciprocalRankFusion([lexicalHits.map(hit => hit.id), ...(semanticResult ? [semanticResult.hits.map(hit => hit.record.id)] : [])]).slice(0, limit);
       const records = new Map((await visibleRecords(fused.map(hit => hit.id))).map(record => [record.id, record]));
+      await access.require('collection', 'search', request.signal);
       return immutable({ mode: semanticResult?.mode ?? 'lexical', fused: true as const, ...(semanticResult ? {} : { limitation: 'semantic_unavailable' as const }),
         hits: fused.flatMap(hit => records.has(hit.id) ? [{ record: records.get(hit.id)!, score: hit.score }] : []) });
     },
     exportPage: async (request = {}) => {
       permission('memory:read'); permission('memory:export');
+      await access.require('collection', 'export');
       const settings = object(request, 2_048, 2); allowedKeys(settings, ['cursor', 'limit']); const limit = limitOf(settings['limit'], 500, 1_000);
+      const pageLimit = Math.min(limit, 127);
       let phase: 'records' | 'edges' = 'records'; let afterId: string | undefined;
-      if (settings['cursor'] !== undefined) {
+      const exportCursor = await access.open(settings['cursor'], 'export');
+      if (exportCursor !== undefined) {
         try {
-          const parsed = object(JSON.parse(new TextDecoder().decode(fromBase64Url(String(settings['cursor'])) ?? new Uint8Array())), 512, 2); exactKeys(parsed, ['phase', 'after']);
+          const parsed = object(JSON.parse(new TextDecoder().decode(fromBase64Url(String(exportCursor)) ?? new Uint8Array())), 512, 2); exactKeys(parsed, ['phase', 'after']);
           if (parsed['phase'] !== 'records' && parsed['phase'] !== 'edges') throw new Error();
           phase = parsed['phase']; afterId = parsed['after'] === null ? undefined : memoryId(parsed['after']);
         } catch { throw new MayuraError('INVALID_INPUT', 'The export cursor is invalid.'); }
@@ -516,19 +577,21 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       let records: NativeMemoryEntry[] = []; let edges: (MemoryEdge | MemoryEdgeTombstone)[] = []; let nextCursor: string | undefined;
       const encode = (value: { phase: string; after: string | null }): string => toBase64Url(JSON.stringify(value));
       if (phase === 'records') {
-        const rows = await storage(() => database.listRecords({ scope: key, limit: limit + 1, statuses: ['active', 'superseded', 'deleted'], sensitivities: profile as MemoryRowSensitivity[], ...(afterId ? { after: afterId } : {}) }));
-        records = rows.slice(0, limit).map(fromRow);
-        nextCursor = rows.length > limit ? encode({ phase: 'records', after: records.at(-1)!.id }) : encode({ phase: 'edges', after: null });
+        const rows = await storage(() => database.listRecords({ scope: key, limit: pageLimit + 1, statuses: ['active', 'superseded', 'deleted'], sensitivities: profile as MemoryRowSensitivity[], ...(afterId ? { after: afterId } : {}) }));
+        for (const row of rows.slice(0, pageLimit)) if (await access.can(row.id)) records.push(fromRow(row));
+        nextCursor = rows.length > pageLimit ? encode({ phase: 'records', after: rows[pageLimit - 1]!.id }) : encode({ phase: 'edges', after: null });
       } else {
-        const rows = await storage(() => database.listEdges({ scope: key, limit: limit + 1, ...(afterId ? { after: afterId } : {}) }));
+        const rows = await storage(() => database.listEdges({ scope: key, limit: pageLimit + 1, ...(afterId ? { after: afterId } : {}) }));
         const visible = new Set([...(await readRows([...new Set(rows.flatMap(row => [row.from, row.to]))])).values()].filter(row => admitted(row.sensitivity)).map(row => row.id));
-        edges = rows.slice(0, limit).filter(row => visible.has(row.from) && visible.has(row.to)).map(edgeFromRow);
-        nextCursor = rows.length > limit ? encode({ phase: 'edges', after: rows[limit - 1]!.id }) : undefined;
+        edges = (await visibleEdges(rows.slice(0, pageLimit).filter(row => visible.has(row.from) && visible.has(row.to)))).map(edgeFromRow);
+        nextCursor = rows.length > pageLimit ? encode({ phase: 'edges', after: rows[pageLimit - 1]!.id }) : undefined;
       }
+      nextCursor = await access.seal(nextCursor, 'export'); await access.require('collection', 'export');
       return immutable<MemoryExportPage>({ format: 'mayura.memory.export.v2', scope: { ...scope }, sequence: stats.sequence, exportedAt: clock(), records, edges, ...(nextCursor ? { nextCursor } : {}) });
     },
     importSnapshot: async (snapshot, request) => {
       permission('memory:write'); permission('memory:import');
+      await access.require('collection', 'import');
       const settings = object(request, 128, 2); exactKeys(settings, ['mode']); const mode = settings['mode'];
       if (mode !== 'merge' && mode !== 'replace-empty') throw new MayuraError('INVALID_INPUT', 'Import mode must be merge or replace-empty.');
       const document = object(snapshot, 64 * 1_048_576, 14, 2_000_000);
@@ -536,6 +599,9 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
       const records = document['records']; const edges = document['format'] === 'mayura.memory.export.v2' ? document['edges'] : [];
       if (!Array.isArray(records) || !Array.isArray(edges)) throw new MayuraError('INVALID_INPUT', 'Memory export records and edges must be arrays.');
       if (mode === 'replace-empty' && (await storage(() => database.stats({ scope: key }))).sequence > 0) throw new MayuraError('CONFLICT', 'replace-empty import requires an empty scope.');
+      // Authorize every record and edge before the first write, including entries that merge may skip.
+      for (const raw of records) { const item = object(raw, 262_144); await access.require(memoryId(item['id']), 'import'); await access.require(memoryId(item['id']), 'read'); }
+      for (const raw of edges) { const edge = object(raw, 16_384, 8); await access.require(memoryId(edge['id']), 'import_edge'); await access.require(memoryId(edge['from']), 'link'); await access.require(memoryId(edge['to']), 'link'); }
       // Validate every entry before the first write.
       for (const raw of records) {
         const item = object(raw, 262_144);
@@ -554,6 +620,7 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
           relation: String(edge['relation']), body: { confidence: edge['confidence']!, provenance: provenance(edge['provenance']) as unknown as JsonObject, validity: interval as unknown as JsonObject,
             metadata: object(edge['metadata'] ?? {}, 2_048, 8) }, validFrom: interval.from, validUntil: interval.until,
           createdAt: timestamp(edge['createdAt']), updatedAt: timestamp(edge['updatedAt']) };
+        await access.require(row.id, 'import_edge'); await access.require(row.from, 'link'); await access.require(row.to, 'link');
         try { await storage(() => database.putEdge({ scope: key, edge: row, expectedVersion: 0 })); importedEdges++; }
         catch (error) { if (error instanceof MayuraError && error.code === 'CONFLICT') { skipped++; continue; } throw error; }
       }
@@ -561,7 +628,20 @@ export function createNativeMemory(options: NativeMemoryOptions): NativeMemory {
     },
     changes: async (request = {}) => {
       permission('memory:read'); const settings = object(request, 128, 2); allowedKeys(settings, ['after', 'limit']);
-      return storage(() => database.changes({ scope: key, after: settings['after'] === undefined || settings['after'] === 0 ? 0 : integer(settings['after'], 'Change cursor'), limit: limitOf(settings['limit'], 100, 1_000) }));
+      await access.require('collection', 'changes');
+      const changes = await storage(() => database.changes({ scope: key, after: settings['after'] === undefined || settings['after'] === 0 ? 0 : integer(settings['after'], 'Change cursor'), limit: limitOf(settings['limit'], 100, 1_000) }));
+      if (!access.enabled) return changes;
+      const visible: MemoryChange[] = [];
+      for (const change of changes) {
+        await access.require(change.id, change.kind === 'edge' ? 'read_edge' : 'read');
+        if (change.kind === 'edge') {
+          const edge = await storage(() => database.getEdge({ scope: key, id: change.id }));
+          if (!edge) throw new MayuraError('PERMISSION_DENIED', 'Memory change-feed authorization cannot be established.');
+          await access.require(edge.from, 'read'); await access.require(edge.to, 'read');
+        }
+        visible.push(change);
+      }
+      await access.require('collection', 'changes'); return Object.freeze(visible);
     },
   };
   return Object.freeze(self);

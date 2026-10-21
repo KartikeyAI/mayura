@@ -460,7 +460,8 @@ async function main() {
     assert(!packedManifest.optionalDependencies && !packedManifest.peerDependencies, 'Base packages need explicit optional-dependency review.');
     assert(!packedManifest.scripts && !packedManifest.bin, 'Lifecycle scripts or executable binaries require distribution review.');
     // Raised from 150 KiB in 1.1, when @mayura/runtime gained the model registry (it packs to about 156 KiB).
-    assert(bytes.length <= 176 * 1024, `Base package compressed size budget exceeded: ${manifest.name}`);
+    // Raised for 1.2 from 176 KiB, when approvals and checkpoints took @mayura/runtime to about 200 KiB compressed.
+    assert(bytes.length <= 256 * 1024, `Base package compressed size budget exceeded: ${manifest.name}`);
     dependencies[manifest.name] = pathToFileURL(destination).href;
     reports.push({ name: manifest.name, version: manifest.version, tarballBytes: bytes.length, unpackedBytes: files.reduce((sum, file) => sum + file.bytes, 0), files: files.length, sourceMaps });
   }
@@ -526,8 +527,10 @@ async function main() {
   const debuggerResult = JSON.parse((await runNode(['--import', pathToFileURL(preload).href, '--enable-source-maps', join(application, 'debugger.mjs')], application)).stdout);
   assert.equal(debuggerResult.sourceMappedStack, true, 'The actual Node debugger stack did not resolve to shipped TypeScript.');
   const frameworkBytes = reports.reduce((sum, item) => sum + item.tarballBytes, 0);
-  assert(frameworkBytes <= 512 * 1024, 'Combined compressed base package budget exceeded.');
-  assert(reports.reduce((sum, item) => sum + item.unpackedBytes, 0) <= 2 * 1024 * 1024, 'Combined unpacked base package budget exceeded.');
+  // Raised for 1.2 (from 512 KiB and 2 MiB, set at the foundation) when in-run approvals took the base packages past
+  // 2 MiB unpacked. No stale build output ships; source maps are about 42% of the bytes, kept for debugging into src.
+  assert(frameworkBytes <= 640 * 1024, 'Combined compressed base package budget exceeded.');
+  assert(reports.reduce((sum, item) => sum + item.unpackedBytes, 0) <= 2.5 * 1024 * 1024, 'Combined unpacked base package budget exceeded.');
   const result = {
     status: 'passed', node: process.version, platform: process.platform, architecture: process.arch,
     output, packages: reports, frameworkTarballBytes: frameworkBytes, installedPackageCount: installed.size,

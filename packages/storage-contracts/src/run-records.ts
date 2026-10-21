@@ -2,7 +2,7 @@ import { jsonValue, MayuraError, type JsonObject, type JsonValue, type RunEvent 
 import { StorageError, type AggregateStore, type StoredRecord } from './contracts.js';
 import { workflowHashMaterial } from './workflow-format2.js';
 
-export type RunRecordStatus = 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type RunRecordStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 /** Structurally matches `RunRecordView` in mayura/server. */
 export interface RunRecordView {
   readonly runId: string; readonly agentId: string; readonly replicaId: string; readonly status: RunRecordStatus;
@@ -20,6 +20,9 @@ export interface RunRecords {
   update(input: { readonly owner: string; readonly runId: string; readonly replicaId: string; readonly events: readonly RunEvent[]; readonly snapshot: JsonObject;
     readonly leaseExpiresAtMs: number; readonly outcome?: JsonObject; readonly signal?: AbortSignal })
     : Promise<{ readonly status: 'written'; readonly cancelRequested: boolean } | { readonly status: 'lost' }>;
+  /** Claim a paused run for a new replica; events continue from the returned lastSequence. */
+  resume?(input: { readonly owner: string; readonly runId: string; readonly replicaId: string; readonly leaseExpiresAtMs: number;
+    readonly signal?: AbortSignal }): Promise<RunRecordView | null>;
   read(input: { readonly owner: string; readonly runId: string; readonly signal?: AbortSignal }): Promise<RunRecordView | null>;
   events(input: { readonly owner: string; readonly runId: string; readonly after: number; readonly limit: number; readonly signal?: AbortSignal }): Promise<readonly RunEvent[]>;
   requestCancel(input: { readonly owner: string; readonly runId: string; readonly signal?: AbortSignal }): Promise<RunRecordView | null>;
@@ -42,9 +45,10 @@ async function digestText(text: string): Promise<string> {
 const runIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const replicaPattern = /^[A-Za-z0-9._:-]{1,128}$/;
-const statuses = new Set<RunRecordStatus>(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
-const eventTypes = new Set(['run.started', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
-  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld']);
+const statuses = new Set<RunRecordStatus>(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const eventTypes = new Set(['run.started', 'history.applied', 'model.started', 'model.completed', 'tool.started', 'tool.completed', 'hook.started', 'hook.completed',
+  'step.started', 'step.completed', 'delegate.started', 'delegate.completed', 'run.completed', 'events.gap', 'output.delta', 'output.withheld',
+  'approval.requested', 'approval.resolved', 'run.paused', 'run.resumed']);
 /** Outcomes up to this size live in the run record; larger ones in chunk events of a companion aggregate. */
 const inlineOutcomeBytes = 262_144; const maxOutcomeBytes = 16_777_216; const chunkChars = 16_384; const chunksPerWrite = 16;
 /** One record write carries at most this much event data, well inside the store's one-MiB transaction bound. */
@@ -61,6 +65,16 @@ interface RunState {
   readonly truncatedFrom: number | null;
   readonly outcome: JsonObject | null; readonly outcomeRef: { readonly bytes: number; readonly digest: string } | null;
 }
+/** The additive history event is counts only; never persist a forged payload carrying conversation content. */
+function validHistoryMetadata(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const metadata = value as Record<string, unknown>;
+  return Object.keys(metadata).length === 4 && ['entries', 'omitted', 'bytes', 'scanTruncated'].every(key => Object.hasOwn(metadata, key))
+    && typeof metadata['entries'] === 'number' && Number.isSafeInteger(metadata['entries']) && metadata['entries'] >= 0 && metadata['entries'] <= 2048
+    && typeof metadata['omitted'] === 'number' && Number.isSafeInteger(metadata['omitted']) && metadata['omitted'] >= 0
+    && typeof metadata['bytes'] === 'number' && Number.isSafeInteger(metadata['bytes']) && metadata['bytes'] >= 2
+    && (metadata['entries'] !== 0 || metadata['bytes'] === 2) && typeof metadata['scanTruncated'] === 'boolean';
+}
 interface ClaimState {
   readonly format: 1; readonly kind: 'claim'; readonly digest: string; readonly runId: string | null; readonly claimedAtMs: number;
   readonly replicaId: string; readonly released: boolean;
@@ -73,8 +87,8 @@ function replica(value: unknown): string { if (typeof value !== 'string' || !rep
 function time(value: unknown): number { if (!Number.isSafeInteger(value) || (value as number) < 0) invalid('A run record time must be a nonnegative integer.'); return value as number; }
 function snapshotOf(value: unknown, id: string): JsonObject {
   let copy: JsonValue; try { copy = jsonValue(value, { maxBytes: 786_432 }); } catch { return invalid('A run snapshot must be bounded JSON.'); }
-  if (copy === null || typeof copy !== 'object' || Array.isArray(copy) || copy['id'] !== id || !statuses.has(copy['status'] as RunRecordStatus)
-    || Object.keys(copy).some(key => !['id', 'status', 'budget', 'evidence'].includes(key))) invalid('A run snapshot has an unexpected shape.');
+  if (copy === null || typeof copy !== 'object' || Array.isArray(copy) || copy['id'] !== id || !(statuses.has(copy['status'] as RunRecordStatus) || copy['status'] === 'waiting')
+    || Object.keys(copy).some(key => !['id', 'status', 'budget', 'evidence', 'approval', 'toolWait'].includes(key))) invalid('A run snapshot has an unexpected shape.');
   return copy;
 }
 function claimState(record: StoredRecord): ClaimState {
@@ -94,7 +108,7 @@ function runState(record: StoredRecord, id: string): RunState {
     || (state['truncatedFrom'] !== null && !Number.isSafeInteger(state['truncatedFrom']))
     || (state['outcome'] !== null && (typeof state['outcome'] !== 'object' || Array.isArray(state['outcome'])))
     || (ref !== null && (typeof ref !== 'object' || Array.isArray(ref) || !Number.isSafeInteger(ref['bytes']) || typeof ref['digest'] !== 'string'))
-    || ((state['status'] === 'running') !== (state['outcome'] === null && ref === null))) integrity();
+    || ((['running', 'waiting'].includes(state['status'] as string)) !== (state['outcome'] === null && ref === null))) integrity();
   return state as unknown as RunState;
 }
 function eventData(event: RunEvent): JsonObject {
@@ -210,8 +224,8 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
       if (typeof input.key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(input.key)) invalid('A run record requires its submission key.');
       const snapshot = snapshotOf(input.snapshot, id); input.signal?.throwIfAborted();
       const scope = await scopeOf(who); const hash = await format();
-      const state: RunState = { format: 1, kind: 'run', runId: id, agentId: input.agentId, replicaId: input.replicaId, status: 'running',
-        leaseExpiresAtMs: input.leaseExpiresAtMs, cancelRequested: false, snapshot: { ...snapshot, status: 'running' }, lastSequence: 0, stored: 0, gaps: [],
+      const state: RunState = { format: 1, kind: 'run', runId: id, agentId: input.agentId, replicaId: input.replicaId, status: snapshot['status'] === 'waiting' ? 'waiting' : 'running',
+        leaseExpiresAtMs: input.leaseExpiresAtMs, cancelRequested: false, snapshot: { ...snapshot, status: snapshot['status'] === 'waiting' ? 'waiting' : 'running' }, lastSequence: 0, stored: 0, gaps: [],
         truncatedFrom: null, outcome: null, outcomeRef: null };
       const created = await store.create({ scope, id: `run:${id}`, idempotencyKey: `run:${id}`, definitionHash: hash, state: state as unknown as JsonObject, events: [] });
       if (!created.created && (created.record.state['replicaId'] !== input.replicaId || created.record.state['kind'] !== 'run')) integrity();
@@ -232,7 +246,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
       let outcomeText: string | undefined;
       if (input.outcome !== undefined) {
         try { outcomeText = JSON.stringify(jsonValue(input.outcome, { maxBytes: maxOutcomeBytes })); } catch { invalid('A run outcome must be JSON of at most 16 MiB.'); }
-        if (!statuses.has(input.outcome['status'] as RunRecordStatus) || input.outcome['status'] === 'running') invalid('A run outcome needs a final status.');
+        if (!statuses.has(input.outcome['status'] as RunRecordStatus) || ['running', 'waiting'].includes(input.outcome['status'] as string)) invalid('A run outcome needs a final status.');
       }
       input.signal?.throwIfAborted();
       const scope = await scopeOf(who);
@@ -249,14 +263,14 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
         const result = await retrying(input.signal, async () => {
           const current = await readRun(scope, id);
           if (!current) integrity();
-          if (current.state.replicaId !== input.replicaId || current.state.status !== 'running') return 'lost' as const;
+          if (current.state.replicaId !== input.replicaId || !['running', 'waiting'].includes(current.state.status)) return 'lost' as const;
           let { lastSequence, stored, truncatedFrom } = current.state; const gaps = current.state.gaps.map(gap => [gap[0], gap[1]] as [number, number]);
           const appended: { type: string; data: JsonObject }[] = [];
           const keep = (event: RunEvent): void => { appended.push({ type: event.type, data: eventData(event) }); stored++; };
           for (const event of batch) {
             const gap = event?.type === 'events.gap';
             if (!event || event.runId !== id || !eventTypes.has(event.type) || !Number.isSafeInteger(event.sequence) || typeof event.timestamp !== 'string' || event.timestamp.length > 64
-              || event.metadata === null || typeof event.metadata !== 'object' || (gap ? event.metadata['from'] !== lastSequence + 1 || event.metadata['to'] !== event.sequence || event.sequence <= lastSequence
+              || event.metadata === null || typeof event.metadata !== 'object' || (event.type === 'history.applied' && !validHistoryMetadata(event.metadata)) || (gap ? event.metadata['from'] !== lastSequence + 1 || event.metadata['to'] !== event.sequence || event.sequence <= lastSequence
                 : event.sequence !== lastSequence + 1)) invalid('Run events must continue the recorded sequence.');
             let size = 0; try { size = encoder.encode(JSON.stringify(jsonValue(event.metadata, { maxBytes: 16_384 }))).byteLength; } catch { size = Infinity; }
             const from = gap ? event.metadata['from'] as number : event.sequence;
@@ -272,7 +286,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
             else if (truncatedFrom === null) truncatedFrom = from;
             lastSequence = event.sequence;
           }
-          let status: RunRecordStatus = 'running'; let outcome: JsonObject | null = null;
+          let status: RunRecordStatus = snapshot['status'] === 'waiting' ? 'waiting' : 'running'; let outcome: JsonObject | null = null;
           if (final) {
             status = input.outcome!['status'] as RunRecordStatus;
             // A history that never reached run.completed still ends with a gap for what was not kept.
@@ -283,7 +297,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
             }
             if (!ref) outcome = JSON.parse(outcomeText!) as JsonObject;
           }
-          const state: RunState = { ...current.state, leaseExpiresAtMs: input.leaseExpiresAtMs, snapshot: { ...snapshot, status: final ? status : 'running' },
+          const state: RunState = { ...current.state, leaseExpiresAtMs: input.leaseExpiresAtMs, snapshot: { ...snapshot, status },
             lastSequence, stored, gaps, truncatedFrom, status, outcome, outcomeRef: final ? ref : null };
           await store.update({ scope, id: `run:${id}`, expectedVersion: current.record.version, state: state as unknown as JsonObject, events: appended });
           return current.state.cancelRequested;
@@ -292,6 +306,17 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
         cancelRequested = result;
       } while (remaining.length > 0);
       return { status: 'written' as const, cancelRequested };
+    },
+    async resume(input) {
+      const scope = await scopeOf(owner(input?.owner)); const id = runId(input.runId); replica(input.replicaId); time(input.leaseExpiresAtMs);
+      return retrying(input.signal, async () => {
+        const current = await readRun(scope, id);
+        if (!current || current.state.status !== 'waiting' || current.state.cancelRequested) return null;
+        const state: RunState = { ...current.state, replicaId: input.replicaId, status: 'running',
+          leaseExpiresAtMs: input.leaseExpiresAtMs, snapshot: { ...Object.fromEntries(Object.entries(current.state.snapshot).filter(([key]) => key !== 'toolWait' && key !== 'approval')), status: 'running' } };
+        await store.update({ scope, id: `run:${id}`, expectedVersion: current.record.version, state: state as unknown as JsonObject, events: [] });
+        return view(scope, state);
+      });
     },
     async read(input) {
       const scope = await scopeOf(owner(input?.owner)); const id = runId(input.runId); input.signal?.throwIfAborted();
@@ -315,7 +340,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
       for (const stored of page.slice(0, input.limit)) {
         const data = stored.data; const sequence = data['sequence']; const metadata = data['metadata'];
         if (!Number.isSafeInteger(sequence) || typeof data['timestamp'] !== 'string' || metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)
-          || !eventTypes.has(stored.type)) integrity();
+          || !eventTypes.has(stored.type) || (stored.type === 'history.applied' && !validHistoryMetadata(metadata))) integrity();
         let item: RunEvent = Object.freeze({ runId: id, sequence: sequence as number, timestamp: data['timestamp'], type: stored.type as RunEvent['type'],
           metadata: Object.freeze({ ...(metadata as Record<string, string | number | boolean>) }) });
         // A reader that stopped inside a gap sees the rest of that gap from its own position.
@@ -332,7 +357,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
       const scope = await scopeOf(owner(input?.owner)); const id = runId(input.runId);
       return retrying(input.signal, async () => {
         const current = await readRun(scope, id); if (!current) return null;
-        if (current.state.status !== 'running' || current.state.cancelRequested) return view(scope, current.state);
+        if (!['running', 'waiting'].includes(current.state.status) || current.state.cancelRequested) return view(scope, current.state);
         const state = { ...current.state, cancelRequested: true };
         await store.update({ scope, id: `run:${id}`, expectedVersion: current.record.version, state: state as unknown as JsonObject, events: [] });
         return view(scope, state);
@@ -342,7 +367,7 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
       const scope = await scopeOf(owner(input?.owner)); const id = runId(input.runId); const now = time(input.nowMs);
       return retrying(input.signal, async () => {
         const current = await readRun(scope, id); if (!current) return null;
-        if (current.state.status !== 'running' || current.state.leaseExpiresAtMs >= now) return view(scope, current.state);
+        if (!['running', 'waiting'].includes(current.state.status) || current.state.leaseExpiresAtMs >= now) return view(scope, current.state);
         // The owner stopped renewing: nobody can say what its run did, so the record ends as outcome_unknown.
         const evidence = current.state.snapshot['evidence'] ?? [];
         const outcome: JsonObject = { status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN',
@@ -355,7 +380,8 @@ export function createAggregateRunRecords(store: AggregateStore, options: Aggreg
         }
         lastSequence += 1;
         appended.push({ type: 'run.completed', data: { sequence: lastSequence, timestamp, metadata: { status: 'outcome_unknown' } } });
-        const state: RunState = { ...current.state, status: 'outcome_unknown', snapshot: { ...current.state.snapshot, status: 'outcome_unknown' }, outcome, outcomeRef: null,
+        const { approval: _approval, ...snapshot } = current.state.snapshot;
+        const state: RunState = { ...current.state, status: 'outcome_unknown', snapshot: { ...snapshot, status: 'outcome_unknown' }, outcome, outcomeRef: null,
           gaps, truncatedFrom, lastSequence, stored: current.state.stored + appended.length };
         await store.update({ scope, id: `run:${id}`, expectedVersion: current.record.version, state: state as unknown as JsonObject, events: appended });
         return view(scope, state);

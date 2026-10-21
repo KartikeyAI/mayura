@@ -6,7 +6,7 @@ import { isAgentTool } from './composition.js';
 export type ControlHookStage = 'beforeExecution' | 'beforeStep' | 'beforeModelCall' | 'beforeToolCall' | 'beforeDelegate' | 'beforeOutputRelease';
 /** Awaited metadata-only observation points. A mandatory observer fails closed; an optional one fails visibly. */
 export type ObserverHookStage = 'afterStep' | 'afterModelCall' | 'afterToolCall' | 'afterDelegate' | 'onViolation'
-  | 'afterExecution' | 'onError' | 'onCancel' | 'onBlocked' | 'onFinally';
+  | 'onApprovalRequested' | 'afterExecution' | 'onError' | 'onCancel' | 'onBlocked' | 'onFinally';
 /** Every lifecycle point served by an agent run. Context, memory and retry points live in their own packages. */
 export type HookStage = ControlHookStage | ObserverHookStage;
 export type TerminalHookStage = 'afterExecution' | 'onError' | 'onCancel' | 'onBlocked' | 'onFinally';
@@ -22,7 +22,7 @@ export interface HookEvents {
      * Content projection only; private instructions, continuation and execution authority are absent. Messages carry no
      * media here: `media` summarizes it (type and size) by message index, and hooks never see its bytes.
      */
-    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] };
+    readonly request: Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens' | 'history'>> & { readonly media?: readonly HookMessageMedia[] };
   };
   /** Tool proposals are not final schema-transformed arguments. */
   readonly beforeToolCall: {
@@ -42,6 +42,11 @@ export interface HookEvents {
     readonly status: Outcome<unknown>['status']; readonly execution?: string; readonly disclosure?: 'released' | 'withheld';
   };
   readonly afterDelegate: { readonly stage: 'afterDelegate'; readonly childRunId: string; readonly childAgentId: string; readonly status: Outcome<unknown>['status'] };
+  /** Before a validated approval candidate is published. No arguments, executable proof or answer capability. */
+  readonly onApprovalRequested: {
+    readonly stage: 'onApprovalRequested'; readonly callId: string; readonly toolId: string; readonly toolVersion: string;
+    readonly digest: string; readonly expiresAtMs: number;
+  };
   readonly onViolation: {
     readonly stage: 'onViolation'; readonly source: 'guard' | 'hook' | 'permission';
     readonly boundary: 'input' | 'output' | 'tool' | 'model' | 'execution' | 'delegate'; readonly code: string; readonly callId?: string;
@@ -131,7 +136,7 @@ const definitions = new WeakMap<object, Readonly<HookDescriptor>>();
 const stableIdentifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const controlStages: readonly ControlHookStage[] = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease'];
 const observerStages: readonly ObserverHookStage[] = ['afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation',
-  'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
+  'onApprovalRequested', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
 const controlFields = { required: ['id', 'version', 'stage', 'tools', 'handler'], optional: ['timeoutMs', 'maxActions', 'maxResultBytes'] };
 const observerFields = { required: ['id', 'version', 'stage', 'handler'], optional: ['tools', 'mandatory', 'timeoutMs'] };
 

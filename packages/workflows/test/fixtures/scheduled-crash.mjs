@@ -54,7 +54,7 @@ const wrapped = { ...store, workflows: { ...underlying,
   },
 } };
 const runtime = createScheduledWorkflowRuntime({
-  store: wrapped, ...config.options, workerId: 'controlled-crash-worker', leaseMs: 1_000,
+  store: wrapped, leaseMs: 1_000, ...config.options, workerId: 'controlled-crash-worker',
 });
 try {
   await store.initialize();

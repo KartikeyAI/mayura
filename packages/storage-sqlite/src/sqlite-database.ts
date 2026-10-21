@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
-import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore, type MemoryIndexMethod } from '@mayura/storage-contracts';
+import { StorageError, type StoredEvent, type StoredRecord, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore, type MemoryIndexMethod, type ThreadMethod, type RunCheckpointMethod } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, migrateCommand, submissionDigest, nextCounter, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerSession, type SchedulerBackend, type SchedulerMethod,
-  ScheduledWorkflowDatabase, type ScheduledMethod, writerRequired, ExecutionWaitDatabase, DurableBudgetDatabase, WorkflowTreeDatabase, MemoryIndexDatabase,
+  ScheduledWorkflowDatabase, type ScheduledMethod, writerRequired, ExecutionWaitDatabase, DurableBudgetDatabase, WorkflowTreeDatabase, MemoryIndexDatabase, ConversationDatabase,
 } from '@mayura/storage-sql/host';
 
 interface Row {
@@ -27,6 +27,7 @@ export class SqliteDatabase {
   private readonly durableBudgets: DurableBudgetDatabase;
   private readonly workflowTrees: WorkflowTreeDatabase;
   private readonly memory: MemoryIndexDatabase;
+  private readonly conversations: ConversationDatabase;
   constructor(private readonly filename: string) {
     this.db = new Database(filename, { timeout: 5_000 });
     const session: SchedulerSession = { query: async <T>(sql: string, parameters: readonly unknown[] = []) => {
@@ -46,6 +47,7 @@ export class SqliteDatabase {
     this.durableBudgets = new DurableBudgetDatabase(backend);
     this.workflowTrees = new WorkflowTreeDatabase(backend,this.scheduler);
     this.memory = new MemoryIndexDatabase(backend);
+    this.conversations = new ConversationDatabase(backend);
   }
 
   schedulerCommand(method: SchedulerMethod, input: unknown): Promise<unknown> { return this.scheduler.execute(method, input); }
@@ -56,6 +58,8 @@ export class SqliteDatabase {
   durableBudgetsCommand(method: DurableBudgetMethod, input: unknown): Promise<unknown> { return this.durableBudgets.execute(method,input); }
   workflowTreesCommand(method: WorkflowTreeMethod, input: unknown): Promise<unknown> { return this.workflowTrees.execute(method,input); }
   memoryCommand(method: MemoryIndexMethod, input: unknown): Promise<unknown> { return this.memory.execute(method,input); }
+  threadsCommand(method: ThreadMethod, input: unknown): Promise<unknown> { return this.conversations.thread(method,input); }
+  runCheckpointsCommand(method: RunCheckpointMethod, input: unknown): Promise<unknown> { return this.conversations.checkpoint(method,input); }
   workflowTreeDiscoveryCommand(method:keyof WorkflowTreeDiscoveryStore,input:unknown):Promise<unknown>{return this.workflowTrees.discover(method,input);}
 
   initialize(): void {

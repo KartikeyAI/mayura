@@ -36,7 +36,7 @@ function managedModel(metadata: JsonObject, completed: boolean): boolean {
 
 /** Every agent-run lifecycle stage (control and observer); context, memory and retry hooks emit no run events. */
 const HOOK_STAGES = ['beforeExecution', 'beforeStep', 'beforeModelCall', 'beforeToolCall', 'beforeDelegate', 'beforeOutputRelease',
-  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
+  'afterStep', 'afterModelCall', 'afterToolCall', 'afterDelegate', 'onViolation', 'onApprovalRequested', 'afterExecution', 'onError', 'onCancel', 'onBlocked', 'onFinally'];
 /** Hooks add correlation-only events, not model/tool counters or arbitrary callback output. */
 function hook(metadata: JsonObject, completed: boolean): void {
   keys(metadata, ['hookId', 'hookVersion', 'stage', 'invocationId', 'step', 'attempt', ...(completed ? ['status'] : [])]);
@@ -74,12 +74,19 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
     const metadata = object(event['metadata']);
     switch (event['type']) {
       case 'run.started':
-        keys(metadata, ['profile'], ['rootId', 'parentId', 'agentId']);
+        keys(metadata, ['profile'], ['rootId', 'parentId', 'agentId', 'history', 'media']);
+        if (Object.hasOwn(metadata, 'history') && integer(metadata['history']) > 2048) throw new Error();
+        if (Object.hasOwn(metadata, 'media')) integer(metadata['media']);
         if (metadata['profile'] !== 'ephemeral') throw new Error();
         for (const key of ['rootId', 'parentId', 'agentId']) if (Object.hasOwn(metadata, key)) stableId(metadata[key]);
         if (metadata['parentId'] === runId || (metadata['parentId'] !== undefined && (metadata['rootId'] === undefined || metadata['rootId'] === runId))
           || (metadata['rootId'] !== undefined && metadata['rootId'] !== runId && metadata['parentId'] === undefined)) throw new Error();
         break;
+      case 'history.applied':
+        keys(metadata, ['entries', 'omitted', 'bytes', 'scanTruncated']);
+        if (integer(metadata['entries']) > 2048 || integer(metadata['bytes']) < 2
+          || (metadata['entries'] === 0 && metadata['bytes'] !== 2) || typeof metadata['scanTruncated'] !== 'boolean') throw new Error();
+        integer(metadata['omitted']); break;
       case 'model.started':
         if (managedModel(metadata, false)) break;
         keys(metadata, ['step', 'modelCall'], ['modelId']); integer(metadata['step']); integer(metadata['modelCall'], true);
@@ -125,6 +132,16 @@ export function eventSnapshot(value: unknown, expectedRunId?: string): RunEvent 
       case 'output.withheld':
         keys(metadata, ['step', 'modelCall'], ['modelId']); integer(metadata['step']); integer(metadata['modelCall'], true);
         if (Object.hasOwn(metadata, 'modelId')) stableId(metadata['modelId']); break;
+      case 'approval.requested':
+        keys(metadata, ['callId', 'toolId', 'digest', 'expiresAtMs']); stableId(metadata['callId']); stableId(metadata['toolId']);
+        if (typeof metadata['digest'] !== 'string' || !/^[0-9a-f]{64}$/u.test(metadata['digest'])) throw new Error();
+        integer(metadata['expiresAtMs']); break;
+      case 'approval.resolved':
+        keys(metadata, ['callId', 'toolId', 'decision'], ['actorId']); stableId(metadata['callId']); stableId(metadata['toolId']);
+        if (!['approved', 'rejected', 'expired'].includes(metadata['decision'] as string)) throw new Error();
+        if (Object.hasOwn(metadata, 'actorId')) stableId(metadata['actorId']); break;
+      case 'run.paused': case 'run.resumed':
+        keys(metadata, ['callId']); stableId(metadata['callId']); break;
       case 'events.gap':
         keys(metadata, ['from', 'to']);
         if (integer(metadata['from'], true) > integer(metadata['to'], true) || metadata['to'] !== sequence) throw new Error(); break;

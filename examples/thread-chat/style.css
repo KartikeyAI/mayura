@@ -1,0 +1,27 @@
+:root { font-family: system-ui, sans-serif; color: #233436; background: #f5f5ee; line-height: 1.55; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.chat { max-width: 58rem; margin: auto; padding: 3rem 1.25rem; }
+h1 { max-width: 20ch; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; font-weight: 600; letter-spacing: -.04em; }
+h2 { font-size: 1.1rem; }
+.eyebrow { letter-spacing: .13em; font-size: .75rem; font-weight: 700; }
+.demo-note, footer { color: #536565; font-size: .85rem; }
+nav { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.5rem 0; }
+section, aside, form { border-top: 1px solid #bdc9c4; padding-block: 1rem; margin-block: .5rem; min-width: 0; }
+aside { background: #fff8df; padding: 1rem; }
+button, textarea { font: inherit; color: inherit; }
+button { background: #fffefa; border: 1px solid #7b8e86; border-radius: .3rem; padding: .55rem .9rem; margin: .25rem .4rem .25rem 0; cursor: pointer; }
+button[type="submit"] { background: #244f43; color: white; border-color: #244f43; }
+button:disabled, button[aria-disabled="true"] { opacity: .55; cursor: default; }
+button:focus-visible, textarea:focus-visible { outline: 3px solid #297d9a; outline-offset: 3px; }
+textarea { display: block; width: 100%; resize: vertical; min-height: 5rem; margin-block: .4rem; border: 1px solid #7b8e86; border-radius: .3rem; background: #fffefa; padding: .7rem; }
+label { font-weight: 600; }
+ol { padding-left: 2rem; }
+li { border-bottom: 1px solid #d8dfda; padding: .5rem 0; }
+pre, .message { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+pre { font-size: .875rem; }
+time { font-size: .8rem; }
+[role="alert"] { color: #9a2f29; }
+[role="status"] { font-weight: 600; }
+footer { margin-top: 1.5rem; }
+@media (max-width: 35rem) { .chat { padding: 1.5rem 1rem; } nav button { flex: 1; } aside { padding: .75rem; } }

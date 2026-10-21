@@ -18,6 +18,7 @@ import { scheduledBounds } from '../../../packages/storage/test/scheduled-bounds
 import { schedulerConformance } from '../../../packages/storage/test/scheduler-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
+import { conversationConformance } from '../../../packages/storage/test/conversation-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { scheduledWorkflowConformance } from '../../../packages/workflows/test/scheduled-conformance.js';
 import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
@@ -72,6 +73,7 @@ describe.skipIf(!server)('MongoDB', () => {
   identityIntegrityConformance('MongoDB', simple);
   memoryConformance('MongoDB', simple as never);
   nativeMemoryConformance('MongoDB', simple);
+  conversationConformance('MongoDB', async () => { const fixture = await simple(); return { store: fixture.store, close: async () => { await fixture.store.close(); await fixture.cleanup(); } }; });
   workflowConformance('MongoDB', simple);
   scheduledBounds('MongoDB', simple);
   /** The workflow suites' fixture: row tampering through the SQL shim, a real held write on an aggregate, and native index access. */

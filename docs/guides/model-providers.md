@@ -357,6 +357,12 @@ export const myModel: ModelAdapter = {
 - An optional `stream(request)` method yields `{ type: 'output.delta', text }` fragments of the final output's JSON
   text, then exactly one `{ type: 'response', response }`. See [Streaming](streaming.md).
 - `continuation` on a response is opaque state the runtime hands back on the next call of the same run.
+- `capabilities.history: true` says the adapter takes a conversation history.
+  - `request.history` then holds the earlier turns, oldest first, to send before `request.messages`.
+  - An earlier final answer in it is `{ role: 'assistant', output }`.
+  - Without the capability, an adapter is never sent a history.
+  - Keep anything that counts this run's turns (a continuation's index, replayed reasoning) on `request.messages` alone,
+    and never give a new tool call an id the history already uses.
 
 For tests, `scriptedModel` from `mayura/testing` is a ready-made adapter; see [Testing](testing.md).
 
@@ -372,3 +378,16 @@ memory, not a chat model. See [Memory and context](memory-and-context.md).
 - [Costs and budgets](../concepts/costs-and-budgets.md)
 - [Permissions](../concepts/permissions.md)
 - [Testing](testing.md)
+
+## Gateway billing fields
+
+`openAICompatibleChat` accepts an optional `reportedCost: { usageField?: string; header?: string }` mapping for trusted
+host-selected gateways. Each mapped field is a nonnegative USD decimal; the adapter charges the maximum of the
+reported cost sources and configured token pricing, rounded up to whole micros. It retains known usage on invalid
+output or a truncated stream. Its `pricing` also accepts the shared long-context token-price contract.
+
+For named gateway authentication and permissioned discovery, use the [gateway packages](ai-gateways.md).
+
+## Retrieval embeddings
+
+Provider packages export priced, permissioned embeddings for OpenAI, Google, Mistral, Azure, Ollama and Bedrock Titan. See [RAG embedding providers and budgets](rag.md#embedding-providers-and-budgets). Offline tests passed locally; real embedding service behavior remains unqualified. See [release validation status](release-readiness.md).

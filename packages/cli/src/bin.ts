@@ -96,6 +96,17 @@ async function main(arguments_: readonly string[]): Promise<unknown> {
     const result = await initWizard(out); if (result.status === 'cancelled') process.exitCode = 1;
     return { ...result, rendered: true };
   }
+  if (command === 'add' && arguments_[1] === 'ui') {
+    const { uiComponents, planUiComponents, applyUiPlan } = await import('./ui.js');
+    const names: string[] = []; const flags: string[] = ['add']; let options = false;
+    for (const value of arguments_.slice(2)) { if (value.startsWith('--')) options = true; if (options) flags.push(value); else names.push(value); }
+    assertArguments(flags, ['--directory', '--confirm'], ['--apply', '--list']);
+    if (flags.includes('--list')) { if (names.length || flags.length !== 2) throw usage('--list does not accept components or write options.'); return { status:'succeeded',components:await uiComponents() }; }
+    if (flags.includes('--confirm') && !flags.includes('--apply')) throw usage('--confirm requires --apply.');
+    const plan = await planUiComponents(names,resolve(option(flags,'--directory') ?? '.'));
+    if (flags.includes('--apply')) { const confirmation = option(flags,'--confirm'); await applyUiPlan(plan, confirmation === undefined ? {} : { confirmation }); }
+    return { status:flags.includes('--apply') ? 'succeeded' : 'planned',plan };
+  }
   if (command === 'templates') { assertArguments(arguments_, []); return { status: 'succeeded', templates: templates() }; }
   if (command === 'starters') { assertArguments(arguments_, []); return { status: 'succeeded', starters: starters() }; }
   if (command === 'init') {

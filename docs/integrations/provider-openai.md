@@ -278,3 +278,17 @@ you call `openai()`; a model name over 128 characters throws it when you call `m
 - [Azure OpenAI](provider-azure.md): the same models from your Azure resource.
 - [Model routing](../guides/model-routing.md): failover, circuit breakers and accounting.
 - [Costs and budgets](../concepts/costs-and-budgets.md): how a call's cost is reserved and charged.
+
+## Shared gateway provider
+
+`gatewayProvider(options, binding)` is the shared Chat Completions registry factory used by the [gateway packages](../guides/ai-gateways.md).
+`GatewayOptions` holds host timeout/byte limits, headers, media, output settings, optional catalog and transport.
+`GatewayBinding` pins the provider id, HTTPS base, native credential headers, fixed request fields, discovery route and
+optional reported-cost field mapping. `gatewayCredential` validates bounded nonempty credential strings without echoing them.
+`GatewayProvider` extends the registry provider with a `discovery` flag and `listModels({ permissions, signal })`.
+No catalog fetch, environment discovery or paid retry occurs implicitly. This shared surface adds no dependency to core;
+it lives in the optional OpenAI extension. See the named package documentation before choosing a binding.
+
+### RAG embeddings
+
+This provider exports `openAIEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Offline embedding tests passed locally with fake transports. Live embedding service behavior remains unqualified; see [release validation status](../guides/release-readiness.md).

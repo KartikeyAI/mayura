@@ -39,6 +39,9 @@ async function bounded<T>(promise: Promise<T>, milliseconds = 15_000): Promise<T
   } finally { if (timer) clearTimeout(timer); }
 }
 
+// Preserve the full stress workload and production deadlines; only the slow Windows CI runner gets more wall time.
+const stressTimeout = (milliseconds: number): number => process.env['CI'] === 'true' && process.platform === 'win32' ? milliseconds * 3 : milliseconds;
+
 /** Identical public scenarios exercise the real selected SQL adapters. */
 export function graphWorkflowConformance(name: string, factory: () => Promise<GraphFixture>): void {
   describe(`${name} versioned workflow graph waits`, () => {
@@ -311,7 +314,7 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       }
       expect(await detail(run.id)).toEqual(before); expect(await engine.events(run.id)).toEqual(history); expect(await owners()).toEqual(journal);
       await finish(source.reference, 'cancelled'); expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded');
-    }, 60_000);
+    }, stressTimeout(60_000));
 
     it.each(['missing', 'scope', 'policy', 'definition', 'unowned', 'self'] as const)('rejects %s targets before persisting any parent or target index', async mismatch => {
       const source = await target(mismatch === 'scope' ? { scope: { ...scope, principalId: 'another-principal' } } : mismatch === 'policy' ? { policyVersion: 'another-policy' } : {});
@@ -500,7 +503,7 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       const definition = defineWorkflowGraph({ id: 'graph.headroom-limit', version: '1', input: z.unknown(), output: z.unknown(), nodes: [...tools, ...waits], result: step('wait-111') });
       // This checks aggregate bounds rather than the minimum lease's throughput envelope.
       // The 16-effect / near-one-MiB public path took 58.75 s in a focused paired run;
-      // allow a bounded 120 s runner window under the full four-worker suite. Production
+      // allow a bounded 120 s runner window (360 s on Windows CI). Production
       // deadlines, the explicit fixture lease and every headroom/receipt assertion stay fixed. Each write here persists
       // close to 1 MiB of state; on a slow Windows runner one took longer than the 10 s default storage deadline, which
       // the runtime rightly reports as STORAGE_UNAVAILABLE (reproduced with a short deadline), so it gets the 30 s maximum.
@@ -520,7 +523,7 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
       for (const node of waits) ((unprojected['steps'] as JsonObject)[node.id] as JsonObject)['output'] = jsonValue([{ reference: source.reference, outcome: 'outcome_unknown', sourceVersion: Number.MAX_SAFE_INTEGER, sourceEventSequence: Number.MAX_SAFE_INTEGER }]);
       expect(Buffer.byteLength(JSON.stringify(unprojected))).toBeGreaterThan(1_048_576);
       await engine.cancel(run.id); await finish(source.reference, 'succeeded'); expect((await engine.inspect(run.id)).status).toBe('blocked');
-    }, 120_000);
+    }, stressTimeout(120_000));
 
     it.each(['registration-before', 'registration-after', 'resolution-before', 'resolution-after'] as const)('recovers atomic parent/index/history state after process termination at %s commit', async phase => {
       const source = await target(); const definition = waitGraph([source.reference]); const engine = runtime(); const submission = { input: null, idempotencyKey: `crash-${phase}` };

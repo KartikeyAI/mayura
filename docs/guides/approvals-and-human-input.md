@@ -12,6 +12,9 @@ need information only a person has: a corrected address, a choice between two pl
 - **Human requests.** A `human` step asks a typed question and continues with the validated answer as its output.
 - **Standalone requests.** `mayura/workstream/humans` stores the same kind of typed question outside any workflow.
 
+An agent run can also wait for approval, in memory, without a workflow: see
+[Approve a tool call](../concepts/runtime.md#approve-a-tool-call).
+
 ## A complete example
 
 This workflow checks a refund and waits for approval before paying it. The approver is verified by `verifyHuman`.
@@ -262,6 +265,10 @@ and each request or answer is at most 3.5 KiB.
 
 ## Good to know
 
+- A tool can declare `approval` itself (`'required'`, or a function of its input). Such a tool runs in a workflow only
+  as a step with `approval: true`, once a person approved it; in any other step it fails with `APPROVAL_UNAVAILABLE`
+  before it runs.
+
 - Approvals are attributed to whatever `id` your verifier returns. If every operator token maps to one service
   identity, every approval is attributed to that identity; put your identity provider in front for per-person records.
 - A waiting approval or human request keeps the run `waiting`. The worker wakes it when an approval lapses or a deadline
@@ -276,3 +283,20 @@ and each request or answer is at most 3.5 KiB.
 - [Operations commands](../cli/operations.md)
 - [React](react.md)
 - [Operator console](operator-console.md)
+
+## Core policy for thread-bound approvals
+
+A runtime configured with core `authorization` requires `approve` on a run and on its recorded thread, when bound,
+before consuming the pending answer or claiming a saved checkpoint. Verified scope supplies the subject; an answer's
+`actorId` only records attribution. Existing execution/tool permissions, digests and expiration rules still apply.
+Denied approvals leave the checkpoint waiting. Claimed approvals use separate terminal reconciliation controls with
+`inspect_approval` and `reconcile_approval` actions on run/thread resources; those controls never replay tool writes.
+See [threads, approvals and compaction authorization](authorization.md#threads-approvals-and-compaction).
+
+## Observing new approval requests
+
+An agent's `onApprovalRequested` observer receives call/tool IDs, version, digest and expiry before a candidate is
+published or saved. It uses the existing bounded `defineHook` observer contract: no arguments, no tools or approval
+capability, optional failure visible through hook events, and `mandatory: true` failure blocking before a pending
+request is created. Restarted approval continuations do not notify again for the same candidate. See
+[approval-request observers](lifecycle-hooks.md#approval-request-observers) for cancellation and delivery semantics.

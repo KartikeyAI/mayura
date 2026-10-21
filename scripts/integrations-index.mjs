@@ -18,6 +18,9 @@ const END = '<!-- integrations:end -->';
 
 /** Each area: its key (the `area` of its pages), the package name prefixes it holds, its guide, and one line about it. */
 const areas = [
+  { key: 'vectors', title: 'Vector stores', prefixes: ['vector-'], guide: 'guides/rag.md', about: 'Scoped vector storage beside built-in memory and native-memory adapters.' },
+  { key: 'rerankers', title: 'Rerankers', prefixes: ['reranker-'], guide: 'guides/rag.md', about: 'Bounded reranking of authorized evidence by original document index.' },
+  { key: 'gateways', title: 'AI gateways', prefixes: ['gateway-'], guide: 'guides/ai-gateways.md', about: 'Registry providers for explicitly configured gateways, with bounded calls and reported-cost accounting.' },
   { key: 'providers', title: 'Model providers', prefixes: ['provider-'], guide: 'guides/model-registry.md', about: 'Models as `provider/model` in a model registry, with prices.' },
   { key: 'voice', title: 'Voice', prefixes: ['voice-'], guide: 'guides/voice.md', about: 'Speech-to-text and text-to-speech in the voice registry.' },
   { key: 'storage', title: 'Storage', prefixes: ['storage-'], guide: 'guides/storage.md', about: 'Databases for runs, workflows, memory and keys, beside the built-in SQLite and PostgreSQL.' },
@@ -25,6 +28,7 @@ const areas = [
   { key: 'observability', title: 'Observability', prefixes: ['observability-'], guide: 'guides/observability.md', about: 'Trace exporters for observability services, over OpenTelemetry.' },
   { key: 'sandboxes', title: 'Sandboxes', prefixes: ['sandbox-'], guide: 'guides/sandboxes.md', about: 'Hosted Linux machines for agents, beside the built-in Docker sandboxes.' },
   { key: 'browsers', title: 'Browsers', prefixes: ['browser-', 'cloudflare-quick-action'], guide: 'guides/browsers.md', about: 'Hosted browsers, browser tools and a live viewer, beside the local Chrome or Edge.' },
+  { key: 'authz', title: 'Authorization policies', prefixes: ['authz-'], guide: 'guides/authorization.md', about: 'External policy decisions through the scoped core authorization and audit contracts.' },
   { key: 'auth', title: 'Sign-in providers', prefixes: ['auth-'], guide: 'guides/authentication.md', about: 'Identity provider tokens as server identities.' },
   { key: 'keys', title: 'API key services', prefixes: ['km-'], guide: 'guides/authentication.md#api-keys', about: 'Keys issued by a key service, beside the built-in key manager.' },
   { key: 'deploy', title: 'Deploy targets', prefixes: ['deploy-'], guide: 'cli/deploy.md', about: 'Platforms for `mayura deploy`, beside Docker, Compose and Kubernetes.' },
@@ -48,7 +52,7 @@ if (problems.length) { console.error(problems.join('\n')); process.exit(1); }
 const lines = [
   '---',
   'title: "Integration packages"',
-  'description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, sign-in, API keys and deploy targets."',
+  'description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."',
   '---',
   '',
   `Beside \`mayura\`, ${packages.length} optional \`@mayurajs/*\` packages connect it to other services. Each is published with every Mayura`,

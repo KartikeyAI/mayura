@@ -60,7 +60,7 @@ describe('opaque control hook definitions', () => {
       expectTypeOf(event).toEqualTypeOf<HookEvent<'beforeModelCall'>>();
       expectTypeOf(event.purpose).toEqualTypeOf<'primary'>();
       expectTypeOf(event.modelId).toEqualTypeOf<string>();
-      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens'>> & { readonly media?: readonly HookMessageMedia[] }>();
+      expectTypeOf(event.request).toEqualTypeOf<Readonly<Pick<ModelRequest, 'messages' | 'tools' | 'maxOutputTokens' | 'history'>> & { readonly media?: readonly HookMessageMedia[] }>();
       expectTypeOf(ctx.step).toEqualTypeOf<number | null>();
       return { decision: 'continue' };
     } });
@@ -198,4 +198,14 @@ describe('agent hook registration', () => {
       { id: 'agent', version: '1', instructions: 'Test fixture.', model, input: schema, output: schema, tools: [] });
     expect(() => defineAgent(configuration)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
+});
+
+
+it('types onApprovalRequested as a metadata-only observer with no tool registry', () => {
+  const hook = defineHook({ id: 'approval-observer', version: '1', stage: 'onApprovalRequested', handler: event => {
+    expectTypeOf(event.digest).toEqualTypeOf<string>(); expectTypeOf(event.expiresAtMs).toEqualTypeOf<number>();
+  } });
+  expectTypeOf(hook).toEqualTypeOf<HookDefinition<'onApprovalRequested'>>();
+  expect(hook.kind).toBe('mayura.observer-hook');
+  expect(() => defineHook({ id: 'bad-observer', version: '1', stage: 'onApprovalRequested', tools: [tool()], handler: () => {} } as never)).toThrow();
 });

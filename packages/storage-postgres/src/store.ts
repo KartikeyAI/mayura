@@ -1,11 +1,11 @@
-import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type MigrateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore } from '@mayura/storage-contracts';
+import { StorageError, storageError, type CreateRecord, type StoredRecord, type StoredEvent, type UpdateRecord, type MigrateRecord, type WorkflowGraphDiscoveryAggregateStore, type DurableBudgetAggregateStore, type WorkflowTreeDiscoveryAggregateStore, type MemoryIndexAggregateStore, type ConversationAggregateStore } from '@mayura/storage-contracts';
 import {
   createCommand, updateCommand, migrateCommand, submissionDigest, nextCounter, identifier, cursor, storedObject, EVENT_PAGE_SIZE,
   SchedulerDatabase, type SchedulerBackend, type SchedulerSession, schedulerFacade,
   ScheduledWorkflowDatabase, scheduledFacade, workflowGraphFacade, initializeOwnership, ownedRun, writerRequired,
   ExecutionWaitDatabase, executionWaitFacade,
   workflowGraphDiscoveryFacade,
-  DurableBudgetDatabase, durableBudgetFacade, MemoryIndexDatabase, memoryIndexFacade,
+  DurableBudgetDatabase, durableBudgetFacade, MemoryIndexDatabase, memoryIndexFacade, ConversationDatabase, threadFacade, runCheckpointFacade,
   WorkflowTreeDatabase, workflowTreeFacade, workflowTreeDiscoveryFacade,
 } from '@mayura/storage-sql/host';
 
@@ -23,7 +23,7 @@ export interface PostgresDriverPool {
   connect(): Promise<PostgresDriverClient>;
   query<Row = any>(text: string, values?: unknown[]): Promise<{ readonly rows: Row[] }>;
 }
-export type PostgresStore = WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore;
+export type PostgresStore = WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore & ConversationAggregateStore;
 
 interface Row {
   scope: string; id: string; idempotency_key: string; definition_hash: string;
@@ -121,6 +121,7 @@ export function postgresStore(pool: PostgresDriverPool, schema: string, end?: ()
   const durableBudgetDatabase = new DurableBudgetDatabase(backend);
   const workflowTreeDatabase = new WorkflowTreeDatabase(backend,schedulerDatabase);
   const memoryDatabase = new MemoryIndexDatabase(backend);
+  const conversationDatabase = new ConversationDatabase(backend);
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
     workflows: scheduledFacade((method,input) => { available(); return workflowsDatabase.execute(method,input); }),
@@ -131,6 +132,8 @@ export function postgresStore(pool: PostgresDriverPool, schema: string, end?: ()
     workflowTrees: workflowTreeFacade((method,input) => { available(); return workflowTreeDatabase.execute(method,input); }),
     workflowTreeDiscovery: workflowTreeDiscoveryFacade((method,input)=>{available();return workflowTreeDatabase.discover(method,input);}),
     memory: memoryIndexFacade((method,input) => { available(); return memoryDatabase.execute(method,input); }),
+    threads: threadFacade((method,input) => { available(); return conversationDatabase.thread(method,input); }),
+    runCheckpoints: runCheckpointFacade((method,input) => { available(); return conversationDatabase.checkpoint(method,input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

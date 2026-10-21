@@ -1,6 +1,6 @@
 import { APIConnectionError, APIError, OpenAI } from 'openai';
 import { assertPositiveInteger, jsonValue, MayuraError, MEDIA_TYPES, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelCatalog, type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest,
+  type ModelCatalog, type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest,
   type ModelResponse, type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { checkStrictDefinition, encodedMediaBytes, mediaDataUrl, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -102,6 +102,23 @@ function messagesToInput(messages: readonly ModelMessage[], offset: number, hasC
   }
   flush();
   return result;
+}
+/**
+ * Responses input for a run's history, encoded as this run's own messages are, with no reasoning items (history has
+ * none) and no media. An earlier final answer is an assistant message holding its JSON text.
+ */
+function historyToInput(history: readonly ModelHistoryMessage[], names: ReadonlyMap<string, string>): JsonValue[] {
+  return history.flatMap((message): JsonValue[] => {
+    if ('output' in message) return [{ role: 'assistant', content: JSON.stringify(message.output) }];
+    if (message.role === 'user') return [{ role: 'user', content: JSON.stringify(message.content) }];
+    if (message.role === 'tool') return [{ type: 'function_call_output', call_id: message.callId, output: JSON.stringify(message.result) }];
+    return message.calls.map(call => ({ type: 'function_call', call_id: call.id, name: names.get(call.toolId) ?? failed(), arguments: JSON.stringify(call.input) }));
+  });
+}
+/** Model names for this run's tools, as before, then for tools only the history called (named the same way, after them). */
+function historyToolNames(tools: readonly string[], history: readonly ModelHistoryMessage[]): ReadonlyMap<string, string> {
+  const called = history.flatMap(message => 'calls' in message ? message.calls.map(call => call.toolId) : []);
+  return modelToolNames([...new Set([...tools, ...called])]);
 }
 function mediaPart(item: Media): JsonValue {
   if (item.mediaType === 'application/pdf') {
@@ -217,9 +234,14 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
             history = previous['history'];
           }
           const input = [...history, ...messagesToInput(request.messages.slice(consumed), consumed, request.continuation !== undefined, aliases)];
+          // The conversation before this run goes first on every call. It stays out of the continuation, which holds
+          // only this run's own input and output, so `consumed` still counts this run's messages alone.
+          const earlier = request.history ?? [];
+          const historyInput = historyToInput(earlier, historyToolNames(request.tools.map(tool => tool.id), earlier));
+          const historyIds = new Set(earlier.flatMap(message => 'calls' in message ? message.calls.map(call => call.id) : []));
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
           const body = jsonValue({
-            model: name, instructions: request.instructions, input: hydrate(input, request.messages),
+            model: name, instructions: request.instructions, input: [...historyInput, ...hydrate(input, request.messages)],
             tools: request.tools.map(tool => ({ type: 'function', name: aliases.get(tool.id)!, description: tool.description, parameters: toolSchema(tool), strict: true })),
             store: false, include: ['reasoning.encrypted_content'], parallel_tool_calls: true, max_output_tokens: request.maxOutputTokens,
             text: { format: { type: 'json_schema', name: 'mayura_output', schema: outputSchema, strict: true } },
@@ -257,7 +279,9 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
             if (item['type'] === 'reasoning') continue;
             if (item['type'] === 'function_call') {
               const callId = item['call_id']; const alias = item['name']; const args = item['arguments'];
-              if (typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId) || callIds.has(callId) || typeof alias !== 'string' || !ids.has(alias) || typeof args !== 'string') return failed();
+              // OpenAI's call ids are long and random: one that repeats a history call's id could not be told apart from it.
+              if (typeof callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(callId) || callIds.has(callId) || historyIds.has(callId)
+                || typeof alias !== 'string' || !ids.has(alias) || typeof args !== 'string') return failed();
               callIds.add(callId); calls.push({ id: callId, toolId: ids.get(alias)!, input: jsonValue(JSON.parse(args)) });
             } else if (item['type'] === 'message') {
               if (item['role'] !== 'assistant' || !Array.isArray(item['content'])) return failed();
@@ -291,7 +315,7 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -300,3 +324,7 @@ export function responsesProvider(options: ResponsesProviderOptions): ModelProvi
   });
 }
 
+
+export { gatewayProvider, gatewayCredential, type GatewayOptions, type GatewayProvider, type GatewayBinding } from './gateway.js';
+
+export { openAIEmbeddings, type OpenAIEmbeddingsOptions } from './embeddings.js';

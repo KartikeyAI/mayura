@@ -1,5 +1,6 @@
 import { Budget, MayuraError, MEDIA_TYPES, jsonValue, mediaFromBase64, type ExecutionReceipt, type Media, type ModelAdapter, type ModelMediaCapability, type ModelRequest, type ModelResponse, type ModelStreamEvent, type Outcome, type Scope } from '@mayura/core';
 import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 
 /**
  * Deterministic test-only model. It never performs inference or network requests.
@@ -9,11 +10,12 @@ import { invokeTool, type AnyTool, type ToolOutput } from '@mayura/tools';
  * (`streamChunk` characters each, 16 by default), then the complete response, exactly as a provider adapter streams.
  *
  * It can "see" every media type and URLs, so agents that accept images or PDFs can be tested; a scripted step receives
- * the request with its `media`. Pass `media: false` to test a model that cannot see.
+ * the request with its `media`. Pass `media: false` to test a model that cannot see. It takes a conversation history
+ * (`capabilities.history`), which a scripted step finds in `request.history`; pass `history: false` to test one that does not.
  */
 export function scriptedModel(
   responses: readonly (ModelResponse | ((request: ModelRequest) => ModelResponse | Promise<ModelResponse>))[],
-  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number; readonly media?: ModelMediaCapability | false } = {},
+  options: { readonly id?: string; readonly maxCostMicros?: number; readonly streamChunk?: number; readonly media?: ModelMediaCapability | false; readonly history?: boolean } = {},
 ): ModelAdapter {
   const steps = [...responses];
   let position = 0;
@@ -29,7 +31,7 @@ export function scriptedModel(
   };
   return Object.freeze({
     id: options.id ?? 'scripted',
-    capabilities: Object.freeze({ tools: true, structuredOutput: true,
+    capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(options.history === false ? {} : { history: true }),
       ...(options.media === false ? {} : { media: options.media ?? Object.freeze({ types: MEDIA_TYPES, urls: true }) }) }),
     maxCostMicros: options.maxCostMicros ?? 0,
     generate: next,
@@ -69,6 +71,8 @@ export interface TestToolOptions {
   readonly signal?: AbortSignal;
   readonly runId?: string;
   readonly callId?: string;
+  /** Treat the call as approved by a person, for a tool that declares `approval`; without it, such a call is refused. */
+  readonly approved?: boolean;
 }
 
 export interface TestToolResult<T extends AnyTool> {
@@ -88,8 +92,14 @@ export interface TestToolResult<T extends AnyTool> {
 export async function testTool<T extends AnyTool>(tool: T, input: unknown, options: TestToolOptions = {}): Promise<TestToolResult<T>> {
   const budget = new Budget(options.budgetMicros ?? tool.costMicros, 1);
   let receipt: ExecutionReceipt | undefined;
+  const runId = options.runId ?? 'test-run'; const callId = options.callId ?? 'test-call';
+  let approvalBinding;
+  if (options.approved === true) {
+    try { approvalBinding = bindToolApproval(tool, { runId, callId, input: jsonValue(input) }); }
+    catch { /* Input that is not plain JSON is refused by the broker itself. */ }
+  }
   const outcome = await invokeTool(tool, input, {
-    runId: options.runId ?? 'test-run', callId: options.callId ?? 'test-call',
+    runId, callId, ...(approvalBinding ? { approvalBinding } : {}),
     scope: options.scope ?? { principalId: 'test', projectId: 'test' }, signal: options.signal ?? new AbortController().signal,
     permissions: { allow: [...(options.permissions ?? toolGrants(tool))] }, budget,
     onExecutionReceipt: async evidence => { receipt = evidence; },

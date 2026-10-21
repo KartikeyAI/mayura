@@ -17,6 +17,7 @@ import { schedulerConformance } from '../../../packages/storage/test/scheduler-c
 import { workflowTreeCapabilityConformance } from '../../../packages/storage/test/workflow-tree-capability-conformance.js';
 import { memoryConformance } from '../../../packages/memory/test/conformance.js';
 import { nativeMemoryConformance } from '../../../packages/memory/test/native-conformance.js';
+import { conversationConformance } from '../../../packages/storage/test/conversation-conformance.js';
 import { workflowConformance } from '../../../packages/workflows/test/conformance.js';
 import { graphWorkflowConformance } from '../../../packages/workflows/test/graph-conformance.js';
 import { graphDiscoveryConformance } from '../../../packages/workflows/test/graph-discovery-conformance.js';
@@ -72,6 +73,7 @@ describe.skipIf(!endpoint)('DynamoDB', () => {
   scheduledBounds('DynamoDB', fixtures.simple);
   memoryConformance('DynamoDB', fixtures.simple as never);
   nativeMemoryConformance('DynamoDB', fixtures.simple);
+  conversationConformance('DynamoDB', async () => { const fixture = await fixtures.simple(); return { store: fixture.store, close: async () => { await fixture.store.close(); await fixture.cleanup(); } }; });
   workflowConformance('DynamoDB', fixtures.simple);
   schedulerConformance('DynamoDB', fixtures.scheduler as never);
   scheduledWorkflowConformance('DynamoDB', fixtures.workflow as never);

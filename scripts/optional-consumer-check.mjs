@@ -14,10 +14,10 @@ import { workDirectory } from './work-directory.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote', 'files', 'voice', 'sandbox', 'browser'];
+const names = ['core', 'cli', 'helpers', 'tools', 'runtime', 'testing', 'sdk', 'threads', 'server', 'server-node', 'client', 'client-react', 'observability', 'exporter-otlp', 'storage-contracts', 'workflows', 'guardrails', 'workstream', 'code-mode', 'code-mode-workflows', 'adapter-code-quickjs', 'adapter-code-docker', 'artifacts', 'provider-openai', 'provider-anthropic', 'memory', 'memory-remote', 'files', 'voice', 'sandbox', 'browser'];
 const expectedDependencies = {
   core: [], cli: ['@clack/prompts', '@mayura/core'], helpers: ['@mayura/core'], tools: ['@mayura/core'], runtime: ['@mayura/core', '@mayura/tools'], testing: ['@mayura/core', '@mayura/files', '@mayura/tools', '@mayura/voice'],
-  sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools', 'zod'], server: ['@mayura/core', '@mayura/runtime'],
+  sdk: ['@mayura/core', '@mayura/runtime', '@mayura/tools', 'zod'], threads: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts'], server: ['@mayura/core', '@mayura/runtime', '@mayura/storage-contracts', '@mayura/threads'],
   'server-node': ['@hono/node-server', '@mayura/server', 'hono'], client: [], observability: ['@mayura/core'],
   'client-react': ['@mayura/client'],
   'exporter-otlp': ['@mayura/core', '@mayura/observability', '@opentelemetry/api'],
@@ -44,7 +44,7 @@ function environment() {
   const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'COREPACK_HOME']);
   return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase()))),
     COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_ignore_scripts: 'true',
-    npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
+    npm_config_cache: join(workspace, '.artifacts', 'npm-cache'), npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
   };
 }
 function cli(kind) {
@@ -113,9 +113,10 @@ function inspectMayura(shortName, files) {
   let maps = 0;
   for (const [path, bytes] of files) {
     // @mayura/cli ships complete starter projects as UTF-8 source; their tests are part of what a user generates.
-    const starter = shortName === 'cli' && /^starters\/[a-z][a-z0-9-]{0,63}\/(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,99}\/){0,6}[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(path)
+    const starter = shortName === 'cli' && /^starters\/[a-z][a-z0-9-]{0,63}\/(?:[A-Za-z0-9_+$\[\]][A-Za-z0-9._+$\[\]-]{0,99}\/){0,6}[A-Za-z0-9_+$\[\]][A-Za-z0-9._+$\[\]-]{0,99}$/.test(path)
       && !/(?:^|\/)(?:node_modules|dist|\.data)\//.test(path);
-    assert(starter || /^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|templates\/[A-Za-z0-9_-]+\.ts|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
+    const ui = shortName === 'cli' && /^ui\/(?:registry\.json|ui\.css|[a-z][a-z0-9-]{0,63}\.tsx)$/.test(path);
+    assert(starter || ui || /^(?:package\.json|README(?:\.md)?|LICENSE(?:\.[^/]+)?|image\/Dockerfile|templates\/[A-Za-z0-9_-]+\.ts|dist\/[A-Za-z0-9_./-]+\.(?:js|js\.map|d\.ts|d\.ts\.map)|src\/[A-Za-z0-9_./-]+\.ts)$/.test(path), `Unreviewed Mayura file: ${path}`);
     assert((starter || !/\.(?:test|spec)\.ts$/.test(path)) && !bytes.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), 'Private/development content in archive.');
     if (!path.startsWith('dist/') || !/\.(?:js|d\.ts)$/.test(path)) continue;
     const directives = [...bytes.toString('utf8').matchAll(/^\/\/# sourceMappingURL=([^\r\n]+)$/gm)];
@@ -465,7 +466,7 @@ async function main() {
   result.checks.push('packed-otlp-http-json-exporter', 'otlp-no-construction-network', 'otlp-metadata-only', 'otlp-partial-accounting', 'otlp-traces', 'otlp-metrics');
   result.checks.push('packed-helper-battery', 'helper-explicit-retry-safety', 'helper-budget-accounting', 'helper-redacted-logging');
   result.checks.push('provider-neutral-credential-store', 'credential-use-scope-zeroing', 'credential-retained-callback-admission');
-  result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-eight-starters', 'cli-no-unconfirmed-overwrite');
+  result.checks.push('packed-cli', 'cli-plan-first-init', 'cli-starter-catalog', 'cli-no-unconfirmed-overwrite');
   result.checks.push('cli-human-list-inspect-respond', 'cli-human-response-file-boundary');
   result.checks.push('cli-run-inspect-wait-cancel', 'cli-run-output-withheld', 'cli-cancel-no-retry');
   result.checks.push('cli-workflow-inspect-cancel-approve', 'cli-workflow-command-no-retry', 'cli-workflow-content-free-output');

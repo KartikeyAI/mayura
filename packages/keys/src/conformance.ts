@@ -68,11 +68,14 @@ export const keyManagerConformance: readonly KeyManagerConformanceCase[] = Objec
     name: 'rate limits a key per window',
     async run({ store }) {
       const keys = createKeyManager({ store, prefix: 'acme' });
-      const { key } = await keys.create({ ...owner(), rateLimit: { limit: 2, windowMs: 1_000 } });
+      // Key creation and three durable verification transactions must fit in the same window,
+      // including on a loaded adapter. The minimum supported 1 s window is too short for that.
+      const { key } = await keys.create({ ...owner(), rateLimit: { limit: 2, windowMs: 10_000 } });
       check((await keys.verify(key)).ok && (await keys.verify(key)).ok, 'requests within the limit pass');
       const limited = await keys.verify(key);
       check(!limited.ok && limited.reason === 'rate_limited' && (limited.retryAfterMs ?? 0) > 0, 'a request over the limit is refused, with when to retry');
-      await pause(1_100);
+      // Use the actual remaining window, rather than restarting a full window after the refusal.
+      await pause(limited.retryAfterMs! + 100);
       check((await keys.verify(key)).ok, 'the next window allows requests again');
     },
   },

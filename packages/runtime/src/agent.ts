@@ -1,9 +1,54 @@
-import { assertSchema, freezeJson, jsonSchemaOf, jsonValue, MayuraError, MEDIA_TYPES, type Guard, type JsonObject, type ManagedGuardDefinition, type InferInput, type InferOutput, type MediaPolicy, type MediaType, type ModelAdapter, type ModelMediaCapability, type Schema } from '@mayura/core';
+import { assertSchema, freezeJson, jsonSchemaOf, jsonValue, MayuraError, MEDIA_TYPES, type Guard, type JsonObject, type ManagedGuardDefinition, type InferInput, type InferOutput, type MediaPolicy, type MediaType, type ModelAdapter, type ModelMediaCapability, type Permissions, type Schema } from '@mayura/core';
 import { mediaPolicy, readManagedGuardDefinition, snapshotLocalGuards, type ResolvedMediaPolicy } from '@mayura/core/host';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { snapshotHooks, type HookDefinition } from './hooks.js';
 
 export type AgentGuard = Guard | ManagedGuardDefinition;
+
+/** Trusted transfer edge. Target grants replace source grants; they are never model-supplied or inherited. */
+export interface AgentHandoff {
+  readonly agent: AgentDefinition;
+  readonly permissions: Permissions;
+  readonly description?: string;
+}
+/** Private presentation of a declared handoff, without an executable tool or authority in a tool context. */
+export function handoffTools(agent: Pick<AgentDefinition, 'handoffs'>) {
+  return (agent.handoffs ?? []).map(edge => Object.freeze({ id: `handoff.${edge.agent.id}`,
+    description: edge.description ?? `Transfer this conversation to ${edge.agent.id}. This agent will not resume.`,
+    ...(edge.agent.inputJsonSchema === undefined ? {} : { inputJsonSchema: edge.agent.inputJsonSchema }) }));
+}
+function snapshotHandoffs(value: readonly AgentHandoff[] | undefined, sourceId: string): readonly AgentHandoff[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value) || value.length > 32 || Object.keys(value).length !== value.length) throw new MayuraError('INVALID_CONFIG', 'Handoffs require a dense bounded target list.');
+  const names = new Map<string, AgentDefinition>(); const heights = new Map<AgentDefinition, number>();
+  const visit = (agent: AgentDefinition, depth: number): number => {
+    assertAgent(agent);
+    if (agent.model.capabilities.history !== true) throw new MayuraError('INVALID_CONFIG', 'Handoff targets require history-capable adapters.');
+    if (agent.stream) throw new MayuraError('INVALID_CONFIG', 'Streaming targets cannot participate in a handoff graph.');
+    if (depth > 32 || agent.id === sourceId || (names.has(agent.id) && names.get(agent.id) !== agent)) throw new MayuraError('INVALID_CONFIG', 'Handoff graph identities must be unique and acyclic.');
+    const cached = heights.get(agent);
+    if (cached !== undefined) {
+      if (depth + cached - 1 > 32) throw new MayuraError('INVALID_CONFIG', 'The handoff graph exceeds its depth bound.'); return cached;
+    }
+    names.set(agent.id, agent);
+    if (names.size > 255) throw new MayuraError('INVALID_CONFIG', 'The handoff graph exceeds 256 agents including its source.');
+    let height = 1; for (const edge of agent.handoffs ?? []) height = Math.max(height, 1 + visit(edge.agent, depth + 1));
+    heights.set(agent, height); return height;
+  };
+  const seen = new Set<string>();
+  return Object.freeze(value.map(edge => {
+    if (!edge || typeof edge !== 'object') throw new MayuraError('INVALID_CONFIG', 'Handoffs require trusted agent definitions and explicit permissions.');
+    visit(edge.agent, 1);
+    if (!isIdentifier(`handoff.${edge.agent.id}`)) throw new MayuraError('INVALID_CONFIG', 'Handoff tool identifiers must fit the 128-character bound.');
+    if (seen.has(edge.agent.id)) throw new MayuraError('INVALID_CONFIG', 'Handoff targets must be unique.'); seen.add(edge.agent.id);
+    const allow = edge.permissions?.allow;
+    if (!Array.isArray(allow) || allow.length > 4096 || allow.some(grant => typeof grant !== 'string' || !grant.length || grant.length > 256)
+      || (edge.description !== undefined && (typeof edge.description !== 'string' || edge.description.length < 1 || edge.description.length > 2048)))
+      throw new MayuraError('INVALID_CONFIG', 'Handoffs require bounded descriptions and explicit permission strings.');
+    return Object.freeze({ agent: edge.agent, permissions: Object.freeze({ allow: Object.freeze([...new Set(allow)]) }),
+      ...(edge.description === undefined ? {} : { description: edge.description }) });
+  }));
+}
 
 /** An immutable agent definition; executable adapters remain trusted application code. */
 export interface AgentDefinition<I extends Schema = Schema, O extends Schema = Schema> {
@@ -12,6 +57,7 @@ export interface AgentDefinition<I extends Schema = Schema, O extends Schema = S
   readonly instructions: string;
   readonly model: ModelAdapter;
   readonly tools: readonly AnyTool[];
+  readonly handoffs?: readonly AgentHandoff[];
   readonly input: Schema<InferInput<I>, InferOutput<I>>;
   readonly output: Schema<InferInput<O>, InferOutput<O>>;
   readonly guards: { readonly input: readonly AgentGuard[]; readonly output: readonly AgentGuard[] };
@@ -50,6 +96,7 @@ export interface AgentOptions<I extends Schema, O extends Schema> {
   readonly instructions: string;
   readonly model: ModelAdapter;
   readonly tools: readonly AnyTool[];
+  readonly handoffs?: readonly AgentHandoff[];
   readonly input: I;
   readonly output: O;
   readonly guards?: { readonly input?: readonly AgentGuard[]; readonly output?: readonly AgentGuard[] };
@@ -161,13 +208,17 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   const model = options.model;
   if (!model || !isModelId(model.id) || typeof model.generate !== 'function'
     || typeof model.capabilities?.tools !== 'boolean' || typeof model.capabilities.structuredOutput !== 'boolean'
+    || (model.capabilities.history !== undefined && typeof model.capabilities.history !== 'boolean')
     || !Number.isSafeInteger(model.maxCostMicros) || model.maxCostMicros < 0) {
     throw new MayuraError('INVALID_CONFIG', 'A model adapter with explicit capabilities and bounded cost is required.');
   }
   if (!Array.isArray(options.tools) || options.tools.length > 256) {
     throw new MayuraError('INVALID_CONFIG', 'Agent tools must be an explicit bounded registry.');
   }
-  const seen = new Set<string>();
+  const handoffs = snapshotHandoffs(options.handoffs, options.id);
+  if (handoffs.length && options.stream) throw new MayuraError('INVALID_CONFIG', 'Handoffs require buffered output under the shared run output contract.');
+  const transfers = handoffTools({ handoffs });
+  const seen = new Set<string>(transfers.map(tool => tool.id));
   for (const tool of options.tools) {
     assertTool(tool);
     if (!tool || !isIdentifier(tool.id) || seen.has(tool.id)) {
@@ -175,7 +226,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     }
     seen.add(tool.id);
   }
-  if (!model.capabilities.structuredOutput || (options.tools.length > 0 && !model.capabilities.tools)) {
+  if (!model.capabilities.structuredOutput || ((options.tools.length > 0 || handoffs.length > 0) && !model.capabilities.tools)) {
     throw new MayuraError('INVALID_CONFIG', 'The model does not support the agent required capabilities.');
   }
   // Media reaches the model with the input and from tools; the model must be able to see every type either may carry.
@@ -200,7 +251,7 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
   const inputJsonSchema = jsonSchemaOf(options.input);
   // The adapter checks now what it would otherwise refuse on the first call, such as a schema its provider rejects.
   if (typeof model.checkDefinition === 'function') {
-    const tools = options.tools.map(tool => Object.freeze({ id: tool.id, description: tool.description, ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: tool.inputJsonSchema }) }));
+    const tools = [...options.tools.map(tool => Object.freeze({ id: tool.id, description: tool.description, ...(tool.inputJsonSchema === undefined ? {} : { inputJsonSchema: tool.inputJsonSchema }) })), ...transfers];
     try { model.checkDefinition(Object.freeze({ tools: Object.freeze(tools), ...(outputJsonSchema === undefined ? {} : { outputJsonSchema }), ...(needs ? { media: needs } : {}) })); }
     catch (error) {
       if (error instanceof MayuraError && error.code === 'INVALID_CONFIG') throw new MayuraError('INVALID_CONFIG', `Agent ${options.id}: ${error.message}`);
@@ -213,12 +264,14 @@ export function defineAgent<I extends Schema, O extends Schema>(options: AgentOp
     instructions: options.instructions,
     model: Object.freeze({
       id: model.id,
-      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput, ...(canSee ? { media: canSee } : {}) }),
+      capabilities: Object.freeze({ tools: model.capabilities.tools, structuredOutput: model.capabilities.structuredOutput, ...(canSee ? { media: canSee } : {}),
+        ...(model.capabilities.history === true ? { history: true } : {}) }),
       maxCostMicros: model.maxCostMicros,
       generate: model.generate.bind(model),
       ...(typeof model.stream === 'function' ? { stream: model.stream.bind(model) } : {}),
     }),
     tools: Object.freeze([...options.tools]),
+    ...(handoffs.length ? { handoffs } : {}),
     input: snapshotSchema(options.input),
     output: snapshotSchema(options.output),
     guards: Object.freeze({ input: snapshotGuards(options.guards?.input ?? []), output: snapshotGuards(options.guards?.output ?? []) }),

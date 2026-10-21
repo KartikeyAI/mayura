@@ -21,7 +21,7 @@ Scheduled execution admits at most 64 KiB per input/output, uses storage-clock l
 
 The same graphs entry also exports `createWorkflowGraphDiscovery` with the separately optional `WorkflowGraphDiscoveryStore` capability. It returns bounded scope/policy-pinned pages of nonterminal graph metadata, not dispatch authority or readiness guarantees. Cursors count terminal owners too; pages are not a stable snapshot. Applications own their definition registry, page budget and explicit continuation calls. No polling service or projection backfill is added.
 
-`createWorkflowGraphCoordinator` adds explicit registered continuation over that capability: 1–32 trusted definitions and their exact resource plans share one driver across finite, sequential candidate pages. Frozen metadata reports distinguish completed pages from interrupted pages carrying the original retry cursor. Unknown definitions are skipped without dispatch. No submit/approve interface, background polling, fleet ownership or pooled cross-run monetary budget is added.
+`createWorkflowGraphCoordinator` adds explicit registered continuation over that capability: 1â€“32 trusted definitions and their exact resource plans share one driver across finite, sequential candidate pages. Frozen metadata reports distinguish completed pages from interrupted pages carrying the original retry cursor. Unknown definitions are skipped without dispatch. No submit/approve interface, background polling, fleet ownership or pooled cross-run monetary budget is added.
 
 The opt-in `mayura/workflows/children` entry exports `defineWorkflowTree`, `createWorkflowTreeRuntime`, `createWorkflowTreeDiscovery` and `createWorkflowTreeCoordinator`. Its current `scheduled-v3` profile drives root-local tools and one-level required child workflows through selected adapters' explicit `workflowTrees` and optional `workflowTreeDiscovery` capabilities, including narrowed authority, exact restartable human approval, fenced dispatch, renewal, close/reopen continuation, exact joins, recovery and terminal accounting. One worker-wide bounded job pool is shared across ready root and child branches and retains timed-out handler capacity until actual settlement. The coordinator processes finite pages against an explicit genuine-definition catalog; it does not infer definitions or run a background poller. Nested children remain rejected in this preview.
 
@@ -34,3 +34,13 @@ The `mayura/workflows/composites` entry supplies the separate durable saga/loop 
 `workflowTraceSpans` projects a settled run's durable event log into deterministic, metadata-only spans (one root per run, one span per step), and `createWorkflowTraceExport` exports settled runs through any OTLP-style trace sink with a durable outbox, per-run markers and a worker unit, so a restarted worker neither loses nor corrupts traces.
 
 See the workspace Markdown documentation for complete scheduled/conservative contracts, adoption examples, failure tests and current limitations. This private development build is not an enterprise-qualified release. License and registry namespace remain owner decisions; nothing has been published.
+
+### Fine-grained execution policy
+
+Durable runtimes and their coordinators accept `authorization`, a shared host-owned core authorizer. Policies grant
+`execute` on workflow definition digests, concrete run IDs and tool IDs, plus `delegate` on child definition digests.
+Children retain their own static grants and budget; parent checks repeat at child dispatch and disclosure, including
+loop and saga children. Approval and explicit resume use `approve` and `resume` on run resources. Policy failure
+blocks admission; revocation after a write retains receipts and costs without replay. Engines cancel their own
+waits on close and leave the shared authorizer and its audit sink open. Inner agent phases and `agentStep` accept
+an independent `authorization` option. See the public authorization guide for details. Local offline validation passed; see [release validation status](../../docs/guides/release-readiness.md) for remaining qualifications.

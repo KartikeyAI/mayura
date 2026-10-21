@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { StorageError } from '@mayura/storage-contracts';
-import type { WorkflowGraphDiscoveryAggregateStore, DurableBudgetAggregateStore, WorkflowTreeDiscoveryAggregateStore, MemoryIndexAggregateStore } from '@mayura/storage-contracts';
+import type { WorkflowGraphDiscoveryAggregateStore, DurableBudgetAggregateStore, WorkflowTreeDiscoveryAggregateStore, MemoryIndexAggregateStore, ConversationAggregateStore } from '@mayura/storage-contracts';
 import { postgresSchema, postgresStore } from './store.js';
 
 export interface PostgresStoreOptions {
@@ -27,7 +27,7 @@ export interface PostgresPoolOptions {
  * Optional PostgreSQL adapter. A schema is isolated storage, not an authorization boundary. Mayura opens a `pg` pool
  * and ends it on `close()`. To use a pool you own, or on runtimes without TCP sockets, use `mayura/storage-postgres/driver`.
  */
-export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore {
+export function createPostgresStore(options: PostgresStoreOptions): WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore & ConversationAggregateStore {
   if (typeof options.connectionString !== 'string' || options.connectionString.length === 0) {
     throw new StorageError('INVALID_INPUT', 'PostgreSQL connection string is required.');
   }

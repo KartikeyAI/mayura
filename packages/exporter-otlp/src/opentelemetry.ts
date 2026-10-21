@@ -155,3 +155,5 @@ export function createOpenTelemetryRunMetrics(options: OpenTelemetryRunMetricsOp
   };
   return Object.freeze({ sink, close: (): void => { closed = true; followed.clear(); } });
 }
+
+export { createOpenTelemetryAuthorization, type OpenTelemetryAuthorizationOptions, type OpenTelemetryAuthorization } from './authorization.js';

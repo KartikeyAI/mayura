@@ -1,6 +1,6 @@
 import { ApiError, GoogleGenAI } from '@google/genai';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -101,6 +101,44 @@ function contentsFor(messages: readonly ModelMessage[], aliases: ReadonlyMap<str
   return contents;
 }
 
+/**
+ * The history as Gemini contents, in the encoding this run's own turns use. It has no thoughts or signatures: Gemini
+ * validates signatures only in the current turn, which starts at the run's own user message, after the history.
+ */
+function historyContents(history: readonly ModelHistoryMessage[], names: ReadonlyMap<string, string>): JsonObject[] {
+  return history.map((message): JsonObject => {
+    if ('media' in message && message.media?.length) return failed('configuration');
+    if (message.role === 'user') return { role: 'user', parts: [{ text: JSON.stringify(message.content) }] };
+    if (message.role === 'tool') return { role: 'user', parts: [{ functionResponse: { id: message.callId, name: names.get(message.toolId)!, response: { output: message.result } } }] };
+    if ('output' in message) return { role: 'model', parts: [{ text: JSON.stringify(message.output) }] };
+    return { role: 'model', parts: message.calls.map(call => ({ functionCall: { id: call.id, name: names.get(call.toolId)!, args: call.input } })) };
+  });
+}
+/**
+ * Contents in the order Gemini accepts: consecutive turns of one role share a turn (a function call turn must follow a
+ * user or function response turn), and a conversation that would start with the model starts with a user turn holding
+ * `null`, the JSON for no input, since the history may begin with an earlier answer.
+ */
+function alternating(contents: readonly JsonObject[]): JsonObject[] {
+  const result: JsonObject[] = [];
+  for (const content of contents) {
+    const previous = result.at(-1);
+    if (previous && previous['role'] === content['role']) result[result.length - 1] = { ...previous, parts: [...previous['parts'] as JsonValue[], ...content['parts'] as JsonValue[]] };
+    else result.push(content);
+  }
+  if (result[0]?.['role'] === 'model') result.unshift({ role: 'user', parts: [{ text: 'null' }] });
+  return result;
+}
+/** The call ids already in the conversation, the history's and this run's, which a new call's id must not repeat. */
+function takenCallIds(request: ModelRequest): Set<string> {
+  return new Set([...request.history ?? [], ...request.messages].flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls.map(call => call.id) : []));
+}
+/** Tool names for the history: this run's tools keep their names, and a tool only the history used gets its own. */
+function historyToolNames(request: ModelRequest): ReadonlyMap<string, string> {
+  const used = (request.history ?? []).flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls.map(call => call.toolId) : message.role === 'tool' ? [message.toolId] : []);
+  return modelToolNames([...new Set([...request.tools.map(tool => tool.id), ...used])]);
+}
+
 /** Joins streamed chunks into one response: text parts are concatenated, other parts kept whole, usage from the last. */
 function joined(chunks: readonly JsonObject[]): JsonObject {
   const parts: JsonObject[] = []; let finishReason: JsonValue = null; let usage: JsonValue | undefined; let feedback: JsonValue | undefined;
@@ -180,7 +218,9 @@ export function google(options: GoogleProviderOptions): ModelProvider {
             return { name: aliases.get(tool.id)!, description: tool.description, parametersJsonSchema: strictJsonSchema(tool.inputJsonSchema, `Tool "${tool.id}" input schema`) };
           });
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
-          const contents = contentsFor(request.messages, aliases, turns);
+          // The history goes first. This run's own turns (and the continuation's count of them) are this run's messages alone.
+          const own = contentsFor(request.messages, aliases, turns);
+          const contents = request.history ? alternating([...historyContents(request.history, historyToolNames(request)), ...own as JsonObject[]]) : own;
           jsonValue({ contents, declarations }, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) });
           const params = {
             model: name, contents,
@@ -219,12 +259,15 @@ export function google(options: GoogleProviderOptions): ModelProvider {
           const parts = Array.isArray((candidate['content'] as JsonObject | undefined)?.['parts']) ? ((candidate['content'] as JsonObject)['parts'] as JsonValue[]).map(object) : [];
           if (parts.length > 256) return failed();
           const accounting = { costMicros: knownCost, inputTokens: input, outputTokens: output };
-          const calls: ModelToolCall[] = []; const seen = new Set<string>();
+          const calls: ModelToolCall[] = []; const seen = new Set<string>(); const taken = takenCallIds(request);
           for (const [index, part] of parts.entries()) {
             const call = part['functionCall'] as JsonObject | undefined;
             if (!call) continue;
             const alias = call['name']; const given = call['id'];
-            const id = typeof given === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(given) ? given : `call-${index}`;
+            // Gemini's own id when it gives a usable one; otherwise one that no earlier call of the conversation has.
+            const usable = typeof given === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(given) && !taken.has(given);
+            let id = usable ? given : `call-${index}`;
+            for (let suffix = 2; !usable && (taken.has(id) || seen.has(id)); suffix++) id = `call-${index}-${suffix}`;
             if (typeof alias !== 'string' || !ids.has(alias) || seen.has(id)) return failed();
             seen.add(id); calls.push({ id, toolId: ids.get(alias)!, input: jsonValue(call['args'] ?? {}) });
           }
@@ -254,7 +297,7 @@ export function google(options: GoogleProviderOptions): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -262,3 +305,5 @@ export function google(options: GoogleProviderOptions): ModelProvider {
     },
   });
 }
+
+export { googleEmbeddings, type EmbeddingsOptions } from './embeddings.js';

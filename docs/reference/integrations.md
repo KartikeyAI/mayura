@@ -1,9 +1,9 @@
 ---
 title: "Integration packages"
-description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, sign-in, API keys and deploy targets."
+description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."
 ---
 
-Beside `mayura`, 85 optional `@mayurajs/*` packages connect it to other services. Each is published with every Mayura
+Beside `mayura`, 105 optional `@mayurajs/*` packages connect it to other services. Each is published with every Mayura
 release at the same version, takes `mayura` as a peer, and is installed only if you use it:
 
 ```bash
@@ -13,6 +13,42 @@ npm install mayura @mayurajs/storage-mysql
 The packages read no environment variables themselves: you pass credentials in as options, and deploy targets use
 the platform's own command-line tool, signed in as you. Each package has its own page, and each area's guide shows
 how the packages fit together.
+
+## Vector stores
+
+Scoped vector storage beside built-in memory and native-memory adapters. See [Vector stores](../guides/rag.md).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/vector-chroma`](../integrations/vector-chroma.md) | Scoped native vector storage for chroma. |
+| [`@mayurajs/vector-libsql`](../integrations/vector-libsql.md) | Scoped native vector storage for libsql. |
+| [`@mayurajs/vector-pgvector`](../integrations/vector-pgvector.md) | Scoped native vector storage for pgvector. |
+| [`@mayurajs/vector-pinecone`](../integrations/vector-pinecone.md) | Scoped native vector storage for pinecone. |
+| [`@mayurajs/vector-qdrant`](../integrations/vector-qdrant.md) | Scoped native vector storage for qdrant. |
+| [`@mayurajs/vector-weaviate`](../integrations/vector-weaviate.md) | Scoped native vector storage for weaviate. |
+
+## Rerankers
+
+Bounded reranking of authorized evidence by original document index. See [Rerankers](../guides/rag.md).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/reranker-cohere`](../integrations/reranker-cohere.md) | Bounded indexed-result reranking with cohere. |
+| [`@mayurajs/reranker-jina`](../integrations/reranker-jina.md) | Bounded indexed-result reranking with jina. |
+| [`@mayurajs/reranker-voyage`](../integrations/reranker-voyage.md) | Bounded indexed-result reranking with voyage. |
+
+## AI gateways
+
+Registry providers for explicitly configured gateways, with bounded calls and reported-cost accounting. See [AI gateways](../guides/ai-gateways.md).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/gateway-cloudflare`](../integrations/gateway-cloudflare.md) | Cloudflare AI Gateway models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
+| [`@mayurajs/gateway-helicone`](../integrations/gateway-helicone.md) | Helicone models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
+| [`@mayurajs/gateway-litellm`](../integrations/gateway-litellm.md) | LiteLLM models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
+| [`@mayurajs/gateway-openrouter`](../integrations/gateway-openrouter.md) | OpenRouter models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
+| [`@mayurajs/gateway-portkey`](../integrations/gateway-portkey.md) | Portkey models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
+| [`@mayurajs/gateway-vercel`](../integrations/gateway-vercel.md) | Vercel AI Gateway models for Mayura, with explicit credentials, bounded calls and gateway cost accounting. |
 
 ## Model providers
 
@@ -123,6 +159,18 @@ Hosted browsers, browser tools and a live viewer, beside the local Chrome or Edg
 | [`@mayurajs/browser-steel`](../integrations/browser-steel.md) | Steel browsers for mayura/browser, over its sessions API. |
 | [`@mayurajs/browser-viewer`](../integrations/browser-viewer.md) | A live viewer for mayura/browser browsers: a screencast of the active tab, shared by link, optionally interactive. |
 | [`@mayurajs/cloudflare-quick-action`](../integrations/cloudflare-quick-action.md) | Cloudflare Browser Run quick actions (markdown, links, scrape, screenshots, PDFs, JSON, crawls) as a client and as tools. |
+
+## Authorization policies
+
+External policy decisions through the scoped core authorization and audit contracts. See [Authorization policies](../guides/authorization.md).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/authz-cedar`](../integrations/authz-cedar.md) | Scoped local Cedar authorization with pinned policies, trusted attributes and core audit integration. |
+| [`@mayurajs/authz-http`](../integrations/authz-http.md) | Bounded HTTP authorization policies with scoped fail-closed decisions and core audit integration. |
+| [`@mayurajs/authz-openfga`](../integrations/authz-openfga.md) | Scoped OpenFGA authorization checks with pinned models, bounded transport and core audit integration. |
+| [`@mayurajs/authz-oso`](../integrations/authz-oso.md) | Scoped Oso Cloud authorization checks with bounded transport and shared core audit integration. |
+| [`@mayurajs/authz-permit`](../integrations/authz-permit.md) | Scoped Permit.io PDP checks with explicit environment credentials, bounded transport and core audit integration. |
 
 ## Sign-in providers
 

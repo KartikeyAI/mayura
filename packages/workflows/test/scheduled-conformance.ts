@@ -11,6 +11,8 @@ import { digest } from '../src/definition.js';
 import type { ScheduledFixture } from './scheduled-fixtures.js';
 
 const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+// Observe real adapter commits without polling reads that can contend with DynamoDB transactions.
+const storageBarrierMs = process.env['CI'] === 'true' ? 10_000 : 3_000;
 
 type Runtime = ReturnType<typeof createScheduledWorkflowRuntime>;
 type Options = Parameters<typeof createScheduledWorkflowRuntime>[0];
@@ -83,10 +85,9 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       },
     });
     const runtime = (overrides: Partial<Options> = {}): Runtime => {
-      // Ordinary conformance uses the production default lease. Tests that exercise
-      // expiry/renewal opt into 1 s explicitly, rather than making every assertion
-      // depend on a heavily contended test machine completing SQL within that window.
-      const instance = createScheduledWorkflowRuntime({ ...base(), workerId: `worker-${++worker}`, ...overrides });
+      // Ordinary assertions do not test lease expiry. Give Windows CI storage round trips headroom;
+      // dedicated expiry/renewal cases retain their explicit short leases through overrides.
+      const instance = createScheduledWorkflowRuntime({ ...base(), leaseMs: slowRunner ? 15_000 : 3_000, workerId: `worker-${++worker}`, ...overrides });
       runtimes.push(instance); return instance;
     };
     const wrapped = (methods: Partial<ScheduledWorkflowStore>): ScheduledWorkflowAggregateStore => ({
@@ -432,14 +433,14 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
 
     it('executes one handler when multiple workers race the same node', async () => {
       let effects = 0; const began = deferred<void>(); const release = deferred<{ value: number }>();
-      const definition = single(tool({ execute: () => { effects++; began.resolve(); return release.promise; } }));
+      const definition = single(tool({ timeoutMs: 30_000, execute: () => { effects++; began.resolve(); return release.promise; } }));
       const engines = Array.from({ length: 4 }, () => runtime());
       const run = await engines[0]!.submit(definition, { input: { value: 2 }, idempotencyKey: 'worker-race' });
       const executions = engines.map(engine => engine.runUntilSettled(definition, run.id));
       const completed = Promise.all(executions);
       // Observe a losing driver's rejection immediately, even while the test awaits handler entry.
       void completed.catch(() => {});
-      try { await bounded(began.promise); }
+      try { await bounded(began.promise, storageBarrierMs); }
       catch (error) {
         const observed = await detail(run.id);
         throw new Error(`Worker race did not reach dispatch: ${JSON.stringify({
@@ -456,12 +457,20 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       let started = 0; const both = deferred<void>(); const firstRelease = deferred<{ value: number }>();
       const secondRelease = deferred<{ value: number }>();
       const enter = (which: typeof firstRelease) => { if (++started === 2) both.resolve(); return which.promise; };
-      const definition = parallel(tool({ execute: () => enter(firstRelease) }), tool({ id: 'scheduled.second', execute: () => enter(secondRelease) }));
-      const engine = runtime({ maxConcurrentJobs: 2 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'parallel-completion' });
+      const definition = parallel(tool({ execute: () => enter(firstRelease), timeoutMs: 30_000 }), tool({ id: 'scheduled.second', execute: () => enter(secondRelease), timeoutMs: 30_000 }));
+      const secondCommitted = deferred<void>(); const backing = store.workflows;
+      const observed = wrapped({ complete: async command => {
+        const saved = await backing.complete(command);
+        if (saved.jobs.some(job => job.nodeId === 'second' && job.state === 'succeeded')) secondCommitted.resolve();
+        return saved;
+      } });
+      const engine = runtime({ store: observed, maxConcurrentJobs: 2 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'parallel-completion' });
       const execution = engine.runUntilSettled(definition, run.id);
-      try { await bounded(both.promise); secondRelease.resolve({ value: 20 }); await vi.waitFor(async () => {
+      try {
+        await bounded(both.promise, storageBarrierMs); secondRelease.resolve({ value: 20 });
+        await bounded(secondCommitted.promise, storageBarrierMs);
         expect((await engine.inspect(run.id)).steps['second']!.status).toBe('succeeded');
-      }); }
+      }
       finally { firstRelease.resolve({ value: 10 }); secondRelease.resolve({ value: 20 }); await execution; }
       const result = await engine.inspect(run.id);
       expect(result.status).toBe('succeeded'); expect(result.output).toEqual([{ value: 20 }, { value: 10 }]); expect(started).toBe(2);
@@ -472,7 +481,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       const execute = async (input: { value: number }) => {
         active++; maximum = Math.max(maximum, active); await new Promise(resolve => setTimeout(resolve, 15)); active--; return input;
       };
-      const definition = parallel(tool({ execute }), tool({ id: 'scheduled.second', execute }));
+      const definition = parallel(tool({ execute, timeoutMs: 30_000 }), tool({ id: 'scheduled.second', execute, timeoutMs: 30_000 }));
       const engine = runtime({ maxConcurrentJobs: 1 }); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'concurrency-cap' });
       expect((await engine.runUntilSettled(definition, run.id)).status).toBe('succeeded'); expect(maximum).toBe(1);
     });
@@ -525,16 +534,23 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
 
     it('records late known cost after cancellation without resurrecting output or replaying', async () => {
       let effects = 0; const began = deferred<void>(); const release = deferred<{ value: number }>();
-      const definition = single(tool({ costMicros: 3, execute: () => { effects++; began.resolve(); return release.promise; } }));
-      const engine = runtime({ resources: { write: ['late-resource'] } });
-      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'late' });
+      const definition = single(tool({ costMicros: 3, execute: () => { effects++; began.resolve(); return release.promise; }, timeoutMs: 30_000 }));
+      const settled = deferred<void>(); const backing = store.workflows; let ownerId: string | undefined;
+      const observed = wrapped({ recordReceipt: async command => {
+        const saved = await backing.recordReceipt(command);
+        if (command.id === ownerId && command.receipt.execution === 'succeeded') settled.resolve();
+        return saved;
+      } });
+      const engine = runtime({ store: observed, resources: { write: ['late-resource'] } });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'late' }); ownerId = run.id;
       const execution = engine.runUntilSettled(definition, run.id);
       try {
-        await bounded(began.promise); await engine.cancel(run.id); await bounded(execution);
+        await bounded(began.promise, storageBarrierMs); await engine.cancel(run.id); await bounded(execution);
         const initial = await engine.inspect(run.id);
         expect(initial.status).toBe('cancelled'); expect(initial.budget).toMatchObject({ spentMicros: 0, reservedMicros: 3 });
         release.resolve({ value: 2 });
-        await vi.waitFor(async () => { expect((await engine.inspect(run.id)).budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 }); });
+        await bounded(settled.promise, storageBarrierMs);
+        expect((await engine.inspect(run.id)).budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 });
         const late = await engine.inspect(run.id);
         expect(late.status).toBe('cancelled'); expect(late.steps['write']!.output).toBeNull();
         expect(late.steps['write']!.receipt).toMatchObject({ execution: 'succeeded', disclosure: 'withheld' });
@@ -548,14 +564,20 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       let effects = 0; const began = deferred<void>(); const release = deferred<{ value: number }>();
       const definition = single(tool({ execute: input => {
         effects++; if (input.value === 1) { began.resolve(); return release.promise; } return input;
-      } }));
-      const shared = runtime({ resources: { write: ['shared'] } }); const unrelated = runtime({ resources: { write: ['independent'] } });
-      const a = await shared.submit(definition, { input: { value: 1 }, idempotencyKey: 'resource-owner' });
+      }, timeoutMs: 30_000 }));
+      const settled = deferred<void>(); const backing = store.workflows; let ownerId: string | undefined;
+      const observed = wrapped({ recordReceipt: async command => {
+        const saved = await backing.recordReceipt(command);
+        if (command.id === ownerId && command.receipt.execution === 'succeeded') settled.resolve();
+        return saved;
+      } });
+      const shared = runtime({ store: observed, resources: { write: ['shared'] } }); const unrelated = runtime({ resources: { write: ['independent'] } });
+      const a = await shared.submit(definition, { input: { value: 1 }, idempotencyKey: 'resource-owner' }); ownerId = a.id;
       const b = await shared.submit(definition, { input: { value: 2 }, idempotencyKey: 'resource-blocked' });
       const c = await unrelated.submit(definition, { input: { value: 3 }, idempotencyKey: 'resource-free' });
       const execution = shared.runUntilSettled(definition, a.id);
       try {
-        await bounded(began.promise);
+        await bounded(began.promise, storageBarrierMs);
         const whileActive = await shared.runUntilSettled(definition, b.id);
         expect(whileActive.steps['write']!.status).not.toBe('succeeded'); expect(effects).toBe(1);
         await shared.cancel(a.id); await bounded(execution);
@@ -563,7 +585,8 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         expect(blocked.steps['write']!.status).not.toBe('succeeded');
         expect((await unrelated.runUntilSettled(definition, c.id)).status).toBe('succeeded'); expect(effects).toBe(2);
         release.resolve({ value: 1 });
-        await vi.waitFor(async () => { expect((await shared.inspect(a.id)).budget.spentMicros).toBe(1); });
+        await bounded(settled.promise, storageBarrierMs);
+        expect((await shared.inspect(a.id)).budget.spentMicros).toBe(1);
         await shared.runUntilSettled(definition, b.id); expect(effects).toBe(2);
       } finally { release.resolve({ value: 1 }); await execution; }
     });
@@ -668,14 +691,15 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
     }, 60_000);
 
     it('blocks a candidate whose approval expires after preparation instead of minting another job', async () => {
-      const backing = store.workflows; let paused = false;
+      const backing = store.workflows; let paused = false; const approvalWindowMs = slowRunner ? 15_000 : 6_000;
       const fault = wrapped({ prepare: async command => {
         const result = await backing.prepare(command);
-        if (!paused) { paused = true; await new Promise(resolve => setTimeout(resolve, 2_100)); }
+        // Keep the review valid through admission, then expire it after the real preparation commit.
+        if (!paused) { paused = true; await new Promise(resolve => setTimeout(resolve, approvalWindowMs + 100)); }
         return result;
       } });
       let effects = 0; const definition = single(tool({ costMicros: 3, execute: input => { effects++; return input; } }), true);
-      const engine = runtime({ store: fault, approvalTtlMs: 2_000 });
+      const engine = runtime({ store: fault, approvalTtlMs: approvalWindowMs, storageTimeoutMs: approvalWindowMs + 10_000 });
       const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'prepared-expired-review' });
       const waiting = await engine.runUntilSettled(definition, run.id);
       await engine.approve({ id: run.id, nodeId: 'write', digest: waiting.steps['write']!.approval!.digest, credential: 'verified-scheduled-human' });
@@ -684,7 +708,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       expect(result.budget).toMatchObject({ spentMicros: 0, reservedMicros: 0 });
       const jobs = (await detail(run.id)).jobs; expect(jobs).toHaveLength(1); expect(jobs[0]!.startedAtMs).toBeNull();
       await engine.runUntilSettled(definition, run.id); expect((await detail(run.id)).jobs).toHaveLength(1); expect(effects).toBe(0);
-    });
+    }, 60_000);
 
     it('renews a live long-running handler and does not replay it after one lease interval', async () => {
       let effects = 0;
@@ -750,11 +774,10 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
     it('drains an in-flight heartbeat before attempting the completed handler CAS', async () => {
       const renewing = deferred<void>(); const finalReceipt = deferred<void>(); const releaseRenewal = deferred<void>();
       let effects = 0; let completions = 0; let receipts = 0; let renewalSettled = false;
-      const definition = single(tool({ execute: async input => { effects++; await renewing.promise; return input; } }));
-      // The renewal is held while both receipts are written, which must finish inside one lease. With 1 s, a slow CI
-      // PostgreSQL let the lease lapse first (the runtime then rightly reports outcome_unknown); this test is about
-      // ordering, not expiry, so it uses the 3 s lease of the renewal test above.
-      const engine = runtime({ leaseMs: 3_000, store: wrapped({
+      const definition = single(tool({ timeoutMs: 30_000, execute: async input => { effects++; await renewing.promise; return input; } }));
+      // Hold renewal until both receipt commits acknowledge. This tests ordering rather than expiry;
+      // Windows storage round trips need room after the first heartbeat at leaseMs / 3.
+      const engine = runtime({ leaseMs: slowRunner ? 9_000 : 3_000, store: wrapped({
         async renew(command) {
           renewing.resolve(); await releaseRenewal.promise;
           const claim = await store.workflows.renew(command); renewalSettled = true; return claim;
@@ -775,7 +798,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
       // Attach a handler immediately; an old runtime can reject before the barrier assertion.
       void execution.catch(() => {});
       try {
-        await bounded(finalReceipt.promise);
+        await bounded(finalReceipt.promise, storageBarrierMs);
         await new Promise(resolve => setTimeout(resolve, 75));
         expect(completions).toBe(0);
       } finally { releaseRenewal.resolve(); }
@@ -875,22 +898,30 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
 
     it('closes a worker promptly while retaining late evidence without cancelling the shared run', async () => {
       const began = deferred<void>(); const release = deferred<{ value: number }>();
-      const definition = single(tool({ costMicros: 3, execute: () => { began.resolve(); return release.promise; } }));
-      const engine = runtime(); const other = runtime();
-      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'worker-close' });
+      const definition = single(tool({ costMicros: 3, execute: () => { began.resolve(); return release.promise; }, timeoutMs: 30_000 }));
+      const settled = deferred<void>(); const backing = store.workflows; let ownerId: string | undefined;
+      const observed = wrapped({ recordReceipt: async command => {
+        const saved = await backing.recordReceipt(command);
+        if (command.id === ownerId && command.receipt.execution === 'succeeded') settled.resolve();
+        return saved;
+      } });
+      const engine = runtime({ store: observed }); const other = runtime();
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'worker-close' }); ownerId = run.id;
       const execution = engine.runUntilSettled(definition, run.id);
       try {
-        await bounded(began.promise); await bounded(engine.close()); await Promise.allSettled([execution]);
+        await bounded(began.promise, storageBarrierMs); await bounded(engine.close()); await Promise.allSettled([execution]);
         expect((await other.inspect(run.id)).status).not.toBe('cancelled');
         release.resolve({ value: 2 });
-        await vi.waitFor(async () => { expect((await other.inspect(run.id)).budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 }); });
+        await bounded(settled.promise, storageBarrierMs);
+        expect((await other.inspect(run.id)).budget).toMatchObject({ spentMicros: 3, reservedMicros: 0 });
         expect((await other.inspect(run.id)).steps['write']!.output).toBeNull();
       } finally { release.resolve({ value: 2 }); await Promise.allSettled([execution]); }
     });
 
     it.each(['start', 'receipt', 'complete'] as const)('survives real process termination after %s commit without replay', async stage => {
       const { store: _store, verifyHuman: _verifier, ...policy } = base();
-      const config = { stage, backend: fixture.childConfig, options: { ...policy, resources: { write: ['crash-resource'] } } };
+      const crashLeaseMs = slowRunner ? 15_000 : 1_000;
+      const config = { stage, backend: fixture.childConfig, options: { ...policy, leaseMs: crashLeaseMs, resources: { write: ['crash-resource'] } } };
       const child = fork(fileURLToPath(new URL('./fixtures/scheduled-crash.mjs', import.meta.url)), [JSON.stringify(config)], {
         execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
       });
@@ -919,11 +950,11 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         child.once('exit', () => { reject(new Error('Owned scheduled process exited before its checkpoint.')); });
       });
       try {
-        const checkpoint = await bounded(marker, 8_000);
+        const checkpoint = await bounded(marker, slowRunner ? 30_000 : 8_000);
         expect(checkpoint.effects).toBe(stage === 'start' ? 0 : 1);
         child.kill('SIGKILL'); await bounded(exit);
         // Wait for the last committed renewal to expire; local process time is not an admission override.
-        await new Promise(resolve => setTimeout(resolve, 1_050));
+        await new Promise(resolve => setTimeout(resolve, crashLeaseMs + 50));
         let replayed = 0;
         const definition = single(tool({ costMicros: 3, execute: input => { replayed++; return input; } }));
         const engine = runtime({ resources: { write: ['crash-resource'] } });
@@ -944,7 +975,7 @@ export function scheduledWorkflowConformance(name: string, factory: () => Promis
         // Only the child created above is terminated; no process enumeration or unrelated PID is used.
         if (!exited) child.kill('SIGKILL'); await bounded(exit);
       }
-    }, 15_000);
+    }, 60_000);
 
     it('keeps a new scheduled submission unavailable to legacy dispatch before ownership exists', async () => {
       let effects = 0; const definition = single(tool({ execute: input => { effects++; return input; } }));

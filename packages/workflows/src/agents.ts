@@ -1,4 +1,4 @@
-import { MayuraError, type InferInput, type InferOutput, type Permissions, type Schema } from '@mayura/core';
+import { MayuraError, type Authorizer, type InferInput, type InferOutput, type Permissions, type Schema } from '@mayura/core';
 import { assertAgent, createRuntime, type AgentDefinition, type RuntimeLimits } from '@mayura/runtime';
 import { defineTool } from '@mayura/tools';
 import { defineWorkflow, type WorkflowDefinition } from './definition.js';
@@ -12,6 +12,8 @@ export interface DurableAgentWorkflowOptions {
    * `model:<agent model id>`). Grant here only what this agent should be able to do.
    */
   readonly permissions: Permissions;
+  /** Optional host-owned policy for the inner agent run and its tools. */
+  readonly authorization?: Authorizer;
   readonly limits?: RuntimeLimits;
   /** Host/model phases require approval by default. */
   readonly approval?: boolean;
@@ -33,6 +35,7 @@ export function agentAsDurableWorkflow<I extends Schema, O extends Schema>(
   assertAgent(agent);
   if (!Array.isArray(options?.permissions?.allow)) throw new MayuraError('INVALID_CONFIG', 'Durable agent phases require explicit inner authority.');
   const permissions = Object.freeze({ allow: Object.freeze([...options.permissions.allow]) });
+  const authorization = options.authorization;
   const limits = Object.freeze({ ...options.limits });
   const maximumCost = limits.maxCostMicros ?? 0;
   if (!Number.isSafeInteger(maximumCost) || maximumCost < 0) throw new MayuraError('INVALID_CONFIG', 'Durable agent cost must be explicitly bounded.');
@@ -44,7 +47,7 @@ export function agentAsDurableWorkflow<I extends Schema, O extends Schema>(
     effects: 'host', capabilities: ['agent:durable', `model:${agent.model.id}`], costMicros: maximumCost,
     timeoutMs: limits.maxDurationMs ?? 60_000,
     execute: async (supplied, context) => {
-      const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions, limits });
+      const runtime = createRuntime({ profile: 'ephemeral', scope: context.scope, permissions, limits, ...(authorization === undefined ? {} : { authorization }) });
       try {
         const run = runtime.submit<I, O>(agent, { input: supplied });
         const outcome = await run.result();

@@ -123,7 +123,7 @@ export function graphCoordinatorConformance(name: string, factory: () => Promise
       const client = coordinator(definitions.map(definition => ({ definition })), { store: observedStore });
       const cursor = { format: 1 as const, scope: scopeHash, policyHash, afterId: '0'.repeat(64) };
       const report = await client.runPage({ cursor, limit: 3 });
-      expect(report).toMatchObject({ status: 'interrupted', examined: 3, code: 'STORAGE_UNAVAILABLE', retryCursor: cursor,
+      expect(report, JSON.stringify({ report, effects, lost })).toMatchObject({ status: 'interrupted', examined: 3, code: 'STORAGE_UNAVAILABLE', retryCursor: cursor,
         outcomes: [{ kind: 'observed', status: 'succeeded' }, { kind: 'failed', code: 'STORAGE_UNAVAILABLE' }, { kind: 'not_attempted' }] });
       expect(report).not.toHaveProperty('nextCursor'); expect(effects).toEqual([1, 1, 0]);
       expect(report.outcomes.map(item => item.reference.runId)).toEqual(runs.map(run => run.id));

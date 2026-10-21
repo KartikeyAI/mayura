@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.data/
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.svelte-kit/
+.tanstack/
+.react-router/
+.wrangler/

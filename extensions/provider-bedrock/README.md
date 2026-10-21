@@ -30,8 +30,16 @@ const agent = defineAgent({
 - Requests go through `fetch`, with bounded response sizes.
 - Tool inputs and structured output use strict JSON Schema; streaming reports output text as it arrives; reasoning
   is kept for the next call and never released.
+- A run's conversation history (`capabilities.history`) goes first, in the order Converse requires: messages of one
+  role in a row are joined, and a history that starts with an answer gets a user message holding `null` before it. A
+  call id Bedrock would refuse is renamed. Bedrock refuses tool blocks in a request without tools, so for an agent
+  without tools, the history's calls and results are sent as JSON text.
 - Cache writes are charged at twice the input rate and cache reads at the full rate, so a budget never undercounts.
 - `catalog` holds on-demand list prices in us-east-1 on its date, offered only by a provider in us-east-1 and used
   only with `prices: 'catalog'`.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+### RAG embeddings
+
+This provider exports `titanEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

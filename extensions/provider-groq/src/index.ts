@@ -1,6 +1,6 @@
 import { APIConnectionError, APIError, Groq } from 'groq-sdk';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -92,7 +92,9 @@ type OwnTurn = { reasoning: string | null; calls: string[] };
  * text, so images from a run of tool results follow it in one user message.
  */
 function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>, assistants: readonly OwnTurn[]): JsonValue[] {
-  const messages: JsonValue[] = [{ role: 'system', content: request.instructions }];
+  // The conversation before this run follows the instructions on every call; `assistants` is matched against this
+  // run's own messages alone.
+  const messages: JsonValue[] = [{ role: 'system', content: request.instructions }, ...historyFor(request.history ?? [], request.tools.map(tool => tool.id))];
   let pending: JsonObject[] = []; let turn = 0;
   const flush = () => { if (pending.length) messages.push({ role: 'user', content: [{ type: 'text', text: 'Images from the tool results above:' }, ...pending] }); pending = []; };
   for (const message of request.messages as readonly ModelMessage[]) {
@@ -117,6 +119,37 @@ function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>
   }
   flush();
   return messages;
+}
+
+/**
+ * A run's history as chat messages, encoded as this run's own messages are, with no reasoning (history has none). An
+ * earlier final answer is an assistant message holding its JSON text.
+ */
+function historyFor(history: readonly ModelHistoryMessage[], tools: readonly string[]): JsonValue[] {
+  const called = history.flatMap(message => 'calls' in message ? message.calls.map(call => call.toolId) : []);
+  // This run's tools keep their names; a tool only the history called is named the same way, after them.
+  const names = modelToolNames([...new Set([...tools, ...called])]);
+  return history.map(message => {
+    if ('output' in message) return { role: 'assistant', content: JSON.stringify(message.output) };
+    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+    if (message.role === 'tool') return { role: 'tool', tool_call_id: message.callId, content: JSON.stringify(message.result) };
+    return { role: 'assistant', tool_calls: message.calls.map(call => ({ id: call.id, type: 'function', function: { name: names.get(call.toolId)!, arguments: JSON.stringify(call.input) } })) };
+  });
+}
+/**
+ * The ids this response's calls are given. Groq's ids are short (such as `call_b790`), so one may repeat an id of the
+ * history: such a call gets the first free `<id>_<n>` instead, which Groq is then sent back like any id of this run.
+ */
+function freshCallIds(ids: readonly string[], history: readonly ModelHistoryMessage[], messages: readonly ModelMessage[]): string[] {
+  const earlier = new Set(history.flatMap(message => 'calls' in message ? message.calls.map(call => call.id) : []));
+  const taken = new Set([...earlier, ...ids, ...messages.flatMap(message => message.role === 'assistant' ? message.calls.map(call => call.id) : [])]);
+  return ids.map(id => {
+    if (!earlier.has(id)) return id;
+    let fresh = id;
+    for (let suffix = 2; taken.has(fresh); suffix++) fresh = `${id.slice(0, 127 - String(suffix).length)}_${suffix}`;
+    taken.add(fresh);
+    return fresh;
+  });
 }
 
 /** Rebuilds the response a non-streamed call returns from a chat completion stream, reporting text as it arrives. */
@@ -261,6 +294,8 @@ export function groq(options: GroqProviderOptions): ModelProvider {
               seen.add(callId); calls.push({ id: callId, toolId: ids.get(alias)!, input: jsonValue(JSON.parse(args || '{}') as JsonValue, { maxBytes: maxResponseBytes }) });
             }
             if (calls.length === 0 || calls.length > 128) return failed();
+            const fresh = freshCallIds(calls.map(entry => entry.id), request.history ?? [], request.messages);
+            for (const [index, id] of fresh.entries()) calls[index] = { ...calls[index]!, id };
             const reasoning = typeof message['reasoning'] === 'string' && message['reasoning'] ? message['reasoning'] : null;
             const continuation = jsonValue({ provider: 'groq.chat.v1', model: name, assistants: [...assistants, { reasoning, calls: calls.map(entry => entry.id) }] }, { maxBytes: maxRequestBytes });
             return { type: 'tool_calls', calls, usage: { costMicros: knownCost!, inputTokens, outputTokens }, continuation };
@@ -293,7 +328,7 @@ export function groq(options: GroqProviderOptions): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),

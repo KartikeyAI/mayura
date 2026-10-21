@@ -214,3 +214,7 @@ throws `INVALID_CONFIG` when you call `models.model()`.
 - [Model routing](../guides/model-routing.md): failover, circuit breakers and accounting.
 - [Amazon Bedrock](provider-bedrock.md): Mistral models through your AWS account.
 - [Costs and budgets](../concepts/costs-and-budgets.md): how a call's cost is reserved and charged.
+
+### RAG embeddings
+
+This provider exports `mistralEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Offline embedding tests passed locally with fake transports. Live embedding service behavior remains unqualified; see [release validation status](../guides/release-readiness.md).

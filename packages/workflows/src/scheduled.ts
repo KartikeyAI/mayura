@@ -1,5 +1,7 @@
+import { workflowAuthorization } from './authorization.js';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
+import { bindToolApproval } from '@mayura/tools/host';
 import { createWorkflowDrainGate, type WorkflowDrainOptions, type WorkflowDrainReport } from './drain.js';
 import {
   StorageError, executionRef, workflowPolicy, workflowResources, workflowOutputs,
@@ -151,6 +153,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     });
   } catch { throw new MayuraError('INVALID_CONFIG', 'Scheduled execution requires explicit bounded scope, grants and policy; output cannot exceed 64 KiB.'); }
   const scope = policy.scope;
+  const auth = workflowAuthorization(options.authorization, scope);
   const scopeKey = digest('mayura:scope:v1', scope);
   const policyHash = digest('mayura:policy:v1', { ...policy, permissions: [...policy.permissions].sort() });
   const stateFrom = (record: StoredRecord) => scheduledState(record, profile);
@@ -343,14 +346,18 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       scheduleRenewal();
       const state = stateFrom(initial.record);
       const raw = resolveBinding(node.input, state.input, outputs(state));
+      // A job for a step that needs approval exists only once the step was approved; the tool's own rule then accepts it.
+      const approvalBinding = node.approval ? bindToolApproval(node.tool, { runId: id, callId: `${id}/step:${node.id}`, input: raw }) : undefined;
       const result = await invokeTool(node.tool, raw, {
-        runId: id, callId: `${id}/step:${node.id}`, scope, permissions, signal: controller.signal,
+        runId: id, callId: `${id}/step:${node.id}`, scope, permissions, signal: controller.signal, ...(approvalBinding ? { approvalBinding } : {}),
+        ...auth.toolContext(definition.digest, id),
         budget: new Budget(node.tool.costMicros, 1), maxOutputBytes: policy.maxOutputBytes,
         acquireExecution: async signal => {
           signal.throwIfAborted(); acquired = true; dispatchSignal = signal;
           return () => { handlerSettled = true; releaseSlot(); };
         },
         beforeDispatch: async input => {
+          await auth.execute(definition.digest, id, dispatchSignal);
           const started = await write(id, command => api.start({ ...command, claim: token, input }), dispatchSignal);
           if (started.status !== 'started') throw new MayuraError('CONFLICT', 'The claim does not grant a fresh dispatch.');
         },
@@ -398,17 +405,20 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
   }
 
   async function drive(definition: DriverDefinition, id: string): Promise<ScheduledPublicSnapshot> {
+      const checkedSnapshot = async (record: StoredRecord) => { await auth.execute(definition.digest, id); return snapshot(record); };
+
     for (let wave = 0; wave < definition.nodes.length * 2 + 8; wave++) {
       open();
+      await auth.execute(definition.digest, id);
       let current = await load(id); matches(definition, current);
-      if (halted(stateFrom(current.record).status)) return snapshot(current.record);
+      if (halted(stateFrom(current.record).status)) return checkedSnapshot(current.record);
       // Each wave holds one drain admission, covering its claims, effects and receipts.
-      const release = gate.enter(); if (!release) return snapshot(current.record);
+      const release = gate.enter(); if (!release) return checkedSnapshot(current.record);
       try {
         const before = current.record.version;
         current = await write(id, command => api.recover(command));
         current = await write(id, command => api.advance(command));
-        if (halted(stateFrom(current.record).status)) return snapshot(current.record);
+        if (halted(stateFrom(current.record).status)) return checkedSnapshot(current.record);
         let preparingState = stateFrom(current.record);
         for (const node of definition.nodes) {
           if (node.kind !== 'tool') continue;
@@ -420,7 +430,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
             || current.jobs.some(job => job.nodeId === node.id)) continue;
           current = await load(id);
           const state = stateFrom(current.record); preparingState = state; const step = state.steps[node.id];
-          if (halted(state.status)) return snapshot(current.record);
+          if (halted(state.status)) return checkedSnapshot(current.record);
           if (!step || !['pending', 'waiting', 'approved'].includes(step.status) || current.jobs.some(job => job.nodeId === node.id)
             || (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded')) continue;
           const required = [`tool:${node.tool.id}`, ...node.tool.capabilities, ...(node.tool.effects === 'none' ? [] : [`effect:${node.tool.effects}`])];
@@ -428,6 +438,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
             current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'blocked' }));
             preparingState = stateFrom(current.record); continue;
           }
+          await auth.execute(definition.digest, id);
+          await auth.require('tool', node.tool.id, 'execute');
           let input: JsonValue;
           try {
             const raw = resolveBinding(node.input, state.input, outputs(state));
@@ -436,6 +448,8 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
             open(); current = await updatePendingNode(id, node.id, command => api.failNode({ ...command, nodeId: node.id, outcome: 'failed' }));
             preparingState = stateFrom(current.record); continue;
           }
+          await auth.execute(definition.digest, id);
+          await auth.require('tool', node.tool.id, 'execute');
           if (node.approval) {
             current = await updatePendingNode(id, node.id, command => api.requestApproval({ ...command, nodeId: node.id, input }));
             preparingState = stateFrom(current.record);
@@ -452,6 +466,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         const available = maxConcurrentJobs - slots;
         let count = 0;
         if (available > 0 && !closed) {
+          await auth.execute(definition.digest, id);
           slots += available;
           let claims: Awaited<ReturnType<ScheduledWorkflowStore['claim']>>;
           try { claims = scheduledClaims(await scheduledStorage(() => api.claim({ ...access(id), workerId, limit: available, leaseMs })), scopeKey, id, workerId, available); }
@@ -464,7 +479,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         }
         current = await write(id, command => api.advance(command));
         const state = stateFrom(current.record);
-        if (halted(state.status)) return snapshot(current.record);
+        if (halted(state.status)) return checkedSnapshot(current.record);
         if (Object.values(state.steps).every(step => step.status === 'succeeded')) {
           let final: { validation: 'passed'; output: JsonValue } | { validation: 'failed' };
           try {
@@ -472,15 +487,16 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
             const output = await scheduledCallback(() => validate(definition.output, raw, 'output', { maxBytes: policy.maxOutputBytes }), 30_000, shutdown.signal);
             final = { validation: 'passed', output: safeScheduledJson(output, policy.maxOutputBytes, 'output') };
           } catch { open(); final = { validation: 'failed' }; }
+          await auth.execute(definition.digest, id);
           try {
             const committed = await scheduledStorage(() => api.finalize({ ...access(id), expectedVersion: current.record.version, commandId: crypto.randomUUID(), ...final }));
-            return snapshot(view(committed, id).record);
+            return checkedSnapshot(view(committed, id).record);
           } catch (error) { if (!isStorageCode(error, 'CONFLICT')) throw error; }
         }
-        if (count === 0 && current.record.version === before) return snapshot(current.record);
+        if (count === 0 && current.record.version === before) return checkedSnapshot(current.record);
       } finally { release(); }
     }
-    return snapshot((await load(id)).record);
+    return checkedSnapshot((await load(id)).record);
   }
 
   return Object.freeze<ScheduledDriverRuntime>({
@@ -489,12 +505,15 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       open(); const registered = enrollment(definition);
       const key = command.idempotencyKey;
       if (typeof key !== 'string' || !key.length || key.length > 128) throw new MayuraError('INVALID_INPUT', 'A bounded stable submission key is required.');
+      const admittedId = digest('mayura:run-id:v1', { scope: scopeKey, submissionKey: key });
+      await auth.execute(definition.digest, admittedId);
       const raw = safeScheduledJson(command.input, policy.maxOutputBytes, 'input');
       const input = safeScheduledJson(await scheduledCallback(() => validate(definition.input, raw, 'input'), 30_000, shutdown.signal), policy.maxOutputBytes, 'input');
       if ('format' in registered.manifest) {
         try { workflowGraphTargets(registered.manifest, input); }
         catch { throw new MayuraError('INVALID_INPUT', 'Workflow graph wait targets are invalid or exceed their finite bounds.'); }
       }
+      await auth.execute(definition.digest, admittedId);
       open(); await initialize();
       const submission = { ...registered, input, idempotencyKey: key };
       const result = await scheduledStorage<{ readonly snapshot: ScheduledStoredSnapshot; readonly created: boolean }>(() => profile === 'scheduled-v1'
@@ -509,7 +528,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       return snapshot(current.record);
     },
     ...(profile === 'scheduled-v1' ? { async attach(definition: AnyWorkflow, id: string) {
-      open(); const registered = enrollment(definition); await initialize();
+      open(); const registered = enrollment(definition); await auth.execute(definition.digest, id); await initialize();
       // Explicit enrollment reads the ordinary pristine aggregate; it has no sidecar to inspect yet.
       const record = await scheduledStorage(() => read(scopeKey, access(id).id));
       if (!record) throw new MayuraError('NOT_FOUND', 'Workflow was not found in this scope.');
@@ -601,11 +620,13 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
       if (!verifyHuman) throw new MayuraError('PERMISSION_DENIED', 'A trusted human verifier is required.');
       let human: VerifiedHuman;
       try {
+        await auth.require('run', id, 'approve');
         const value = await scheduledCallback(() => verifyHuman(credential), 30_000, shutdown.signal);
         human = { id: value.id, projectId: value.projectId, canApprove: value.canApprove };
         if (typeof human.id !== 'string' || !human.id.length || human.id.length > 256 || human.projectId !== scope.projectId || human.canApprove !== true) throw new Error();
       } catch { throw new MayuraError('PERMISSION_DENIED', 'Human verification did not authorize this approval.'); }
       open();
+      await auth.require('run', id, 'approve');
       return snapshot((await write(id, base => api.approve({ ...base, nodeId, digest: approvalDigest, humanId: human.id }), shutdown.signal)).record);
     },
     async cancel(id) {
@@ -694,12 +715,12 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
     },
     async recoverExpired(id) { open(); return snapshot((await write(id, command => api.recover(command))).record); },
     close() {
-      if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
+      if (!closing) { closed = true; auth.close(); shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
       return closing;
     },
     drain(options) {
       return gate.drain(options, () => {
-        if (!closing) { closed = true; shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
+        if (!closing) { closed = true; auth.close(); shutdown.abort(); closing = Promise.allSettled([...drivers.values()].map(driver => driver.operation)).then(() => {}); }
         return closing;
       });
     },

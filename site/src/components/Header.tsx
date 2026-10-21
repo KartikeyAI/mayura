@@ -35,6 +35,7 @@ export function Header() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
+          <a href={`${import.meta.env.BASE_URL}ui/`} className="px-2 text-sm text-muted hover:text-fg">UI gallery</a>
           <SearchButton />
           <a href={site.repository} target="_blank" rel="noopener noreferrer" aria-label="Mayura on GitHub"
             className="grid size-9 place-items-center rounded-lg text-muted hover:bg-soft hover:text-fg">

@@ -22,6 +22,13 @@ describe('scriptedModel', () => {
 });
 
 describe('testTool', () => {
+  it('refuses a call that needs approval unless told it was approved', async () => {
+    const tool = defineTool({ id: 'orders.refund', version: '1', description: 'Refund', input: z.object({ amount: z.number() }), output: z.object({ ok: z.boolean() }),
+      effects: 'write', capabilities: [], approval: 'required', execute: () => ({ ok: true }) });
+    expect((await testTool(tool, { amount: 1 })).outcome).toMatchObject({ status: 'failed', error: { code: 'APPROVAL_UNAVAILABLE' } });
+    expect((await testTool(tool, { amount: 1 }, { approved: true })).outcome).toMatchObject({ status: 'succeeded', output: { ok: true } });
+  });
+
   const refund = defineTool({ id: 'orders.refund', version: '1', description: 'Refund.', input: z.object({ orderId: z.string() }), output: z.object({ refunded: z.boolean() }),
     effects: 'write', capabilities: ['payments:refund'], costMicros: 10,
     execute: ({ orderId }) => { if (orderId === 'missing') throw new ToolRefusal('No such order.'); if (orderId === 'boom') throw new Error('PRIVATE'); return { refunded: true }; } });

@@ -1,6 +1,6 @@
-import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { base64ToBytes, bytesToBase64, checkStrictDefinition, modelToolNames, providerEndpoint, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -125,9 +125,10 @@ function sdkBlock(block: JsonObject): unknown {
   if (reasoning && typeof reasoning['redactedContentBase64'] === 'string') return { reasoningContent: { redactedContent: base64ToBytes(reasoning['redactedContentBase64']) } };
   return block;
 }
+type ConverseMessage = { role: string; content: unknown[] };
 /** The conversation as Converse messages; `turns` are the model's own earlier tool-call turns in this run. */
-function messagesFor(messages: readonly ModelMessage[], aliases: ReadonlyMap<string, string>, turns: readonly JsonObject[][]): unknown[] {
-  const result: { role: string; content: unknown[] }[] = []; let turn = 0;
+function messagesFor(messages: readonly ModelMessage[], aliases: ReadonlyMap<string, string>, turns: readonly JsonObject[][]): ConverseMessage[] {
+  const result: ConverseMessage[] = []; let turn = 0;
   for (const message of messages) {
     if (message.role === 'user') {
       result.push({ role: 'user', content: [{ text: JSON.stringify(message.content) }, ...(message.media ?? []).map(mediaBlock)] });
@@ -152,6 +153,56 @@ function messagesFor(messages: readonly ModelMessage[], aliases: ReadonlyMap<str
       else result.push({ role: 'user', content: blocks });
     }
   }
+  return result;
+}
+
+/** A tool use id Bedrock takes: 1 to 64 letters, digits, `_`, `.`, `:` or `-`. */
+const BEDROCK_CALL_ID = /^[A-Za-z0-9_.:-]{1,64}$/u;
+const callsOf = (messages: readonly ModelHistoryMessage[]) => messages.flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls : []);
+/**
+ * The history as Converse messages, in the encoding this run's own turns use, without reasoning (history has none). A
+ * call id Bedrock would refuse gets a fresh one that no other call of the conversation has. Bedrock refuses tool use
+ * and tool result blocks in a request without tools, so for an agent without tools, the history's calls and results
+ * are given as JSON text instead.
+ */
+function historyMessages(request: ModelRequest, history: readonly ModelHistoryMessage[]): ConverseMessage[] {
+  const used = history.flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls.map(call => call.toolId) : message.role === 'tool' ? [message.toolId] : []);
+  // This run's tools keep their names; a tool only the history used gets its own.
+  const names = modelToolNames([...new Set([...request.tools.map(tool => tool.id), ...used])]);
+  const taken = new Set(callsOf([...history, ...request.messages]).map(call => call.id));
+  const ids = new Map<string, string>(); let next = 1;
+  for (const { id } of callsOf(history)) {
+    let alias = id;
+    if (!BEDROCK_CALL_ID.test(id)) { do alias = `mayura-${next++}`; while (taken.has(alias)); taken.add(alias); }
+    ids.set(id, alias);
+  }
+  const asText = request.tools.length === 0;
+  return history.map((message): ConverseMessage => {
+    if ('media' in message && message.media?.length) return failed('configuration');
+    if (message.role === 'user') return { role: 'user', content: [{ text: JSON.stringify(message.content) }] };
+    if (message.role === 'tool') {
+      const name = names.get(message.toolId)!;
+      return { role: 'user', content: [asText ? { text: JSON.stringify({ toolResult: { id: message.callId, name, result: message.result } }) }
+        : { toolResult: { toolUseId: ids.get(message.callId)!, content: [{ text: JSON.stringify(message.result) }] } }] };
+    }
+    if ('output' in message) return { role: 'assistant', content: [{ text: JSON.stringify(message.output) }] };
+    return { role: 'assistant', content: asText ? [{ text: JSON.stringify({ toolCalls: message.calls.map(call => ({ id: call.id, name: names.get(call.toolId)!, input: call.input })) }) }]
+      : message.calls.map(call => ({ toolUse: { toolUseId: ids.get(call.id)!, name: names.get(call.toolId)!, input: call.input } })) };
+  });
+}
+/**
+ * Messages in the order Converse requires: user and assistant alternate, so consecutive messages of one role are
+ * joined, and a conversation that would start with the assistant (a history that begins with an earlier answer) starts
+ * with a user message holding `null`, the JSON for no input.
+ */
+function alternating(messages: readonly ConverseMessage[]): ConverseMessage[] {
+  const result: ConverseMessage[] = [];
+  for (const message of messages) {
+    const previous = result.at(-1);
+    if (previous?.role === message.role) result[result.length - 1] = { role: previous.role, content: [...previous.content, ...message.content] };
+    else result.push(message);
+  }
+  if (result[0]?.role === 'assistant') result.unshift({ role: 'user', content: [{ text: 'null' }] });
   return result;
 }
 
@@ -268,10 +319,12 @@ export function bedrock(options: BedrockProviderOptions): ModelProvider {
           });
           const outputSchema = request.outputJsonSchema === undefined ? failed('configuration') : strictJsonSchema(request.outputJsonSchema, 'The output schema');
           // The request's JSON is bounded; media bytes are bounded by the runtime (maxMediaBytes) and sent as bytes.
-          jsonValue({ instructions: request.instructions, tools, turns, messages: request.messages.map(message => message.role === 'user' ? message.content : message.role === 'tool' ? message.result : message.calls) },
-            { maxBytes: maxRequestBytes });
+          jsonValue({ instructions: request.instructions, tools, turns, messages: request.messages.map(message => message.role === 'user' ? message.content : message.role === 'tool' ? message.result : message.calls),
+            ...(request.history ? { history: request.history } : {}) }, { maxBytes: maxRequestBytes });
+          // The history goes first. This run's own turns (and the continuation's count of them) are this run's messages alone.
+          const own = messagesFor(request.messages, aliases, turns);
           const input = {
-            modelId: name, system: [{ text: request.instructions }], messages: messagesFor(request.messages, aliases, turns),
+            modelId: name, system: [{ text: request.instructions }], messages: request.history ? alternating([...historyMessages(request, request.history), ...own]) : own,
             inferenceConfig: { maxTokens: request.maxOutputTokens },
             outputConfig: { textFormat: { type: 'json_schema', structure: { jsonSchema: { schema: JSON.stringify(outputSchema), name: 'mayura_output' } } } },
             ...(tools.length > 0 ? { toolConfig: { tools, toolChoice: { auto: {} } } } : {}),
@@ -333,7 +386,7 @@ export function bedrock(options: BedrockProviderOptions): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -342,3 +395,30 @@ export function bedrock(options: BedrockProviderOptions): ModelProvider {
   });
 }
 
+
+export interface TitanEmbeddingsOptions {
+  readonly region:string; readonly credentials:BedrockAwsCredentials; readonly dimensions:256|512|1024;
+  readonly costMicros:number; readonly permissions:{readonly allow:readonly string[]}; readonly timeoutMs:number;
+  readonly fetch?:typeof globalThis.fetch;
+}
+/** Titan Text Embeddings V2: one input, explicit SigV4 credentials and no SDK retry or default credential chain. */
+export function titanEmbeddings(options:TitanEmbeddingsOptions):import('mayura/rag').RagEmbedder & {close():void} {
+  if(!/^[a-z]{2}(?:-[a-z]+)+-\d$/u.test(options.region)||!options.credentials||![256,512,1024].includes(options.dimensions)||!Number.isSafeInteger(options.costMicros)||options.costMicros<0||!Number.isSafeInteger(options.timeoutMs)||options.timeoutMs<1||options.timeoutMs>30_000)throw new MayuraError('INVALID_CONFIG','Titan embedding configuration is invalid.');
+  const client=new BedrockRuntimeClient({region:options.region,credentials:options.credentials,maxAttempts:1,retryMode:'standard',requestHandler:fetchHandler(()=>options.fetch??globalThis.fetch,4_194_304) as never});
+  let busy=false;let closed=false;
+  return Object.freeze({id:`bedrock.titan-embed-text-v2.${options.dimensions}`,dimensions:options.dimensions,maxBatch:1,location:'hosted',costMicros:options.costMicros,
+    async embed(texts:readonly string[],signal:AbortSignal) {
+      if(!options.permissions.allow.includes('rag:transport:bedrock-embeddings'))throw new MayuraError('PERMISSION_DENIED','Titan embedding permission required.');
+      if(closed||busy||signal.aborted)throw new MayuraError('CANCELLED','Titan embedding unavailable.');
+      if(texts.length!==1||typeof texts[0]!=='string'||!texts[0].trim()||texts[0].length>8000)throw new MayuraError('INVALID_INPUT','Titan embedding input is invalid.');
+      const control=new AbortController();const abort=()=>control.abort();signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();const timer=setTimeout(abort,options.timeoutMs);busy=true;
+      try {
+        const result=await client.send(new InvokeModelCommand({modelId:'amazon.titan-embed-text-v2:0',contentType:'application/json',accept:'application/json',body:new TextEncoder().encode(JSON.stringify({inputText:texts[0],dimensions:options.dimensions,normalize:true}))}),{abortSignal:control.signal});
+        if(control.signal.aborted||closed)throw new Error();const raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(result.body)) as {embedding:unknown};
+        if(!Array.isArray(raw.embedding)||raw.embedding.length!==options.dimensions||raw.embedding.some(value=>typeof value!=='number'||!Number.isFinite(value)))throw new Error();return [raw.embedding as number[]];
+      }catch{throw new MayuraError(control.signal.aborted?'CANCELLED':'MODEL_FAILED','Titan embedding failed; no automatic retry was performed.');}
+      finally{busy=false;clearTimeout(timer);signal.removeEventListener('abort',abort);}
+    },
+    close(){closed=true;client.destroy();},
+  });
+}

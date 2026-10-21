@@ -132,8 +132,10 @@ const denied = await testTool(lookupOrder, { orderId: 'A1' }, { permissions: ['t
 assert.equal(denied.outcome.status, 'blocked');
 ```
 
-Options: `permissions`, `scope`, `budgetMicros`, `signal`, `runId` and `callId`. The result has the `outcome`, what the
-call was charged (`spentMicros`, and `reservedMicros` still held for an uncertain call) and its execution `receipt`.
+Options: `permissions`, `scope`, `budgetMicros`, `signal`, `runId`, `callId`, and `approved: true` to test a tool that
+declares `approval` as though a person approved the call (without it, the call fails with `APPROVAL_UNAVAILABLE`). The
+result has the `outcome`, what the call was charged (`spentMicros`, and `reservedMicros` still held for an uncertain
+call) and its execution `receipt`.
 An agent exposed with `agentAsTool` needs a runtime to start the child; test it inside a runtime.
 
 **Test child agents.** Give the parent and child scripted models with different ids, and grant `agent:delegate` plus

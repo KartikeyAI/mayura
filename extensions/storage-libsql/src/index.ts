@@ -1,14 +1,14 @@
 import { createClient, type Client, type InArgs, type Transaction } from '@libsql/client';
-import { StorageError, storageError, type CreateRecord, type DurableBudgetAggregateStore, type MemoryIndexAggregateStore, type MigrateRecord, type StoredEvent, type StoredRecord,
+import { StorageError, storageError, type CreateRecord, type DurableBudgetAggregateStore, type MemoryIndexAggregateStore, type ConversationAggregateStore, type MigrateRecord, type StoredEvent, type StoredRecord,
   type UpdateRecord, type WorkflowGraphDiscoveryAggregateStore, type WorkflowTreeDiscoveryAggregateStore } from 'mayura/storage-contracts';
 import {
   createCommand, cursor, durableBudgetFacade, DurableBudgetDatabase, EVENT_PAGE_SIZE, executionWaitFacade, ExecutionWaitDatabase, identifier, initializeOwnership, memoryIndexFacade,
-  MemoryIndexDatabase, migrateCommand, nextCounter, ownedRun, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest,
+  MemoryIndexDatabase, ConversationDatabase, threadFacade, runCheckpointFacade, migrateCommand, nextCounter, ownedRun, ScheduledWorkflowDatabase, scheduledFacade, SchedulerDatabase, schedulerFacade, storedObject, submissionDigest,
   updateCommand, workflowGraphDiscoveryFacade, workflowGraphFacade, WorkflowTreeDatabase, workflowTreeDiscoveryFacade, workflowTreeFacade, writerRequired,
   type SchedulerBackend, type SchedulerSession,
 } from 'mayura/storage-sql/host';
 
-export type LibsqlStore = WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore;
+export type LibsqlStore = WorkflowGraphDiscoveryAggregateStore & DurableBudgetAggregateStore & WorkflowTreeDiscoveryAggregateStore & MemoryIndexAggregateStore & ConversationAggregateStore;
 
 export interface LibsqlStoreOptions {
   /**
@@ -179,6 +179,7 @@ export function createLibsqlStore(options: LibsqlStoreOptions): LibsqlStore {
   const durableBudgetDatabase = new DurableBudgetDatabase(backend);
   const workflowTreeDatabase = new WorkflowTreeDatabase(backend, schedulerDatabase);
   const memoryDatabase = new MemoryIndexDatabase(backend);
+  const conversationDatabase = new ConversationDatabase(backend);
 
   return {
     scheduler: schedulerFacade((method, input) => { available(); return schedulerDatabase.execute(method, input); }),
@@ -190,6 +191,8 @@ export function createLibsqlStore(options: LibsqlStoreOptions): LibsqlStore {
     workflowTrees: workflowTreeFacade((method, input) => { available(); return workflowTreeDatabase.execute(method, input); }),
     workflowTreeDiscovery: workflowTreeDiscoveryFacade((method, input) => { available(); return workflowTreeDatabase.discover(method, input); }),
     memory: memoryIndexFacade((method, input) => { available(); return memoryDatabase.execute(method, input); }),
+    threads: threadFacade((method, input) => { available(); return conversationDatabase.thread(method, input); }),
+    runCheckpoints: runCheckpointFacade((method, input) => { available(); return conversationDatabase.checkpoint(method, input); }),
     initialize: async () => {
       available(false);
       if (!initializePromise) {

@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createModels, createRuntime, defineAgent, z, type JsonObject, type ModelRequest } from 'mayura';
+import { createModels, createRuntime, defineAgent, z, type JsonObject, type ModelHistoryMessage, type ModelRequest } from 'mayura';
 import { conformanceTools, modelAdapterConformance, type ModelAdapterHarness, type ModelScenario } from 'mayura/testing';
 import { bedrock, catalog } from '../src/index.js';
 
@@ -115,6 +115,74 @@ describe('@mayurajs/provider-bedrock', () => {
     expect(messages[2]).toEqual({ role: 'user', content: [{ toolResult: { toolUseId: 'tooluse_1', content: [{ text: '{"status":"shipped"}' }] } }] });
     await expect(bedrock({ region: 'us-east-1', credentials, fetch: transport(final) }).model('other', settings).generate(request({ continuation: first.continuation! })))
       .rejects.toMatchObject({ reason: 'invalid_response' });
+  });
+
+  describe('a conversation history', () => {
+    const history: ModelHistoryMessage[] = [
+      { role: 'user', content: { message: 'Where is A-1?' } },
+      { role: 'assistant', calls: [{ id: 'mayura-1', toolId: 'orders.lookup', input: { orderId: 'A-1' } }, { id: 'h/2', toolId: 'orders.cancel', input: { orderId: 'A-1' } }] },
+      { role: 'tool', callId: 'mayura-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool', callId: 'h/2', toolId: 'orders.cancel', result: 'too late' },
+      { role: 'assistant', output: { answer: 'It has shipped.' } },
+      { role: 'assistant', output: 'Anything else?' },
+    ];
+    // The call id Bedrock would refuse ('h/2') gets one no other call has; a tool only the history used is named too.
+    const rendered = [
+      { role: 'user', content: [{ text: '{"message":"Where is A-1?"}' }] },
+      { role: 'assistant', content: [{ toolUse: { toolUseId: 'mayura-1', name: 'orders_lookup', input: { orderId: 'A-1' } } }, { toolUse: { toolUseId: 'mayura-2', name: 'orders_cancel', input: { orderId: 'A-1' } } }] },
+      { role: 'user', content: [{ toolResult: { toolUseId: 'mayura-1', content: [{ text: '{"status":"shipped"}' }] } }, { toolResult: { toolUseId: 'mayura-2', content: [{ text: '"too late"' }] } }] },
+      // Two earlier answers in a row share one message, as Converse needs; a string output is still JSON.
+      { role: 'assistant', content: [{ text: '{"answer":"It has shipped."}' }, { text: '"Anything else?"' }] },
+    ];
+    const run = (seen: Seen, scenario: Parameters<typeof transport>[0], overrides: Partial<ModelRequest>) =>
+      bedrock({ region: 'us-east-1', credentials, fetch: transport(scenario, seen) }).model('m', settings).generate(request({ tools, history, ...overrides }));
+
+    it('declares the capability and sends every kind of history message first, in order, then the run', async () => {
+      expect(bedrock({ region: 'us-east-1', credentials }).model('m', settings).capabilities.history).toBe(true);
+      const seen: Seen = [];
+      await run(seen, final, { messages: [{ role: 'user', content: 'And when?' }] });
+      expect(seen[0]!.body['messages']).toEqual([...rendered, { role: 'user', content: [{ text: '"And when?"' }] }]);
+      expect(((seen[0]!.body['toolConfig'] as JsonObject)['tools'] as { toolSpec: JsonObject }[]).map(tool => tool.toolSpec['name'])).toEqual(['orders_lookup']);
+      // The history counts toward the request's size limit.
+      const large: Seen = [];
+      await expect(bedrock({ region: 'us-east-1', credentials, maxRequestBytes: 1_000, fetch: transport(final, large) }).model('m', settings)
+        .generate(request({ history: [{ role: 'user', content: 'x'.repeat(2_000) }, { role: 'assistant', output: 'ok' }] }))).rejects.toThrow();
+      expect(large).toHaveLength(0);
+    });
+
+    it('alternates user and assistant: a history that ends with results or starts with an answer is joined or led by a user message', async () => {
+      const seen: Seen = [];
+      await run(seen, final, { history: [history[4]!, ...history.slice(0, 4)] });
+      expect(seen[0]!.body['messages']).toEqual([
+        { role: 'user', content: [{ text: 'null' }] }, { role: 'assistant', content: [{ text: '{"answer":"It has shipped."}' }] },
+        rendered[0], rendered[1], { role: 'user', content: [...rendered[2]!.content, { text: '"hi"' }] },
+      ]);
+    });
+
+    it('gives the history\'s calls and results as JSON text to an agent without tools, which Bedrock needs', async () => {
+      const seen: Seen = [];
+      await run(seen, final, { tools: [] });
+      expect(seen[0]!.body['toolConfig']).toBeUndefined();
+      expect((seen[0]!.body['messages'] as JsonObject[]).slice(1, 3)).toEqual([
+        { role: 'assistant', content: [{ text: JSON.stringify({ toolCalls: [{ id: 'mayura-1', name: 'orders_lookup', input: { orderId: 'A-1' } }, { id: 'h/2', name: 'orders_cancel', input: { orderId: 'A-1' } }] }) }] },
+        { role: 'user', content: [{ text: JSON.stringify({ toolResult: { id: 'mayura-1', name: 'orders_lookup', result: { status: 'shipped' } } }) },
+          { text: JSON.stringify({ toolResult: { id: 'h/2', name: 'orders_cancel', result: 'too late' } }) }] },
+      ]);
+    });
+
+    it('sends the history first on the next call of a tool loop, with the run\'s own reasoning', async () => {
+      const reasoning = { reasoningContent: { reasoningText: { text: 'Look it up.', signature: 'sig-1' } } };
+      const toolUse = { toolUse: { toolUseId: 'tooluse_1', name: 'orders_lookup', input: { orderId: 'A-2' } } };
+      const first = await run([], { kind: 'raw', body: converse([reasoning, toolUse], 'tool_use', usage(10, 5)) }, {});
+      const seen: Seen = [];
+      await run(seen, final, { continuation: first.continuation!, messages: [{ role: 'user', content: 'hi' },
+        { role: 'assistant', calls: [{ id: 'tooluse_1', toolId: 'orders.lookup', input: { orderId: 'A-2' } }] },
+        { role: 'tool', callId: 'tooluse_1', toolId: 'orders.lookup', result: { status: 'new' } }] });
+      expect(seen[0]!.body['messages']).toEqual([...rendered, { role: 'user', content: [{ text: '"hi"' }] }, { role: 'assistant', content: [reasoning, toolUse] },
+        { role: 'user', content: [{ toolResult: { toolUseId: 'tooluse_1', content: [{ text: '{"status":"new"}' }] } }] }]);
+      // The continuation still counts this run's own turns alone.
+      await expect(run([], final, { continuation: first.continuation! })).rejects.toMatchObject({ reason: 'invalid_response' });
+    });
   });
 
   it('refuses configuration it cannot use', () => {

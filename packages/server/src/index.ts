@@ -1,12 +1,22 @@
-import { freezeJson, jsonValue, MayuraError, MEDIA_TYPES, mediaFromBase64, mediaUrl, type JsonObject, type JsonValue, type Media, type MediaType, type Outcome, type Permissions, type RunEvent, type RunHandle, type Scope } from '@mayura/core';
-import { admitMedia } from '@mayura/core/host';
+import { authorizationCursors, serverAuthorizationRoute, type ServerAuthorizationOptions } from './authorization.js';
+export type { ServerAuthorizationOptions } from './authorization.js';
+import { createThreadCompactionService, type ServerThreadCompactionOptions } from './thread-compaction.js';
+export type { ServerThreadCompactionOptions, ServerThreadCompactionCommand } from './thread-compaction.js';
+import { createApprovalReconciliation, type ApprovalReconciliationOptions, type ClaimedApprovalRequest, type ReconcileClaimedApprovalRequest, type ClaimedApprovalView, type ApprovalReconciliationResult } from './approval-reconciliation.js';
+export type { ApprovalReconciliationOptions, ClaimedApprovalRequest, ReconcileClaimedApprovalRequest, ClaimedApprovalView, ApprovalReconciliationResult } from './approval-reconciliation.js';
+import { createRecoveryController, type ConversationRecoveryOptions, type ConversationRecoveryOutcome, type ConversationRecoveryRequest, type ConversationRecoveryReport } from './conversation-recovery.js';
+export type { ConversationRecoveryOptions, ConversationRecoveryOutcome, ConversationRecoveryRequest, ConversationRecoveryReport } from './conversation-recovery.js';
+import { createAuthorizer, type AuthorizationResourceKind, type AuthorizationAuditSnapshot, freezeJson, jsonValue, MayuraError, MEDIA_TYPES, mediaFromBase64, mediaUrl, type JsonObject, type JsonValue, type Media, type MediaType, type Outcome, type Permissions, type RunEvent, type RunHandle, type Scope } from '@mayura/core';
+import { admitMedia, sha256Hex } from '@mayura/core/host';
+import type { RunCheckpointStore } from '@mayura/storage-contracts';
 import { inspectorAsset } from './inspector.js';
+import { createThreads, runInThread, type Threads, type ThreadsOptions } from '@mayura/threads';
 import { assertAgent, createRuntime, type AgentDefinition, type Runtime, type RuntimeLimits } from '@mayura/runtime';
 
 export interface ServerIdentity {
   readonly scope: Scope;
   readonly agentIds: readonly string[];
-  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control' | 'workflows:fleet' | 'workflows:migrate')[];
+  readonly capabilities: readonly ('runs:read' | 'runs:submit' | 'runs:cancel' | 'runs:approve' | 'runs:resume' | 'threads:read' | 'threads:write' | 'threads:delete' | 'threads:compact' | 'threads:import' | 'operations:read' | 'humans:read' | 'humans:respond' | 'workflows:read' | 'workflows:control' | 'workflows:fleet' | 'workflows:migrate')[];
   readonly expiresAtMs: number;
 }
 export interface HealthCheck {
@@ -127,7 +137,7 @@ export interface SubmissionJournal {
   readonly claim: (input: { readonly owner: string; readonly key: string; readonly digest: string; readonly signal: AbortSignal })
     => Promise<{ readonly status: 'claimed' } | { readonly status: 'existing'; readonly digest: string }>;
 }
-export type RunRecordStatus = 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
+export type RunRecordStatus = 'running' | 'waiting' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
 /** One durable agent run as every replica sees it. `snapshot` is the run's inspection; `outcome` is present once it ended. */
 export interface RunRecordView {
   readonly runId: string; readonly agentId: string; readonly replicaId: string; readonly status: RunRecordStatus;
@@ -155,6 +165,9 @@ export interface RunRecordStore {
   update(input: { readonly owner: string; readonly runId: string; readonly replicaId: string; readonly events: readonly RunEvent[];
     readonly snapshot: JsonObject; readonly leaseExpiresAtMs: number; readonly outcome?: JsonObject; readonly signal: AbortSignal })
     : Promise<{ readonly status: 'written'; readonly cancelRequested: boolean } | { readonly status: 'lost' }>;
+  /** Atomically transfer a waiting record to a resuming replica; required with threads and durable run records. */
+  resume?(input: { readonly owner: string; readonly runId: string; readonly replicaId: string; readonly leaseExpiresAtMs: number;
+    readonly signal: AbortSignal }): Promise<RunRecordView | null>;
   read(input: { readonly owner: string; readonly runId: string; readonly signal: AbortSignal }): Promise<RunRecordView | null>;
   /** Recorded events after a run sequence, in order; a missing range is one `events.gap`. */
   events(input: { readonly owner: string; readonly runId: string; readonly after: number; readonly limit: number; readonly signal: AbortSignal }): Promise<readonly RunEvent[]>;
@@ -182,6 +195,8 @@ export interface AgentServerOptions {
    */
   readonly mounted?: boolean;
   readonly agents: readonly RegisteredAgent[];
+  /** Opt-in fine-grained HTTP enforcement in addition to token capabilities and scoped adapters. Server owns its lifecycle. */
+  readonly authorization?: ServerAuthorizationOptions;
   /** Expose only a content-free process liveness response at GET /healthz. */
   readonly publicLiveness?: boolean;
   /** Serve the read-only local inspector at GET /inspector. Its static assets contain no data; every read is authenticated. */
@@ -214,6 +229,14 @@ export interface AgentServerOptions {
    * `outcome_unknown` after its lease instead of disappearing. They also make submission idempotency durable.
    */
   readonly runRecords?: RunRecordStore;
+  /** Scoped conversation routes, thread-bound submissions and durable approval checkpoints. Initialize storage first. */
+  /** Explicit service policy and optional process scheduler for saved approvals and recording outboxes. */
+  readonly conversationRecovery?: ConversationRecoveryOptions;
+  /** Host-only operator controls for expired claimed approvals. */
+  readonly approvalReconciliation?: ApprovalReconciliationOptions;
+  /** Opt-in paid summarization with host-pinned agents, explicit grants and per-command ceilings. */
+  readonly threadCompaction?: ServerThreadCompactionOptions;
+  readonly threads?: { readonly store: ThreadsOptions['store'] & { readonly runCheckpoints: RunCheckpointStore } };
   /**
    * Where an agent run executes. `'background'` (the default): the run keeps going in this process after
    * `POST /v1/runs` answers 202. `'request'`: the run finishes, and its outcome is recorded, before that 202 is sent, so
@@ -253,7 +276,18 @@ export interface AgentServerOptions {
     readonly streamHeartbeatMs?: number;
   };
 }
-export interface AgentServer { fetch(request: Request): Promise<Response>; close(): Promise<void> }
+export interface AgentServer {
+  /** Host-only audit counters; no resource or principal data. Null when authorization is disabled. */
+  inspectAuthorizationAudit(): AuthorizationAuditSnapshot | null;
+  /** Drain admitted audit deliveries to their deadlines before host shutdown. */
+  flushAuthorizationAudit(): Promise<void>;
+  fetch(request: Request): Promise<Response>;
+  /** Trusted host/cron entry point, never an HTTP/browser route. Requires conversationRecovery configuration. */
+  recoverConversations(options?: ConversationRecoveryRequest): Promise<ConversationRecoveryReport>;
+  inspectClaimedApproval(request: ClaimedApprovalRequest): Promise<ClaimedApprovalView>;
+  reconcileClaimedApproval(request: ReconcileClaimedApprovalRequest): Promise<ApprovalReconciliationResult>;
+  close(): Promise<void>;
+}
 /** A submission another replica already started: answered with its run id. */
 type Replay = { readonly replay: string; readonly digest: string };
 interface Entry {
@@ -261,6 +295,9 @@ interface Entry {
   readonly handle: RunHandle<unknown>; readonly runtime: Runtime;
   readonly runtimeKey: string; readonly submissionKey: string;
   outcome?: Outcome<unknown>;
+  /** Run event sequence before this replica resumed the run. */
+  eventOffset?: number;
+  observedAfter?: number;
   finished?: boolean;
   /** With run records: settles once the owner has recorded the outcome (or lost the run, or the server closed). */
   persisted?: Promise<void>;
@@ -280,6 +317,12 @@ class HttpFailure extends Error {
  * data, credentials or adapter text: only what happened and what to do. docs/guides/server-and-client.md lists them.
  */
 const errorMessages = Object.freeze({
+  AUTHORIZATION_DENIED: 'The operation is not authorized.',
+  THREAD_NOT_FOUND: 'No thread with this id is visible in this access token scope.',
+  THREAD_CONFLICT: 'The thread changed or has an unfinished turn. Read it again before retrying.',
+  CONVERSATION_UNAVAILABLE: 'Conversation storage is unavailable. Retry shortly.',
+  TOOL_CONTINUATION_CONFLICT: 'The external result checkpoint changed, expired or was already consumed. Inspect the existing run; do not repeat execution.',
+  APPROVAL_CONFLICT: 'The approval expired, was already answered, or no longer matches the waiting run. Read the run again.',
   AUTH_REQUIRED: 'Send an Authorization: Bearer <token> header with an access token.',
   AUTH_INVALID: 'The access token was not accepted. Get a new token and try again.',
   AUTH_EXPIRED: 'The identity for this access token has expired. Get a new token and try again.',
@@ -288,7 +331,7 @@ const errorMessages = Object.freeze({
   IDENTITY_INVALID: 'The server\'s authenticate callback returned an identity Mayura cannot use: principalId, projectId and agent ids must be 1-128 letters, digits, ".", "_", "/" or "-" starting with a letter or digit, capabilities must be known, and expiresAtMs must be in the future. This is a server configuration problem.',
   CAPABILITY_REQUIRED: 'The access token lacks the capability this request needs (see capability).',
   ORIGIN_DENIED: 'Browser requests from this origin are not allowed. Add the page\'s exact origin to the server\'s allowedOrigins.',
-  PREFLIGHT_DENIED: 'The CORS preflight asked for a method or header this API does not accept. Use GET or POST with only Authorization, Content-Type and Idempotency-Key.',
+  PREFLIGHT_DENIED: 'The CORS preflight asked for a method or header this API does not accept. Use GET or POST, or DELETE for a thread, with only Authorization, Content-Type and Idempotency-Key.',
   INVALID_DESTINATION: 'The request URL\'s origin is not this server\'s publicOrigin. Send requests to the public origin, or set mounted: true when a trusted proxy or framework routes requests to this handler.',
   INVALID_QUERY: 'The query string has a parameter this route does not accept, or repeats one.',
   INVALID_CURSOR: 'The after or limit query parameter is invalid. Use a cursor the server returned and a limit from 1 to 100.',
@@ -330,6 +373,9 @@ const errorMessages = Object.freeze({
   WORKFLOW_TRANSPORT_INVALID: 'The server\'s workflow adapter returned data Mayura could not validate. This is a server problem.',
   RESPONSE_TOO_LARGE: 'The response would be larger than the server allows (maxResponseBytes).',
   OBSERVATION_FAILED: 'The server could not follow this run\'s events from the requested position. Read the run, then reconnect from a sequence it has sent.',
+  THREAD_COMPACTION_NOT_FOUND: 'No such compaction command in this thread.',
+  THREAD_COMPACTION_LIMIT: 'Compaction exceeded an admission or source limit. Inspect the command before taking further action.',
+  THREAD_COMPACTION_CANCELLED: 'Compaction was cancelled. Inspect the command to determine whether a summary committed.',
   INTERNAL_ERROR: 'The server failed unexpectedly. The request may or may not have taken effect: retry with the same idempotency key or command id.',
 } satisfies Record<string, string>);
 export type ServerErrorCode = keyof typeof errorMessages;
@@ -337,12 +383,12 @@ export type ServerErrorCode = keyof typeof errorMessages;
 const retryable: Readonly<Partial<Record<ServerErrorCode, number>>> = Object.freeze({
   AUTH_LIMIT: 1_000, REQUEST_LIMIT: 1_000, STREAM_LIMIT: 1_000, RUN_LIMIT: 1_000, RUNTIME_LIMIT: 1_000, HUMAN_LIMIT: 1_000, WORKFLOW_LIMIT: 1_000,
   SUBMISSION_IN_PROGRESS: 1_000, AUTH_UNAVAILABLE: 2_000, SERVER_CLOSED: 1_000, SERVICE_UNAVAILABLE: 2_000, SUBMISSION_JOURNAL_UNAVAILABLE: 2_000,
-  RUN_RECORDS_UNAVAILABLE: 2_000, HUMAN_UNAVAILABLE: 2_000, WORKFLOW_UNAVAILABLE: 2_000,
+  CONVERSATION_UNAVAILABLE: 2_000, RUN_RECORDS_UNAVAILABLE: 2_000, HUMAN_UNAVAILABLE: 2_000, WORKFLOW_UNAVAILABLE: 2_000,
 });
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
-const capabilities: readonly ServerIdentity['capabilities'][number][] = Object.freeze(['runs:read', 'runs:submit', 'runs:cancel', 'operations:read',
+const capabilities: readonly ServerIdentity['capabilities'][number][] = Object.freeze(['runs:read', 'runs:submit', 'runs:cancel', 'runs:approve', 'runs:resume', 'threads:read', 'threads:write', 'threads:delete', 'threads:compact', 'threads:import', 'operations:read',
   'humans:read', 'humans:respond', 'workflows:read', 'workflows:control', 'workflows:fleet', 'workflows:migrate']);
-const runStatuses = new Set(['running', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
+const runStatuses = new Set(['running', 'waiting', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown']);
 /** Replica clocks may disagree by up to this much (or one lease, if shorter); a lease counts as lapsed only after it. */
 const maxLeaseSkewMs = 5_000;
 const commandFields = 'commandId must be 1-128 letters, digits, ".", "_", "/" or "-" starting with a letter or digit, and revision a positive integer.';
@@ -690,10 +736,55 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(item.data)));
     return { mediaType: item.mediaType, sha256: [...digest].map(byte => byte.toString(16).padStart(2, '0')).join(''), name: item.name ?? null };
   }));
-  const toolCatalog = Object.freeze([...registry.values()].flatMap(config => config.agent.tools.map(tool => Object.freeze({
+  const toolCatalog = Object.freeze([...registry.values()].flatMap(config => [...config.agent.tools.map(tool => Object.freeze({
     agentId: config.agent.id, agentVersion: config.agent.version, id: tool.id, version: tool.version,
     effects: tool.effects, capabilities: tool.capabilities, timeoutMs: tool.timeoutMs, costMicros: tool.costMicros,
-  }))).sort((left, right) => left.agentId.localeCompare(right.agentId) || left.id.localeCompare(right.id) || left.version.localeCompare(right.version)));
+  })), ...(config.agent.handoffs ?? []).map(edge => Object.freeze({
+    agentId: config.agent.id, agentVersion: config.agent.version, id: `handoff.${edge.agent.id}`, version: edge.agent.version,
+    effects: 'none' as const, capabilities: Object.freeze([`agent:${edge.agent.id}`]),
+    timeoutMs: config.limits?.maxDurationMs ?? 60_000, costMicros: 0,
+  }))]).sort((left, right) => left.agentId.localeCompare(right.agentId) || left.id.localeCompare(right.id) || left.version.localeCompare(right.version)));
+  const authorization = options.authorization === undefined ? undefined : createAuthorizer(options.authorization);
+  const cursorCodec = options.authorization === undefined ? undefined : authorizationCursors(options.authorization);
+  const readCursor = async (cursor: string | null, identity: ServerIdentity, context: string, signal: AbortSignal): Promise<string | null> => {
+    if (!cursorCodec) return cursor;
+    try { return await bounded(cursorCodec.decode(cursor, identity, context), signal); } catch { throw new HttpFailure(400, 'INVALID_CURSOR'); }
+  };
+  const writeCursor = async (cursor: string | null, identity: ServerIdentity, context: string, signal: AbortSignal): Promise<string | null> => {
+    if (!cursorCodec) return cursor;
+    try { return await bounded(cursorCodec.encode(cursor, identity, context), signal); } catch { throw new HttpFailure(503, 'SERVICE_UNAVAILABLE'); }
+  };
+  const access = async (identity: ServerIdentity, kind: AuthorizationResourceKind, id: string, action: string, signal: AbortSignal): Promise<boolean> => {
+    assertActive(signal);
+    if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
+    if (identity.expiresAtMs <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
+    if (!authorization) return true;
+    const owned = action !== 'list' && ['thread', 'run', 'workflow', 'human_request'].includes(kind);
+    const decision = await authorization.authorize(identity.scope, action, { kind, id, scope: identity.scope,
+      ...(owned ? { ownerId: identity.scope.principalId } : {}) }, { signal });
+    assertActive(signal);
+    if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
+    if (identity.expiresAtMs <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
+    return decision.effect === 'allow';
+  };
+  const authorize = async (identity: ServerIdentity, kind: AuthorizationResourceKind, id: string, action: string, signal: AbortSignal): Promise<void> => {
+    if (!await access(identity, kind, id, action, signal)) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
+  };
+  const filterAuthorized = async <T>(items: readonly T[], identity: ServerIdentity, kind: AuthorizationResourceKind,
+    id: (item: T) => string, signal: AbortSignal): Promise<T[]> => {
+    if (!authorization) return [...items];
+    const visible: T[] = [];
+    for (const item of items) if (await access(identity, kind, id(item), 'read', signal)) visible.push(item);
+    return visible;
+  };
+  const conversationStore = options.threads?.store;
+  if (options.threads !== undefined && (!conversationStore || typeof conversationStore.threads?.recording !== 'function'
+    || typeof conversationStore.runCheckpoints?.get !== 'function')) throw new MayuraError('INVALID_CONFIG', 'threads requires initialized thread and run-checkpoint storage.');
+  const compaction = createThreadCompactionService(options.threadCompaction, conversationStore, id => registry.has(id), authorization);
+  const scopedThreads = (scope: Scope, signal?: AbortSignal): Threads => createThreads({ store: conversationStore!, scope, ...(authorization === undefined ? {} : { authorization }), ...(signal === undefined ? {} : { signal }),
+    permissions: { allow: ['thread:read', 'thread:write', 'thread:delete', 'thread:import'] } });
+  const resumeOffsets = new Map<string, number>();
+  const runtimeThreads = new Map<string, Threads>();
   const runtimes = new Map<string, Runtime>();
   const runs = new Map<string, Entry>();
   // Same-process concurrent submissions share one journal claim and one run.
@@ -710,10 +801,18 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const supplied = options.runRecords as unknown as Record<string, unknown> | null;
     if (supplied === null || typeof supplied !== 'object' || names.some(name => typeof supplied[name] !== 'function'))
       throw new Error('Run records require claim, release, start, update, read, events, requestCancel and abandon functions.');
-    return Object.freeze(Object.fromEntries(names.map(name => [name, (supplied[name] as (...values: unknown[]) => unknown).bind(supplied)])) as unknown as RunRecordStore);
+    if (conversationStore && typeof supplied['resume'] !== 'function') throw new MayuraError('INVALID_CONFIG', 'Thread approvals with durable run records require runRecords.resume.');
+    return Object.freeze({ ...Object.fromEntries(names.map(name => [name, (supplied[name] as (...values: unknown[]) => unknown).bind(supplied)])),
+      ...(typeof supplied['resume'] === 'function' ? { resume: supplied['resume'].bind(supplied) } : {}) } as unknown as RunRecordStore);
   })();
   const runExecution = options.runExecution ?? 'background';
   if (runExecution !== 'background' && runExecution !== 'request') throw new MayuraError('INVALID_CONFIG', "runExecution must be 'background' or 'request'.");
+  if (options.conversationRecovery !== undefined && (!conversationStore || !runRecords || typeof conversationStore.runCheckpoints.scan !== 'function'))
+    throw new MayuraError('INVALID_CONFIG', 'Conversation recovery requires threads, runRecords and checkpoint scan support.');
+  if (options.approvalReconciliation !== undefined && (!conversationStore || !runRecords || typeof conversationStore.runCheckpoints.reconcile !== 'function'))
+    throw new MayuraError('INVALID_CONFIG', 'Approval reconciliation requires threads, runRecords and atomic checkpoint reconciliation support.');
+  if (runExecution === 'request' && options.conversationRecovery?.intervalMs !== undefined)
+    throw new MayuraError('INVALID_CONFIG', 'Request-mode conversation recovery must be invoked by a trusted cron/job, without a process interval.');
   if (runExecution === 'request' && !runRecords) throw new MayuraError('INVALID_CONFIG', "runExecution 'request' requires runRecords, so any instance can serve a run's result and events.");
   // In request mode a submission lasts as long as the longest run it may start, plus time to record the outcome.
   const submissionTimeoutMs = runExecution === 'request'
@@ -739,7 +838,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     if (remaining > 0) { retained.set(entry.runtimeKey, remaining); return; }
     retained.delete(entry.runtimeKey);
     const runtime = runtimes.get(entry.runtimeKey);
-    if (runtime === entry.runtime) { runtimes.delete(entry.runtimeKey); void Promise.resolve().then(() => runtime.close()).catch(() => undefined); }
+    if (runtime === entry.runtime) { runtimes.delete(entry.runtimeKey); runtimeThreads.delete(entry.runtimeKey); void Promise.resolve().then(() => runtime.close()).catch(() => undefined); }
   };
   /** Release the oldest finished runs until a new run (and, when needed, a new runtime) fits. Active runs are never released. */
   const makeRoom = (runtimeKey: string): void => {
@@ -811,7 +910,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       exact(raw, ['scope', 'agentIds', 'capabilities', 'expiresAtMs']); exact(scope, ['principalId', 'projectId']);
       if (typeof scope['principalId'] !== 'string' || !identifier.test(scope['principalId']) || typeof scope['projectId'] !== 'string' || !identifier.test(scope['projectId'])
         || !Array.isArray(raw['agentIds']) || raw['agentIds'].length > 256 || raw['agentIds'].some(id => typeof id !== 'string' || !identifier.test(id))
-        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > 10 || raw['capabilities'].some(cap => !(capabilities as readonly string[]).includes(String(cap)))
+        || !Array.isArray(raw['capabilities']) || raw['capabilities'].length > capabilities.length || raw['capabilities'].some(cap => !(capabilities as readonly string[]).includes(String(cap)))
         || typeof raw['expiresAtMs'] !== 'number' || !Number.isSafeInteger(raw['expiresAtMs'])) throw new Error();
     } catch { throw new HttpFailure(500, 'IDENTITY_INVALID'); }
     if ((raw['expiresAtMs'] as number) <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
@@ -857,9 +956,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       || raw['runId'] !== runId || typeof raw['agentId'] !== 'string' || !identifier.test(raw['agentId']) || typeof raw['replicaId'] !== 'string'
       || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['replicaId']) || typeof status !== 'string' || !runStatuses.has(status)
       || !Number.isSafeInteger(raw['leaseExpiresAtMs']) || typeof raw['cancelRequested'] !== 'boolean' || !Number.isSafeInteger(raw['lastSequence']) || (raw['lastSequence'] as number) < 0
-      || snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot) || Object.keys(snapshot).some(key => !['id', 'status', 'budget', 'evidence'].includes(key))
+      || snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot) || Object.keys(snapshot).some(key => !['id', 'status', 'budget', 'evidence', 'approval', 'toolWait'].includes(key))
       || snapshot['id'] !== runId || snapshot['status'] !== status
-      || (status === 'running') !== (outcome === undefined)
+      || (['running', 'waiting'].includes(status)) !== (outcome === undefined)
       || (outcome !== undefined && (outcome === null || typeof outcome !== 'object' || Array.isArray(outcome) || outcome['status'] !== status))) throw new HttpFailure(503, 'RUN_RECORDS_UNAVAILABLE');
     return raw as unknown as RunRecordView;
   };
@@ -867,8 +966,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const readRecord = async (owner: string, runId: string, signal: AbortSignal): Promise<RunRecordView | null> => {
     const records = runRecords!;
     let record = recordView(await recorded(() => records.read({ owner, runId, signal }), signal), runId);
-    if (record?.status === 'running' && record.replicaId !== replicaId && record.leaseExpiresAtMs < Date.now() - leaseSkewMs) {
-      record = recordView(await recorded(() => records.abandon({ owner, runId, nowMs: Date.now() - leaseSkewMs, signal }), signal), runId);
+    if (record && ['running', 'waiting'].includes(record.status) && record.replicaId !== replicaId && record.leaseExpiresAtMs < Date.now() - leaseSkewMs) {
+      const checkpoint = conversationStore ? await recorded(() => conversationStore.runCheckpoints.get({ runId }), signal) : undefined;
+      if (!checkpoint || !checkpoint.body['scope'] || canonical(checkpoint.body['scope']) !== owner) {
+        record = recordView(await recorded(() => records.abandon({ owner, runId, nowMs: Date.now() - leaseSkewMs, signal }), signal), runId);
+      }
     }
     return record;
   };
@@ -903,13 +1005,19 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           if (!pending) { pending = iterator.next(); pending.catch(() => {}); }
           const next = await Promise.race([pending, new Promise<'beat'>(resolve => { beat = setTimeout(resolve, limits.streamHeartbeatMs, 'beat'); })]);
           if (ended) return;
+          if (authorization) {
+            const path = new URL(request.url).pathname; const runId = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(path)?.[1];
+            if (!runId) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
+            await authorize(identity, 'run', runId, 'read', controller.signal);
+            if (ended) return;
+          }
           if (next === 'beat') { value.enqueue(encoder.encode(': keep-alive\n\n')); return; }
           pending = undefined;
           if (next.done) { onDone?.(); finish(); return; }
           const event = JSON.stringify(jsonValue(next.value, { maxBytes: 16_384 }));
           value.enqueue(encoder.encode(`id: ${next.value.sequence}\nevent: ${next.value.type}\ndata: ${event}\n\n`));
         } catch (error) {
-          const code: ServerErrorCode = error instanceof HttpFailure && error.code === 'RUN_RECORDS_UNAVAILABLE' ? error.code : 'OBSERVATION_FAILED';
+          const code: ServerErrorCode = error instanceof HttpFailure && ['RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED'].includes(error.code) ? error.code : 'OBSERVATION_FAILED';
           if (!ended) value.enqueue(encoder.encode(`event: stream.error\ndata: ${JSON.stringify({ code, message: errorMessages[code] })}\n\n`));
           finish();
         } finally { clearTimeout(beat); }
@@ -935,7 +1043,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       }
       if (page.length === 256) continue;
       const record = await readRecord(owner, runId, signal);
-      if (!record || (record.status !== 'running' && record.lastSequence <= cursor)) return;
+      if (!record || (!['running', 'waiting'].includes(record.status) && record.lastSequence <= cursor)) return;
       if (page.length === 0) await new Promise<void>(resolve => {
         const done = (): void => { clearTimeout(wait); signal.removeEventListener('abort', done); resolve(); };
         const wait = setTimeout(done, limits.runRecordPollMs); signal.addEventListener('abort', done, { once: true });
@@ -947,7 +1055,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const inspection = (entry: Entry): JsonObject => {
     const view = entry.runtime.inspect(entry.handle);
     // A snapshot that is not JSON is an internal failure, not the caller's bad request.
-    return jsonValue({ id: view.id, status: view.status, budget: view.budget, evidence: view.evidence }, { maxBytes: 4_194_304 }) as JsonObject;
+    return jsonValue({ id: view.id, status: view.status, budget: view.budget, evidence: view.evidence, ...(view.approval ? { approval: view.approval } : {}), ...(view.toolWait ? { toolWait: view.toolWait } : {}) }, { maxBytes: 4_194_304 }) as JsonObject;
   };
   /** In-flight owner loops; close() lets them record final outcomes for a bounded time. */
   const persisters = new Set<Promise<void>>(); const persisterStop = new AbortController();
@@ -958,10 +1066,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    */
   const persist = (entry: Entry): Promise<void> => {
     const records = runRecords!; const runId = entry.handle.id; const owner = entry.owner;
+    const observer = new AbortController();
     const buffer: RunEvent[] = []; let observed = false; let wake: (() => void) | undefined;
     const notify = (): void => { const resume = wake; wake = undefined; resume?.(); };
     void (async () => {
-      try { for await (const event of entry.handle.observe({ after: 0, signal: persisterStop.signal })) { buffer.push(event); notify(); } }
+      try { for await (const event of entry.handle.observe({ after: entry.observedAfter ?? 0, signal: observer.signal })) { buffer.push(entry.eventOffset ? { ...event, sequence: event.sequence + entry.eventOffset,
+        ...(event.type === 'events.gap' ? { metadata: { ...event.metadata, from: Number(event.metadata['from']) + entry.eventOffset, to: Number(event.metadata['to']) + entry.eventOffset } } : {}) } : event); notify(); } }
       catch { /* The final write still records the outcome; readers see the missing events as a gap. */ }
       finally { observed = true; notify(); }
     })();
@@ -982,16 +1092,21 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
             const result = await call(signal => records.update({ owner, runId, replicaId, events, snapshot: inspection(entry),
               leaseExpiresAtMs: now + limits.runLeaseMs, ...(final ? { outcome: object(entry.outcome, 4_194_304) } : {}), signal })) as unknown;
             const written = result as { status?: unknown; cancelRequested?: unknown } | null;
-            if (written?.status === 'lost') { entry.lost = true; entry.handle.cancel(); return; }
+            if (written?.status === 'lost') { entry.lost = true; if (entry.runtime.inspect(entry.handle).status !== 'waiting') entry.handle.cancel(); return; }
             if (written?.status !== 'written' || typeof written.cancelRequested !== 'boolean') throw new Error('invalid');
+            if (events.length > 0) entry.observedAfter = events[events.length - 1]!.sequence - (entry.eventOffset ?? 0);
             buffer.splice(0, events.length); lastWrite = now; failures = 0;
             if (written.cancelRequested) entry.handle.cancel();
-            if (final) return;
+            if (final || (closed && buffer.length === 0 && inspection(entry)['status'] === 'waiting')) return;
+            if (runExecution === 'request' && buffer.length === 0 && inspection(entry)['status'] === 'waiting' && conversationStore) {
+              const checkpoint = await call(() => conversationStore.runCheckpoints.get({ runId }));
+              if (checkpoint) return;
+            }
             if (buffer.length > 0 || (observed && entry.finished)) continue;
           } else {
             const record = recordView(await call(signal => records.read({ owner, runId, signal })), runId);
             if (!record) throw new Error('missing');
-            if (record.replicaId !== replicaId || record.status !== 'running') { entry.lost = true; entry.handle.cancel(); return; }
+            if (record.replicaId !== replicaId || !['running', 'waiting'].includes(record.status)) { entry.lost = true; if (entry.runtime.inspect(entry.handle).status !== 'waiting') entry.handle.cancel(); return; }
             if (record.cancelRequested) entry.handle.cancel();
             failures = 0;
           }
@@ -1005,19 +1120,190 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         });
       }
     })();
-    persisters.add(task); void task.finally(() => { persisters.delete(task); });
+    persisters.add(task); void task.finally(() => { observer.abort(); persisters.delete(task); });
     return task;
   };
   /** A 409 for a workflow command; with read access the caller also learns the run's current revision. */
   const workflowConflict = async (identity: ServerIdentity, runId: string, signal: AbortSignal): Promise<HttpFailure> => {
     if (!workflowViews || !identity.capabilities.includes('workflows:read') || signal.aborted) return new HttpFailure(409, 'WORKFLOW_CONFLICT');
     try {
+      await authorize(identity, 'workflow', runId, 'read', signal);
       const item = await bounded(Promise.resolve().then(() => workflowViews.inspect(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, runId, signal }))), signal);
       if (item !== null) return new HttpFailure(409, 'WORKFLOW_CONFLICT', { currentRevision: workflowRecord(item, runId).revision });
     } catch { /* The conflict stands without the hint. */ }
     return new HttpFailure(409, 'WORKFLOW_CONFLICT');
   };
 
+  const runtimeFor = (owner: string, agentId: string, scope: Scope): Runtime => {
+    const key = JSON.stringify([owner, agentId]); const existing = runtimes.get(key); if (existing) return existing;
+    makeRoom(key);
+    if (runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
+    const config = registry.get(agentId)!; const threads = conversationStore ? scopedThreads(scope) : undefined;
+    const runtime = createRuntime({ profile: 'ephemeral', scope, permissions: config.permissions,
+      ...(authorization ? { authorization } : {}),
+      ...(config.limits ? { limits: config.limits } : {}), ...(threads ? { recorder: threads.recorder,
+        checkpoints: { store: {
+          ...conversationStore!.runCheckpoints,
+          // Runtime claims the checkpoint before this callback returns, and deletes it only before dispatch.
+          // Transfer the run record inside that exclusive claim, so a losing approval can never steal the writer.
+          claim: async command => {
+            const checkpoints = conversationStore!.runCheckpoints;
+            const claimed = await checkpoints.claim(command);
+            if (!runRecords) return claimed;
+            const signal = AbortSignal.timeout(Math.min(limits.requestTimeoutMs, 10_000));
+            try {
+              if (closed) throw new Error('closed');
+              let before = recordView(await recorded(() => runRecords.read({ owner, runId: command.runId, signal }), signal), command.runId);
+              if (!before || before.agentId !== agentId) throw new Error('missing');
+              // A process can stop after saving its checkpoint but before its final waiting snapshot.
+              if (before.status === 'running') {
+                const saved = savedInspection(claimed);
+                const refreshed = await recorded(() => runRecords.update({ owner, runId: command.runId, replicaId: before!.replicaId,
+                  events: [], snapshot: saved, leaseExpiresAtMs: before!.leaseExpiresAtMs, signal }), signal);
+                if (refreshed.status !== 'written') throw new Error('lost');
+              }
+              before = recordView(await recorded(() => runRecords.resume!({ owner, runId: command.runId, replicaId,
+                leaseExpiresAtMs: Date.now() + limits.runLeaseMs, signal }), signal), command.runId);
+              if (!before || closed) throw new Error('lost');
+              if (!runs.has(command.runId)) resumeOffsets.set(command.runId, before.lastSequence);
+              return claimed;
+            } catch {
+              await checkpoints.update({ runId: command.runId, holderId: command.holderId, expectedVersion: claimed.version, body: claimed.body, status: 'waiting' });
+              throw new MayuraError('CONFLICT', 'The run record could not be claimed; the checkpoint remains waiting.');
+            }
+          },
+        }, agents: [config.agent], autoExpire: runExecution === 'background' && options.conversationRecovery === undefined } } : {}) });
+    runtimes.set(key, runtime); if (threads) runtimeThreads.set(key, threads); return runtime;
+  };
+  /** Keep adapter diagnostics private; request cancellation does not undo already committed storage writes. */
+  const conversationCall = async <T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+    assertActive(signal);
+    return bounded(Promise.resolve().then(operation).catch(error => {
+      if (error instanceof HttpFailure) throw error;
+      if (error instanceof MayuraError) {
+        if (error.code === 'NOT_FOUND') throw new HttpFailure(404, 'THREAD_NOT_FOUND');
+        if (error.code === 'CONFLICT') throw new HttpFailure(409, 'THREAD_CONFLICT');
+        if (error.code === 'INVALID_INPUT') throw new HttpFailure(400, 'INVALID_REQUEST');
+        if (error.code === 'LIMIT_EXCEEDED') throw new HttpFailure(500, 'RESPONSE_TOO_LARGE');
+      }
+      throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+    }), signal);
+  };
+  const savedRun = async (runId: string, identity: ServerIdentity, signal: AbortSignal) => {
+    if (!conversationStore) return undefined;
+    const checkpoint = await conversationCall(() => conversationStore.runCheckpoints.get({ runId }), signal);
+    const expected = sha256Hex(`mayura:run-scope:v1\0${identity.scope.principalId}\0${identity.scope.projectId}`);
+    const agent = checkpoint?.body['agent']; const storedScope = checkpoint?.body['scope'];
+    if (!checkpoint || checkpoint.body['reconciliation'] !== undefined || checkpoint.scope !== expected || !agent || typeof agent !== 'object' || Array.isArray(agent)
+      || typeof agent['id'] !== 'string' || !identity.agentIds.includes(agent['id']) || !registry.has(agent['id'])
+      || !storedScope || typeof storedScope !== 'object' || Array.isArray(storedScope) || canonical(storedScope) !== canonical(identity.scope as unknown as JsonValue)) return undefined;
+    return checkpoint;
+  };
+  const savedInspection = (checkpoint: NonNullable<Awaited<ReturnType<typeof savedRun>>>): JsonObject => {
+    const pending = checkpoint.body['pending']; const spent = checkpoint.body['spent'];
+    if (!pending || typeof pending !== 'object' || Array.isArray(pending) || !spent || typeof spent !== 'object' || Array.isArray(spent)) throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+    const { callId, toolId, toolVersion, input, digest, expiresAtMs } = pending;
+    if (typeof callId !== 'string' || callId.length > 128 || typeof toolId !== 'string' || typeof toolVersion !== 'string'
+      || input === undefined || typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest) || !Number.isSafeInteger(expiresAtMs)
+      || typeof spent['micros'] !== 'string' || !/^[0-9]{1,30}$/.test(spent['micros']) || !Number.isSafeInteger(spent['calls'])) throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+    const receipts = checkpoint.body['receipts'] ?? [];
+    if (!Array.isArray(receipts) || receipts.some(receipt => !receipt || typeof receipt !== 'object' || Array.isArray(receipt))) throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+    return { id: checkpoint.runId, status: 'waiting', budget: { spentMicros: Number(spent['micros']) > Number.MAX_SAFE_INTEGER ? spent['micros'] : Number(spent['micros']), reservedMicros: 0, calls: spent['calls']! },
+      evidence: receipts.map(receipt => ({ runId: checkpoint.runId, receipt })), [checkpoint.body['waitKind'] === 'frontend' ? 'toolWait' : 'approval']: { callId: callId!, toolId: toolId!, toolVersion: toolVersion!, input: input!, digest: digest!, expiresAtMs: expiresAtMs! } };
+  };
+  const settleSaved = async (owner: string, runId: string, status: 'failed' | 'cancelled', code: 'DEFINITION_CHANGED' | 'CANCELLED', message: string, signal: AbortSignal): Promise<void> => {
+    const previousSequence = resumeOffsets.get(runId); resumeOffsets.delete(runId);
+    if (!runRecords || previousSequence === undefined) return;
+    const before = recordView(await recorded(() => runRecords.read({ owner, runId, signal }), signal), runId);
+    if (!before) throw new HttpFailure(503, 'RUN_RECORDS_UNAVAILABLE');
+    const snapshot: JsonObject = { id: runId, status, budget: before.snapshot['budget']!, evidence: before.snapshot['evidence'] ?? [] };
+    await recorded(() => runRecords.update({ owner, runId, replicaId, snapshot, leaseExpiresAtMs: Date.now() + limits.runLeaseMs,
+      events: [{ runId, sequence: previousSequence + 1, timestamp: new Date().toISOString(), type: 'run.completed', metadata: { status } }],
+      outcome: { status, error: { code, message } }, signal }), signal);
+  };
+  const retain = (entry: Entry): void => {
+    runs.set(entry.handle.id, entry); retained.set(entry.runtimeKey, (retained.get(entry.runtimeKey) ?? 0) + 1);
+    void entry.handle.result().then(outcome => {
+      entry.outcome = outcome; entry.finished = true; if (closed) return;
+      const timer = setTimeout(() => { retentionTimers.delete(timer); release(entry); }, limits.runRetentionMs);
+      (timer as { unref?: () => void }).unref?.(); retentionTimers.add(timer);
+    });
+  };
+  /** Verify persisted scope/agent metadata before asking the host policy to authorize any work. */
+  const recoverCandidate = async (id: string, signal: AbortSignal, authorize: ConversationRecoveryOptions['authorize']): Promise<ConversationRecoveryOutcome> => {
+    const active = (): void => { if (closed || signal.aborted) throw new MayuraError('CANCELLED', 'Conversation recovery stopped.'); };
+    active(); if (id.startsWith('thread-compact:')) return { id, status: 'skipped' };
+    const checkpoint = await conversationStore!.runCheckpoints.get({ runId: id }); active();
+    if (!checkpoint) return { id, status: 'skipped' };
+    const journal = id.startsWith('thread-record:');
+    const frontendWait = !journal && checkpoint.body['waitKind'] === 'frontend';
+    const completion = journal ? checkpoint.body['completion'] : checkpoint.body;
+    if (!completion || typeof completion !== 'object' || Array.isArray(completion)) return { id, status: 'skipped', code: 'INVALID_INPUT' };
+    const storedScope = completion['scope'];
+    if (!storedScope || typeof storedScope !== 'object' || Array.isArray(storedScope) || Object.keys(storedScope).sort().join(',') !== 'principalId,projectId'
+      || ![storedScope['principalId'], storedScope['projectId']].every(value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(value))) return { id, status: 'skipped', code: 'INVALID_INPUT' };
+    const scope: Scope = Object.freeze({ principalId: storedScope['principalId'] as string, projectId: storedScope['projectId'] as string });
+    const prefix = journal ? 'thread' : 'run';
+    if (checkpoint.scope !== sha256Hex(`mayura:${prefix}-scope:v1\0${scope.principalId}\0${scope.projectId}`)) return { id, status: 'skipped', code: 'INVALID_INPUT' };
+    const runId = journal ? completion['runId'] : id;
+    if (typeof runId !== 'string' || !/^[a-f0-9-]{36}$/.test(runId) || (journal && id !== `thread-record:${sha256Hex(runId)}`)) return { id, status: 'skipped', code: 'INVALID_INPUT' };
+    const owner = canonical(scope as unknown as JsonValue);
+    const record = recordView(await runRecords!.read({ owner, runId, signal }), runId); active();
+    if (!record || !registry.has(record.agentId)) return { id, status: 'skipped' };
+    if (!journal) {
+      const agent = completion['agent'];
+      if (!agent || typeof agent !== 'object' || Array.isArray(agent) || agent['id'] !== record.agentId) return { id, status: 'skipped', code: 'INVALID_INPUT' };
+      // A claimed approval may already have executed a write; lease expiry cannot authorize replay.
+      if ((!frontendWait && (checkpoint.expiresAtMs > Date.now() || checkpoint.status === 'claimed'))
+        || (frontendWait && checkpoint.status === 'claimed' && (checkpoint.leaseExpiresAtMs ?? Infinity) > Date.now())
+        || !['running', 'waiting'].includes(record.status)) return { id, status: 'skipped' };
+    } else if (['running', 'waiting'].includes(record.status) && record.leaseExpiresAtMs > Date.now()) return { id, status: 'skipped' };
+    if (await authorize(Object.freeze({ scope, agentId: record.agentId, kind: journal ? 'recording' as const : frontendWait ? 'frontend' as const : 'approval' as const, signal })) !== true) return { id, status: 'skipped', code: 'PERMISSION_DENIED' };
+    active();
+    if (frontendWait) {
+      const binding = completion['recording'];
+      if (!binding || typeof binding !== 'object' || Array.isArray(binding) || typeof binding['threadId'] !== 'string') return { id, status: 'skipped', code: 'INVALID_INPUT' };
+      const thread = await scopedThreads(scope).get(binding['threadId']);
+      if (!thread || thread.status !== 'active' || thread.agentId !== record.agentId) return { id, status: 'skipped', code: 'CONFLICT' };
+    }
+    if (journal) {
+      const threadId = checkpoint.body['threadId'];
+      if (typeof threadId !== 'string') return { id, status: 'skipped', code: 'INVALID_INPUT' };
+      const recovered = await scopedThreads(scope).recoverRun(threadId, runId);
+      return { id, status: recovered ? 'recovered' : 'skipped' };
+    }
+    let entry = runs.get(runId); if (entry?.lost) { release(entry); entry = undefined; }
+    if (!entry && runs.size >= limits.maxRuns) throw new MayuraError('LIMIT_EXCEEDED', 'The run retention limit is reached.');
+    const runtimeKey = JSON.stringify([owner, record.agentId]); const runtime = runtimeFor(owner, record.agentId, scope);
+    try {
+      const pending = checkpoint.body['pending'] as JsonObject;
+      const resumedTool = frontendWait && checkpoint.expiresAtMs > Date.now()
+        ? await runtime.resumeTool(runId, { callId: pending['callId'] as string, digest: pending['digest'] as string }) : undefined;
+      const result = frontendWait && checkpoint.expiresAtMs > Date.now()
+        ? resumedTool ? { status: 'resumed' as const, run: resumedTool } : { status: 'not_due' as const }
+        : await runtime.expireApproval(runId);
+      if (result.status === 'not_due') { resumeOffsets.delete(runId); return { id, status: 'skipped' }; }
+      if (result.status === 'cancelled') {
+        if (entry) { if (runExecution === 'request') { await entry.handle.result(); entry.persisted = persist(entry); await entry.persisted; } }
+        else await settleSaved(owner, runId, 'cancelled', 'CANCELLED', 'The approval request expired and the run was cancelled.', signal);
+        return { id, status: 'cancelled' };
+      }
+      const offset = resumeOffsets.get(runId); resumeOffsets.delete(runId);
+      if (!entry) {
+        entry = { owner, agentId: record.agentId, digest: '', handle: result.run, runtime, runtimeKey, submissionKey: '', ...(offset === undefined ? {} : { eventOffset: offset }) };
+        retain(entry); entry.persisted = persist(entry);
+      } else if (runExecution === 'request') entry.persisted = persist(entry);
+      if (runExecution === 'request') await entry.persisted;
+      return { id, status: 'resumed' };
+    } catch (error) {
+      if (error instanceof MayuraError && error.code === 'DEFINITION_CHANGED') {
+        if (entry && runExecution === 'request') { await entry.handle.result(); entry.persisted = persist(entry); await entry.persisted; }
+        else await settleSaved(owner, runId, 'failed', 'DEFINITION_CHANGED', 'The agent changed while the run waited for approval.', signal);
+        return { id, status: 'skipped', code: 'DEFINITION_CHANGED' };
+      }
+      throw error;
+    } finally { resumeOffsets.delete(runId); }
+  };
   const route = async (request: Request, signal: AbortSignal): Promise<Response> => {
     const received = new URL(request.url);
     // Mounted behind a trusted router, only the path and query are taken from the request; the destination is always
@@ -1037,25 +1323,41 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const catalogQuery = effectiveMethod === 'GET' && url.pathname === '/v1/tools';
     const humanListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/human-requests';
     const workflowListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/workflow-runs';
-    if ([...url.searchParams.keys()].some(key => effectiveMethod !== 'GET' || (eventMatch ? key !== 'after' : catalogQuery || humanListQuery ? !['after', 'limit'].includes(key) : workflowListQuery ? !['after', 'limit', 'view'].includes(key) : true))
-      || url.searchParams.getAll('after').length > 1 || url.searchParams.getAll('limit').length > 1 || url.searchParams.getAll('view').length > 1) throw new HttpFailure(400, 'INVALID_QUERY');
+    const threadListQuery = effectiveMethod === 'GET' && url.pathname === '/v1/threads';
+    const threadEntriesQuery = effectiveMethod === 'GET' && /^\/v1\/threads\/[^/]+\/entries$/.test(url.pathname);
+    const allowedQuery = eventMatch ? ['after'] : catalogQuery || humanListQuery ? ['after', 'limit'] : workflowListQuery ? ['after', 'limit', 'view']
+      : threadListQuery ? ['cursor', 'limit', 'status'] : threadEntriesQuery ? ['after', 'before', 'limit'] : [];
+    if ([...url.searchParams.keys()].some(key => effectiveMethod !== 'GET' || !allowedQuery.includes(key) || url.searchParams.getAll(key).length > 1)) throw new HttpFailure(400, 'INVALID_QUERY');
     if (request.method === 'OPTIONS') {
-      if (!requestOrigin || !['GET', 'POST'].includes(request.headers.get('access-control-request-method') ?? '')) throw new HttpFailure(403, requestOrigin ? 'PREFLIGHT_DENIED' : 'ORIGIN_DENIED');
+      const threadDelete = effectiveMethod === 'DELETE' && /^\/v1\/threads\/[^/]+$/.test(url.pathname);
+      if (!requestOrigin || (!['GET', 'POST'].includes(effectiveMethod) && !threadDelete)) throw new HttpFailure(403, requestOrigin ? 'PREFLIGHT_DENIED' : 'ORIGIN_DENIED');
       const headers = (request.headers.get('access-control-request-headers') ?? '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
       if (headers.some(value => !['authorization', 'content-type', 'idempotency-key'].includes(value))) throw new HttpFailure(403, 'PREFLIGHT_DENIED');
-      return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key' } });
+      return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': threadDelete ? 'GET, POST, DELETE' : 'GET, POST', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key' } });
     }
     if (request.method === 'GET' && url.pathname === '/healthz' && options.publicLiveness === true) return response({ status: 'ok' });
     const identity = await session(request, signal);
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     const owner = canonical(identity.scope as unknown as JsonValue);
+    const checkRoute = async (): Promise<void> => {
+      if (!authorization) return;
+      let checks; try { checks = serverAuthorizationRoute(request.method, url.pathname); }
+      catch { throw new HttpFailure(400, 'INVALID_REQUEST'); }
+      if (checks === null) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
+      for (const check of checks) for (const capability of check.capabilities) requireCapability(identity, capability);
+      for (const check of checks) await authorize(identity, check.kind, check.id, check.action, signal);
+    };
+    await checkRoute();
+    const respond = async (...args: Parameters<typeof response>): Promise<Response> => { await checkRoute(); return response(...args); };
     if (workflowListQuery) {
       requireCapability(identity, 'workflows:read'); if (!workflowIndex) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'workflowIndex' });
-      const after = url.searchParams.get('after'); const limitText = url.searchParams.get('limit') ?? '20';
+      const viewKey = url.searchParams.get('view') ?? 'active';
+      const after = await readCursor(url.searchParams.get('after'), identity, `workflow:${viewKey}`, signal); const limitText = url.searchParams.get('limit') ?? '20';
       if ((after !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !/^\d+$/.test(limitText)) throw new HttpFailure(400, 'INVALID_CURSOR');
       const limit = Number(limitText); if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
       const view = url.searchParams.get('view') ?? 'active'; if (view !== 'active' && view !== 'settled') throw new HttpFailure(400, 'INVALID_QUERY');
       const settled = view === 'settled';
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const operation = Promise.resolve().then(() => workflowIndex.list(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
         after, limit, signal, ...(settled ? { view: 'settled' as const } : {}) }))).finally(() => { workflowOperations--; });
@@ -1068,7 +1370,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const items = page['items'].map(item => workflowIndexRecord(item, settled)); if (new Set(items.map(item => item.runId)).size !== items.length)
         throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ items, next: page['next'] });
+      assertActive(signal); requireCapability(identity, 'workflows:read'); return respond({ items: await filterAuthorized(items, identity, 'workflow', item => item.runId, signal), next: await writeCursor(page['next'] as string | null, identity, `workflow:${view}`, signal) });
     }
     const fleetMatch = /^\/v1\/workflow-fleet(?:\/(hold|release|sweeps\/pause|sweeps\/resume))?$/.exec(url.pathname);
     if (fleetMatch && request.method === (fleetMatch[1] === undefined ? 'GET' : 'POST')) {
@@ -1084,6 +1386,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           limit = data['limit']; if (data['cursor'] !== null) cursor = object(data['cursor'], 4_096);
         }
       }
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const base = Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId, signal });
       const call = (): Promise<unknown> => action === 'inspect' ? workflowFleet.inspect(base) : action === 'hold' ? workflowFleet.hold(base)
@@ -1097,15 +1400,16 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         let raw: JsonObject; try { raw = object(result, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
         if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw new HttpFailure(409, 'FLEET_CONFLICT');
         workflowExact(raw, ['status', 'sweep']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-        return response({ sweep: fleetSweep(raw['sweep'], limit) });
+        return respond({ sweep: fleetSweep(raw['sweep'], limit) });
       }
       const fleet = fleetHold(result);
       if ((action === 'hold' && !fleet.held) || (action === 'release' && fleet.held)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      return response({ fleet });
+      return respond({ fleet });
     }
     const workflowMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})$/.exec(url.pathname);
     if (workflowMatch && request.method === 'GET') {
       requireCapability(identity, 'workflows:read'); if (!workflowViews) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'workflowViews' });
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT');
       workflowOperations++;
       const operation = Promise.resolve().then(() => workflowViews.inspect(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
@@ -1113,7 +1417,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       let item: WorkflowViewRecord | null;
       try { item = await bounded(operation, signal); } catch (error) { if (error instanceof HttpFailure && error.status === 408) throw error; throw new HttpFailure(503, 'WORKFLOW_UNAVAILABLE'); }
       if (item === null) throw new HttpFailure(404, 'WORKFLOW_RUN_NOT_FOUND'); const record = workflowRecord(item, workflowMatch[1]!);
-      assertActive(signal); requireCapability(identity, 'workflows:read'); return response({ workflow: record });
+      assertActive(signal); requireCapability(identity, 'workflows:read'); return respond({ workflow: record });
     }
     const workflowControlMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/(cancel|approvals)$/.exec(url.pathname);
     if (workflowControlMatch && request.method === 'POST') {
@@ -1126,6 +1430,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         || typeof data['approvalDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['approvalDigest'])
         || (data['childRunId'] !== null && (typeof data['childRunId'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['childRunId'])))))
         throw new HttpFailure(400, 'INVALID_REQUEST', { message: 'nodeId must be a workflow node id, approvalDigest a 64-character lowercase hex digest, and childRunId null or a workflow run id.' });
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const common = { scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId, runId: workflowControlMatch[1]!,
         revision: data['revision'] as number, commandId: data['commandId'] as string, signal };
@@ -1141,7 +1446,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const record = workflowRecord(raw['workflow'], workflowControlMatch[1]!);
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      return response({ workflow: record });
+      return respond({ workflow: record });
     }
     const workflowSignalMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/signals$/.exec(url.pathname);
     if (workflowSignalMatch && request.method === 'POST') {
@@ -1152,6 +1457,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         || typeof data['signalName'] !== 'string' || !identifier.test(data['signalName'])) throw new HttpFailure(400, 'INVALID_REQUEST', { message: `${commandFields} signalId and signalName must be identifiers of the same form.` });
       let value: JsonValue; try { value = freezeJson(jsonValue(data['value'], { maxBytes: 4_096, maxDepth: 16, maxNodes: 1_024 })); }
       catch { throw new HttpFailure(400, 'INVALID_REQUEST', { message: 'value must be JSON of at most 4,096 bytes, 16 levels and 1,024 values.' }); }
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const operation = Promise.resolve().then(() => workflowSignals.deliver(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
         actorId: identity.scope.principalId, runId: workflowSignalMatch[1]!, revision: data['revision'] as number,
@@ -1166,7 +1472,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const record = workflowRecord(raw['workflow'], workflowSignalMatch[1]!);
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      return response({ workflow: record });
+      return respond({ workflow: record });
     }
     const migrationMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/migrations(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))?$/.exec(url.pathname);
     if (migrationMatch && (request.method === 'GET' || (request.method === 'POST' && migrationMatch[2] !== undefined))) {
@@ -1179,6 +1485,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
           || !Number.isSafeInteger(data['revision']) || data['revision'] < 1) throw new HttpFailure(400, 'INVALID_REQUEST', { message: commandFields });
       }
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const base = { scope: identity.scope, agentIds: identity.agentIds, runId, signal };
       const operation = Promise.resolve().then((): Promise<unknown> => migrationId === undefined ? workflowMigrations.list(Object.freeze(base))
@@ -1193,11 +1500,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         if (!Array.isArray(result) || result.length > 256) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
         const migrations = result.map(migrationRecord);
         if (new Set(migrations.map(item => item.id)).size !== migrations.length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-        return response({ migrations });
+        return respond({ migrations });
       }
       if (data === undefined) {
         if (result === null) throw new HttpFailure(404, 'MIGRATION_NOT_FOUND');
-        return response({ plan: migrationPlan(result, runId, migrationId) });
+        return respond({ plan: migrationPlan(result, runId, migrationId) });
       }
       let raw: JsonObject; try { raw = object(result, 524_288); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
       if (raw['status'] === 'conflict' && Object.keys(raw).length === 1) throw await workflowConflict(identity, runId, signal);
@@ -1205,12 +1512,13 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (raw['status'] === 'refused') {
         workflowExact(raw, ['status', 'plan']); const plan = migrationPlan(raw['plan'], runId, migrationId);
         if (plan.allowed) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+        await checkRoute();
         return failureResponse(new HttpFailure(409, 'MIGRATION_REFUSED'), { plan: plan as unknown as JsonValue });
       }
       workflowExact(raw, ['status', 'plan', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const plan = migrationPlan(raw['plan'], runId, migrationId); const record = workflowRecord(raw['workflow'], runId);
       if (!plan.allowed || record.revision <= (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      return response({ plan, workflow: record });
+      return respond({ plan, workflow: record });
     }
     // Continuation and operator pause share one exact revision-bound body; each has its own least-authority adapter.
     const workflowResumeMatch = /^\/v1\/workflow-runs\/([a-f0-9]{64})\/(resume|pause)$/.exec(url.pathname);
@@ -1221,6 +1529,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const data = await body(request, signal); exact(data, ['commandId', 'revision']);
       if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['revision'] !== 'number'
         || !Number.isSafeInteger(data['revision']) || data['revision'] < 1) throw new HttpFailure(400, 'INVALID_REQUEST', { message: commandFields });
+      await checkRoute();
       if (workflowOperations >= limits.maxWorkflowOperations) throw new HttpFailure(429, 'WORKFLOW_LIMIT'); workflowOperations++;
       const operation = Promise.resolve().then(() => callback(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds,
         actorId: identity.scope.principalId, runId: workflowResumeMatch[1]!, revision: data['revision'] as number,
@@ -1234,23 +1543,29 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       workflowExact(raw, ['status', 'workflow']); if (raw['status'] !== 'applied') throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
       const record = workflowRecord(raw['workflow'], workflowResumeMatch[1]!);
       if (record.revision < (data['revision'] as number)) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-      return response({ workflow: record });
+      return respond({ workflow: record });
     }
     if (request.method === 'GET' && url.pathname === '/v1/session') {
       // What this token may do and which optional APIs this server offers it, so a UI shows only usable views.
       const has = (prefix: string): boolean => identity.capabilities.some(capability => capability.startsWith(prefix));
       const features = [
+        ...(authorization ? ['authorization'] : []),
         ...(has('humans:') && humanRequests ? ['humanRequests'] : []),
         ...(has('workflows:') ? ([['workflowIndex', workflowIndex], ['workflowViews', workflowViews], ['workflowControls', workflowControls],
           ['workflowSignals', workflowSignals], ['workflowResumes', workflowResumes], ['workflowPauses', workflowPauses], ['workflowFleet', workflowFleet],
           ['workflowMigrations', workflowMigrations]] as const).filter(([, enabled]) => enabled !== undefined).map(([name]) => name) : []),
         ...(has('runs:') && runRecords ? ['runRecords'] : []),
+        ...(has('threads:') && conversationStore ? ['threads'] : []),
+        ...(identity.capabilities.includes('runs:approve') ? ['runApprovals'] : []),
+        ...(identity.capabilities.includes('runs:resume') && conversationStore && runRecords ? ['toolContinuations'] : []),
+        ...(compaction && identity.capabilities.includes('threads:compact') && identity.capabilities.includes('threads:read')
+          && identity.agentIds.some(id => compaction.allows(id)) ? ['threadCompaction'] : []),
       ];
-      return response({ session: { scope: identity.scope, agentIds: identity.agentIds, capabilities: identity.capabilities, expiresAtMs: identity.expiresAtMs, features } });
+      return respond({ session: { scope: identity.scope, agentIds: identity.agentIds, capabilities: identity.capabilities, expiresAtMs: identity.expiresAtMs, features } });
     }
     if (request.method === 'GET' && url.pathname === '/v1/agents') {
       requireCapability(identity, 'runs:read');
-      return response({ agents: [...registry.values()].filter(config => identity.agentIds.includes(config.agent.id)).map(config => ({ id: config.agent.id, version: config.agent.version })) });
+      return respond({ agents: (await filterAuthorized([...registry.values()].filter(config => identity.agentIds.includes(config.agent.id)), identity, 'agent', config => config.agent.id, signal)).map(config => ({ id: config.agent.id, version: config.agent.version })) });
     }
     if (request.method === 'GET' && url.pathname === '/v1/operations/health') {
       requireCapability(identity, 'operations:read');
@@ -1265,7 +1580,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       assertActive(signal); requireCapability(identity, 'operations:read');
       const checks = [{ id: 'server', status: 'ready' as const }, ...results];
       const ready = checks.every(check => check.status === 'ready');
-      return response({ status: ready ? 'ready' : 'degraded', checks }, ready ? 200 : 503);
+      return respond({ status: ready ? 'ready' : 'degraded', checks }, ready ? 200 : 503);
     }
     if (request.method === 'GET' && url.pathname === '/v1/tools') {
       requireCapability(identity, 'operations:read');
@@ -1275,19 +1590,20 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (!Number.isSafeInteger(after) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
       const visible = toolCatalog.filter(tool => identity.agentIds.includes(tool.agentId));
       if (after > visible.length) throw new HttpFailure(400, 'INVALID_CURSOR');
-      const tools = visible.slice(after, after + limit); const next = after + tools.length;
-      return response({ tools, next: next < visible.length ? next : null });
+      const page = visible.slice(after, after + limit); const next = after + page.length;
+      const tools = await filterAuthorized(page, identity, 'tool', tool => tool.id, signal);
+      return respond({ tools, next: next < visible.length ? next : null });
     }
     if (request.method === 'GET' && url.pathname === '/v1/human-requests') {
       requireCapability(identity, 'humans:read'); if (!humanRequests) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'humanRequests' });
-      const after = url.searchParams.get('after'); const limitText = url.searchParams.get('limit') ?? '50';
+      const after = await readCursor(url.searchParams.get('after'), identity, 'human_request', signal); const limitText = url.searchParams.get('limit') ?? '50';
       if ((after !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(after)) || !/^\d+$/.test(limitText) || Number(limitText) < 1 || Number(limitText) > 100) throw new HttpFailure(400, 'INVALID_CURSOR');
       const page = await humanCall(() => humanRequests.list(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, after, limit: Number(limitText), signal })), signal);
       let raw: JsonObject; try { raw = object(page, 1_048_576); exact(raw, ['items', 'next']); } catch { throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID'); }
       if (!Array.isArray(raw['items']) || raw['items'].length > Number(limitText) || (raw['next'] !== null && (typeof raw['next'] !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(raw['next'])))) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
       const items = raw['items'].map(item => humanRecord(item, identity));
       if (new Set(items.map(item => item.id)).size !== items.length) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
-      assertActive(signal); requireCapability(identity, 'humans:read'); return response({ items, next: raw['next'] });
+      assertActive(signal); requireCapability(identity, 'humans:read'); return respond({ items: await filterAuthorized(items, identity, 'human_request', item => item.id, signal), next: await writeCursor(raw['next'] as string | null, identity, 'human_request', signal) });
     }
     const humanMatch = /^\/v1\/human-requests\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/responses)?$/.exec(url.pathname);
     if (humanMatch && request.method === 'GET' && !url.pathname.endsWith('/responses')) {
@@ -1295,31 +1611,259 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const item = await humanCall(() => humanRequests.inspect(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, id: humanMatch[1]!, signal })), signal);
       if (item === null) throw new HttpFailure(404, 'HUMAN_REQUEST_NOT_FOUND'); const record = humanRecord(item, identity);
       if (record.id !== humanMatch[1]) throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
-      assertActive(signal); requireCapability(identity, 'humans:read'); return response({ request: record });
+      assertActive(signal); requireCapability(identity, 'humans:read'); return respond({ request: record });
     }
     if (humanMatch && request.method === 'POST' && url.pathname.endsWith('/responses')) {
       requireCapability(identity, 'humans:respond'); if (!humanRequests) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'humanRequests' });
       const data = await body(request, signal); exact(data, ['commandId', 'requestDigest', 'value']);
       if (typeof data['commandId'] !== 'string' || !identifier.test(data['commandId']) || typeof data['requestDigest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['requestDigest'])) throw new HttpFailure(400, 'INVALID_REQUEST', { message: `${commandFields.replace(' and revision a positive integer', '')} requestDigest must be the request's 64-character lowercase hex digest.` });
+      await checkRoute();
       const item = await humanCall(() => humanRequests.respond(Object.freeze({ scope: identity.scope, agentIds: identity.agentIds, actorId: identity.scope.principalId,
         id: humanMatch[1]!, commandId: data['commandId'] as string, requestDigest: data['requestDigest'] as string, value: data['value']!, signal })), signal);
       const record = humanRecord(item, identity);
       if (record.id !== humanMatch[1] || record.digest !== data['requestDigest'] || record.status === 'waiting') throw new HttpFailure(503, 'HUMAN_TRANSPORT_INVALID');
-      assertActive(signal); requireCapability(identity, 'humans:respond'); return response({ request: record });
+      assertActive(signal); requireCapability(identity, 'humans:respond'); return respond({ request: record });
+    }
+    const compactionMatch = /^\/v1\/threads\/([^/]+)\/compactions(?:\/([^/]+)(?:\/(cancel))?)?$/.exec(url.pathname);
+    if (compactionMatch) {
+      requireCapability(identity, 'threads:compact'); requireCapability(identity, 'threads:read');
+      if (!compaction || !conversationStore) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'threadCompaction' });
+      const decode = (value: string): string => {
+        let decoded: string; try { decoded = decodeURIComponent(value); } catch { throw new HttpFailure(400, 'INVALID_REQUEST'); }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(decoded)) throw new HttpFailure(400, 'INVALID_REQUEST'); return decoded;
+      };
+      const id = decode(compactionMatch[1]!); const commandId = compactionMatch[2] === undefined ? undefined : decode(compactionMatch[2]);
+      const thread = await conversationCall(() => scopedThreads(identity.scope).get(id), signal);
+      if (!thread || !['active', 'archived'].includes(thread.status) || thread.agentId === null
+        || !identity.agentIds.includes(thread.agentId) || !compaction.allows(thread.agentId)) throw new HttpFailure(404, 'THREAD_NOT_FOUND');
+      if (request.method === 'GET' && commandId && !compactionMatch[3]) {
+        if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST');
+        const view = await conversationCall(() => compaction.inspect(identity.scope, id, commandId, signal), signal);
+        assertActive(signal); requireCapability(identity, 'threads:compact');
+        if (!view) throw new HttpFailure(404, 'THREAD_COMPACTION_NOT_FOUND'); return respond({ compaction: view });
+      }
+      if (request.method !== 'POST') throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+      requireCapability(identity, 'threads:write');
+      if (commandId && compactionMatch[3] === 'cancel') {
+        if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST');
+        await checkRoute();
+        return respond(await conversationCall(() => compaction.cancel(identity.scope, id, commandId, signal), signal));
+      }
+      if (commandId) throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+      const data = await body(request, signal);
+      exact(data, ['commandId', 'through', ...('previousSummarySequence' in data ? ['previousSummarySequence'] : [])]);
+      if (typeof data['commandId'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(data['commandId'])
+        || !Number.isSafeInteger(data['through']) || (data['through'] as number) < 1 || (data['through'] as number) > 999_999_997
+        || (data['previousSummarySequence'] !== undefined && (!Number.isSafeInteger(data['previousSummarySequence'])
+          || (data['previousSummarySequence'] as number) < 1 || (data['previousSummarySequence'] as number) > 999_999_999))) throw new HttpFailure(400, 'INVALID_REQUEST');
+      assertActive(signal); requireCapability(identity, 'threads:compact'); requireCapability(identity, 'threads:write');
+      await checkRoute();
+      try {
+        const result = await compaction.compact(identity.scope, id, { commandId: data['commandId'], through: data['through'] as number,
+          ...(data['previousSummarySequence'] === undefined ? {} : { previousSummarySequence: data['previousSummarySequence'] as number }) }, signal, identity.expiresAtMs);
+        assertActive(signal); requireCapability(identity, 'threads:compact'); return respond({ result });
+      } catch (error) {
+        if (error instanceof MayuraError && error.code === 'LIMIT_EXCEEDED') throw new HttpFailure(422, 'THREAD_COMPACTION_LIMIT');
+        if (error instanceof MayuraError && error.code === 'CANCELLED') throw new HttpFailure(409, 'THREAD_COMPACTION_CANCELLED');
+        return conversationCall(() => Promise.reject(error), signal);
+      }
+    }
+    const threadMatch = /^\/v1\/threads(?:\/([^/]+)(?:\/(entries|archive|restore))?)?$/.exec(url.pathname);
+    if (threadMatch) {
+      const reading = request.method === 'GET'; const deleting = request.method === 'DELETE';
+      requireCapability(identity, deleting ? 'threads:delete' : reading ? 'threads:read' : 'threads:write');
+      if (!conversationStore) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'threads' });
+      const threads = scopedThreads(identity.scope, signal); let id: string | undefined;
+      if (threadMatch[1]) {
+        try { id = decodeURIComponent(threadMatch[1]); } catch { throw new HttpFailure(400, 'INVALID_REQUEST'); }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(id)) throw new HttpFailure(400, 'INVALID_REQUEST');
+      }
+      const action = threadMatch[2];
+      if (!id && reading) {
+        const status = url.searchParams.get('status') ?? 'active'; const limit = url.searchParams.get('limit') ?? '20';
+        const cursor = await readCursor(url.searchParams.get('cursor'), identity, `thread:${status}`, signal);
+        if (!['active', 'archived', 'all'].includes(status) || !/^[1-9][0-9]?$|^100$/.test(limit)
+          || (cursor !== null && (cursor.length === 0 || cursor.length > 256))) throw new HttpFailure(400, 'INVALID_CURSOR');
+        // HTTP listing owns its existing identity-bound cursor and row policy checks; avoid nesting service cursors.
+        const listing = createThreads({ store: conversationStore!, scope: identity.scope, permissions: { allow: ['thread:read'] } });
+        const page = await conversationCall(() => listing.list({ status: status as 'active' | 'archived' | 'all', limit: Number(limit), ...(cursor ? { cursor } : {}) }), signal);
+        return respond({ ...page, threads: await filterAuthorized(page.threads, identity, 'thread', thread => thread.id, signal), cursor: await writeCursor(page.cursor, identity, `thread:${status}`, signal) });
+      }
+      if (!id && request.method === 'POST') {
+        const data = await body(request, signal);
+        if (Object.keys(data).some(key => !['id', 'agentId', 'title', 'metadata'].includes(key))) throw new HttpFailure(400, 'INVALID_REQUEST');
+        if (data['agentId'] !== undefined && (typeof data['agentId'] !== 'string' || !identity.agentIds.includes(data['agentId']) || !registry.has(data['agentId']))) throw new HttpFailure(404, 'AGENT_NOT_FOUND');
+        requireCapability(identity, 'threads:write');
+        if (data['id'] !== undefined && (typeof data['id'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(data['id']))) throw new HttpFailure(400, 'INVALID_REQUEST');
+        const id = typeof data['id'] === 'string' ? data['id'] : crypto.randomUUID();
+        if (authorization) requireCapability(identity, 'threads:read');
+        await authorize(identity, 'thread', id, 'create', signal);
+        await authorize(identity, 'thread', id, 'read', signal);
+        const thread = await conversationCall(() => threads.create({ ...data, id } as Parameters<Threads['create']>[0]), signal);
+        await authorize(identity, 'thread', id, 'read', signal);
+        return respond({ thread }, 201);
+      }
+      if (id && reading && !action) {
+        const thread = await conversationCall(() => threads.get(id!), signal);
+        if (!thread || thread.status === 'deleted' || thread.status === 'deleting') throw new HttpFailure(404, 'THREAD_NOT_FOUND');
+        return respond({ thread });
+      }
+      if (id && request.method === 'POST' && action === 'entries') {
+        requireCapability(identity, 'threads:import'); requireCapability(identity, 'threads:read');
+        await checkRoute(); const data = await body(request, signal);
+        return respond({ entries: await conversationCall(() => threads.append(id!, data as unknown as Parameters<Threads['append']>[1]), signal) });
+      }
+      if (id && reading && action === 'entries') {
+        const after = url.searchParams.get('after'); const before = url.searchParams.get('before'); const limit = url.searchParams.get('limit') ?? '100';
+        if ((after !== null && before !== null) || [after, before].some(value => value !== null && (!/^[0-9]{1,10}$/.test(value) || !Number.isSafeInteger(Number(value))))
+          || !/^[1-9][0-9]{0,2}$/.test(limit) || Number(limit) > 500) throw new HttpFailure(400, 'INVALID_CURSOR');
+        const thread = await conversationCall(() => threads.get(id!), signal);
+        if (!thread || thread.status === 'deleted' || thread.status === 'deleting') throw new HttpFailure(404, 'THREAD_NOT_FOUND');
+        return respond({ entries: await conversationCall(() => threads.entries(id!, { limit: Number(limit), ...(after !== null ? { after: Number(after) } : {}), ...(before !== null ? { before: Number(before) } : {}) }), signal) });
+      }
+      if (id && deleting && !action) {
+        if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST');
+        await checkRoute();
+        return respond(await conversationCall(() => threads.delete(id!), signal));
+      }
+      if (id && request.method === 'POST' && (action === 'archive' || action === 'restore')) {
+        if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST');
+        await checkRoute();
+        return respond({ thread: await conversationCall(() => threads[action](id!), signal) });
+      }
+      if (id && request.method === 'POST' && !action) {
+        const data = await body(request, signal);
+        if (Object.keys(data).some(key => !['title', 'metadata', 'expectedVersion'].includes(key)) || (!('title' in data) && !('metadata' in data))) throw new HttpFailure(400, 'INVALID_REQUEST');
+        if (data['expectedVersion'] !== undefined && (!Number.isSafeInteger(data['expectedVersion']) || (data['expectedVersion'] as number) < 1)) throw new HttpFailure(400, 'INVALID_REQUEST');
+        requireCapability(identity, 'threads:write');
+        await checkRoute();
+        return respond({ thread: await conversationCall(() => threads.update(id!, data as Parameters<Threads['update']>[1]), signal) });
+      }
+      throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+    }
+    const toolResumeMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/tool-results\/resume$/.exec(url.pathname);
+    if (toolResumeMatch) {
+      if (request.method !== 'POST') throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+      for (const capability of ['runs:resume', 'runs:read', 'threads:read', 'threads:write'] as const) requireCapability(identity, capability);
+      if (!conversationStore || !runRecords || runExecution !== 'background') throw new HttpFailure(404, 'NOT_ENABLED');
+      const runId = toolResumeMatch[1]!; const data = await body(request, signal); exact(data, ['callId', 'digest']);
+      if (typeof data['callId'] !== 'string' || !data['callId'].length || data['callId'].length > 128
+        || typeof data['digest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['digest'])) throw new HttpFailure(400, 'INVALID_REQUEST');
+      const checkpoint = await savedRun(runId, identity, signal);
+      if (!checkpoint || checkpoint.body['waitKind'] !== 'frontend') throw new HttpFailure(409, 'TOOL_CONTINUATION_CONFLICT');
+      const agentId = (checkpoint.body['agent'] as JsonObject)['id'] as string;
+      const bound = checkpoint.body['recording'];
+      if (!bound || typeof bound !== 'object' || Array.isArray(bound) || typeof bound['threadId'] !== 'string') throw new HttpFailure(409, 'TOOL_CONTINUATION_CONFLICT');
+      await authorize(identity, 'thread', bound['threadId'], 'read', signal); await authorize(identity, 'thread', bound['threadId'], 'append', signal);
+      const thread = await conversationCall(() => scopedThreads(identity.scope).get(bound['threadId'] as string), signal);
+      if (!thread || thread.status !== 'active' || thread.agentId !== agentId) throw new HttpFailure(409, 'TOOL_CONTINUATION_CONFLICT');
+      await authorize(identity, 'agent', agentId, 'execute', signal); await checkRoute(); assertActive(signal);
+      const local = runs.get(runId);
+      if (local && (local.owner !== owner || !identity.agentIds.includes(local.agentId))) throw new HttpFailure(404, 'RUN_NOT_FOUND');
+      let entry = local && !local.lost ? local : undefined;
+      if (!entry && runs.size >= limits.maxRuns && !local) throw new HttpFailure(429, 'RUN_LIMIT');
+      if (local?.lost) release(local);
+      const runtime = entry?.runtime ?? runtimeFor(owner, agentId, identity.scope);
+      try {
+        const handle = await runtime.resumeTool(runId, { callId: data['callId'], digest: data['digest'] });
+        if (!handle) return respond({ id: runId, profile: 'ephemeral' }, 202);
+        const offset = resumeOffsets.get(runId); resumeOffsets.delete(runId);
+        if (!entry) {
+          const runtimeKey = JSON.stringify([owner, agentId]);
+          entry = { owner, agentId, digest: '', handle, runtime, runtimeKey, submissionKey: '', ...(offset === undefined ? {} : { eventOffset: offset }) };
+          retain(entry); entry.persisted = persist(entry);
+        }
+        return respond({ id: runId, profile: 'ephemeral' }, 202);
+      } catch (error) {
+        resumeOffsets.delete(runId);
+        if (error instanceof MayuraError && ['CONFLICT', 'NOT_FOUND', 'DEFINITION_CHANGED'].includes(error.code)) throw new HttpFailure(409, 'TOOL_CONTINUATION_CONFLICT');
+        if (error instanceof MayuraError && error.code === 'PERMISSION_DENIED') throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
+        if (error instanceof HttpFailure) throw error;
+        throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+      }
+    }
+    const approvalMatch = /^\/v1\/runs\/([a-f0-9-]{36})\/approvals$/.exec(url.pathname);
+    if (approvalMatch) {
+      if (request.method !== 'POST') throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+      requireCapability(identity, 'runs:approve');
+      const runId = approvalMatch[1]!; const data = await body(request, signal);
+      exact(data, ['callId', 'digest', 'decision', ...('reason' in data ? ['reason'] : [])]);
+      if (typeof data['callId'] !== 'string' || data['callId'].length > 128 || typeof data['digest'] !== 'string' || !/^[a-f0-9]{64}$/.test(data['digest'])
+        || !['approved', 'rejected'].includes(data['decision'] as string) || (data['reason'] !== undefined && (typeof data['reason'] !== 'string' || data['reason'].length > 1000))) throw new HttpFailure(400, 'INVALID_REQUEST');
+      const local = runs.get(runId);
+      let entry = local && !local.lost && local.owner === owner && identity.agentIds.includes(local.agentId) ? local : undefined;
+      if (local && !local.lost && !entry) throw new HttpFailure(404, 'RUN_NOT_FOUND');
+      let runtime = entry?.runtime; let agentId = entry?.agentId; let offset: number | undefined;
+      if (!entry) {
+        if (!conversationStore) throw new HttpFailure(404, 'RUN_NOT_FOUND');
+        const checkpoint = await savedRun(runId, identity, signal);
+        if (!checkpoint) {
+          if (runRecords) {
+            const recorded = await readRecord(owner, runId, signal);
+            if (recorded && identity.agentIds.includes(recorded.agentId)) throw new HttpFailure(409, 'APPROVAL_CONFLICT');
+          }
+          throw new HttpFailure(404, 'RUN_NOT_FOUND');
+        }
+        const agent = checkpoint.body['agent'] as JsonObject;
+        const pending = checkpoint.body['pending'];
+        if (!pending || typeof pending !== 'object' || Array.isArray(pending) || pending['callId'] !== data['callId'] || pending['digest'] !== data['digest']
+          || typeof pending['expiresAtMs'] !== 'number' || pending['expiresAtMs'] <= Date.now()) throw new HttpFailure(409, 'APPROVAL_CONFLICT');
+        agentId = agent['id'] as string; const runtimeKey = JSON.stringify([owner, agentId]); makeRoom(runtimeKey);
+        if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
+        if (local?.lost) release(local);
+        runtime = runtimeFor(owner, agentId, identity.scope);
+
+      }
+      assertActive(signal); requireCapability(identity, 'runs:approve');
+      await checkRoute();
+      try {
+        const handle = await runtime!.approve(runId, { callId: data['callId'], digest: data['digest'], decision: data['decision'] as 'approved' | 'rejected',
+          actorId: identity.scope.principalId, ...(typeof data['reason'] === 'string' ? { reason: data['reason'] } : {}) });
+        offset = resumeOffsets.get(runId); resumeOffsets.delete(runId);
+        if (!entry) {
+          const runtimeKey = JSON.stringify([owner, agentId]);
+          entry = { owner, agentId: agentId!, digest: '', handle, runtime: runtime!, runtimeKey, submissionKey: '', ...(offset === undefined ? {} : { eventOffset: offset }) };
+          retain(entry); if (runRecords) entry.persisted = persist(entry);
+        }
+        if (runExecution === 'request') {
+          if (local && runRecords) entry.persisted = persist(entry);
+          await entry.persisted;
+        }
+        return respond({ id: handle.id, profile: 'ephemeral' }, 202);
+      } catch (error) {
+        if (error instanceof MayuraError && error.code === 'DEFINITION_CHANGED') {
+          await settleSaved(owner, runId, 'failed', 'DEFINITION_CHANGED', 'The agent changed while the run waited for approval.', signal);
+        } else resumeOffsets.delete(runId);
+        if (error instanceof HttpFailure) throw error;
+        if (error instanceof MayuraError && ['CONFLICT', 'DEFINITION_CHANGED', 'NOT_FOUND'].includes(error.code)) throw new HttpFailure(409, 'APPROVAL_CONFLICT');
+        if (error instanceof MayuraError && error.code === 'INVALID_INPUT') throw new HttpFailure(400, 'INVALID_REQUEST');
+        throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+      }
     }
     if (request.method === 'POST' && url.pathname === '/v1/runs') {
       requireCapability(identity, 'runs:submit');
       const key = request.headers.get('idempotency-key') ?? '';
       if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key)) throw new HttpFailure(400, 'IDEMPOTENCY_KEY_REQUIRED');
-      const data = await body(request, signal, runBodyBytes); exact(data, 'media' in data ? ['agentId', 'input', 'media'] : ['agentId', 'input']);
+      const data = await body(request, signal, runBodyBytes); exact(data, ['agentId', 'input', ...('media' in data ? ['media'] : []), ...('threadId' in data ? ['threadId'] : [])]);
       const agentId = data['agentId'];
       if (typeof agentId !== 'string' || !identity.agentIds.includes(agentId) || !registry.has(agentId)) throw new HttpFailure(404, 'AGENT_NOT_FOUND');
       const config = registry.get(agentId)!;
+      if ('threadId' in data) {
+        requireCapability(identity, 'threads:read'); requireCapability(identity, 'threads:write');
+        if (!conversationStore) throw new HttpFailure(404, 'NOT_ENABLED', { option: 'threads' });
+        if (typeof data['threadId'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(data['threadId'])) throw new HttpFailure(400, 'INVALID_REQUEST');
+        if ('media' in data) throw new HttpFailure(400, 'INVALID_REQUEST');
+      }
+      await authorize(identity, 'agent', agentId, 'submit', signal);
+      if (typeof data['threadId'] === 'string') {
+        await authorize(identity, 'thread', data['threadId'], 'read', signal);
+        await authorize(identity, 'thread', data['threadId'], 'append', signal);
+      }
       // Media is checked here against the agent's policy and limits, so a refusal says exactly why.
       const media = await submittedMedia(data['media'], identity.scope, signal);
       try { admitMedia(media, config.agent.media, config.limits?.maxMediaBytes ?? 20_971_520, 'INVALID_INPUT', `Agent ${agentId}`); }
       catch (error) { throw new HttpFailure(400, 'INVALID_MEDIA', { message: error instanceof MayuraError ? error.message : 'The media was refused.' }); }
-      const digestBytes = await crypto.subtle.digest('SHA-256', encoder.encode(canonical({ agentId, version: config.agent.version, input: data['input']!,
+      const digestBytes = await crypto.subtle.digest('SHA-256', encoder.encode(canonical({ agentId, version: config.agent.version, input: data['input']!, ...('threadId' in data ? { threadId: data['threadId']! } : {}),
         ...(media.length > 0 ? { media: await mediaDigests(media) } : {}) })));
       const digest = [...new Uint8Array(digestBytes)].map(value => value.toString(16).padStart(2, '0')).join('');
       assertActive(signal); requireCapability(identity, 'runs:submit');
@@ -1329,11 +1873,13 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (previous === 'duplicate') throw new HttpFailure(409, 'SUBMISSION_OUTCOME_UNKNOWN');
       if (previous && typeof previous === 'object' && 'replay' in previous) {
         if (previous.digest !== digest) throw new HttpFailure(409, 'IDEMPOTENCY_CONFLICT');
-        return response({ id: previous.replay, profile: 'ephemeral' }, 200);
+        await authorize(identity, 'run', previous.replay, 'read', signal);
+        return respond({ id: previous.replay, profile: 'ephemeral' }, 200);
       }
       if (previous) {
         if (previous.digest !== digest) throw new HttpFailure(409, 'IDEMPOTENCY_CONFLICT');
-        return response({ id: previous.handle.id, profile: 'ephemeral' }, 200);
+        await authorize(identity, 'run', previous.handle.id, 'read', signal);
+        return respond({ id: previous.handle.id, profile: 'ephemeral' }, 200);
       }
       const expired = tombstones.get(submissionKey);
       if (expired !== undefined) throw new HttpFailure(expired === digest ? 410 : 409, expired === digest ? 'RUN_EXPIRED' : 'IDEMPOTENCY_CONFLICT');
@@ -1373,23 +1919,17 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           assertActive(signal); if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
           makeRoom(runtimeKey);
           if (runs.size >= limits.maxRuns) throw new HttpFailure(429, 'RUN_LIMIT');
-          let runtime = runtimes.get(runtimeKey);
-          if (!runtime) {
-            if (runtimes.size >= limits.maxRuntimes) throw new HttpFailure(429, 'RUNTIME_LIMIT');
-            runtime = createRuntime({ profile: 'ephemeral', scope: identity.scope, permissions: config.permissions, ...(config.limits ? { limits: config.limits } : {}) });
-            runtimes.set(runtimeKey, runtime);
-          }
+          await authorize(identity, 'agent', agentId, 'submit', signal);
+          if (typeof data['threadId'] === 'string') { await authorize(identity, 'thread', data['threadId'], 'read', signal); await authorize(identity, 'thread', data['threadId'], 'append', signal); }
+          requireCapability(identity, 'runs:submit');
+          const runtime = runtimeFor(owner, agentId, identity.scope);
+          const handle = 'threadId' in data
+            ? (await conversationCall(() => runInThread({ threads: runtimeThreads.get(runtimeKey)!, runtime, agent: config.agent,
+              threadId: data['threadId'] as string, input: data['input'] }), signal)).run
+            : runtime.submit(config.agent, { input: data['input'], ...(media.length > 0 ? { media } : {}) });
           claimed = false;
-          const handle = runtime.submit(config.agent, { input: data['input'], ...(media.length > 0 ? { media } : {}) });
           const entry: Entry = { owner, agentId, digest, handle, runtime, runtimeKey, submissionKey };
-          runs.set(handle.id, entry); submissions.set(submissionKey, entry);
-          retained.set(runtimeKey, (retained.get(runtimeKey) ?? 0) + 1);
-          void handle.result().then(outcome => {
-            entry.outcome = outcome; entry.finished = true;
-            if (closed) return;
-            const timer = setTimeout(() => { retentionTimers.delete(timer); release(entry); }, limits.runRetentionMs);
-            (timer as { unref?: () => void }).unref?.(); retentionTimers.add(timer);
-          });
+          retain(entry); submissions.set(submissionKey, entry);
           if (runRecords) {
             // 202 means the run is recorded: without its record no other replica could find it, so it is stopped instead.
             try {
@@ -1409,10 +1949,10 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       let started: Entry | 'duplicate' | Replay;
       try { started = await pending; } finally { pendingSubmissions.delete(submissionKey); }
       if (started === 'duplicate') throw new HttpFailure(409, 'SUBMISSION_OUTCOME_UNKNOWN');
-      if ('replay' in started) return response({ id: started.replay, profile: 'ephemeral' }, 200);
+      if ('replay' in started) { await authorize(identity, 'run', started.replay, 'read', signal); return respond({ id: started.replay, profile: 'ephemeral' }, 200); }
       // Request mode: answer only once the run has ended and its outcome is recorded, so nothing runs after the response.
       if (runExecution === 'request') await started.persisted;
-      return response({ id: started.handle.id, profile: 'ephemeral' }, 202);
+      return respond({ id: started.handle.id, profile: 'ephemeral' }, 202);
     }
     const match = /^\/v1\/runs\/([a-f0-9-]{36})(?:\/(cancel|events))?$/.exec(url.pathname);
     if (!match) throw new HttpFailure(404, 'ROUTE_NOT_FOUND');
@@ -1421,6 +1961,28 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     const action = request.method === 'POST' && match[2] === 'cancel' ? 'cancel' : request.method === 'GET' && match[2] === 'events' ? 'events'
       : request.method === 'GET' && !match[2] ? 'read' : null;
     if (!action) throw new HttpFailure(405, 'METHOD_NOT_ALLOWED');
+    if (!entry && action === 'read' && (!local || local.lost)) {
+      requireCapability(identity, 'runs:read');
+      const checkpoint = await savedRun(runId, identity, signal);
+      if (checkpoint) return respond(savedInspection(checkpoint));
+    }
+    if (!entry && action === 'cancel' && (!local || local.lost)) {
+      requireCapability(identity, 'runs:cancel');
+      if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST');
+      const checkpoint = await savedRun(runId, identity, signal);
+      if (checkpoint) {
+        const agentId = (checkpoint.body['agent'] as JsonObject)['id'] as string;
+        if (local?.lost) release(local);
+        await checkRoute();
+        try { await runtimeFor(owner, agentId, identity.scope).cancelSaved(runId); }
+        catch (error) {
+          if (error instanceof MayuraError && ['CONFLICT', 'NOT_FOUND'].includes(error.code)) throw new HttpFailure(409, 'APPROVAL_CONFLICT');
+          throw new HttpFailure(503, 'CONVERSATION_UNAVAILABLE');
+        }
+        await settleSaved(owner, runId, 'cancelled', 'CANCELLED', 'Run cancellation was requested.', signal);
+        return respond({ id: runId, cancellationRequested: true }, 202);
+      }
+    }
     if (!entry) {
       // Not held here: another replica's (or an earlier process's) run, answered from durable run records when configured.
       if (!runRecords || (local && !local.lost)) throw new HttpFailure(404, 'RUN_NOT_FOUND');
@@ -1435,35 +1997,71 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       if (!record || !identity.agentIds.includes(record.agentId)) throw new HttpFailure(404, 'RUN_NOT_FOUND');
       assertActive(signal); requireCapability(identity, action === 'cancel' ? 'runs:cancel' : 'runs:read');
       if (action === 'cancel') {
-        if (record.status === 'running') {
+        if (['running', 'waiting'].includes(record.status)) {
+          await checkRoute();
           const records = runRecords;
           if (recordView(await recorded(() => records.requestCancel({ owner, runId, signal }), signal), runId) === null) throw new HttpFailure(404, 'RUN_NOT_FOUND');
         }
-        return response({ id: runId, cancellationRequested: true }, 202);
+        return respond({ id: runId, cancellationRequested: true }, 202);
       }
       if (action === 'events') return eventStream(stop => recordedEvents(owner, runId, cursor, stop), identity, request);
-      return response({ ...record.snapshot, ...(record.outcome ? { outcome: record.outcome } : {}) });
+      const saved = ['running', 'waiting'].includes(record.status) ? await savedRun(runId, identity, signal) : undefined;
+      if (saved?.body['waitKind'] === 'frontend' && saved.status === 'waiting') return respond(savedInspection(saved));
+      return respond({ ...record.snapshot, ...(record.outcome ? { outcome: record.outcome } : {}) });
     }
     if (action === 'cancel') {
       requireCapability(identity, 'runs:cancel');
       if (request.body !== null) throw new HttpFailure(400, 'INVALID_REQUEST', { message: 'Send the cancel request without a body.' });
+      await checkRoute();
       assertActive(signal); entry.handle.cancel();
-      return response({ id: entry.handle.id, cancellationRequested: true }, 202);
+      return respond({ id: entry.handle.id, cancellationRequested: true }, 202);
     }
     if (action === 'events') {
       requireCapability(identity, 'runs:read');
       const cursor = url.searchParams.get('after') ?? '0';
       if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor))) throw new HttpFailure(400, 'INVALID_CURSOR');
       assertActive(signal);
+      if (entry.eventOffset !== undefined && runRecords) return eventStream(stop => recordedEvents(owner, runId, Number(cursor), stop), identity, request);
       return eventStream(stop => entry.handle.observe({ after: Number(cursor), signal: stop })[Symbol.asyncIterator](), identity, request,
         () => { if (entry.finished) entry.collected = true; });
     }
     requireCapability(identity, 'runs:read');
     if (entry.outcome) entry.collected = true;
-    return response({ ...inspection(entry), ...(entry.outcome ? { outcome: entry.outcome } : {}) });
+    return respond({ ...inspection(entry), ...(entry.outcome ? { outcome: entry.outcome } : {}) });
   };
 
+  const reconciliation = createApprovalReconciliation(options.approvalReconciliation, {
+    ...(conversationStore ? { store: conversationStore.runCheckpoints } : {}), ...(authorization === undefined ? {} : { authorization }),
+    read: async (scope, runId, signal) => recordView(await recorded(() => runRecords!.read({ owner: canonical(scope as unknown as JsonValue), runId, signal }), signal), runId),
+    abandon: async (scope, runId, signal) => recordView(await recorded(() => runRecords!.abandon({ owner: canonical(scope as unknown as JsonValue), runId, nowMs: Date.now(), signal }), signal), runId),
+    agentExists: id => registry.has(id),
+    hasRecording: async (scope, checkpoint) => {
+      const binding = checkpoint.body['recording']; if (binding === undefined) return false;
+      if (!binding || typeof binding !== 'object' || Array.isArray(binding) || typeof binding['threadId'] !== 'string') throw new MayuraError('STORAGE_UNAVAILABLE', 'Invalid thread association.');
+      return !!await conversationStore!.threads.recording({ scope: sha256Hex(`mayura:thread-scope:v1\0${scope.principalId}\0${scope.projectId}`),
+        id: binding['threadId'], runtimeRunId: checkpoint.runId, action: 'read' });
+    },
+    record: async (scope, checkpoint, receipt) => {
+      const binding = checkpoint.body['recording'];
+      if (binding !== undefined) {
+        if (!binding || typeof binding !== 'object' || Array.isArray(binding)) throw new MayuraError('STORAGE_UNAVAILABLE', 'Invalid thread association.');
+        // Keep uncertain transcript/results in the sealed checkpoint, outside model history. Close only its turn.
+        await scopedThreads(scope).recorder.complete({ runId: checkpoint.runId, scope, binding, messages: [], approvals: [], reconciliation: receipt,
+          outcome: { status: 'outcome_unknown', error: { code: 'OUTCOME_UNKNOWN', message: 'An operator closed the claimed approval without resuming the unfinished run.' } } });
+      }
+      const entry = runs.get(checkpoint.runId); if (entry) { entry.lost = true; release(entry); }
+    },
+    timeoutMs: limits.requestTimeoutMs, maxOperations: limits.maxRequests,
+  });
+  const recovery = createRecoveryController(options.conversationRecovery, {
+    scan: (after, limit) => conversationStore!.runCheckpoints.scan({ limit, ...(after ? { after } : {}) }),
+    process: recoverCandidate, timeoutMs: submissionTimeoutMs,
+  });
   return Object.freeze({
+    inspectAuthorizationAudit: () => authorization?.auditSnapshot() ?? null,
+    flushAuthorizationAudit: async () => { await authorization?.flushAudit(); },
+    recoverConversations: recovery.recover,
+    inspectClaimedApproval: reconciliation.inspect, reconcileClaimedApproval: reconciliation.reconcile,
     async fetch(request: Request): Promise<Response> {
       const allow = (result: Response): Response => {
         const requestOrigin = request.headers.get('origin');
@@ -1480,8 +2078,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const abort = (): void => { controller.abort(); };
       request.signal.addEventListener('abort', abort, { once: true });
       if (request.signal.aborted) abort();
-      const submission = runExecution === 'request' && request.method === 'POST' && new URL(request.url).pathname === '/v1/runs';
-      const timer = setTimeout(abort, submission ? submissionTimeoutMs : limits.requestTimeoutMs);
+      const submission = runExecution === 'request' && request.method === 'POST' && /^\/v1\/runs(?:\/[a-f0-9-]{36}\/approvals)?$/.test(new URL(request.url).pathname);
+      const compacting = request.method === 'POST' && /^\/v1\/threads\/[^/]+\/compactions$/.test(new URL(request.url).pathname);
+      const timer = setTimeout(abort, compacting && compaction ? compaction.maxDurationMs + limits.requestTimeoutMs : submission ? submissionTimeoutMs : limits.requestTimeoutMs);
       let result: Response;
       try { result = await bounded(route(request, controller.signal).catch(error => {
         throw error instanceof HttpFailure ? error : new HttpFailure(500, 'INTERNAL_ERROR');
@@ -1492,15 +2091,15 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       return allow(result);
     },
     async close(): Promise<void> {
-      closed = true;
+      closed = true; authorization?.close(); recovery.stop(); reconciliation.stop(); compaction?.stop();
       for (const timer of retentionTimers) clearTimeout(timer); retentionTimers.clear();
       for (const finish of [...streams]) finish();
       await Promise.all([...runtimes.values()].map(runtime => runtime.close()));
       // Let owners record the outcomes of the runs just closed; a write still pending after this ends as outcome_unknown
       // once its lease lapses.
-      if (persisters.size > 0) {
+      {
         let timer: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([Promise.allSettled([...persisters]), new Promise(resolve => { timer = setTimeout(resolve, Math.min(5_000, limits.runLeaseMs)); })]);
+        await Promise.race([Promise.allSettled([recovery.settled(), reconciliation.settled(), ...(compaction ? [compaction.settled()] : []), ...persisters]), new Promise(resolve => { timer = setTimeout(resolve, Math.min(5_000, limits.runLeaseMs)); })]);
         clearTimeout(timer);
       }
       persisterStop.abort();

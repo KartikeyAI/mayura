@@ -1,7 +1,7 @@
 import { HTTPClient, Mistral } from '@mistralai/mistralai';
 import { HTTPClientError, MistralError } from '@mistralai/mistralai/models/errors';
 import { assertPositiveInteger, jsonValue, MayuraError, ModelProviderError, type JsonObject, type JsonValue, type Media, type MediaType, type ModelAdapter,
-  type ModelDefinitionCheck, type ModelFailureReason, type ModelMediaCapability, type ModelMessage, type ModelProvider, type ModelRequest, type ModelResponse,
+  type ModelDefinitionCheck, type ModelFailureReason, type ModelHistoryMessage, type ModelMediaCapability, type ModelProvider, type ModelRequest, type ModelResponse,
   type ModelStreamEvent, type ModelToolCall, type ProviderModelSettings } from 'mayura';
 import { bytesToBase64, checkStrictDefinition, encodedMediaBytes, modelToolNames, providerEndpoint, providerHeaders, providerHttpFailure, streamModelCall, strictJsonSchema, tokenCostMicros } from 'mayura/core/host';
 import { catalog } from './catalog.js';
@@ -96,9 +96,12 @@ function mediaChunks(item: Media): JsonObject[] {
   const chunk = { type: 'image_url', imageUrl: 'data' in item ? `data:${item.mediaType};base64,${bytesToBase64(item.data)}` : item.url };
   return item.name === undefined ? [chunk] : [{ type: 'text', text: `Image: ${item.name}` }, chunk];
 }
-/** One Mistral call id for every call id in the conversation: its own where it is valid, a fresh one otherwise. */
-function callIdsFor(messages: readonly ModelMessage[]): ReadonlyMap<string, string> {
-  const all = messages.flatMap(message => message.role === 'assistant' ? message.calls.map(call => call.id) : message.role === 'tool' ? [message.callId] : []);
+/**
+ * One Mistral call id for every call id in the conversation, the history's and this run's: its own where it is valid,
+ * a fresh one otherwise.
+ */
+function callIdsFor(messages: readonly ModelHistoryMessage[]): ReadonlyMap<string, string> {
+  const all = messages.flatMap(message => message.role === 'assistant' ? 'calls' in message ? message.calls.map(call => call.id) : [] : message.role === 'tool' ? [message.callId] : []);
   const ids = new Map<string, string>(); const used = new Set<string>();
   for (const id of all) if (MISTRAL_CALL_ID.test(id)) { ids.set(id, id); used.add(id); }
   let next = 0;
@@ -133,11 +136,29 @@ function contentOf(content: JsonValue | undefined): { text: string; thinking: Js
 
 /** One of the model's own tool-call turns in this run: its thinking and the ids of its calls. */
 type OwnTurn = { thinking: JsonObject[]; calls: string[] };
-/** The conversation as Mistral messages (in the SDK's shape); `assistants` are the model's own earlier tool-call turns. */
+/**
+ * The history as Mistral messages, in the encoding this run's own turns use, without thinking (history has none). This
+ * run's tools keep their names; a tool only the history used gets its own. Mistral takes any order of these roles.
+ */
+function historyMessages(request: ModelRequest, history: readonly ModelHistoryMessage[], callIds: ReadonlyMap<string, string>): JsonValue[] {
+  const used = history.flatMap(message => message.role === 'assistant' && 'calls' in message ? message.calls.map(call => call.toolId) : message.role === 'tool' ? [message.toolId] : []);
+  const names = modelToolNames([...new Set([...request.tools.map(tool => tool.id), ...used])]);
+  return history.map((message): JsonValue => {
+    if ('media' in message && message.media?.length) return failed('configuration');
+    if (message.role === 'user') return { role: 'user', content: JSON.stringify(message.content) };
+    if (message.role === 'tool') return { role: 'tool', toolCallId: callIds.get(message.callId)!, name: names.get(message.toolId)!, content: JSON.stringify(message.result) };
+    if ('output' in message) return { role: 'assistant', content: JSON.stringify(message.output) };
+    return { role: 'assistant', toolCalls: message.calls.map(call => ({ id: callIds.get(call.id)!, type: 'function', function: { name: names.get(call.toolId)!, arguments: JSON.stringify(call.input) } })) };
+  });
+}
+/**
+ * The conversation as Mistral messages (in the SDK's shape): the history first, then this run's messages.
+ * `assistants` are the model's own earlier tool-call turns in this run, counted in this run's messages alone.
+ */
 function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>, assistants: readonly OwnTurn[]): JsonValue[] {
-  const callIds = callIdsFor(request.messages);
+  const callIds = callIdsFor([...request.history ?? [], ...request.messages]);
   let turn = 0;
-  return [{ role: 'system', content: request.instructions }, ...request.messages.map((message): JsonValue => {
+  return [{ role: 'system', content: request.instructions }, ...request.history ? historyMessages(request, request.history, callIds) : [], ...request.messages.map((message): JsonValue => {
     if (message.role === 'user') {
       const text = JSON.stringify(message.content);
       return { role: 'user', content: message.media?.length ? [{ type: 'text', text }, ...message.media.flatMap(mediaChunks)] : text };
@@ -321,7 +342,7 @@ export function mistral(options: MistralProviderOptions): ModelProvider {
 
       return Object.freeze({
         id: settings.id, maxCostMicros: settings.maxCostMicros,
-        capabilities: Object.freeze({ tools: true, structuredOutput: true, ...(media ? { media } : {}) }),
+        capabilities: Object.freeze({ tools: true, structuredOutput: true, history: true, ...(media ? { media } : {}) }),
         checkDefinition: (definition: ModelDefinitionCheck): void => checkStrictDefinition(definition),
         generate: (request: ModelRequest): Promise<ModelResponse> => call(request),
         stream: (request: ModelRequest): AsyncIterable<ModelStreamEvent> => streamModelCall((onDelta, consumer) => call(request, onDelta, consumer)),
@@ -329,3 +350,5 @@ export function mistral(options: MistralProviderOptions): ModelProvider {
     },
   });
 }
+
+export { mistralEmbeddings, type EmbeddingsOptions } from './embeddings.js';

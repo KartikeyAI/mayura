@@ -1,4 +1,4 @@
-import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
+import { assertPositiveInteger, freezeJson, jsonValue, MayuraError, type Authorizer, type JsonObject, type JsonValue, type Scope } from '@mayura/core';
 import { evaluateLifecycleControl, evaluateLifecycleObserver, sha256Hex, snapshotHookOptions, utf8ByteLength } from '@mayura/core/host';
 import type { MemoryEntry, MemoryHooks, MemoryRecord, MemoryStore, MemoryTombstone } from '@mayura/memory';
 
@@ -140,7 +140,7 @@ async function remote<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 /** Canonical-state firewall around an untrusted remote semantic index. */
-export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemoryStore; adapter: RemoteMemoryAdapter; scope: Scope; hooks?: MemoryHooks }>): RemoteMemoryBridge {
+export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemoryStore; adapter: RemoteMemoryAdapter; scope: Scope; hooks?: MemoryHooks; authorization?: Authorizer }>): RemoteMemoryBridge {
   if (!options?.canonical || typeof options.canonical.get !== 'function' || !options.adapter
     || !['publish', 'remove', 'search'].every(method => typeof (options.adapter as unknown as Record<string, unknown>)[method] === 'function')) {
     throw new MayuraError('INVALID_CONFIG', 'Remote memory requires a canonical store and adapter.');
@@ -149,6 +149,20 @@ export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemorySt
   const namespace = scopeNamespace(scope); const adapter = options.adapter; const provider = identifier(adapter.id); const canonical = options.canonical;
   const { handlers, timeoutMs } = snapshotHookOptions(options.hooks, ['beforeMemoryWrite', 'afterMemoryWrite'] as const,
     'Memory hooks require callable beforeMemoryWrite/afterMemoryWrite handlers and a bounded timeout.');
+  const authorization = options.authorization;
+  if (authorization !== undefined && (!authorization || typeof authorization.authorize !== 'function')) throw new MayuraError('INVALID_CONFIG', 'Remote memory authorization requires a core authorizer.');
+  const evaluate = authorization?.authorize.bind(authorization);
+  const can = async (id: string, action: string, signal: AbortSignal, resourceScope: Scope = scope): Promise<boolean> => {
+    if (signal.aborted) throw new MayuraError('CANCELLED', 'Remote memory request was cancelled.');
+    if (!evaluate) return true;
+    const decision = await evaluate(scope, action, { kind: 'memory', id, scope: resourceScope, ...(id === 'collection' && action === 'search_remote' ? {} : { ownerId: scope.principalId }) }, { signal });
+    if (decision.effect === 'allow') return true;
+    if (!['no_match', 'explicit_deny', 'permission_denied', 'scope_mismatch', 'invalid_request'].includes(decision.reason)) throw new MayuraError('PERMISSION_DENIED', 'Remote memory authorization is unavailable or cancelled.');
+    return false;
+  };
+  const requireAccess = async (id: string, action: string, signal: AbortSignal, resourceScope: Scope = scope): Promise<void> => {
+    if (!await can(id, action, signal, resourceScope)) throw new MayuraError('PERMISSION_DENIED', 'The remote memory operation is not authorized.');
+  };
   const beforeWrite = handlers.beforeMemoryWrite as MemoryHooks['beforeMemoryWrite']; const afterWrite = handlers.afterMemoryWrite as MemoryHooks['afterMemoryWrite'];
   const before = async (entry: MemoryEntry, operation: 'publish' | 'remove', writeSignal: AbortSignal): Promise<void> => {
     if (!beforeWrite) return;
@@ -171,20 +185,29 @@ export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemorySt
   return Object.freeze<RemoteMemoryBridge>({
     namespace, provider,
     publish: async (record, publishOptions = {}) => {
+      record = immutable(record);
       if (record.status !== 'active') throw new MayuraError('INVALID_INPUT', 'Only active canonical records can be published.');
-      await current(record); const writeSignal = signal(publishOptions.signal); await before(record, 'publish', writeSignal);
+      const writeSignal = signal(publishOptions.signal);
+      await requireAccess(record.id, 'publish', writeSignal, record.scope); await requireAccess(record.id, 'read', writeSignal, record.scope);
+      await current(record); await before(record, 'publish', writeSignal);
+      await requireAccess(record.id, 'publish', writeSignal); await requireAccess(record.id, 'read', writeSignal);
       const receipt = await remote(() => adapter.publish(record, namespace, publishOptions.previous, writeSignal));
       await after(record, 'publish'); return receipt;
     },
     remove: async (tombstone, reference, removeOptions = {}) => {
+      tombstone = immutable(tombstone);
       if (tombstone.status !== 'deleted') throw new MayuraError('INVALID_INPUT', 'Remote deletion requires a canonical tombstone.');
-      await current(tombstone); const writeSignal = signal(removeOptions.signal); await before(tombstone, 'remove', writeSignal);
+      const writeSignal = signal(removeOptions.signal);
+      await requireAccess(tombstone.id, 'remove_remote', writeSignal, tombstone.scope);
+      await current(tombstone); await before(tombstone, 'remove', writeSignal);
+      await requireAccess(tombstone.id, 'remove_remote', writeSignal);
       await remote(() => adapter.remove(tombstone, namespace, reference, writeSignal)); await after(tombstone, 'remove');
     },
     search: async (query, searchOptions = {}) => {
       bounded(query, 'Memory search query', 512); const limit = searchOptions.limit ?? 10;
       assertPositiveInteger(limit, 'limit'); if (limit > 50) throw new MayuraError('INVALID_INPUT', 'Remote memory searches are limited to 50 candidates.');
-      const candidates = await remote(() => adapter.search(query, namespace, limit, signal(searchOptions.signal)));
+      const requestSignal = signal(searchOptions.signal); await requireAccess('collection', 'search_remote', requestSignal);
+      const candidates = await remote(() => adapter.search(query, namespace, limit, requestSignal));
       if (!Array.isArray(candidates) || candidates.length > limit) return fail();
       const hits: RemoteMemorySearchHit[] = []; const seen = new Set<string>();
       const excluded = { wrongScope: 0, stale: 0, deleted: 0, duplicate: 0 };
@@ -193,14 +216,17 @@ export function createRemoteMemoryBridge(options: Readonly<{ canonical: MemorySt
         if (copy.reference.provider !== provider) return fail();
         if (copy.namespace !== namespace) { excluded.wrongScope++; continue; }
         if (seen.has(copy.canonicalId)) { excluded.duplicate++; continue; } seen.add(copy.canonicalId);
+        if (!await can(copy.canonicalId, 'read', requestSignal)) continue;
         const stored = await canonical.get(copy.canonicalId, { includeDeleted: true });
         if (!stored || !equalScope(stored.scope, scope) || stored.version !== copy.canonicalVersion
           || (stored.status === 'active' && stored.contentSha256 !== copy.contentSha256)) { excluded.stale++; continue; }
         if (stored.status === 'deleted') { excluded.deleted++; continue; }
         // A superseded record is history, not a current retrieval candidate.
         if (stored.status !== 'active') { excluded.stale++; continue; }
+        if (!await can(stored.id, 'read', requestSignal)) continue;
         hits.push({ record: stored, score: number(copy.score, 0, 1), reference: copy.reference });
       }
+      await requireAccess('collection', 'search_remote', requestSignal);
       return immutable<RemoteMemorySearchResult>({ mode: 'semantic-index', provider, hits, excluded });
     },
   });

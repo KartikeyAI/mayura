@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as NotFoundRouteImport } from './routes/not-found'
+import { Route as UiRouteImport } from './routes/ui'
 import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
 import { Route as CompareIndexRouteImport } from './routes/compare/index'
 import { Route as CompareSlugRouteImport } from './routes/compare/$slug'
@@ -38,6 +39,11 @@ const DocsRouteRoute = DocsRouteRouteImport.update({
 const NotFoundRoute = NotFoundRouteImport.update({
   id: '/not-found',
   path: '/not-found',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UiRoute = UiRouteImport.update({
+  id: '/ui',
+  path: '/ui',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArticlesIndexRoute = ArticlesIndexRouteImport.update({
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
+  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/not-found': typeof NotFoundRoute
+  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
+  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/not-found'
+    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/not-found'
+    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/not-found'
+    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
   NotFoundRoute: typeof NotFoundRoute
+  UiRoute: typeof UiRoute
   CompareSlugRoute: typeof CompareSlugRoute
   GuidesSlugRoute: typeof GuidesSlugRoute
   IntegrationsSlugRoute: typeof IntegrationsSlugRoute
@@ -242,6 +255,13 @@ declare module '@tanstack/react-router' {
       path: '/not-found'
       fullPath: '/not-found'
       preLoaderRoute: typeof NotFoundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ui': {
+      id: '/ui'
+      path: '/ui'
+      fullPath: '/ui'
+      preLoaderRoute: typeof UiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/articles/': {
@@ -349,6 +369,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
   NotFoundRoute: NotFoundRoute,
+  UiRoute: UiRoute,
   CompareSlugRoute: CompareSlugRoute,
   GuidesSlugRoute: GuidesSlugRoute,
   IntegrationsSlugRoute: IntegrationsSlugRoute,

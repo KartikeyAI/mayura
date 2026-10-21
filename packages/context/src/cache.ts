@@ -104,6 +104,8 @@ export function createContextCache(options: ContextCacheOptions = {}): ContextCa
 
   return Object.freeze<ContextCache>({
     async assemble(input) {
+      // A policy can change without a source revision or policy-version change. Never cache authorization decisions.
+      if (input.authorization !== undefined) return assembleContext(input);
       // Captured before any await: an invalidation at any point during this call prevents caching its result.
       const started = generation;
       const { key, request } = await prepare(input);
@@ -117,6 +119,7 @@ export function createContextCache(options: ContextCacheOptions = {}): ContextCa
       return admit(await compute(key, request, started), request);
     },
     prefetch(input) {
+      if (input.authorization !== undefined) return;
       if (queue.length >= 64) return;
       queue.push(input); pump();
     },

@@ -3,6 +3,9 @@ import { articles } from 'virtual:mayura-content';
 
 /** The directory's areas, in the order its filters list them. `key` matches `area` in an integration page's frontmatter. */
 export const areas = [
+  { key: 'vectors', title: 'Vector stores' },
+  { key: 'rerankers', title: 'Rerankers' },
+  { key: 'gateways', title: 'AI gateways' },
   { key: 'providers', title: 'Model providers' },
   { key: 'voice', title: 'Voice' },
   { key: 'storage', title: 'Databases' },
@@ -11,6 +14,7 @@ export const areas = [
   { key: 'observability', title: 'Observability' },
   { key: 'sandboxes', title: 'Sandboxes' },
   { key: 'browsers', title: 'Browsers' },
+  { key: 'authz', title: 'Authorization' },
   { key: 'auth', title: 'Sign-in' },
   { key: 'keys', title: 'API keys' },
   { key: 'deploy', title: 'Deploy' },

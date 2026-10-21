@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { storageError, StorageError, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type MemoryIndexMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore } from '@mayura/storage-contracts';
+import { storageError, StorageError, type CreateRecord, type UpdateRecord, type MigrateRecord, type ExecutionWaitMethod, type WorkflowGraphStore, type WorkflowGraphDiscoveryStore, type DurableBudgetMethod, type MemoryIndexMethod, type WorkflowTreeMethod, type WorkflowTreeDiscoveryStore, type ThreadMethod, type RunCheckpointMethod } from '@mayura/storage-contracts';
 import { SqliteDatabase } from './sqlite-database.js';
 import { identifier, cursor, type SchedulerMethod, type ScheduledMethod } from '@mayura/storage-sql/host';
 
@@ -34,6 +34,8 @@ port.on('message', (request: Request) => { serial = serial.then(async () => {
         case 'durableBudgets': result = await database.durableBudgetsCommand(request.args[0] as DurableBudgetMethod, request.args[1]); break;
         case 'workflowTrees': result = await database.workflowTreesCommand(request.args[0] as WorkflowTreeMethod, request.args[1]); break;
         case 'memory': result = await database.memoryCommand(request.args[0] as MemoryIndexMethod, request.args[1]); break;
+        case 'threads': result = await database.threadsCommand(request.args[0] as ThreadMethod, request.args[1]); break;
+        case 'runCheckpoints': result = await database.runCheckpointsCommand(request.args[0] as RunCheckpointMethod, request.args[1]); break;
         case 'workflowTreeDiscovery': result = await database.workflowTreeDiscoveryCommand(request.args[0] as keyof WorkflowTreeDiscoveryStore,request.args[1]); break;
         case 'create': result = database.create(request.args[0] as CreateRecord); break;
         case 'update': result = database.update(request.args[0] as UpdateRecord); break;

@@ -11,3 +11,11 @@ coverage/
 .artifacts/
 .claude/
 internal-docs/
+
+# Framework build outputs produced by workspace starter qualification.
+packages/cli/starters/*/.next/
+packages/cli/starters/*/.nuxt/
+packages/cli/starters/*/.output/
+packages/cli/starters/*/.svelte-kit/
+packages/cli/starters/*/.react-router/
+packages/cli/starters/*/build/

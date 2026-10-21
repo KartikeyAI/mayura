@@ -12,6 +12,8 @@ import { workflowConformance } from '../../workflows/test/conformance.js';
 import { workflowTreeRuntimeConformance } from '../../workflows/test/tree-runtime-conformance.js';
 import { workflowTreeCoordinatorConformance } from '../../workflows/test/tree-coordinator-conformance.js';
 import { documentFixtures } from './document-fixtures.js';
+import { conversationConformance } from '../../storage/test/conversation-conformance.js';
+import { createDocumentStore } from '../src/document/store.js';
 
 const fixtures = documentFixtures(async () => {
   const backend = memoryDocumentBackend();
@@ -38,4 +40,11 @@ describe('document store on memory', () => {
   workflowTreeCapabilityConformance('Document memory', fixtures.trees as never);
   workflowTreeRuntimeConformance('Document memory', fixtures.trees as never);
   workflowTreeCoordinatorConformance('Document memory', fixtures.trees as never);
+});
+
+describe('threads and run checkpoints on documents', () => {
+  conversationConformance('document (memory backend)', async () => {
+    const store = createDocumentStore(memoryDocumentBackend());
+    return { store, close: () => store.close() };
+  });
 });

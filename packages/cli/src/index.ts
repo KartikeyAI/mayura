@@ -49,7 +49,7 @@ export const PEER_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */
-export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent'] as const);
+export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent', 'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt'] as const);
 export type StarterName = typeof STARTER_NAMES[number];
 
 const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze({
@@ -58,6 +58,12 @@ const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze
   'research-team': 'Multi-agent research: a planner, parallel researchers over a source library and a writer as one durable workflow under a shared budget, with cited reports stored as content-addressed artifacts and optional OpenTelemetry traces.',
   'event-automation': 'Signed webhooks start durable workflows in which a triage agent acts through MCP tools under explicit capability grants; forged, stale and replayed deliveries are refused.',
   'cli-agent': 'Command-line assistant: chat or one-shot requests about the folder you run it in, with file tools confined to that folder, writes you confirm, skills and streaming replies.',
+  'nextjs': 'Next.js App Router notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'hono': 'Hono across Node, Bun, Deno and Workers notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'react-router': 'React Router framework notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'tanstack-start': 'TanStack Start notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'sveltekit': 'SvelteKit notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'nuxt': 'Nuxt notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
 });
 
 const id = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
@@ -66,7 +72,7 @@ const starterRoot = fileURLToPath(new URL('../starters/', import.meta.url));
 // Bounds for one starter: text files only, so a plan can always show what it writes.
 const starterLimits = Object.freeze({ files: 256, fileBytes: 262_144, totalBytes: 4_194_304 });
 // Build output, installs and local state never leave the repository copy of a starter.
-const starterSkipped = new Set(['node_modules', 'dist', '.data', 'coverage']);
+const starterSkipped = new Set(['node_modules', 'dist', 'build', '.data', 'coverage']);
 
 export interface ProjectToolRecord {
   readonly id: string; readonly version: string; readonly effects: 'none' | 'read' | 'write' | 'host'; readonly capabilities: readonly string[];
@@ -153,7 +159,7 @@ async function collectStarter(name: StarterName): Promise<Map<string, string>> {
     const entries = await readdir(resolve(root, ...segments), { withFileTypes: true });
     for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
       if (starterSkipped.has(entry.name) || entry.name.startsWith('.') || entry.name.endsWith('.tsbuildinfo')) continue;
-      if (!/^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/u.test(entry.name)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file name.');
+      if (!/^[A-Za-z0-9_+$\[\]][A-Za-z0-9._+$\[\]-]{0,99}$/u.test(entry.name)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file name.');
       const next = [...segments, entry.name];
       if (entry.isDirectory()) { await walk(next); continue; }
       const path = resolve(root, ...next); const details = await lstat(path);
@@ -175,8 +181,8 @@ async function starterManifest(content: string, name: string): Promise<string> {
   for (const field of ['dependencies', 'devDependencies']) {
     const entries = manifest[field] as Record<string, string> | undefined;
     for (const [dependency, range] of Object.entries(entries ?? {})) {
-      if (range === 'workspace:*' && dependency === 'mayura') entries![dependency] = version;
-      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only mayura to the workspace.');
+      if (range === 'workspace:*' && (dependency === 'mayura' || dependency === '@mayurajs/storage-d1')) entries![dependency] = version;
+      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only mayura and the reviewed D1 extension to the workspace.');
     }
   }
   return `${JSON.stringify(manifest, null, 2)}\n`;
@@ -236,7 +242,7 @@ export function validateProject(value: unknown): MayuraProject {
   const definitions = root['definitions'].map(raw => {
     const item = record(raw); if (Object.keys(item).sort().join(',') !== 'id,kind,source,version' || !['agent', 'workflow'].includes(String(item['kind']))
       || typeof item['id'] !== 'string' || !id.test(item['id']) || typeof item['version'] !== 'string' || !id.test(item['version'])
-      || typeof item['source'] !== 'string' || !/^src\/[A-Za-z0-9_./-]+\.ts$/u.test(item['source']) || item['source'].includes('..')) {
+      || typeof item['source'] !== 'string' || !/^(?:src|server)\/[A-Za-z0-9_./-]+\.(?:ts|mjs)$/u.test(item['source']) || item['source'].includes('..')) {
       throw new MayuraError('INVALID_CONFIG', 'Project definition record is invalid.');
     }
     const key = `${item['kind']}:${item['id']}:${item['version']}`; if (identities.has(key)) throw new MayuraError('CONFLICT', 'Project definition identity is duplicated.');
@@ -274,3 +280,5 @@ export function starters(): readonly Readonly<{ name: StarterName; description: 
 }
 export { defineMayuraApplication, loadApplication, migrateApplication, runWorkerApplication, runWorkerOnce, serveApplication, type MayuraApplication, type MayuraLifecycleEvent,
   type MayuraServerHandle, type MayuraWorkerHandle, type MayuraWorkerOnceReport } from './application.js';
+
+export { uiComponents, planUiComponents, applyUiPlan, type UiComponent, type UiPlan } from './ui.js';

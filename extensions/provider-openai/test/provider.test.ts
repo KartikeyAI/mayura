@@ -95,6 +95,84 @@ describe('@mayurajs/provider-openai', () => {
     await runtime.close();
   });
 
+  describe('with a conversation history', () => {
+    const tools = [{ id: 'orders.lookup', description: 'Look up an order.', inputJsonSchema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false } }];
+    // All four kinds of history message, one of them a call to a tool this run does not offer.
+    const history = [
+      { role: 'user' as const, content: { message: 'Where is order A-1001?' } },
+      { role: 'assistant' as const, calls: [{ id: 'call-1', toolId: 'orders.lookup', input: { orderId: 'A-1001' } }, { id: 'call-2', toolId: 'billing.refund', input: { orderId: 'A-1001' } }] },
+      { role: 'tool' as const, callId: 'call-1', toolId: 'orders.lookup', result: { status: 'shipped' } },
+      { role: 'tool' as const, callId: 'call-2', toolId: 'billing.refund', result: 'refused' },
+      { role: 'assistant' as const, output: 'Order A-1001 has shipped.' },
+    ];
+    const historyInput = [
+      { role: 'user', content: '{"message":"Where is order A-1001?"}' },
+      { type: 'function_call', call_id: 'call-1', name: 'orders_lookup', arguments: '{"orderId":"A-1001"}' },
+      { type: 'function_call', call_id: 'call-2', name: 'billing_refund', arguments: '{"orderId":"A-1001"}' },
+      { type: 'function_call_output', call_id: 'call-1', output: '{"status":"shipped"}' },
+      { type: 'function_call_output', call_id: 'call-2', output: '"refused"' },
+      { role: 'assistant', content: '"Order A-1001 has shipped."' },
+    ];
+    const replies = (bodies: unknown[], seen: { url: string; body: JsonObject; headers: Headers }[]): typeof globalThis.fetch => async (input, init) => {
+      seen.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')) as JsonObject, headers: new Headers(init?.headers) });
+      return json(bodies.shift());
+    };
+    const lookup = (callId: string) => ({ status: 'completed', usage: usage(10, 5), output: [
+      { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'private-reasoning' },
+      { type: 'function_call', id: 'fc_1', status: 'completed', call_id: callId, name: 'orders_lookup', arguments: '{"orderId":"A-1002"}' }] });
+
+    it('sends the history first, in the Responses encoding, then this run\'s messages', async () => {
+      const seen: { url: string; body: JsonObject; headers: Headers }[] = [];
+      const adapter = openai({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('gpt-test', settings);
+      expect(adapter.capabilities.history).toBe(true);
+      await adapter.generate({ ...request, tools, history });
+      expect(seen[0]!.body['input']).toEqual([...historyInput, { role: 'user', content: '"hi"' }]);
+      // Only this run's tools are offered; a tool only the history called is named, never offered.
+      expect((seen[0]!.body['tools'] as JsonObject[]).map(tool => tool['name'])).toEqual(['orders_lookup']);
+    });
+
+    it('sends the history first on the next call of the run too, keeping it out of the continuation', async () => {
+      const seen: { url: string; body: JsonObject; headers: Headers }[] = [];
+      const adapter = openai({ apiKey: 'fixture-key', fetch: replies([lookup('call_run_1'), { status: 'completed', output: [message('{"answer":"ok"}')], usage: usage(20, 4) }], seen) }).model('gpt-test', settings);
+      const first = await adapter.generate({ ...request, tools, history });
+      expect(first).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call_run_1', toolId: 'orders.lookup' }] });
+      expect(JSON.stringify(first.continuation)).not.toContain('A-1001');
+      const second = await adapter.generate({ ...request, tools, history, continuation: first.continuation!, messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', calls: [{ id: 'call_run_1', toolId: 'orders.lookup', input: { orderId: 'A-1002' } }] },
+        { role: 'tool', callId: 'call_run_1', toolId: 'orders.lookup', result: { status: 'packed' } },
+      ] });
+      expect(second).toMatchObject({ type: 'final', output: { answer: 'ok' } });
+      // The history, then this run's input and the model's own output items (reasoning included) from the continuation,
+      // then only the messages the continuation has not seen.
+      expect(seen[1]!.body['input']).toEqual([...historyInput, { role: 'user', content: '"hi"' }, ...lookup('call_run_1').output,
+        { type: 'function_call_output', call_id: 'call_run_1', output: '{"status":"packed"}' }]);
+    });
+
+    it('refuses a call whose id repeats a history call\'s, charging for it', async () => {
+      const adapter = openai({ apiKey: 'fixture-key', fetch: replies([lookup('call-1')], []) }).model('gpt-test', settings);
+      await expect(adapter.generate({ ...request, tools, history })).rejects.toMatchObject({ reason: 'invalid_response', costMicros: 10 + 5 * 4 });
+    });
+
+    it('runs an agent given a history through a model registry', async () => {
+      const seen: { url: string; body: JsonObject; headers: Headers }[] = [];
+      const models = createModels({ providers: [openai({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 10, outputTokens: 2 }, seen) })],
+        prices: { 'openai/gpt-test': settings.pricing }, maxCallCostMicros: 10_000 });
+      const agent = defineAgent({ id: 'a', version: '1', instructions: 'x', input: z.object({ message: z.string() }), output: z.object({ answer: z.string() }), tools: [], model: models.model('openai/gpt-test') });
+      const runtime = createRuntime({ profile: 'ephemeral', permissions: { allow: ['model:openai/gpt-test'] }, limits: { maxCostMicros: 100_000 } });
+      const turns = [{ role: 'user' as const, content: { message: 'Hello' } }, { role: 'assistant' as const, output: { answer: 'Hi.' } }];
+      expect(await runtime.submit(agent, { input: { message: 'Again' }, history: turns }).result()).toMatchObject({ status: 'succeeded', output: { answer: 'ok' } });
+      await runtime.close();
+      expect(seen[0]!.body['input']).toEqual([{ role: 'user', content: '{"message":"Hello"}' }, { role: 'assistant', content: '{"answer":"Hi."}' }, { role: 'user', content: '{"message":"Again"}' }]);
+    });
+  });
+
+  it('without a history, sends this run\'s messages alone, as before', async () => {
+    const seen: { url: string; body: JsonObject; headers: Headers }[] = [];
+    await openai({ apiKey: 'fixture-key', fetch: transport({ kind: 'final', output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 }, seen) }).model('gpt-test', settings).generate(request);
+    expect(seen[0]!.body['input']).toEqual([{ role: 'user', content: '"hi"' }]);
+  });
+
   it('ships a dated catalog whose prices a registry accepts, with the long-context tier on every model', () => {
     expect(catalog.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
     const models = createModels({ providers: [openai({ apiKey: 'fixture-key' })], prices: 'catalog', maxCallCostMicros: 10_000 });

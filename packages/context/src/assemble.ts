@@ -108,6 +108,18 @@ export async function assembleContext(options: AssembleContextOptions): Promise<
   const estimate = estimatorInput.estimate.bind(estimatorInput);
   const hooks = contextHooks(options.hooks); const signal = options.signal;
   if (signal !== undefined && !(signal instanceof AbortSignal)) return invalid('signal must be an AbortSignal.');
+  const authorization = options.authorization;
+  if (authorization !== undefined && (!authorization || typeof authorization.authorize !== 'function')) throw new MayuraError('INVALID_CONFIG', 'Context authorization requires a core authorizer.');
+  const evaluate = authorization?.authorize.bind(authorization);
+  const canRead = async (candidate: Pick<ContextCandidate, 'scope' | 'source'>): Promise<boolean> => {
+    if (!evaluate) return true;
+    const decision = await evaluate(scope, 'read', { kind: candidate.source.kind === 'memory' ? 'memory' : 'rag_document',
+      id: candidate.source.id, scope: candidate.scope, ownerId: candidate.scope.principalId }, signal ? { signal } : undefined);
+    if (decision.effect === 'allow') return true;
+    if (!['no_match', 'explicit_deny', 'permission_denied', 'scope_mismatch', 'invalid_request'].includes(decision.reason))
+      throw new MayuraError('PERMISSION_DENIED', 'Context authorization is unavailable or cancelled.');
+    return false;
+  };
   if (hooks.before) await evaluateLifecycleControl({ stage: 'beforeContextBuild', handler: hooks.before, timeoutMs: hooks.timeoutMs, ...(signal ? { signal } : {}),
     event: { scope: { ...scope }, policyVersion, asOf, candidateCount: rawCandidates.length, sourceCount: rawSources.length,
       budget: { maxBytes, maxEstimatedTokens, reservedBytes, reservedTokens } } });
@@ -137,9 +149,11 @@ export async function assembleContext(options: AssembleContextOptions): Promise<
     else if (current.revision !== candidate.source.revision) reason = 'stale_revision';
     else if (candidate.validity && Date.parse(candidate.validity.from) > asOfTime) reason = 'not_yet_valid';
     else if (candidate.validity?.until !== undefined && candidate.validity.until !== null && Date.parse(candidate.validity.until) <= asOfTime) reason = 'expired';
+    // Authorization precedes selection, hashing, estimators, citations and after-build hooks.
+    if (reason !== 'sensitivity_denied' && !await canRead(candidate)) reason = 'authorization_denied';
     if (reason) {
-      if (candidate.required) throw new MayuraError(reason === 'sensitivity_denied' ? 'PERMISSION_DENIED' : 'CONFLICT', 'A required continuity item is unavailable, stale, deleted, outside its validity interval, or denied; refresh or resolve it explicitly.');
-      excluded.push(Object.freeze({ position, reason, ...(reason === 'sensitivity_denied' ? {} : { candidateId: candidate.id, sourceId: candidate.source.id, revision: candidate.source.revision }) }));
+      if (candidate.required) throw new MayuraError(['sensitivity_denied', 'authorization_denied'].includes(reason) ? 'PERMISSION_DENIED' : 'CONFLICT', 'A required continuity item is unavailable, stale, deleted, outside its validity interval, or denied; refresh or resolve it explicitly.');
+      excluded.push(Object.freeze({ position, reason, ...(['sensitivity_denied', 'authorization_denied'].includes(reason) ? {} : { candidateId: candidate.id, sourceId: candidate.source.id, revision: candidate.source.revision }) }));
     } else eligible.push({ item: candidate, position });
   }
   eligible.sort((left, right) => {
@@ -181,6 +195,8 @@ export async function assembleContext(options: AssembleContextOptions): Promise<
     event: { scope: { ...scope }, policyVersion, asOf, fingerprint,
       selected: selected.map(item => ({ id: item.id, sourceId: item.source.id, revision: item.source.revision, contentDigest: item.contentDigest })),
       excluded: excluded.map(entry => ({ ...entry })), usage: { ...assembly.usage } } });
+  for (const item of selected) if (!await canRead(item)) throw new MayuraError('PERMISSION_DENIED', 'Context access changed before disclosure.');
+  if (signal?.aborted) throw new MayuraError('CANCELLED', 'Context assembly was cancelled.');
   return assembly;
 }
 

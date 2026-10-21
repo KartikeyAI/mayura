@@ -1,0 +1,153 @@
+{
+  "format": "mayura.ui-registry.v1",
+  "version": "1.0.0",
+  "components": [
+    {
+      "id": "chat",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "chat.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react"
+      ]
+    },
+    {
+      "id": "thread-history",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "thread-history.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react",
+        "mayura/client",
+        "mayura/client/headless"
+      ]
+    },
+    {
+      "id": "approval",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "approval.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react",
+        "mayura/client",
+        "mayura/client/headless"
+      ]
+    },
+    {
+      "id": "run-status",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "run-status.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react/components"
+      ]
+    },
+    {
+      "id": "workflow-progress",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "workflow-progress.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react/components"
+      ]
+    },
+    {
+      "id": "thread-list",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "thread-list.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "mayura/client-react"
+      ]
+    },
+    {
+      "id": "tool-call",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "tool-call.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "react"
+      ]
+    },
+    {
+      "id": "citations",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "citations.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "react"
+      ]
+    },
+    {
+      "id": "browser-view",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "browser-view.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "react"
+      ]
+    },
+    {
+      "id": "sandbox-terminal",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "sandbox-terminal.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "react"
+      ]
+    },
+    {
+      "id": "voice",
+      "version": "1.0.0",
+      "minimumMayura": "1.2.0",
+      "maximumMajor": 1,
+      "files": [
+        "voice.tsx",
+        "ui.css"
+      ],
+      "dependencies": [
+        "react"
+      ]
+    }
+  ]
+}

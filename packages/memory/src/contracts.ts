@@ -1,4 +1,4 @@
-import type { JsonObject, LifecycleControl, LifecycleObserver, Permissions, Scope } from '@mayura/core';
+import type { Authorizer, JsonObject, LifecycleControl, LifecycleObserver, Permissions, Scope } from '@mayura/core';
 import type { AggregateStore } from '@mayura/storage-contracts';
 
 export type MemorySensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
@@ -54,6 +54,8 @@ export type MemoryEntry = MemoryRecord | MemorySupersededRecord | MemoryTombston
 
 export interface MemoryStoreOptions {
   readonly store: AggregateStore;
+  /** Optional host-owned core enforcement; its audit sink receives metadata-only decisions. */
+  readonly authorization?: Authorizer;
   readonly scope: Scope;
   readonly permissions: Permissions;
   readonly allowedSensitivities?: readonly MemorySensitivity[];

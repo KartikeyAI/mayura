@@ -273,6 +273,7 @@ Good to know:
 | [Durable workflows](durable-workflows.md) | `createScheduledWorkflowRuntime({ store })` and the lifecycle hosts | None: the runtime creates its tables on first use |
 | [Native memory](memory-and-context.md) | `createNativeMemory({ store })` | `await store.memory.initialize()` once |
 | [Durable budgets](../concepts/costs-and-budgets.md) | `store.durableBudgets` | `await store.durableBudgets.initialize()` once |
+| Threads (conversation history) and run checkpoints (runs paused for a person) | `store.threads`, low-level storage the threads API builds on, and `store.runCheckpoints`, which `createRuntime({ checkpoints })` uses ([Surviving a restart](../concepts/runtime.md#surviving-a-restart)) | `await store.threads.initialize()` once (it creates both) |
 | Scheduled jobs | `store.scheduler`, a low-level leased job queue | `await store.scheduler.initialize()` once |
 | [Server](server-and-client.md) submission journal | `createAggregateSubmissionJournal(store)` from `mayura/storage-contracts` | None |
 | [Server](server-and-client.md#several-server-replicas) run records, for several server replicas | `createAggregateRunRecords(store)` from `mayura/storage-contracts` | None |

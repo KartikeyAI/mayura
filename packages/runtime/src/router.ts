@@ -173,6 +173,7 @@ export function createModelRouter(options: ModelRouterOptions): ModelRouter {
   return Object.freeze({
     id,
     capabilities: Object.freeze({ tools: routes.every(route => route.capabilities.tools), structuredOutput: routes.every(route => route.capabilities.structuredOutput),
+      ...(routes.every(route => route.capabilities.history === true) ? { history: true } : {}),
       // Any route may answer, so the router sees only what every route can see.
       ...(routes.every(route => route.capabilities.media) ? { media: Object.freeze({
         types: Object.freeze(routes[0]!.capabilities.media!.types.filter((type: MediaType) => routes.every(route => route.capabilities.media!.types.includes(type)))),

@@ -7,3 +7,5 @@ Exports `assembleContext` and `byteTokenEstimator`, with typed candidate, proven
 Optional validity intervals are evaluated at one explicit or snapshotted `asOf` timestamp. Preserve native-memory validity and original source identity under `provenance.upstream`; canonical memory record ID/version remain separate context source metadata. Use an explicit `asOf` when reproducible assembly fingerprints are needed.
 
 See [Memory and context](../../docs/guides/memory-and-context.md). This package does not perform semantic retrieval or generated summarization and does not replace the final provider-token admission check.
+
+Optional `authorization: Authorizer` enforces memory/read for memory sources and rag_document/read for all other source kinds before selection. Denied optional evidence has no content, citations or diagnostic IDs; required evidence fails closed. Guarded cache calls always reassemble and reevaluate current membership.

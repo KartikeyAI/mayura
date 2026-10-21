@@ -17,6 +17,7 @@ interface ManagedGuardEvaluation {
   readonly operations: OperationPermits;
   /** Private owning-run checks and exact model ticket; never derived from public context fields. */
   readonly assertActive: () => void;
+  readonly authorize?: (signal: AbortSignal) => Promise<void>;
   readonly start: () => Reservation;
   readonly onStarted: () => void;
   readonly onCompleted: (decision: 'allow' | 'block') => void;
@@ -145,6 +146,8 @@ export async function evaluateManagedGuard(options: ManagedGuardEvaluation): Pro
     }, { maxBytes: maxInputBytes }));
     const request: ModelRequest = Object.freeze({ ...data as unknown as Omit<ModelRequest, 'signal'>, signal });
     const response = await deadline.wait(() => operations.run(signal, async () => {
+      active();
+      await options.authorize?.(signal);
       active();
       const reservation = options.start();
       options.onStarted();

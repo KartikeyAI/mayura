@@ -105,7 +105,7 @@ The state from `getSnapshot()` is immutable and changes identity on every update
 | `errorCode` | The last error code, safe to show or log: the server's own code (for example `RUN_NOT_FOUND` or `AUTH_EXPIRED`) when it sent one. |
 
 `createRunActivityProjection(state)` (or the `useMayuraRunActivity` hook) turns the events into a timeline of run,
-step, model, tool, hook and delegate items, each `active`, `completed`, `failed`, `blocked`, `cancelled`,
+step, model, tool, hook and delegate items, each `active`, `waiting`, `completed`, `failed`, `blocked`, `cancelled`,
 `outcome_unknown` or `unknown`. `unknown` means the events cannot tell; do not guess.
 
 ## Hooks
@@ -130,6 +130,8 @@ and render every value as text.
 
 | Component | Shows |
 | --- | --- |
+| `MayuraThreadHistory` | One thread history page, from a caller-owned thread store; optional explicit paging callbacks. |
+| `MayuraRunApprovalControl` | Exact pending tool input, expiry, optional reason and approve/reject actions, from a caller-owned approval controller. |
 | `MayuraRunSummary` | A run's status and activity timeline, from a `store`. |
 | `MayuraWorkflowGraph` | A workflow run's steps, their status and dependencies, from a run view. |
 | `MayuraHumanRequestCard` | A human request's prompt and status, with a respond button that calls `onRespond`. |
@@ -274,3 +276,237 @@ store.dispose();
 - [Streaming](streaming.md)
 - [Approvals and human input](approvals-and-human-input.md)
 - [Workflow operations](workflow-operations.md)
+
+
+## Threads and run approvals
+
+`mayura/client/headless` also exports `createHeadlessThreadsStore({ client })` for one index page and
+`createHeadlessThreadStore({ client, threadId, maxEntries? })` for one conversation page. Both start idle.
+Call the index store's `refresh({ status, cursor, limit })` explicitly to load a page. The conversation store's
+`refresh({ after, before, limit })` replaces its history page, bounded by `maxEntries` (default 100, at most 500).
+Both stores allow one operation at a time; overlapping work fails with `VIEW_BUSY`.
+
+The conversation store exposes `update`, `archive`, `restore`, `delete` and `submit`. `submit(agentId, input,
+{ idempotencyKey })` fixes the binding to its thread and returns a `RemoteRun`; create a run store separately to
+observe it. Mutations never retry or refresh implicitly. Refresh the history after a run ends to load its recorded
+turn. Deletion clears the visible thread and entries. Calling `dispose()` aborts owned operations and stops updates.
+
+```tsx
+import type { HeadlessThreadStore, HeadlessThreadsStore } from 'mayura/client/headless';
+import { useMayuraThread, useMayuraThreadActions, useMayuraThreads } from 'mayura/client-react';
+
+export function Conversation({ store }: { readonly store: HeadlessThreadStore }) {
+  const state = useMayuraThread(store);
+  const actions = useMayuraThreadActions(store);
+  return <section>
+    <button onClick={() => { void actions.refresh().catch(() => {}); }}>Refresh conversation</button>
+    <p>{state.thread?.title ?? 'Conversation'}: {state.status}</p>
+    {state.errorCode && <p role="alert">{state.errorCode}</p>}
+    <ol>{state.entries.map(entry => <li key={entry.sequence}>{entry.kind}</li>)}</ol>
+  </section>;
+}
+
+export function Conversations({ store }: { readonly store: HeadlessThreadsStore }) {
+  const state = useMayuraThreads(store);
+  return <ul>{state.page?.threads.map(thread => <li key={thread.id}>{thread.title ?? thread.id}</li>)}</ul>;
+}
+```
+
+Run stores accept `waiting` and refresh their snapshot at pause, resume and event gaps, so the UI can render the
+exact `state.snapshot.approval`. Observation remains open across a pause; it does not make approval decisions.
+`useMayuraRunActivity` shows a paused run as `waiting`, without treating it as completed.
+
+After inspection, create `createRunApprovalController({ run, approval: snapshot.approval })` outside render.
+It captures an immutable copy of that call and digest. Present its tool, input and expiry for review before
+calling `submit('approved' | 'rejected', { reason?, signal? })`. Decisions are explicit and never retried.
+Feedback is `idle`, `submitting`, `succeeded`, `conflict`, `failed` or `disposed`; an expired request becomes a
+conflict without sending. Success or conflict closes that controller to further decisions. Inspect again and create
+a new controller for a different pending request. A failed transport may have accepted the decision; inspect before
+an explicit retry. The server supplies the actor identity and checks capabilities and the current checkpoint.
+
+```tsx
+import type { RunApprovalController } from 'mayura/client/headless';
+import { useMayuraRunApprovalCommand } from 'mayura/client-react';
+
+export function Approval({ controller }: { readonly controller: RunApprovalController }) {
+  const state = useMayuraRunApprovalCommand(controller);
+  const disabled = !['idle', 'failed'].includes(state.status);
+  return <section>
+    <p>Review {state.approval.toolId}</p>
+    <pre>{JSON.stringify(state.approval.input, null, 2)}</pre>
+    <button disabled={disabled} onClick={() => { void controller.submit('approved').catch(() => {}); }}>Approve</button>
+    <button disabled={disabled} onClick={() => { void controller.submit('rejected').catch(() => {}); }}>Reject</button>
+    {state.errorCode && <p role="alert">{state.errorCode}</p>}
+  </section>;
+}
+```
+
+These hooks use the caller's stable snapshots, including during server rendering and React StrictMode.
+Mounting and unmounting start no requests, submit no decisions and do not dispose shared stores. The application
+owns explicit actions and disposal. `useMayuraThreadActions` returns stable actions without adding a subscription.
+
+
+## Conversation components
+
+`MayuraThreadHistory` subscribes to a `HeadlessThreadStore` and renders its current page as an ordered list, with
+sequence numbers, timestamps, user input, assistant output, tool calls/results, approvals, summaries and terminal
+run outcomes. Internal recording markers are hidden. HTML, Markdown and URLs remain plain text. Omitted content
+and media are marked explicitly. `maxContentChars` bounds displayed characters per entry (default 8,192, at most
+65,536); truncation is marked without changing the saved content. Loading, empty, deleted, disposed and failed
+states have accessible feedback. A failed refresh retains the last loaded page.
+
+Optional `onLoadEarlier({ before })` and `onLoadLater({ after })` callbacks add explicit paging buttons when the
+loaded sequence bounds indicate more entries. The bounds include hidden recording markers. Route those callbacks
+to `store.refresh`; the component never loads pages on mount or scroll. Buttons stop emitting while the store is
+busy or closed. The thread count is a snapshot; refresh it to discover later entries from a newly completed run.
+
+`MayuraRunApprovalControl` subscribes to a `RunApprovalController`. It shows the exact tool, version, call, input
+and expiry with an optional reason field limited to 1,000 characters. Only explicit approve/reject button events
+call `controller.submit`. Concurrent, expired, succeeded, conflicted and disposed decisions are locked. A failed
+command also locks the controls because its outcome may be unknown: inspect the run and create a new controller
+before another decision. Buttons retain keyboard focus and expose `aria-disabled` while locked; handlers enforce
+the lock even when click events arrive before React repaints.
+
+Pass an explicit `nowMs` and update it through your application's clock policy. The component creates no timer;
+the controller and server still enforce expiry at submission. `maxInputChars` defaults to 8,192 (at most 65,536).
+If the input is truncated, approval is disabled and rejection remains available; use a custom review surface to
+review larger input before approving. A different call/digest clears the reason draft. `subject` distinguishes
+button labels when several pending approvals are shown together.
+
+```tsx
+import type { HeadlessThreadStore, RunApprovalController } from 'mayura/client/headless';
+import { MayuraThreadHistory, MayuraRunApprovalControl } from 'mayura/client-react/components';
+
+export function ConversationPanel({ store, controller, nowMs }: {
+  readonly store: HeadlessThreadStore;
+  readonly controller: RunApprovalController;
+  readonly nowMs: number;
+}) {
+  return <div>
+    <button onClick={() => { void store.refresh().catch(() => {}); }}>Refresh history</button>
+    <MayuraThreadHistory store={store}
+      onLoadEarlier={page => { void store.refresh(page).catch(() => {}); }}
+      onLoadLater={page => { void store.refresh(page).catch(() => {}); }} />
+    <MayuraRunApprovalControl controller={controller} nowMs={nowMs} subject="current conversation" />
+  </div>;
+}
+```
+
+These components import from `mayura/client-react/components`. They are unstyled and use semantic HTML,
+`data-mayura-component` selectors, live status regions and associated input labels. Server rendering, React
+StrictMode and unmounting perform no requests, decisions or disposal. Applications own the shared stores,
+controllers, refresh policy and eventual cleanup.
+
+
+## Run the complete chat example
+
+In a repository checkout, the thread chat example connects these components to a real SQLite-backed local server.
+It needs no provider key: a deterministic adapter proposes saving each message as a local note.
+
+```sh
+pnpm build
+node examples/thread-chat/server.mjs
+```
+
+Open the printed URL. Send a message, review the pending tool input, then approve, reject or cancel the turn.
+The completed turn appears in history and the composer becomes available for the next message. Reload during a
+wait to recover the same run and approval. A lost send response can be retried explicitly using its original
+idempotency key; decisions never retry automatically. The example separates agent/server setup (`agent.mjs`,
+`server.mjs`), app-owned session wiring (`session.js`) and React composition (`app.js`).
+
+The hosts bind only loopback addresses and use a fixed-scope local demo token. Browser storage contains the
+current thread/run and in-flight message/retry key, never the token. Temporary SQLite data lasts for the process;
+set `MAYURA_CHAT_PORT` and `MAYURA_CHAT_DATABASE` for a stable origin and database across restarts. The application's
+clock updates approval expiry; the reusable components still start no requests or timers on mount.
+
+`node examples/thread-chat/check.mjs` builds the browser app and runs the same session through approval, rejection,
+cancellation and reload recovery using in-process Fetch, without network calls or credentials. This runs in CI.
+
+## Headless thread compaction
+
+`mayura/client/headless` provides a command-bound controller for any UI framework. The host must opt into
+[scoped compaction routes](server-and-client.md#hosted-thread-compaction), and the token needs their explicit capabilities.
+
+```ts
+import { createClient } from 'mayura/client';
+import { createThreadCompactionController } from 'mayura/client/headless';
+const client = createClient({ baseUrl: 'https://agents.example.com', token: () => 'session-token', requestTimeoutMs: 75_000 });
+const controller = createThreadCompactionController({ client, threadId: 'conversation-1',
+  command: { commandId: 'summary-first-turn', through: 3 }, maxSubscribers: 64 });
+const unsubscribe = controller.subscribe(() => console.log(controller.getSnapshot().status));
+await controller.compact(); // Only the captured command; no automatic retries.
+await controller.refresh(); // Durable status after an interrupted response; no model call.
+await controller.cancel(); // May also run while compact() is pending.
+unsubscribe();
+controller.dispose();
+```
+
+Snapshots are immutable and expose status, command metadata, the committed result, cancellation feedback and a safe
+error code. History refresh remains explicit. A successful cancellation prevents late submit feedback from replacing
+its view state. `missing` does not fence a request that has not reserved yet; inspect and cancel again explicitly if
+needed. The controller serializes submit/inspection, independently admits one cancellation, bounds listeners (64 by
+default, at most 256), propagates caller abort signals, and stops publication on disposal. Local abort/disposal does not
+send a durable cancellation command. Reuse the captured command after uncertainty; a new command ID admits new spending.
+
+## React thread compaction
+
+`useMayuraThreadCompactionCommand(controller)` subscribes to the caller-owned controller;
+`useMayuraThreadCompactionActions(controller)` returns stable, explicit `compact`, `refresh` and `cancel` actions.
+The snapshot includes the immutable `threadId` and captured `command`, so a view can review the exact prefix before
+admitting model spending. Neither hook starts a request, creates a controller or owns its disposal.
+
+`MayuraThreadCompactionControl` on `mayura/client-react/components` provides accessible, unstyled controls over that
+same controller. Create the controller once in the application's conversation/session lifecycle, then pass it in:
+
+```tsx
+import type { ThreadCompactionController } from 'mayura/client/headless';
+import { MayuraThreadCompactionControl } from 'mayura/client-react/components';
+
+export function ConversationCompaction({ controller }: { controller: ThreadCompactionController }) {
+  return <MayuraThreadCompactionControl controller={controller}
+    subject="Current conversation" label="Summarize earlier turns" maxSummaryChars={8192} />;
+}
+```
+
+The control shows the thread ID, command ID, inclusive prefix and optional prior summary sequence. **Start compaction**
+is available only for an untouched controller. After an uncertain submit, it offers inspection and cancellation;
+it never retries a paid call or invents another command ID. Inspection of a `ready` journal enables **Publish saved
+summary**, which uses the captured command to publish staged output without another model call. Pending commands
+can be inspected again or cancelled; failed and committed commands cannot start another paid call through this view.
+
+Cancellation remains available while submission is pending. A `missing` reservation is presented as uncertain and
+never unlocks a replacement call. A committed cancellation preserves the summary. Read-only inspection reports the
+last observed durable status, admitted ceiling and recorded cost; unknown cost is shown explicitly. The control does
+not invent a numeric budget before the host has admitted the command.
+
+Saved summaries render only as text, with explicit truncation and surrogate-safe character boundaries. Refresh thread
+history explicitly after publication or when inspection finds an already committed summary. The component never
+interprets summary text as HTML/Markdown, refreshes history implicitly or renders staged output. Its `label`, `subject`
+and `maxSummaryChars` props change presentation only. Character limits default to 8,192 and accept 1–65,536.
+
+For a custom view, compose the same hooks:
+
+```tsx
+import type { ThreadCompactionController } from 'mayura/client/headless';
+import { useMayuraThreadCompactionCommand, useMayuraThreadCompactionActions } from 'mayura/client-react';
+
+export function CompactionStatus({ controller }: { controller: ThreadCompactionController }) {
+  const state = useMayuraThreadCompactionCommand(controller);
+  const actions = useMayuraThreadCompactionActions(controller);
+  const busy = state.status === 'submitting' || state.status === 'loading' || state.cancelling;
+  return <section aria-label="Compaction status">
+    <p role="status">{state.commandId}: {state.compaction?.status ?? state.status}</p>
+    <button type="button" disabled={busy || state.status === 'disposed'}
+      onClick={() => { void actions.refresh().catch(() => {}); }}>Inspect command</button>
+  </section>;
+}
+```
+
+SSR, StrictMode, mounting, controller replacement and unmounting perform no remote work or disposal. Applications own
+token/capability gating, controller lifetime, command selection and eventual cleanup. Reuse the same command ID when
+inspecting uncertainty; choosing a fresh ID is a separate explicit spending decision. Components keep action buttons
+focusable while busy and recheck the current controller snapshot on activation, preventing duplicate clicks before
+React paints feedback. Style `data-mayura-component="thread-compaction-control"` and `[aria-disabled="true"]` as needed.
+
+
+See [copy-in components](copy-in-ui.md) for source-owned chat, threads, approvals, status, tools, citations and media controls. Thread actions additionally expose explicit `append` for permissioned imports; refresh the selected history page after a confirmed import.

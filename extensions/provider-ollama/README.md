@@ -27,7 +27,12 @@ const agent = defineAgent({
 - `host` is http only on a loopback address, https anywhere else. For Ollama's cloud, use `ollama({ host: 'https://ollama.com', apiKey })`.
 - Nothing is read from the environment (not `OLLAMA_HOST` or `OLLAMA_API_KEY`) or the file system.
 - Structured output and tool inputs use JSON Schema. With tools, the answer comes from one more call, in the format, once the model calls no more tools (a format leaves no way to call a tool). Ollama's cloud accepts a format without enforcing it, so a request with one also gives the schema in its instructions; streaming reports output text as it arrives; set `think` for a thinking model, whose thinking is kept for the next call and never released.
+- A run's conversation history (`capabilities.history`) goes first on every call, the one for the answer in the format included. Tool calls get ids (`call_N`) that no earlier call of the conversation has.
 - Models see no media unless you say so: pass `media: { types: ['image/png', 'image/jpeg'], urls: false }` for a vision model.
 - The default time limit is 120 seconds, since a local model may need loading first.
 
 See the [model registry guide](https://mayurajs.com/docs/guides/model-registry/). Apache-2.0.
+
+### RAG embeddings
+
+This provider exports `ollamaEmbeddings` for scoped RAG ingestion and retrieval. See [the RAG guide](../../docs/guides/rag.md) for explicit permissions, cost ceilings and sensitivity profiles. Development cases are authored; validation is deferred.

@@ -16,4 +16,6 @@ export * from './workflow-loop-format1.js';
 export * from './submission-journal.js';
 export * from './run-records.js';
 export * from './memory-contracts.js';
+export * from './conversation-contracts.js';
 export { schemaDigest } from './schema-digest.js';
+export * from './frontend-tools.js';

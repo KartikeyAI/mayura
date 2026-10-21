@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bundle } from './bundle-package.mjs';
+import { STARTER_NAMES } from '../packages/cli/dist/index.js';
 import { compilerPlatform, createPacker, run, workspace } from './local-packages.mjs';
 import { workDirectory } from './work-directory.mjs';
 
@@ -57,7 +58,7 @@ const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);
 assert.match((await run([bin, '--help'], light)).stdout, /mayura <command>/u);
 assert.equal((await run([bin, '--version'], light)).stdout.trim(), manifest.version, 'mayura --version must print the package version.');
 const starters = JSON.parse((await run([bin, 'starters'], light)).stdout);
-assert.equal(starters.starters.length, 5);
+assert.deepEqual(starters.starters.map(starter => starter.name), [...STARTER_NAMES]);
 const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);
 assert(plan.plan.changes.some(change => change.path === 'src/workflow.ts'), 'The CLI in the bundle must find its starters.');
 

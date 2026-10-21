@@ -26,6 +26,7 @@ const agent = defineAgent({
 - Credentials are options: nothing is read from the environment.
 - The SDK's own retries are off; the registry's `retry` option retries and charges every attempt.
 - Tool inputs and structured output use strict JSON Schema; streaming reports output text as it arrives; the model's thinking is kept for the next call and never released.
+- Runs can take a conversation history (`runtime.submit(agent, { input, history })`), sent before the run's own messages on every call. Tool call ids Anthropic does not take (with `.` or `/`) are sent with `_` in their place; when a run offers no tools, the history's tool calls and results are sent as text, since Anthropic refuses tool blocks without tools.
 - Prompt-cache writes are charged at twice the input rate and reads at the full rate, so a budget never undercounts.
 - `catalog` holds Anthropic's list prices on its date, used only with `prices: 'catalog'`.
 
