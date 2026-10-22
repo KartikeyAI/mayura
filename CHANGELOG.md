@@ -6,6 +6,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- Windows qualification allows 90 minutes for the full matrix job, including its final SBOM check; individual test
+  deadlines remain unchanged.
 - Key-rotation conformance checks the persisted overlap deadline and explicitly expires the predecessor, avoiding
   short wall-clock waits that fail when durable storage is slow on Windows CI.
 - Code Mode crash fixtures allow slow Windows SQLite I/O before the deliberate process kill, then wait for the
