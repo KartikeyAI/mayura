@@ -1,11 +1,38 @@
 name: Mayura qualification
-on: [push, pull_request]
+on:
+  # PRs qualify their merge result; a second full branch-push run duplicates that work.
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: mayura-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  checks:
+    name: Shared checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        with:
+          node-version: 24.14.1
+      - run: node scripts/ci-step.mjs -- node scripts/secret-scan.mjs
+      - run: node scripts/ci-step.mjs -- pnpm typecheck
+      - run: node scripts/ci-step.mjs -- pnpm console:check
+      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs
+      - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
+      - run: node scripts/ci-step.mjs -- pnpm api:report
+      - run: node scripts/ci-step.mjs -- node scripts/version.mjs check
+      - run: node scripts/ci-step.mjs -- node scripts/workspace-facade.mjs --check
+      - run: node scripts/ci-step.mjs -- pnpm docs:check
+      - run: node scripts/ci-step.mjs -- node scripts/sbom.mjs
   consumers:
     strategy:
       fail-fast: false
@@ -13,22 +40,17 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22.23.2, 24.14.1]
     runs-on: ${{ matrix.os }}
-    # Windows qualification can exceed 75 minutes after tests, bundle, docs and archive checks;
-    # allow the final SBOM step to finish while retaining each test's own deadline.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 45 }}
+    # Unit and bundle qualification run in independent shards, so this lane only
+    # covers source types, consumers, examples, generated projects and archives.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: ./.github/actions/setup-workspace
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install --global pnpm@10.17.1 --ignore-scripts
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: node scripts/ci-step.mjs -- node scripts/secret-scan.mjs
       - run: node scripts/ci-step.mjs -- pnpm typecheck
-      - run: node scripts/ci-step.mjs -- pnpm console:check
-      - run: node scripts/ci-step.mjs -- pnpm test
       - run: node scripts/ci-step.mjs -- pnpm test:consumer
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:optional
       - run: node scripts/ci-step.mjs -- pnpm test:consumer:storage
@@ -50,14 +72,47 @@ jobs:
       - run: node scripts/ci-step.mjs -- node examples/durable-budgets.mjs
       - run: node scripts/ci-step.mjs -- pnpm test:templates
       - run: node scripts/ci-step.mjs -- pnpm test:starters
-      - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
-      - run: node scripts/ci-step.mjs -- pnpm api:report
-      - run: node scripts/ci-step.mjs -- node scripts/version.mjs check
-      - run: node scripts/ci-step.mjs -- node scripts/workspace-facade.mjs --check
-      - run: node scripts/ci-step.mjs -- pnpm test:bundle
-      - run: node scripts/ci-step.mjs -- pnpm docs:check
       - run: node scripts/ci-step.mjs -- pnpm release:artifacts
-      - run: node scripts/ci-step.mjs -- node scripts/sbom.mjs
+  tests:
+    name: Tests (${{ matrix.os }}, ${{ matrix.node }}, ${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.23.2, 24.14.1]
+        shard: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node scripts/ci-step.mjs -- pnpm build
+      # Keep both existing Vitest projects: locally runnable integration files
+      # previously exercised by `pnpm test` must not disappear from OS coverage.
+      - run: node scripts/ci-step.mjs --timeout-minutes 40 -- pnpm test --shard=${{ matrix.shard }}/2
+  bundle:
+    name: Bundle (${{ matrix.os }}, ${{ matrix.node }}, ${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.23.2, 24.14.1]
+        shard: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node scripts/ci-step.mjs -- pnpm build
+      - run: node scripts/ci-step.mjs --timeout-minutes 35 -- pnpm test:bundle --shard ${{ matrix.shard }}/2
   postgres:
     strategy:
       fail-fast: false
@@ -122,11 +177,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: ./.github/actions/setup-workspace
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install --global pnpm@10.17.1 --ignore-scripts
-      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: node scripts/ci-step.mjs -- pnpm typecheck
       # A single-node MongoDB replica set (transactions need one) for @mayurajs/storage-mongodb. Service containers take no
       # command line, and MongoDB needs --replSet, so it is started here.
@@ -214,3 +267,20 @@ jobs:
         run: docker pull node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85
       - run: docker pull postgres@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
       - run: node scripts/ci-step.mjs -- node scripts/server-image.mjs --smoke --node ${{ matrix.node }}
+  qualification:
+    name: Qualification gate
+    if: ${{ always() }}
+    needs: [checks, consumers, tests, bundle, postgres, runtimes, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - name: Require every qualification lane
+        env:
+          MAYURA_QUALIFICATION_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-qualification.mjs

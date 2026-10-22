@@ -4,6 +4,7 @@ import { defineTool, type AnyTool } from '@mayura/tools';
 import { createWorkflowRuntime, defineWorkflow, type WorkflowRuntimeOptions, type WorkflowNode } from '@mayura/workflows';
 import { StorageError, type AggregateStore, type CreateRecord } from '@mayura/storage';
 import type { ExecutionContext, Guard, JsonObject } from '@mayura/core';
+import { createAuthorizer } from '@mayura/core';
 import type { WorkflowFixture } from './fixtures.js';
 
 type Runtime = ReturnType<typeof createWorkflowRuntime>;
@@ -185,18 +186,60 @@ export function workflowConformance(name: string, factory: () => Promise<Workflo
 
     it('drains an admitted effect and its receipt without dispatching dependents', async () => {
       const started = deferred<void>(); const release = deferred<{ value: number }>(); let effects = 0;
+      const dependentRead = deferred<void>(); const releaseRead = deferred<void>(); const writeCompleted = deferred<void>();
+      const underlying = store; let reads = 0;
+      // Hold the dependent's first-wave read until its predecessor has committed.
+      // A slow database can produce this ordering without explicit test barriers.
+      store = { ...underlying,
+        read: async (...args) => {
+          if (++reads === 3) { dependentRead.resolve(); await releaseRead.promise; }
+          return underlying.read(...args);
+        },
+        update: async command => {
+          const saved = await underlying.update(command);
+          if (command.events.some(event => event.type === 'step.completed' && event.data['nodeId'] === 'write')) writeCompleted.resolve();
+          return saved;
+        },
+      };
       const definition = defineWorkflow({ id: 'fixture.drain', version: '1', input: numberInput, output: z.unknown(), nodes: [
         { kind: 'tool', id: 'write', tool: tool({ execute: async () => { effects++; started.resolve(); return release.promise; } }), input: { kind: 'input', path: [] } },
         { kind: 'tool', id: 'follow', dependsOn: ['write'], tool: tool({ id: 'fixture.second', execute: input => { effects++; return input; } }), input: { kind: 'input', path: [] } },
       ], result: { kind: 'step', stepId: 'follow', path: [] } });
       const engine = runtime(); const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'drain' });
-      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined); await started.promise;
-      const draining = engine.drain({ timeoutMs: 5_000 });
-      await expect(engine.runUntilSettled(definition, run.id)).rejects.toMatchObject({ code: 'CANCELLED' });
-      release.resolve({ value: 2 }); expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
-      expect(await runtime().inspect(run.id)).toMatchObject({ status: 'running',
+      reads = 0;
+      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined);
+      try {
+        await Promise.all([started.promise, dependentRead.promise]);
+        const draining = engine.drain({ timeoutMs: 5_000 });
+        await expect(engine.runUntilSettled(definition, run.id)).rejects.toMatchObject({ code: 'CANCELLED' });
+        release.resolve({ value: 2 }); await writeCompleted.promise; releaseRead.resolve();
+        expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
+      } finally { release.resolve({ value: 2 }); releaseRead.resolve(); await execution; }
+      const successor = runtime();
+      expect(await successor.inspect(run.id)).toMatchObject({ status: 'running',
         steps: { write: { status: 'succeeded', receipt: { execution: 'succeeded' } }, follow: { status: 'pending' } } });
       expect(effects).toBe(1);
+      expect((await successor.runUntilSettled(definition, run.id)).status).toBe('succeeded');
+      expect(effects).toBe(2); // The successor executes only the dependent, preserving the first receipt.
+    });
+
+    it('fences an effect claim when its final policy evaluation finishes after draining begins', async () => {
+      const evaluating = deferred<void>(); const release = deferred<void>(); let toolChecks = 0; let held = false; let effects = 0;
+      const authorization = createAuthorizer({ permissions: { allow: ['authz:evaluate'] }, policy: { version: 'drain-policy', authorize: async request => {
+        if (request.resource.kind === 'tool') toolChecks++;
+        if (request.resource.kind === 'run' && toolChecks >= 2 && !held) { held = true; evaluating.resolve(); await release.promise; }
+        return { effect: 'allow', reason: 'allowed', policyVersion: 'drain-policy', ruleId: null };
+      } } });
+      const definition = single(tool({ execute: input => { effects++; return input; } }));
+      const engine = runtime({ authorization });
+      const run = await engine.submit(definition, { input: { value: 2 }, idempotencyKey: 'drain-policy' });
+      const execution = engine.runUntilSettled(definition, run.id).catch(() => undefined);
+      try {
+        await evaluating.promise; const draining = engine.drain({ timeoutMs: 5_000 }); release.resolve();
+        expect(await draining).toEqual({ drained: true, interrupted: 0 }); await execution;
+        expect(effects).toBe(0);
+        expect(await runtime().inspect(run.id)).toMatchObject({ status: 'running', steps: { write: { status: 'pending' } } });
+      } finally { release.resolve(); await execution; authorization.close(); }
     });
 
     it('reports an effect still in flight at the drain deadline', async () => {

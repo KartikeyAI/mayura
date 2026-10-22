@@ -6,12 +6,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- Cross-platform qualification separates consumers from two Vitest and two bundle shards per OS/Node combination.
+  Shared checks run once, PR branch pushes no longer duplicate the full matrix, and an aggregate qualification gate
+  requires all lanes to succeed, including database, runtime and container coverage.
 - The paid-summary recovery fixture allows slow Windows CI disk I/O across its seeded turns, denied publication
   and receipt-only retry while still asserting exactly one model call.
 - libSQL conformance cleanup yields to native statement finalizers and repeats garbage collection on bounded
   Windows file-lock retries; persistent locks still fail the suite.
-- Windows qualification allows 90 minutes for the full matrix job, including its final SBOM check; individual test
-  deadlines remain unchanged.
 - Key-rotation conformance checks the persisted overlap deadline and explicitly expires the predecessor, avoiding
   short wall-clock waits that fail when durable storage is slow on Windows CI.
 - Code Mode crash fixtures allow slow Windows SQLite I/O before the deliberate process kill, then wait for the
@@ -51,6 +52,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Workflow draining fences dependent nodes that resume a delayed storage read or policy evaluation after shutdown
+  begins, while allowing already-claimed effects and their receipts to settle without replay.
 - Make the Mistral conformance transport reject requests whose signals aborted before listener registration,
   matching real fetch cancellation; cover the delayed-subscription path deterministically through the adapter.
 - Control the checkpoint host-expiry test clock at the deadline boundary so slow persistence cannot expire
