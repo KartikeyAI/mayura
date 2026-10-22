@@ -105,7 +105,7 @@ jobs:
     environment: release
     permissions:
       contents: write # the version commit, the tag and the GitHub Release
-      id-token: write # npm provenance through OpenID Connect
+      id-token: write # npm trusted publishing and provenance through OpenID Connect
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -128,8 +128,7 @@ jobs:
           pnpm release:artifacts
           node scripts/sbom.mjs
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # empty when npm trusted publishing is configured instead
+        # npm exchanges this job's OIDC identity for package-scoped credentials. No npm token secret is required.
         run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }} --publish
       - name: Commit the version, tag it and push
         # Author and committer may differ: RELEASE_GIT_AUTHOR_* and RELEASE_GIT_COMMITTER_* (the committer also tags),

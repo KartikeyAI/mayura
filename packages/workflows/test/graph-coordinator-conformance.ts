@@ -47,7 +47,9 @@ async function bounded<T>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> {
 export function graphCoordinatorConformance(name: string, factory: () => Promise<GraphFixture>): void {
   describe(`${name} registered graph continuation coordinator`, () => {
     let fixture: GraphFixture; let store: Store; let stores: Store[]; let clients: { close(): Promise<void> }[]; let worker = 0;
-    const base = () => ({ store, scope, permissions: { allow: policy.permissions }, policyVersion: policy.policyVersion,
+    // These scenarios test coordination, not lease expiry. Document-adapter I/O on hosted Windows can exhaust
+    // the production three-second lease; explicit uncertainty scenarios retain their own lease overrides below.
+    const base = () => ({ store, scope, leaseMs: 60_000, permissions: { allow: policy.permissions }, policyVersion: policy.policyVersion,
       maxCostMicros: policy.maxCostMicros, maxOutputBytes: policy.maxOutputBytes, approvalTtlMs: policy.approvalTtlMs });
     const runtime = (overrides: Partial<RuntimeOptions> = {}): Runtime => {
       const client = Graphs.createWorkflowGraphRuntime({ ...base(), workerId: `coordinator-producer-${++worker}`, ...overrides }); clients.push(client); return client;
@@ -83,9 +85,7 @@ export function graphCoordinatorConformance(name: string, factory: () => Promise
       const initial = coordinator([{ definition: first, resources: firstResources }, { definition: second, resources: secondResources }]);
       await initial.close(); await store.close(); store = await reopen();
       const entries = [{ definition: first, resources: { write: ['first-resource'] } }, { definition: second, resources: { write: ['second-resource'] } }];
-      // This checks reopened definitions and resource plans, rather than claim expiry.
-      // Busy document adapters can consume the default lease before delivering a claim.
-      const client = coordinator(entries, { leaseMs: 10_000 }); entries[0]!.resources.write[0] = 'mutated-after-registration';
+      const client = coordinator(entries); entries[0]!.resources.write[0] = 'mutated-after-registration';
       const report = await client.runPage();
       expect(report.status).toBe('completed'); expect(report.examined).toBe(2);
       expect(report.outcomes.map(item => item.reference.runId)).toEqual([a.id, b.id]);
@@ -247,7 +247,8 @@ export function graphCoordinatorConformance(name: string, factory: () => Promise
       const producer = runtime({ maxCostMicros: 1 }); const runs = [];
       for (const key of orderedKeys('independent-budget', 2)) runs.push(await producer.submit(definition, { input: null, idempotencyKey: key }));
       const report = await coordinator([{ definition }], { maxCostMicros: 1, maxConcurrentJobs: 1 }).runPage();
-      expect(report.status).toBe('completed'); expect(report.outcomes.every(item => item.kind === 'observed' && item.status === 'succeeded')).toBe(true);
+      expect(report.status).toBe('completed');
+      expect(report.outcomes).toMatchObject([{ kind: 'observed', status: 'succeeded' }, { kind: 'observed', status: 'succeeded' }]);
       expect(effects).toBe(2);
       for (const run of runs) expect((await producer.inspect(run.id)).budget).toEqual({ spentMicros: 1, reservedMicros: 0, maxCostMicros: 1 });
     });

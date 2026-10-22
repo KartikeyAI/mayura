@@ -66,9 +66,13 @@ pushed, tagged or published.
 
 ## One-time setup
 
-1. **npm package.** Publish from an npm account that owns the `mayura` package, with two-factor authentication on.
-   Then either add an automation token as the repository secret `NPM_TOKEN`, or configure
-   [trusted publishing](https://docs.npmjs.com/trusted-publishers) for this repository and the `release.yml` workflow.
+1. **npm trusted publishers.** Use an npm account with package write access and two-factor authentication enabled.
+   Configure [trusted publishing](https://docs.npmjs.com/trusted-publishers/) separately for `mayura` and every
+   published `@mayurajs/*` extension: GitHub owner `KartikeyAI`, repository `mayura`, workflow filename `release.yml`,
+   environment `release`. Enable direct publishing, not only staged publishing. Names are case-sensitive.
+   The release job uses GitHub OIDC (`id-token: write`) on a GitHub-hosted runner; no `NPM_TOKEN` repository secret
+   or user-supplied `NODE_AUTH_TOKEN` is needed. Node 24.14.1 includes an npm version above the OIDC minimum
+   (npm 11.5.1; Node 22.14.0). Keep the runner's npm version at or above that minimum.
 2. **Protected environment.** Create the `release` environment (Settings → Environments) with required reviewers and
    the `main` branch only. The release job waits there for approval before it publishes anything.
 3. **Pushing the version commit.** The job pushes `chore(release)` commits and tags with its own token. If `main` is
@@ -80,10 +84,37 @@ pushed, tagged or published.
 
    Without them, both are `github-actions[bot]`.
 4. **Enable publishing:** set the repository variable `MAYURA_RELEASE=enabled`.
-5. **The `@mayurajs` scope.** Create the npm organization `mayurajs`, owned by the same account. npm configures trusted
-   publishing per package and only once the package exists, so the first release of each new `@mayurajs/*` package
-   publishes with the `NPM_TOKEN` (a token that may publish to the scope); then configure trusted publishing for that
-   package like `mayura`.
+5. **New packages in the `@mayurajs` scope.** The npm organization must grant the publishing account access.
+   npm requires a package to exist before configuring trust. A new package therefore needs a separately approved,
+   interactive first publication with npm login and 2FA, using reviewed, versioned release archives (never the private
+   workspace directory). Then configure its trusted publisher before CI publishes later versions. Do not approve a
+   release expecting OIDC to create new packages automatically, or publish placeholder packages to establish trust.
+
+### Configure or check existing packages in bulk
+
+The management command [`npm trust`](https://docs.npmjs.com/cli/v11/commands/npm-trust/) requires npm 11.15 or newer.
+Install it locally without changing the project's dependencies, then authenticate in your own terminal:
+
+```sh
+npm install --prefix .artifacts/tools/npm-trust --ignore-scripts --no-audit --no-fund --package-lock=false npm@11.21.1
+npm login --registry=https://registry.npmjs.org/
+node .artifacts/tools/npm-trust/node_modules/npm/bin/npm-cli.js trust list mayura --json
+node scripts/npm-trusted-publishing.mjs         # read-only plan
+node scripts/npm-trusted-publishing.mjs --apply # create missing trust; never publish packages
+```
+
+Complete npm's browser verification locally; its five-minute verification window makes bulk setup easier. If it expires,
+complete verification again and resume with `--from @mayurajs/<name>`. To select individual packages, use
+`--package @mayurajs/<name>` (repeat the option for multiple packages).
+Use `--npm-cli /absolute/path/to/npm-cli.js` for another npm installation. The helper discovers extensions from their
+workspace manifests, verifies each created publisher, preserves different existing configurations for review, stops on
+errors, and returns a nonzero exit status for failures or packages not found publicly. A public 404 may also mean a
+private package; inspect its access before any first publication.
+
+A newly configured publisher must first publish successfully within npm's two-day activation window; otherwise recreate
+it before releasing. Configuration checks and dry runs do not prove an OIDC publication succeeded. Verify provenance
+after the first approved release. Keep an older waiting release run unapproved when it predates workflow changes;
+qualify the updated `main` commit and start a release from that commit instead.
 
 GitHub Packages is not used: its npm registry accepts only scoped packages, and `mayura` is unscoped. The GitHub
 Release carries the same archive.
