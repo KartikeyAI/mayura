@@ -156,14 +156,15 @@ it('refuses options it cannot use, and a token or plain http to anything but a l
 });
 
 it('uses a client you give without closing it', async () => {
-  const { filename, cleanup } = await database('given');
-  const client = createClient({ url: url(filename) });
+  // Client ownership is independent of file durability. Keep this lifecycle assertion off
+  // disk so native file-handle collection cannot consume its deadline on loaded Windows CI.
+  const client = createClient({ url: ':memory:' });
   try {
     const store = createLibsqlStore({ client }); await store.initialize();
     await store.create({ scope: 's', id: 'r', idempotencyKey: 'k', definitionHash: 'h', state: {}, events: [] });
     await store.close();
     expect((await client.execute('SELECT count(*) FROM mayura_aggregates')).rows[0]![0]).toBe(1);
-  } finally { client.close(); await cleanup(); }
+  } finally { client.close(); }
 });
 
 it('waits for another process\'s write lock, and replaces the connection the driver leaves unusable after it', async () => {
