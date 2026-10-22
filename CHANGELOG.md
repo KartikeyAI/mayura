@@ -6,6 +6,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- Key-rotation conformance checks the persisted overlap deadline and explicitly expires the predecessor, avoiding
+  short wall-clock waits that fail when durable storage is slow on Windows CI.
 - Coordinator conformance fixtures allow slow document-store I/O without accidentally expiring their leases;
   explicit uncertainty cases retain their shorter lease settings.
 - Durable-budget fixture cleanup retries transient Windows file locks after libSQL closes its native handles.
