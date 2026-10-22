@@ -6,6 +6,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- The paid-summary recovery fixture allows slow Windows CI disk I/O across its seeded turns, denied publication
+  and receipt-only retry while still asserting exactly one model call.
 - libSQL conformance cleanup yields to native statement finalizers and repeats garbage collection on bounded
   Windows file-lock retries; persistent locks still fail the suite.
 - Windows qualification allows 90 minutes for the full matrix job, including its final SBOM check; individual test

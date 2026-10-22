@@ -185,7 +185,9 @@ it('retains a paid ready summary after publication is revoked, then commits it w
     expect(await threads.compact(thread.id, command)).toMatchObject({ reused: true, costMicros: 3, entry: { content: 'PRIVATE paid summary' } });
     expect(generate).toHaveBeenCalledTimes(1);
   } finally { authorization.close(); }
-});
+// Three seeded durable turns, a denied publication and a receipt-only retry can
+// exceed 30 s of native disk I/O on Windows CI. The paid-call count stays one.
+}, process.env['CI'] === 'true' && process.platform === 'win32' ? 60_000 : undefined);
 
 
 it('rechecks compaction at provider dispatch after intervening runtime policy evaluations', async () => {
