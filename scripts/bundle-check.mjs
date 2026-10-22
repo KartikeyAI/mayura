@@ -1,6 +1,7 @@
 // Qualify the single `mayura` package as users get it: bundle, pack, install offline into a fresh project (with and
 // without the optional peers), import every entry point, type-check a strict consumer, and run the `mayura` command.
-//   node scripts/bundle-check.mjs
+//   node scripts/bundle-check.mjs [--shard <index>/<count>]
+// Shard 1 owns the complete core checks; every extension belongs to exactly one shard.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -10,6 +11,10 @@ import { bundle } from './bundle-package.mjs';
 import { STARTER_NAMES } from '../packages/cli/dist/index.js';
 import { compilerPlatform, createPacker, run, workspace } from './local-packages.mjs';
 import { workDirectory } from './work-directory.mjs';
+import { bundleExtensions, bundleShard } from './ci-shards.mjs';
+
+const shard = bundleShard(process.argv.slice(2));
+const started = performance.now();
 
 const artifacts = join(workspace, '.artifacts'); await mkdir(artifacts, { recursive: true });
 const output = await workDirectory(join(artifacts, 'bundle-check-')); const tarballs = join(output, 'tarballs'); await mkdir(tarballs);
@@ -35,53 +40,62 @@ async function project(label, withPeers) {
   return directory;
 }
 
-// 1. Without optional peers: `npm i mayura` alone. Everything that does not need a peer loads, and the CLI runs.
-const light = await project('light', false);
-const needsPeer = new Set(['./storage', './storage-sqlite', './storage-postgres', './adapter-code-quickjs', './adapter-code-docker', './client-react', './client-react/components']);
 const subpaths = Object.keys(manifest.exports).filter(key => key !== './package.json');
-const probe = async (directory, keys) => {
-  const script = join(directory, 'probe.mjs');
-  await writeFile(script, `const results = {};\nfor (const key of ${JSON.stringify(keys)}) {\n  const specifier = key === '.' ? 'mayura' : 'mayura' + key.slice(1);\n  try { const module = await import(specifier); results[key] = Object.keys(module).length; } catch (error) { results[key] = 'ERROR ' + (error.code ?? error.message); }\n}\nconsole.log(JSON.stringify(results));\n`);
-  return JSON.parse((await run([script], directory)).stdout);
-};
-const lightResults = await probe(light, subpaths.filter(key => !needsPeer.has(key)));
-for (const [key, value] of Object.entries(lightResults)) assert(typeof value === 'number' && value > 0, `mayura${key.slice(1)} did not load without peers: ${value}`);
-// Bundlers that resolve nested subpaths by path (Vercel's Edge Functions) must find the same module there.
-for (const key of subpaths.filter(key => key !== '.')) {
-  const stub = join(light, 'node_modules', 'mayura', key.slice(2), 'index.js');
-  assert(existsSync(stub), `mayura${key.slice(1)} has no file at its own path.`);
-  assert.equal(manifest.exports[key].import, `${key}/index.js`, `mayura${key.slice(1)} must export the file at its own path.`);
-}
-const missing = await probe(light, ['./storage-sqlite']);
-assert.match(String(missing['./storage-sqlite']), /ERR_MODULE_NOT_FOUND/u, 'storage-sqlite should need its optional peer.');
-const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);
-assert.match((await run([bin, '--help'], light)).stdout, /mayura <command>/u);
-assert.equal((await run([bin, '--version'], light)).stdout.trim(), manifest.version, 'mayura --version must print the package version.');
-const starters = JSON.parse((await run([bin, 'starters'], light)).stdout);
-assert.deepEqual(starters.starters.map(starter => starter.name), [...STARTER_NAMES]);
-const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);
-assert(plan.plan.changes.some(change => change.path === 'src/workflow.ts'), 'The CLI in the bundle must find its starters.');
+let lightResults = null;
+const coreStarted = performance.now();
+if (shard.index === 1) {
+  // 1. Without optional peers: `npm i mayura` alone. Everything that does not need a peer loads, and the CLI runs.
+  const light = await project('light', false);
+  const needsPeer = new Set(['./storage', './storage-sqlite', './storage-postgres', './adapter-code-quickjs', './adapter-code-docker', './client-react', './client-react/components']);
+  const probe = async (directory, keys) => {
+    const script = join(directory, 'probe.mjs');
+    await writeFile(script, `const results = {};\nfor (const key of ${JSON.stringify(keys)}) {\n  const specifier = key === '.' ? 'mayura' : 'mayura' + key.slice(1);\n  try { const module = await import(specifier); results[key] = Object.keys(module).length; } catch (error) { results[key] = 'ERROR ' + (error.code ?? error.message); }\n}\nconsole.log(JSON.stringify(results));\n`);
+    return JSON.parse((await run([script], directory)).stdout);
+  };
+  lightResults = await probe(light, subpaths.filter(key => !needsPeer.has(key)));
+  for (const [key, value] of Object.entries(lightResults)) assert(typeof value === 'number' && value > 0, `mayura${key.slice(1)} did not load without peers: ${value}`);
+  // Bundlers that resolve nested subpaths by path (Vercel's Edge Functions) must find the same module there.
+  for (const key of subpaths.filter(key => key !== '.')) {
+    const stub = join(light, 'node_modules', 'mayura', key.slice(2), 'index.js');
+    assert(existsSync(stub), `mayura${key.slice(1)} has no file at its own path.`);
+    assert.equal(manifest.exports[key].import, `${key}/index.js`, `mayura${key.slice(1)} must export the file at its own path.`);
+  }
+  const missing = await probe(light, ['./storage-sqlite']);
+  assert.match(String(missing['./storage-sqlite']), /ERR_MODULE_NOT_FOUND/u, 'storage-sqlite should need its optional peer.');
+  const bin = join(light, 'node_modules', 'mayura', manifest.bin.mayura);
+  assert.match((await run([bin, '--help'], light)).stdout, /mayura <command>/u);
+  assert.equal((await run([bin, '--version'], light)).stdout.trim(), manifest.version, 'mayura --version must print the package version.');
+  const starters = JSON.parse((await run([bin, 'starters'], light)).stdout);
+  assert.deepEqual(starters.starters.map(starter => starter.name), [...STARTER_NAMES]);
+  const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);
+  assert(plan.plan.changes.some(change => change.path === 'src/workflow.ts'), 'The CLI in the bundle must find its starters.');
 
-// 2. With every optional peer: every entry point loads, and a strict consumer type-checks against the declarations.
-const full = await project('full', true);
-const fullResults = await probe(full, subpaths);
-for (const [key, value] of Object.entries(fullResults)) assert(typeof value === 'number' && value > 0, `mayura${key.slice(1)} did not load: ${value}`);
-await writeFile(join(full, 'consumer.ts'), `${subpaths.map((key, index) => `import * as entry${index} from '${key === '.' ? 'mayura' : `mayura${key.slice(1)}`}';`).join('\n')}
-import { defineAgent, createRuntime } from 'mayura';
-import { defineWorkflowLifecycle, fanOut } from 'mayura/workflows/lifecycle';
-export const entries = [${subpaths.map((_, index) => `entry${index}`).join(', ')}];
-export const used = [defineAgent, createRuntime, defineWorkflowLifecycle, fanOut];
-`);
-await writeFile(join(full, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
-  strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'], jsx: 'react-jsx' },
-  include: ['consumer.ts'] }, null, 2));
-await run([join(full, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(full, 'tsconfig.json'), '--pretty', 'false'], full, { timeout: 300_000 });
+  // 2. With every optional peer: every entry point loads, and a strict consumer type-checks against the declarations.
+  const full = await project('full', true);
+  const fullResults = await probe(full, subpaths);
+  for (const [key, value] of Object.entries(fullResults)) assert(typeof value === 'number' && value > 0, `mayura${key.slice(1)} did not load: ${value}`);
+  await writeFile(join(full, 'consumer.ts'), `${subpaths.map((key, index) => `import * as entry${index} from '${key === '.' ? 'mayura' : `mayura${key.slice(1)}`}';`).join('\n')}
+  import { defineAgent, createRuntime } from 'mayura';
+  import { defineWorkflowLifecycle, fanOut } from 'mayura/workflows/lifecycle';
+  export const entries = [${subpaths.map((_, index) => `entry${index}`).join(', ')}];
+  export const used = [defineAgent, createRuntime, defineWorkflowLifecycle, fanOut];
+  `);
+  await writeFile(join(full, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
+    strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'], jsx: 'react-jsx' },
+    include: ['consumer.ts'] }, null, 2));
+  await run([join(full, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(full, 'tsconfig.json'), '--pretty', 'false'], full, { timeout: 300_000 });
+}
+const coreMs = shard.index === 1 ? Math.round(performance.now() - coreStarted) : 0;
 
 // 3. Every @mayurajs extension, installed offline next to this bundle as its peer: it loads, and a strict consumer
 // type-checks against its declarations and mayura's.
 const { extensions } = await import('./extensions.mjs');
 const extensionResults = {};
-for (const extension of extensions()) {
+const extensionMs = {};
+const inventory = extensions();
+const selected = new Set(bundleExtensions(inventory.map(extension => extension.name), shard));
+for (const extension of inventory.filter(extension => selected.has(extension.name))) {
+  const extensionStarted = performance.now();
   const name = `@mayurajs/${extension.name}`;
   const directory = join(output, `extension-${extension.name}`); await mkdir(directory);
   // Optional dependencies installed here come along: a driver's native binary for this platform (libSQL's) is one.
@@ -101,8 +115,11 @@ for (const extension of extensions()) {
     strict: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'] }, include: ['consumer.ts'] }, null, 2));
   await run([join(directory, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(directory, 'tsconfig.json'), '--pretty', 'false'], directory, { timeout: 300_000 });
   extensionResults[name] = exported;
+  extensionMs[name] = Math.round(performance.now() - extensionStarted);
 }
 
 const files = (await readdir(join(staged, 'lib'))).length;
 console.log(JSON.stringify({ status: 'passed', package: `${manifest.name}@${manifest.version}`, tarballBytes: packed[0].size, unpackedBytes: packed[0].unpackedSize,
-  archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: Object.keys(lightResults).length, rewritten: summary.rewritten, extensions: extensionResults, output }));
+  archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: lightResults === null ? null : Object.keys(lightResults).length,
+  rewritten: summary.rewritten, coreChecked: shard.index === 1, shard, totalExtensions: inventory.length, extensions: extensionResults,
+  timings: { totalMs: Math.round(performance.now() - started), coreMs, extensions: extensionMs }, output }));

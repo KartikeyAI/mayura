@@ -58,6 +58,31 @@ artifacts from the final reviewed commit; local qualification archives are not t
 The first release, or any exact version, is started by hand: **Actions → Mayura release → Run workflow** on `main`,
 with the version (for example `1.0.0-rc.1`). With no `v*` tag yet, automatic runs release nothing.
 
+## Qualification layout
+
+Full qualification runs on pull requests (the proposed merge result), pushes to `main`, merge-queue groups and
+manual workflow dispatches. Feature-branch pushes do not also start a duplicate full matrix; open a PR or dispatch
+the workflow manually to qualify a branch before it reaches `main`.
+
+- Shared checks run once on Linux: secrets, inspector build, CI tooling, provider dry run, API and version reports,
+  facade consistency, documentation and the SBOM/license policy.
+- Each Linux/macOS/Windows and Node 22/24 combination retains source type checks, offline consumers, examples,
+  templates, starters and release archive qualification in its consumer lane.
+- Each OS/Node combination runs the existing Vitest projects across two file shards, with the same per-runner
+  worker limits and per-test deadlines. Service-backed integration still runs separately in all four database shards.
+- Bundle checks use two extension shards per OS/Node combination. Shard 1 also checks all core entry points, optional
+  peers, the strict core consumer and the CLI. Every extension still gets its own offline installation, runtime import
+  and strict TypeScript consumer on each OS/Node combination. Without arguments, `pnpm test:bundle` checks everything;
+  use `pnpm test:bundle --shard 1/2` and `--shard 2/2` to reproduce CI. Reports include per-extension timings.
+- Runtime and container matrices retain their existing coverage. Build outputs and native dependencies are produced
+  on each runner; native binaries are never copied between operating systems or Node versions.
+
+The stable required check is **Qualification gate**. It runs after all seven lane groups and rejects failed,
+cancelled, skipped or missing lanes. Configure branch protection to require this check instead of individual matrix
+job names. Automatic release planning continues to require the entire **Mayura qualification** workflow to succeed
+on the exact pushed `main` commit. At the current matrix sizes there are 39 jobs including the gate; release tooling must
+use the gate and workflow conclusion rather than assuming a fixed job count.
+
 ## Nothing is published until you turn it on
 
 Until the repository variable `MAYURA_RELEASE` is `enabled`, every run is a complete **dry run**: it builds, verifies
