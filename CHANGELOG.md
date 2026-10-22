@@ -7,7 +7,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 ### Changed
 
 - Release automation uses npm trusted publishing through GitHub OIDC without an npm token secret. Added a resumable
-  package-trust setup helper and documented first-publication requirements for new extensions.
+  package-trust setup helper, including prerelease-only packages without a `latest` tag, and documented
+  first-publication requirements for new extensions.
 
 ### Validation status (2026-10-21)
 

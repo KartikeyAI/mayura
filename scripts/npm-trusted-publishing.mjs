@@ -49,9 +49,11 @@ if (version.status !== 0 || !(major > 11 || (major === 11 && minor >= 15))) {
 const totals = { configured: 0, planned: 0, created: 0, needsFirstPublish: 0, failed: 0 };
 for (const name of packages) {
   try {
-    const response = await fetch(registry + encodeURIComponent(name) + '/latest', {
+    // A first publication under `next` may have no `latest` tag yet. Check the package itself.
+    const response = await fetch(registry + encodeURIComponent(name), {
       signal: AbortSignal.timeout(20_000),
     });
+    await response.body?.cancel(); // Only existence is needed; do not retain the package's version history.
     if (response.status === 404) {
       totals.needsFirstPublish++;
       console.log(`${name}: not found publicly; first publication required before trust setup`);

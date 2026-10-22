@@ -41,7 +41,7 @@ async function run(...args: string[]) {
 describe('npm trusted publishing setup', () => {
   it('uses scoped package names and defaults to a read-only plan', async () => {
     await run();
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('%40mayurajs%2Fprovider-openai/latest'), expect.anything());
+    expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/%40mayurajs%2Fprovider-openai', expect.anything());
     expect(spawn.mock.calls.some((call) => call[1].includes('github'))).toBe(false);
   });
 
@@ -54,6 +54,17 @@ describe('npm trusted publishing setup', () => {
     ]));
     expect(commands.filter((args) => args.includes('list'))).toHaveLength(2);
     expect(commands.some((args) => args.includes('publish') || args.includes('revoke'))).toBe(false);
+  });
+
+  it('configures a prerelease-only package without requiring a latest tag', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(fetch).mockImplementation(async (url) => new Response(new ReadableStream({ cancel }), {
+      status: String(url).endsWith('/latest') ? 404 : 200,
+    }));
+    await run('--apply');
+    expect(process.exitCode).toBe(0);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(spawn.mock.calls.some((call) => call[1].includes('github'))).toBe(true);
   });
 
   it('preserves conflicting trust configurations', async () => {
