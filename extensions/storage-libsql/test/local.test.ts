@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
+import { setImmediate, setTimeout as delay } from 'node:timers/promises';
 import { createClient } from '@libsql/client';
 import { expect, it, describe } from 'vitest';
 import type { JsonObject } from 'mayura';
@@ -39,13 +40,28 @@ const collect: () => void = process.platform === 'win32' ? (setFlagsFromString('
 const url = (filename: string) => `file:${filename.split(sep).join('/')}`;
 const opener = (filename: string) => () => createLibsqlStore({ url: url(filename) });
 
+/** Let native statement finalizers run between bounded Windows-only cleanup attempts. */
+async function cleanupClosedDatabase(cleanup: () => Promise<void>): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    // A collection in the closing call's microtask can still see its native statements.
+    // Yield first, then collect again on retry rather than merely retrying unlink.
+    if (process.platform === 'win32') { await setImmediate(); collect(); await setImmediate(); }
+    try { await cleanup(); return; }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || attempt >= 3 || !['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code ?? '')) throw error;
+      await delay(100 * (attempt + 1));
+    }
+  }
+}
+
 /** A fresh database file in its own temporary directory, removed afterwards. */
 async function database(prefix: string): Promise<{ filename: string; cleanup(): Promise<void> }> {
   const directory = await mkdtemp(join(tmpdir(), `mayura-libsql-${prefix}-`));
   return { filename: join(directory, 'store.db'), cleanup: async () => {
     const target = resolve(directory);
     if (!target.startsWith(`${resolve(tmpdir())}${sep}mayura-libsql-${prefix}-`)) throw new Error('Unexpected fixture path.');
-    collect(); await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await cleanupClosedDatabase(() => rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   } };
 }
 /**
@@ -80,7 +96,7 @@ async function onLibsql<F extends { store: { close(): Promise<void> }; cleanup()
     };
   };
   for (const name of ['lockRoot', 'lockAggregate']) if (name in base) hooks[name] = lock;
-  return { ...base, ...hooks, store: open(), reopen: open, cleanup: async () => { collect(); await base.cleanup(); } };
+  return { ...base, ...hooks, store: open(), reopen: open, cleanup: () => cleanupClosedDatabase(() => base.cleanup()) };
 }
 const simple = (prefix: string) => async () => {
   const { filename, cleanup } = await database(prefix);
