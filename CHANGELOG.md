@@ -12,6 +12,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   matching lease expiry before checking recovery without replay.
 - The libSQL caller-owned client check uses an in-memory database, keeping its lifecycle assertion independent
   of native file cleanup while the file durability and lock conformance suites remain covered.
+- Scheduler crash fixtures use a matching Windows lease and post-kill expiry wait, while the live-renewal check
+  has time to reach renewal before expiry. Explicit stale-claim checks keep their short leases.
+- Long-running workflow renewal conformance outlives the configured Windows lease with matching tool and case
+  deadlines, retaining its single-effect and unchanged-fence assertions.
 - Coordinator conformance fixtures allow slow document-store I/O without accidentally expiring their leases;
   explicit uncertainty cases retain their shorter lease settings.
 - Durable-budget fixture cleanup retries transient Windows file locks after libSQL closes its native handles.
