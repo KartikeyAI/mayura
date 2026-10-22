@@ -6,6 +6,22 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- The paid-summary recovery fixture allows slow Windows CI disk I/O across its seeded turns, denied publication
+  and receipt-only retry while still asserting exactly one model call.
+- libSQL conformance cleanup yields to native statement finalizers and repeats garbage collection on bounded
+  Windows file-lock retries; persistent locks still fail the suite.
+- Windows qualification allows 90 minutes for the full matrix job, including its final SBOM check; individual test
+  deadlines remain unchanged.
+- Key-rotation conformance checks the persisted overlap deadline and explicitly expires the predecessor, avoiding
+  short wall-clock waits that fail when durable storage is slow on Windows CI.
+- Code Mode crash fixtures allow slow Windows SQLite I/O before the deliberate process kill, then wait for the
+  matching lease expiry before checking recovery without replay.
+- The libSQL caller-owned client check uses an in-memory database, keeping its lifecycle assertion independent
+  of native file cleanup while the file durability and lock conformance suites remain covered.
+- Scheduler crash fixtures use a matching Windows lease and post-kill expiry wait, while the live-renewal check
+  has time to reach renewal before expiry. Explicit stale-claim checks keep their short leases.
+- Long-running workflow renewal conformance outlives the configured Windows lease with matching tool and case
+  deadlines, retaining its single-effect and unchanged-fence assertions.
 - Coordinator conformance fixtures allow slow document-store I/O without accidentally expiring their leases;
   explicit uncertainty cases retain their shorter lease settings.
 - Durable-budget fixture cleanup retries transient Windows file locks after libSQL closes its native handles.

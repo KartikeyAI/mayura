@@ -16,6 +16,7 @@ const key = { scope: 'scheduler-a', jobId: 'job-a' };
 const candidateHash = 'a'.repeat(64);
 const executionReceipt = { callId: 'call-a', toolId: 'tool-a', execution: 'succeeded', disclosure: 'withheld' } as const;
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
 export function schedulerConformance(name: string, factory: () => Promise<SchedulerFixture>): void {
   describe(`${name} leased scheduler`, () => {
     let fixture: SchedulerFixture;
@@ -84,8 +85,8 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
     });
 
     it('renews a live generation but ignores caller-supplied expiry as authority', async () => {
-      await reserve(); const claim = await claimOne(1_000);
-      const renewed = await scheduler.renew({ claim: { ...claim, leaseUntilMs: 0 }, leaseMs: 10_000 });
+      await reserve(); const claim = await claimOne();
+      const renewed = await scheduler.renew({ claim: { ...claim, leaseUntilMs: 0 }, leaseMs: 20_000 });
       expect(renewed.fence).toBe(claim.fence); expect(renewed.leaseUntilMs).toBeGreaterThan(claim.leaseUntilMs);
       expect((await scheduler.start({ claim, candidateHash })).status).toBe('started');
     });
@@ -223,8 +224,11 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
 
     it.each(['claim','start','receipt'] as const)('recovers truthfully after a process is killed following %s commit', async phase => {
       await reserve({ resourceKeys: ['crash-resource'] });
+      // Reaching the checkpoint requires several durable writes before the intentional kill.
+      // Expire the same longer lease afterwards; the recovery assertions stay unchanged.
+      const crashLeaseMs = slowRunner ? 15_000 : 1_000;
       const child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/scheduler-child.mjs', import.meta.url))], {
-        env: { ...process.env, MAYURA_SCHEDULER_FIXTURE: JSON.stringify({ ...fixture.childOptions, phase }) },
+        env: { ...process.env, MAYURA_SCHEDULER_FIXTURE: JSON.stringify({ ...fixture.childOptions, phase, leaseMs: crashLeaseMs }) },
         stdio: ['ignore','pipe','pipe'], windowsHide: true,
       });
       const exited = new Promise<void>(resolve => { child.once('exit', () => resolve()); child.once('error', () => resolve()); });
@@ -235,16 +239,16 @@ export function schedulerConformance(name: string, factory: () => Promise<Schedu
           child.stdout.on('data', (data: Buffer) => { output += data.toString(); if (output.includes('ready\n')) resolve(); });
           child.once('error', () => reject(new Error('Scheduler fixture process could not start.')));
           child.once('exit', () => reject(new Error('Scheduler fixture exited before its durable boundary.')));
-          timer = setTimeout(() => reject(new Error('Scheduler fixture did not reach its durable boundary.')), 5_000);
+          timer = setTimeout(() => reject(new Error('Scheduler fixture did not reach its durable boundary.')), slowRunner ? 30_000 : 5_000);
         });
       } finally { if (timer) clearTimeout(timer); child.kill('SIGKILL'); await exited; }
-      await pause(1_050);
+      await pause(crashLeaseMs + 50);
       const result = await scheduler.recover({ scope: key.scope, limit: 1 });
       expect(result[0]?.state).toBe(phase === 'claim' ? 'ready' : 'outcome_unknown');
       const claims = await scheduler.claim({ scope: key.scope, workerId: 'replacement', limit: 1, leaseMs: 1_000 });
       expect(claims).toHaveLength(phase === 'claim' ? 1 : 0);
       if (phase === 'receipt') expect((await scheduler.read(key))?.receipt?.execution).toBe('succeeded');
-    });
+    }, slowRunner ? 60_000 : undefined);
 
     it('samples authority time after waiting for the database job lock', async () => {
       await reserve(); const claim = await claimOne(1_000);

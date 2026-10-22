@@ -96,14 +96,21 @@ export const keyManagerConformance: readonly KeyManagerConformanceCase[] = Objec
     async run({ store }) {
       const keys = createKeyManager({ store, prefix: 'acme' });
       const old = await keys.create({ ...owner(), credits: { remaining: 9 } });
-      // An overlap long enough for two verifications on a slow store (D1 on a loaded runner took over 300 ms).
-      const rotatedAt = Date.now(); const rotated = await keys.rotate(old.record.keyId, { overlapMs: 2_000 });
+      // Durable verification can exceed a short wall-clock overlap on a loaded runner. Check the
+      // persisted deadline, then expire it explicitly so adapter latency cannot consume the overlap.
+      const overlapMs = 60_000;
+      const rotatedAt = Date.now(); const rotated = await keys.rotate(old.record.keyId, { overlapMs });
+      const rotationFinishedAt = Date.now();
       check(rotated.key !== old.key && rotated.record.keyId !== old.record.keyId, 'rotation makes a new key');
       check((await keys.verify(rotated.key)).ok && (await keys.verify(old.key)).ok, 'both work during the overlap');
-      check((await keys.get(old.record.keyId))?.rotatedTo === rotated.record.keyId, 'the old key names its successor');
+      const predecessor = await keys.get(old.record.keyId);
+      check(predecessor?.rotatedTo === rotated.record.keyId, 'the old key names its successor');
+      check(predecessor.expiresAtMs !== null && predecessor.expiresAtMs >= rotatedAt + overlapMs
+        && predecessor.expiresAtMs <= rotationFinishedAt + overlapMs, 'rotation persists the requested overlap deadline');
       check((await keys.get(rotated.record.keyId))?.remaining === 8, 'the new key starts with the old one\'s credits');
-      await pause(Math.max(0, rotatedAt + 2_100 - Date.now()));
-      check(!(await keys.verify(old.key)).ok && (await keys.verify(rotated.key)).ok, 'after the overlap only the new key works');
+      await keys.update(old.record.keyId, { expiresAtMs: Date.now() - 1 });
+      const expired = await keys.verify(old.key);
+      check(!expired.ok && expired.reason === 'expired' && (await keys.verify(rotated.key)).ok, 'after the overlap only the new key works');
       const next = await keys.rotate(rotated.record.keyId);
       const stopped = await keys.verify(rotated.key);
       check(!stopped.ok && stopped.reason === 'revoked' && (await keys.verify(next.key)).ok, 'without an overlap the old key stops at once');

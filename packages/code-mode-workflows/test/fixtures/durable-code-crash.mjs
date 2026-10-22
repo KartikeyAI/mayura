@@ -10,6 +10,8 @@ const sqlite = config?.adapter === 'sqlite' && typeof config.filename === 'strin
 const postgres = config?.adapter === 'postgres' && typeof config.schema === 'string'
   && /^mayura_code_phase_crash_[a-f0-9]{32}$/.test(config.schema) && typeof process.env.MAYURA_TEST_POSTGRES_URL === 'string';
 if ((!sqlite && !postgres) || !['effect', 'receipt', 'completion'].includes(config.scenario) || !process.send) throw new Error('Invalid fixture.');
+const leaseMs = config.leaseMs ?? 1_000;
+if (![1_000, 10_000].includes(leaseMs)) throw new Error('Invalid fixture lease.');
 const notify = message => new Promise((resolve, reject) => process.send(message, error => error ? reject(error) : resolve()));
 const schema = { '~standard': { version: 1, vendor: 'crash-fixture', validate: value => value && typeof value === 'object'
   && typeof value.value === 'number' ? { value } : { issues: [{ message: 'invalid' }] } } };
@@ -59,18 +61,20 @@ const workflows = Object.freeze({
 const instrumentedStore = Object.freeze({ ...store, workflows });
 const runtime = createScheduledWorkflowRuntime({ store: instrumentedStore, scope: { principalId: 'crash-user', projectId: 'project' },
   permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] },
-  policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'crash-child', leaseMs: 1_000,
+  policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'crash-child', leaseMs,
   verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
+let settledStatus;
 try {
   await store.initialize();
   const submitted = await runtime.submit(definition, { input: { value: 1 }, idempotencyKey: 'crash' });
   const waiting = await runtime.runUntilSettled(definition, submitted.id);
   await runtime.approve({ id: submitted.id, nodeId: 'execute', digest: waiting.steps.execute.approval.digest, credential: 'trusted' });
   await notify({ kind: 'run', runId: submitted.id });
-  await runtime.runUntilSettled(definition, submitted.id);
+  settledStatus = (await runtime.runUntilSettled(definition, submitted.id)).status;
   throw new Error('Expected process checkpoint was not reached.');
 } catch {
-  await notify({ kind: 'fixture-error' }).catch(() => {});
+  // Only framework state crosses IPC; never expose program or storage error text.
+  await notify({ kind: 'fixture-error', status: settledStatus }).catch(() => {});
   await runtime.close().catch(() => {}); await store.close().catch(() => {});
   process.exitCode = 1; if (process.connected) process.disconnect();
 }
