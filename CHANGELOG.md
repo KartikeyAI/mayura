@@ -51,6 +51,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Fixed
 
+- Workflow draining fences dependent nodes that resume a delayed storage read or policy evaluation after shutdown
+  begins, while allowing already-claimed effects and their receipts to settle without replay.
 - Make the Mistral conformance transport reject requests whose signals aborted before listener registration,
   matching real fetch cancellation; cover the delayed-subscription path deterministically through the adapter.
 - Control the checkpoint host-expiry test clock at the deadline boundary so slow persistence cannot expire

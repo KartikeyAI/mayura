@@ -352,6 +352,9 @@ await worker.drain({ timeoutMs: 30_000 });
 - Leadership is a durable lease: run as many worker replicas as you like, and one advances the fleet at a time. If the
   leader dies, another takes over when its lease expires (15 s by default).
 - In tests, call `host.runOnce()` instead of starting a timer.
+- The DAG runtime stops new effect claims when draining begins, including dependent nodes whose storage reads or
+  authorization checks finish later. Already-claimed effects persist their receipts; a successor continues pending
+  nodes without replaying completed effects.
 - With `defineMayuraApplication` from `mayura/cli`, return the worker from `worker()` and `mayura worker` runs it. See
   [Running in production](../cli/run.md).
 

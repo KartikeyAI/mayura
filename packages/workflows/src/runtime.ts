@@ -115,7 +115,9 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
   async function executeNode(id: string, node: WorkflowNode, claimRetries = 0): Promise<void> {
     const record = await load(id); const state = stateFrom(record); const step = state.steps[node.id];
     await auth.execute(state.definition, id);
-    if (!step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status)) return;
+    // A first-wave read can finish after a predecessor settles and draining begins.
+    // Such a node has not claimed an effect and must remain for the next worker.
+    if (gate.draining || !step || state.policy !== policy || ['paused', 'cancelled'].includes(state.status)) return;
     // A dispatching step that no call in this process owns, past the tool's timeout and a margin, belongs to a process
     // that stopped: settle it as recoverAbandoned would, and never run the effect again.
     if (node.kind === 'tool' && step.status === 'dispatching') {
@@ -172,6 +174,9 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       return;
     }
     await auth.execute(state.definition, id);
+    // Policy evaluation may yield after the earlier admission check. Linearize the
+    // effect claim here; already-claimed work still drains through its receipt.
+    if (gate.draining) return;
     step.status = 'dispatching'; step.candidateHash = candidateHash; step.costReserved = node.tool.costMicros;
     state.reservedMicros += node.tool.costMicros; state.status = 'running';
     try { await save(record, state, 'step.dispatching', { nodeId: node.id, callId: step.callId }); }
