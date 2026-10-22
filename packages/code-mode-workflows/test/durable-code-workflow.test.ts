@@ -21,6 +21,9 @@ const limits = { cpuMillis: 100, wallTimeMillis: 2_000, memoryBytes: 16 * 1_024 
 // A child process must start Node.js, load Mayura and open SQLite before its checkpoint: several times slower on
 // hosted Windows CI runners (see vitest.config.ts), where it once took longer than 8 s. Other runs keep the tight limits.
 const slowRunner = process.env['CI'] === 'true' && process.platform === 'win32';
+// A one-second lease can expire during synchronous SQLite I/O before the intended kill.
+// Recovery still waits for the actual lease to expire after terminating the child.
+const crashLeaseMs = slowRunner ? 10_000 : 1_000;
 
 describe('durable Code Mode workflow bridge', () => {
   it('persists exact approval before one brokered phase execution across reopen', async () => {
@@ -209,25 +212,29 @@ describe('durable Code Mode workflow bridge', () => {
   it.each(['effect', 'receipt', 'completion'] as const)('recovers without replay after actual process termination at the %s boundary', async scenario => {
     const directory = await mkdtemp(join(tmpdir(), 'mayura-code-phase-crash-'));
     const filename = join(directory, 'state.sqlite');
-    const child = fork(fileURLToPath(new URL('./fixtures/durable-code-crash.mjs', import.meta.url)), [JSON.stringify({ adapter: 'sqlite', filename, scenario })],
+    const child = fork(fileURLToPath(new URL('./fixtures/durable-code-crash.mjs', import.meta.url)), [JSON.stringify({ adapter: 'sqlite', filename, scenario, leaseMs: crashLeaseMs })],
       { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     let exited = false; let runId: string | undefined;
     const exit = new Promise<void>(resolve => { child.once('exit', () => { exited = true; resolve(); }); });
     const checkpoint = new Promise<{ readonly effects: number; readonly scenario: string }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Owned Code Mode child did not reach its checkpoint.')), slowRunner ? 30_000 : 8_000);
       child.once('error', reject);
-      child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown; scenario?: unknown }) => {
+      child.on('message', (message: { kind?: unknown; runId?: unknown; effects?: unknown; scenario?: unknown; status?: unknown }) => {
         if (message.kind === 'run' && typeof message.runId === 'string') runId = message.runId;
         if (message.kind === 'checkpoint' && Number.isSafeInteger(message.effects) && typeof message.scenario === 'string') {
           clearTimeout(timer); resolve({ effects: message.effects as number, scenario: message.scenario });
         }
-        if (message.kind === 'fixture-error') { clearTimeout(timer); reject(new Error('Owned Code Mode child failed before its checkpoint.')); }
+        if (message.kind === 'fixture-error') {
+          const status = typeof message.status === 'string' && ['succeeded', 'failed', 'outcome_unknown', 'blocked', 'waiting', 'running'].includes(message.status)
+            ? message.status : 'unknown';
+          clearTimeout(timer); reject(new Error(`Owned Code Mode child failed before its checkpoint (workflow ${status}).`));
+        }
       });
       child.once('exit', () => { clearTimeout(timer); reject(new Error('Owned Code Mode child exited before its checkpoint.')); });
     });
     try {
       expect(await checkpoint).toEqual({ effects: 1, scenario }); expect(runId).toMatch(/^[a-f0-9]{64}$/u);
-      child.kill('SIGKILL'); await exit; await new Promise(resolve => setTimeout(resolve, 1_050));
+      child.kill('SIGKILL'); await exit; await new Promise(resolve => setTimeout(resolve, crashLeaseMs + 50));
       let replayed = 0;
       const nested = defineTool({ id: 'external.crash-write', version: '1', description: 'Controlled crash write.', input: schema, output: schema,
         effects: 'write', capabilities: [], costMicros: 3, execute: input => { replayed++; return input; } });
@@ -245,7 +252,7 @@ describe('durable Code Mode workflow bridge', () => {
       const phase = definition.nodes[0]; if (!phase || phase.kind !== 'tool') throw new Error('Invalid fixture phase.');
       const runtime = createScheduledWorkflowRuntime({ store, scope: { principalId: 'crash-user', projectId: 'project' },
         permissions: { allow: [`tool:${phase.tool.id}`, 'effect:write', ...phase.tool.capabilities] },
-        policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'recovery', leaseMs: 1_000,
+        policyVersion: '1', maxCostMicros: 6, maxOutputBytes: 1_024, workerId: 'recovery', leaseMs: crashLeaseMs,
         verifyHuman: async () => ({ id: 'reviewer', projectId: 'project', canApprove: true }) });
       try {
         await runtime.recoverExpired(runId!);
