@@ -35,7 +35,9 @@ export async function durableBudgetSqliteFixture(): Promise<DurableBudgetFixture
     async cleanup() {
       const target = resolve(directory);
       if (!target.startsWith(`${resolve(tmpdir())}${sep}mayura-durable-budgets-`)) throw new Error('Unexpected durable-budget fixture path.');
-      await rm(target, { recursive: true, force: true });
+      // The libSQL conformance suite reuses this file fixture; its native handles can be released
+      // just after close/GC on Windows. Retry transient unlink failures without hiding a lasting lock.
+      await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }

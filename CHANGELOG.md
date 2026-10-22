@@ -6,6 +6,10 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Changed
 
+- Coordinator conformance fixtures allow slow document-store I/O without accidentally expiring their leases;
+  explicit uncertainty cases retain their shorter lease settings.
+- Durable-budget fixture cleanup retries transient Windows file locks after libSQL closes its native handles.
+
 - Release automation uses npm trusted publishing through GitHub OIDC without an npm token secret. Added a resumable
   package-trust setup helper, including prerelease-only packages without a `latest` tag, and documented
   first-publication requirements for new extensions.
