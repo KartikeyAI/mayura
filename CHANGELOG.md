@@ -4,6 +4,11 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Changed
+
+- Release automation uses npm trusted publishing through GitHub OIDC without an npm token secret. Added a resumable
+  package-trust setup helper and documented first-publication requirements for new extensions.
+
 ### Validation status (2026-10-21)
 
 - Full release-branch CI passed: all 13 jobs in [qualification run 39576846216](https://github.com/KartikeyAI/mayura/actions/runs/39576846216)
