@@ -2,92 +2,24 @@
 // Dry run: node scripts/publish-prerelease.mjs --manifest <path> --version <prerelease>
 // Publishing additionally requires --publish, qualified main, and GitHub Actions OIDC credentials.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { selectReleaseArchives, assertPublishContext } from './release-safety.mjs';
+export { assertPublishContext } from './release-safety.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const digest = (bytes, algorithm = 'sha256', encoding = 'hex') => createHash(algorithm).update(bytes).digest(encoding);
-const integrity = bytes => 'sha512-' + digest(bytes, 'sha512', 'base64');
-
-/** Read only the manifest from a bounded tarball; never extract or execute its contents. */
-function packageManifest(bytes) {
-  const tar = gunzipSync(bytes, { maxOutputLength: 128 * 1024 * 1024 });
-  for (let cursor = 0; cursor + 512 <= tar.length;) {
-    const header = tar.subarray(cursor, cursor + 512);
-    if (header.every(byte => byte === 0)) break;
-    const name = header.subarray(0, 100).toString().replace(/\0.*$/su, '');
-    const size = Number.parseInt(header.subarray(124, 136).toString().trim(), 8);
-    assert(Number.isSafeInteger(size) && size >= 0 && cursor + 512 + size <= tar.length, 'Invalid archive member.');
-    if (name === 'package/package.json') return JSON.parse(tar.subarray(cursor + 512, cursor + 512 + size));
-    cursor += 512 + Math.ceil(size / 512) * 512;
-  }
-  throw new Error('Archive has no package.json.');
-}
-
-/** Validate the entire allowlisted dependency closure and every archive before the first registry write. */
+/** Preserve the scoped RC contract while sharing archive validation with full releases. */
 export function selectPrerelease(manifest, scope, version, sourceCommit, archiveBytes) {
   assert(/^1\.2\.0-rc\.[1-9]\d*$/u.test(version), 'This lane accepts only 1.2.0 RCs after rc.0.');
   assert.equal(scope.format, 1);
   assert.equal(scope.packages.length, 22);
   assert.equal(new Set(scope.packages).size, 22);
   assert.deepEqual(scope.packages.slice(0, 2), ['mayura', '@mayurajs/provider-openai']);
-  assert(scope.packages.every(name => name === 'mayura' || /^@mayurajs\/[a-z0-9-]+$/u.test(name)));
-  assert.equal(manifest.format, 1);
-  assert.equal(manifest.status, 'passed');
-  assert.equal(manifest.version, version);
-  assert.equal(manifest.sourceCommit, sourceCommit, 'Archives do not belong to this source commit.');
-  const inventory = new Map(manifest.packages.map(entry => [entry.name, entry]));
-  assert.equal(inventory.size, manifest.packages.length, 'Duplicate archive identities.');
-  return scope.packages.map(name => {
-    const entry = inventory.get(name);
-    assert(entry, `Missing selected archive: ${name}`);
-    assert.equal(entry.version, version);
-    assert(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.tgz$/u.test(entry.filename), 'Unsafe archive filename.');
-    assert(/^[a-f0-9]{64}$/u.test(entry.sha256));
-    const bytes = archiveBytes(entry.filename);
-    assert.equal(digest(bytes), entry.sha256, `Archive changed: ${name}`);
-    const pkg = packageManifest(bytes);
-    assert.equal(pkg.name, name);
-    assert.equal(pkg.version, version);
-    assert.equal(pkg.repository?.url, 'git+https://github.com/KartikeyAI/mayura.git');
-    assert.equal(pkg.private, undefined);
-    assert.equal(pkg.scripts, undefined);
-    assert.equal(pkg.publishConfig?.access, 'public');
-    assert.equal(pkg.publishConfig?.provenance, true);
-    for (const [dependency, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })) {
-      if (dependency === 'mayura' || dependency.startsWith('@mayurajs/')) {
-        assert(scope.packages.includes(dependency), `Missing prerelease dependency: ${dependency}`);
-        assert([version, '^' + version].includes(range), `Wrong dependency version: ${dependency}`);
-      }
-    }
-    return { ...entry, integrity: integrity(bytes) };
-  });
+  return selectReleaseArchives(manifest, scope.packages, version, sourceCommit, archiveBytes);
 }
-
-/** A manual dispatch still has to publish the exact, fully qualified main commit. */
-export function assertPublishContext(context, run, jobs, main) {
-  assert.equal(context.event, 'workflow_dispatch');
-  assert.equal(context.ref, 'refs/heads/main');
-  assert.equal(context.workflowRef, 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main');
-  assert.equal(main.sha, context.sha, 'Main moved before publication.');
-  assert.equal(run.name, 'Mayura qualification');
-  assert.equal(run.path, '.github/workflows/ci.yml');
-  assert.equal(run.event, 'push');
-  assert.equal(run.head_branch, 'main');
-  assert.equal(run.head_sha, context.sha);
-  assert.equal(run.head_repository?.full_name, 'KartikeyAI/mayura');
-  assert.equal(run.status, 'completed');
-  assert.equal(run.conclusion, 'success');
-  const gates = jobs.filter(job => job.name === 'Qualification gate');
-  assert.equal(gates.length, 1);
-  assert.equal(gates[0].conclusion, 'success');
-  assert(jobs.every(job => job.conclusion === 'success'), 'A qualification job did not pass.');
-}
-
 /** Accepted or uncertain uploads are reconciled, never replayed after a crash or cancellation. */
 export async function publishPrerelease({ entries, version, sourceCommit, registry, upload, save, previous,
   signal, pause = () => new Promise(done => setTimeout(done, 15_000)), now = Date.now,
