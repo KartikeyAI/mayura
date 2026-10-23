@@ -21,6 +21,7 @@ async function main() {
       const key = args[i]; options[key] = args[++i];
     }
   }
+  if (publish) assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Live publication requires GitHub Actions.');
   assert(options['--manifest'], 'An explicit release manifest is required.');
   const tag = options['--tag'];
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
@@ -33,7 +34,6 @@ async function main() {
   const entries = selectFullRelease(manifest, names, version, sourceCommit,
     filename => readFileSync(join(dirname(manifestPath), 'tarballs', filename)));
   if (publish) {
-    assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Live publication requires GitHub Actions.');
     assert.equal(process.env.SOURCE_SHA, sourceCommit, 'Checkout differs from the qualified source.');
     if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') assert.equal(process.env.GITHUB_SHA, sourceCommit);
     assert(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'OIDC identity is required.');

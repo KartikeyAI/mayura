@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { assertPreparedRelease, publishRelease, selectFullRelease } from './release-publisher.mjs';
 import { assertPublishContext, sha256 } from './release-safety.mjs';
 import { assertReleaseReceipt } from './release-finalize.mjs';
@@ -62,6 +63,13 @@ test('only the committed release version and its correct distribution channel ar
   }
 });
 
+test('the CLI denies local publication before reading archives or invoking npm', () => {
+  const result = spawnSync(process.execPath, ['scripts/publish-staged.mjs', '--manifest', 'nonexistent-manifest.json', '--tag', 'latest', '--publish'],
+    { encoding: 'utf8', windowsHide: true, env: { ...process.env, GITHUB_ACTIONS: 'false', NODE_AUTH_TOKEN: '', NPM_TOKEN: '' } });
+  assert.equal(result.status, 1); assert.match(result.stderr, /Live publication requires GitHub Actions/u);
+  assert.doesNotMatch(result.stderr, /ENOENT/u);
+});
+
 test('manual and automatic releases require green exact-main push CI and the complete aggregate gate', () => {
   const context = { event: 'workflow_run', ref: 'refs/heads/main', sha: sourceCommit,
     workflowRef: 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main' };
@@ -108,6 +116,16 @@ test('cancellation persists uncertainty and refuses replay or further writes unt
   assert.equal(f.receipt.uploads[names[0]], 'uncertain');
   await assert.rejects(f.run({ previous: f.receipt }), /Uncertain upload/u); assert.equal(f.uploads.length, 1);
   f.reveal(entries[0]); await f.run({ previous: f.receipt }); assert.equal(f.uploads.length, 106);
+});
+
+test('cancelling during a registry polling wait interrupts the wait and preserves accepted writes', { timeout: 1000 }, async () => {
+  const f = registryFixture(fixture().entries()); const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 0);
+  try {
+    await assert.rejects(publishRelease({ entries: fixture().entries(), version, sourceCommit, tag: 'latest',
+      registry: f.registry, upload: f.upload, save: f.save, signal: controller.signal }), { name: 'AbortError' });
+    assert.equal(f.uploads.length, 106); assert.equal(f.receipt.status, 'awaiting_registry');
+  } finally { clearTimeout(timer); }
 });
 
 test('accepted writes survive visibility timeouts; recovery rejects changed archives and other-channel movement', async () => {

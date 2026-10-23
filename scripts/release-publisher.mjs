@@ -1,5 +1,6 @@
 // Pure publication state machine. All I/O is injected; tests never use npm credentials or a network.
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { selectReleaseArchives } from './release-safety.mjs';
 import { requestedRelease } from './version.mjs';
 
@@ -23,7 +24,7 @@ export function selectFullRelease(manifest, names, version, sourceCommit, archiv
  * target-tag movement. Snapshot the complete registry state before writing; persist intent before invoking npm.
  */
 export async function publishRelease({ entries, version, sourceCommit, tag, registry, upload, save, previous,
-  signal, pause = () => new Promise(done => setTimeout(done, 15_000)), now = Date.now,
+  signal, pause = signal => delay(15_000, undefined, { signal }), now = Date.now,
   deadlineMs = 20 * 60_000, progress = () => {} }) {
   assertPreparedRelease(version, version, tag);
   assert(entries.length > 0 && new Set(entries.map(e => e.name)).size === entries.length);
