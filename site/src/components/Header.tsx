@@ -7,43 +7,54 @@ import { ThemeToggle } from './ThemeToggle';
 
 const items = [
   { label: 'Docs', link: { to: '/docs/$/' as const, params: { _splat: 'introduction' } }, prefix: '/docs' },
+  { label: 'Starters', link: { to: '/guides/$slug/' as const, params: { slug: 'choose-a-starter' } }, prefix: '/guides/choose-a-starter' },
   { label: 'Articles', link: { to: '/articles/' as const }, prefix: '/articles' },
   { label: 'Integrations', link: { to: '/integrations/' as const }, prefix: '/integrations' },
+  { label: 'UI gallery', link: { to: '/ui/' as const }, prefix: '/ui' },
   { label: 'Roadmap', link: { to: '/roadmap/' as const }, prefix: '/roadmap' },
 ];
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    // Only the threshold changes React state; scrolling does not drive a per-pixel render loop.
+    const update = () => setScrolled(window.scrollY > 12);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
   const path = pathname.replace(import.meta.env.BASE_URL.replace(/\/$/u, ''), '');
   // Articles live under their kind's address (/guides/..., /compare/...); the Articles item covers them too.
-  const current = (prefix: string) => path.startsWith(prefix) || (prefix === '/articles' && /^\/(?:guides|compare|research)\//u.test(path));
+  const current = (prefix: string) => path.startsWith(prefix) || (prefix === '/articles'
+    && !path.startsWith('/guides/choose-a-starter') && /^\/(?:guides|compare|research)\//u.test(path));
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-bg/75 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-[90rem] items-center gap-4 px-4 sm:px-6">
+    <header data-scrolled={scrolled} onKeyDown={event => { if (event.key === 'Escape') setOpen(false); }}
+      className={`sticky top-0 z-40 border-b transition-colors motion-reduce:transition-none ${scrolled || open ? 'border-line bg-bg/95 backdrop-blur-md' : 'border-transparent bg-transparent'}`}>
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-5 px-4 sm:px-6">
         <Link to="/" aria-label="Mayura home" className="shrink-0"><Logo /></Link>
-        <span className="hidden rounded-full border border-line px-2 py-0.5 font-mono text-[0.7rem] text-muted md:inline">
+        <span className="hidden text-xs text-muted 2xl:inline">
           v{site.version}
         </span>
-        <nav aria-label="Main" className="ml-2 hidden items-center gap-1 text-sm md:flex">
+        <nav aria-label="Main" className="ml-2 hidden items-center gap-4 text-sm xl:flex">
           {items.map(item => (
             <Link key={item.label} {...item.link} aria-current={current(item.prefix) ? 'page' : undefined}
-              className={`rounded-md px-2.5 py-1.5 ${current(item.prefix) ? 'font-medium text-fg' : 'text-muted hover:text-fg'}`}>
+              className={`whitespace-nowrap py-2 ${current(item.prefix) ? 'font-medium text-fg' : 'text-muted hover:text-fg'}`}>
               {item.label}
             </Link>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
-          <a href={`${import.meta.env.BASE_URL}ui/`} className="px-2 text-sm text-muted hover:text-fg">UI gallery</a>
-          <SearchButton />
+          <SearchButton compact />
           <a href={site.repository} target="_blank" rel="noopener noreferrer" aria-label="Mayura on GitHub"
             className="grid size-9 place-items-center rounded-lg text-muted hover:bg-soft hover:text-fg">
             <GitHubIcon />
           </a>
           <ThemeToggle />
           <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="main-menu" aria-label="Menu"
-            className="grid size-9 place-items-center rounded-lg text-muted hover:bg-soft hover:text-fg md:hidden">
+            className="grid size-9 place-items-center rounded-lg text-muted hover:bg-soft hover:text-fg xl:hidden">
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d={open ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} strokeLinecap="round" />
             </svg>
@@ -55,7 +66,7 @@ export function Header() {
         </div>
       </div>
       {open && (
-        <nav id="main-menu" aria-label="Main" className="border-t border-line px-4 py-3 md:hidden">
+        <nav id="main-menu" aria-label="Main" className="border-t border-line px-4 py-3 xl:hidden">
           <ul className="space-y-1">
             {items.map(item => (
               <li key={item.label}>

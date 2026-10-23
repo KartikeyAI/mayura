@@ -2,7 +2,7 @@
 title: "Mayura vs Mastra"
 description: "Two TypeScript frameworks for AI agents and workflows, compared: what each is designed for, how they differ on permissions, budgets and durability, and when to choose which."
 date: 2026-09-29
-updated: 2026-10-12
+updated: 2026-10-23
 tags: comparison, Mastra, TypeScript
 ---
 
@@ -16,25 +16,38 @@ We make Mayura, so read this with that in mind. We checked every statement about
 repository and npm listing, and link the sources at the end. If something here is wrong or out of date, please
 [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Compared on September 29, 2026: Mastra (`@mastra/core`) 1.71.0 and Mayura 1.0.0. Mayura's side updated for Mayura 1.1 on
-October 12, 2026; Mastra's side is as checked on September 29.*
+*Baseline compared September 29, 2026: Mastra (`@mastra/core`) 1.71.0. Mayura's side is updated for published 1.2.0
+on October 23, 2026. Mastra version, adoption and catalog counts below are historical baseline figures, not current
+measurements. Its approval and memory documentation was rechecked on October 23; other Mastra details retain the baseline date.*
+
+## What changes with Mayura 1.2
+
+Mayura now includes scoped persistent threads, exact approvals inside agent runs, continuing-budget handoffs,
+fine-grained RBAC/external authorization and six framework notebooks. Its 105 extensions include AI gateways,
+vector adapters and rerankers. RAG includes offline evaluation but remains experimental; it is not equivalent to
+Mastra's broader eval/studio ecosystem. See [V1.2 capabilities](../../../docs/project/whats-new.md).
+
+Both support conversations and human review: Mastra documents
+[tool approval/suspension](https://mastra.ai/docs/agents/human-in-the-loop) and
+[message history](https://mastra.ai/docs/memory/overview). The useful comparison is how authority, spending and
+uncertain effects are enforced, rather than whether one framework has a chat history feature.
 
 ## At a glance
 
 | | Mastra | Mayura |
 |---|---|---|
-| **Maturity** | Since 2024, 1.0 in January 2026; about 28k GitHub stars and 2M weekly npm downloads | 1.0 in September 2026, 1.1 in October 2026; a new project |
+| **Maturity** | Since 2024, 1.0 in January 2026; about 28k GitHub stars and 2M weekly npm downloads | Stable 1.2.0 published October 23, 2026; first 1.0 in September 2026; a new project |
 | **License** | Apache-2.0, except `ee/` directories under a source-available enterprise license that requires an agreement for production use | Apache-2.0, all of it |
 | **Models** | Built-in router with `provider/model` strings (the docs list 212 providers), fallbacks, and AI SDK providers | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint (DeepSeek, xAI, OpenRouter and others) |
-| **Tool access** | An agent can use the tools you give it; per-call `activeTools`; fine-grained authorization is an enterprise feature | Nothing allowed by default: each model, tool, capability and effect kind is an explicit grant |
+| **Tool access** | An agent can use the tools you give it; per-call `activeTools`; fine-grained authorization is an enterprise feature | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | `TokenCostControl` processor, documented as approximate (a run may briefly exceed it) | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
-| **Human approval** | Tool-call approval (`requireApproval`), and suspend and resume | Approval steps in durable workflows, bound to the exact input by a digest; typed human requests |
+| **Human approval** | Tool-call approval (`requireApproval`), and suspend and resume | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
 | **Workflows** | `createWorkflow` with `.then`, `.branch`, `.parallel` and loops; suspend and resume; snapshots; retries; Inngest and Temporal integrations | Durable graphs persisted at every step; at-most-once dispatch; automatic recovery of abandoned steps; pinned definitions and reviewed migrations |
-| **Memory** | Message history, observational and working memory, semantic recall, threads | Scoped long-term memory with provenance and sensitivity, and lexical, semantic and hybrid search |
+| **Memory** | Message history, observational and working memory, semantic recall, threads | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
 | **Storage** | 21 providers, from libSQL and PostgreSQL to DynamoDB and Cloudflare D1 | SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, Cloudflare D1 and DynamoDB |
 | **Evals and tooling** | Evals and scorers, a local Studio, many tracing exporters | Offline tests with scripted models, an operator console, OpenTelemetry export, and packages for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog |
 | **MCP** | Client and server | Wraps individual MCP tools as ordinary tools, under your permissions and budget |
-| **Also** | RAG utilities, 17 voice providers, about 120 listed integrations | Code Mode (model-written programs in a sandbox), vision, artifacts, 7 voice providers, sandboxes, browsers, file storage, sign-in and API keys; 85 integration packages |
+| **Also** | RAG utilities, 17 voice providers, about 120 listed integrations | Code Mode (model-written programs in a sandbox), vision, artifacts, 7 voice providers, sandboxes, browsers, file storage, sign-in and API keys; 105 integration packages |
 | **Runtimes** | Node.js, Bun, Deno and Cloudflare; deployers for Vercel, Netlify and Cloudflare | Node.js 22 and 24, Bun, Deno, Cloudflare Workers and Vercel Edge (apart from the Node-only entry points); `mayura deploy` to Docker, Kubernetes and eleven platforms |
 
 ## Where they differ most
@@ -81,8 +94,8 @@ someone occasionally reconciles an `outcome_unknown` run.
 
 ## Where Mastra is ahead
 
-- **Breadth.** RAG utilities, evals, a studio, more storage and vector backends, and more integrations. Mayura has no
-  RAG utilities or built-in eval framework.
+- **Breadth.** A studio, general agent evals and a broad storage/integration ecosystem. Mayura 1.2 adds experimental
+  RAG and retrieval-specific offline evaluation; real vector/reranker interoperability remains unqualified.
 - **Models.** Mastra's router reaches far more providers out of the box.
 - **Edge deployments.** Both run on Bun, Deno and Cloudflare. Mayura is tested on them in CI and on a Vercel Edge
   deployment, but deployed Cloudflare Workers and Deno Deploy are still experimental.

@@ -1,8 +1,8 @@
 export const site = {
   name: 'Mayura',
   tagline: 'Build AI agents you can put in production',
-  description: 'Mayura is a TypeScript framework for AI agents, typed tools and durable workflows. Explicit permissions, '
-    + 'cost limits on every run, schemas at every boundary, and workflows that survive restarts.',
+  description: 'Build AI agents with persistent conversations, tool approvals and durable workflows in TypeScript. '
+    + 'Explicit permissions, shared run budgets, 105 integration packages and six framework starters.',
   origin: import.meta.env.SITE_ORIGIN,
   version: import.meta.env.MAYURA_VERSION,
   repository: 'https://github.com/KartikeyAI/mayura',

@@ -68,6 +68,11 @@ const builtIns: Omit<DirectoryEntry, 'kind'>[] = [
 /** Logos and areas for the framework and platform guides in site/content/integrations. */
 const guideMeta: Record<string, { logo: string; area: AreaKey; name: string }> = {
   nextjs: { logo: 'nextjs', area: 'frameworks', name: 'Next.js' },
+  hono: { logo: 'hono', area: 'frameworks', name: 'Hono' },
+  'react-router': { logo: 'react', area: 'frameworks', name: 'React Router' },
+  'tanstack-start': { logo: 'tanstack', area: 'frameworks', name: 'TanStack Start' },
+  sveltekit: { logo: 'svelte', area: 'frameworks', name: 'SvelteKit' },
+  nuxt: { logo: 'nuxt', area: 'frameworks', name: 'Nuxt' },
   vercel: { logo: 'vercel', area: 'deploy', name: 'Vercel' },
   'cloudflare-workers': { logo: 'cloudflare', area: 'runtimes', name: 'Cloudflare Workers' },
   supabase: { logo: 'supabase', area: 'storage', name: 'Supabase' },

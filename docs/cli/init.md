@@ -6,8 +6,8 @@ description: "Create a Mayura project from a starter or a template with mayura i
 `mayura init` creates a new project. You choose between two kinds of starting point:
 
 - A **starter** is a complete application you can run, test and ship: configuration read from the environment,
-  tests and CI. Four are servers, with a worker, a Dockerfile and a compose file; `cli-agent` is a command-line
-  assistant. Start here for a real project.
+  tests and CI. Choose four server applications, six framework notebooks with persistent chat and exact approvals,
+  or the `cli-agent` command-line assistant. See [Choose a starter](../guides/choosing-a-starter.md).
 - A **template** is one small file that shows one feature, with a `package.json` and `tsconfig.json` around it. Start
   here to learn a single idea.
 
@@ -126,6 +126,16 @@ it does not do. The server starters use SQLite locally and PostgreSQL when `DATA
 | `research-team` | Multi-agent research as one durable workflow: a planner, up to four parallel researchers over a source library and a writer whose citations are checked, under one shared budget. The report is stored as a content-addressed artifact, with optional OpenTelemetry traces. |
 | `event-automation` | Signed webhooks start durable workflow runs in which a triage agent acts on a ticket tracker through MCP tools under explicit permissions. Forged, stale and replayed deliveries start nothing, and assigning an urgent ticket waits for operator approval. |
 | `cli-agent` | A command-line assistant: `assistant chat`, or one request such as `assistant list files in src`, about the folder you run it in. File tools stay inside that folder and never open `.env` files, you confirm every write, skills load from `skills/`, and replies stream. `npm run dev` starts the chat. |
+| `nextjs` | App Router notebook with persistent threads, exact note approvals and a separate indexing worker. |
+| `hono` | Hono/Vite React notebook with a Node path and additional Bun, Deno and Workers source. |
+| `react-router` | React Router resource routes and an owned React notebook interface. |
+| `tanstack-start` | TanStack Start server routes, React notebook and separate worker. |
+| `sveltekit` | Native Svelte controls with the headless conversation stores. |
+| `nuxt` | Nitro server bridge and native Vue conversation controls. |
+
+The framework notebooks first use `npm run setup` to create a local session, then `npm run dev` and a separate
+`npm run worker`. See [framework starters](../guides/framework-starters.md) for the shared architecture and the
+dedicated guide for your framework. This demonstration identity must be replaced before opening the app to customers.
 
 Browse the source at
 [packages/cli/starters](https://github.com/KartikeyAI/mayura/blob/main/packages/cli/starters).

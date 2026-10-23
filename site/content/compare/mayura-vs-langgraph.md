@@ -2,6 +2,7 @@
 title: "Mayura vs LangGraph.js"
 description: "LangGraph.js and Mayura compared for production TypeScript agents: graphs and checkpoints, versus grants, hard budgets and steps that never run twice."
 date: 2026-10-12
+updated: 2026-10-23
 tags: comparison, LangGraph, durable workflows, TypeScript
 ---
 
@@ -18,22 +19,36 @@ We make Mayura, so read this with that in mind. We checked every statement about
 documentation, repository and npm listing, and link the sources at the end. If something here is wrong or out of date,
 please [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Compared on October 12, 2026: LangGraph.js (`@langchain/langgraph`) 1.4.21 and Mayura 1.1.0.*
+*Baseline compared October 12, 2026: LangGraph.js (`@langchain/langgraph`) 1.4.21. Mayura's side is updated for
+published 1.2.0 on October 23. Version/adoption figures and other LangGraph details retain the baseline date;
+its persistence and interrupt documentation was rechecked on October 23.*
+
+## What changes with Mayura 1.2
+
+Mayura adds scoped [threads and compaction](../../../docs/guides/threads.md), exact approvals inside agent runs,
+[handoffs](../../../docs/guides/agent-handoffs.md) and resource authorization across execution and data access.
+It now ships six framework notebooks and an experimental bounded AG-UI adapter. It still does not offer time travel
+or conversation branching, and experimental client interoperability remains unqualified.
+
+LangGraph's [persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence) distinguishes
+thread checkpoints from cross-thread stores; [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts)
+pause for external input and resume through a command. Both frameworks can retain conversation state and wait for a
+person. Their graph expressiveness and handling of side-effect replay remain the architectural decisions to compare.
 
 ## At a glance
 
 | | LangGraph.js | Mayura |
 |---|---|---|
-| **Maturity** | Since January 2024, 1.0 in October 2025; about 3,300 GitHub stars on the JavaScript repository and 3.8M weekly npm downloads; an equivalent Python library | 1.0 in September 2026, 1.1 in October 2026; a new project |
+| **Maturity** | Since January 2024, 1.0 in October 2025; about 3,300 GitHub stars on the JavaScript repository and 3.8M weekly npm downloads; an equivalent Python library | Stable 1.2.0 published October 23, 2026; first 1.0 in September 2026; a new project |
 | **License** | MIT. LangSmith (tracing, evaluation, Studio and managed deployment) is a separate LangChain platform | Apache-2.0, all of it |
 | **Models** | Any model you call from a node; the docs use LangChain's chat model integrations, and `@langchain/core` is a peer dependency | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint |
 | **Graph shape** | Nodes are arbitrary code; edges may loop; conditional edges, `Send` fan-out and subgraphs | A fixed graph declared as data: at most 128 nodes, no cycles, no code between steps; parallel slots, conditions, and sagas and loops as separate constructs |
-| **Tool access** | No permission model: a tool you give the model can be called. LangChain's `createAgent` adds middleware for approvals and call limits | Nothing allowed by default: each model, tool, capability and effect kind is an explicit grant |
+| **Tool access** | No permission model: a tool you give the model can be called. LangChain's `createAgent` adds middleware for approvals and call limits | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | No spending limit. `recursionLimit` caps super-steps (25 by default); LangChain middleware caps the number of model and tool calls | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
-| **Human approval** | `interrupt()` anywhere in a node, resumed with a `Command`; needs a checkpointer and a thread id | Approval steps in durable workflows, bound to the exact input by a digest; typed human requests |
+| **Human approval** | `interrupt()` anywhere in a node, resumed with a `Command`; needs a checkpointer and a thread id | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
 | **Durability** | A checkpoint after every super-step, in three durability modes; a resumed node restarts from its beginning; retries are opt-in per node | Every step recorded before and after it runs; at-most-once dispatch; abandoned steps settled as unknown, never re-run; no automatic retries |
 | **Versions** | The latest graph code applies to every thread, new or resumed | Each run is pinned to the definition it started with; reviewed migrations move runs to a new version |
-| **Memory** | Threads hold conversation state; time travel; a store for long-term memory with optional semantic search | Scoped long-term memory with provenance and sensitivity, and lexical, semantic and hybrid search; no thread or chat history store |
+| **Memory** | Threads hold conversation state; time travel; a store for long-term memory with optional semantic search | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
 | **Storage** | Checkpointers for memory, SQLite, PostgreSQL, MongoDB and Redis; stores for PostgreSQL, Redis and MongoDB | SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, Cloudflare D1 and DynamoDB |
 | **Observability** | LangSmith tracing and Studio | Metadata-only run events, OpenTelemetry export, and packages for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog |
 | **Deployment** | Guides for Next.js, SvelteKit, Nuxt, Cloudflare Workers and Deno Deploy; LangSmith Deployment as cloud, hybrid or self-hosted | Node.js 22 and 24, Bun, Deno, Cloudflare Workers and Vercel Edge (apart from the Node-only entry points); `mayura deploy` to Docker, Kubernetes and eleven platforms |
@@ -109,12 +124,12 @@ refused until you set a limit at all. See [Permissions](../../../docs/concepts/p
 - **Expressiveness.** Cycles, arbitrary code in nodes, dynamic fan-out with `Send`, subgraphs, and state you can read
   and edit between steps. Mayura's workflows are deliberately more rigid.
 - **Conversations and time travel.** A thread keeps multi-turn conversation state for you, and you can replay or fork a
-  thread from any earlier checkpoint. Mayura has no thread store: a chat app passes earlier turns in the run's input.
-  It has no time travel.
+  thread from an earlier checkpoint. Mayura has persistent threads and journaled compaction, but no time travel or
+  conversation branching.
 - **Approval inside an agent.** `interrupt()` works in any node, and LangChain's human-in-the-loop middleware pauses an
-  ordinary agent before selected tool calls, with approve, edit and reject. In Mayura, approvals are steps of durable
-  workflows; an agent run can't pause for a person. The pattern is for the agent to start a workflow that holds the
-  sensitive step, as in [the refund guide](../guides/refund-approval.md).
+  ordinary agent before selected tool calls, with approve, edit and reject. Mayura 1.2 can pause agent runs directly
+  for exact-input approval as well as use durable workflow approvals; changing the proposed input requires a new
+  bound proposal rather than editing an approved call.
 - **Ecosystem.** LangChain's integrations, Deep Agents, prebuilt chat UI, LangSmith Studio and evaluations, a Python
   library with the same design, and far wider adoption.
 - **A managed platform.** LangSmith Deployment runs graphs with persistence handled for you, in the cloud, hybrid or

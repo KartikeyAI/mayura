@@ -1,0 +1,48 @@
+/* Gallery-only skin: leave the copy-in stylesheet and published components unchanged. */
+.ui-gallery .mayura-ui {
+  --ui-paper: var(--bg-raised);
+  --ui-ink: var(--fg);
+  --ui-muted: var(--muted);
+  --ui-line: var(--line);
+  --ui-accent: var(--primary);
+  padding: 0;
+  font: 0.9375rem/1.65 var(--font-sans);
+}
+.ui-gallery .mayura-ui :where(h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.ui-gallery .mayura-ui h2 { font-size: 1.125rem; }
+.ui-gallery .mayura-ui :where(p, small) { color: var(--muted); }
+.ui-gallery .mayura-ui label { display: block; font-size: 0.875rem; }
+.ui-gallery .mayura-ui :where(button, textarea, input) { border-radius: 0.5rem; }
+.ui-gallery .mayura-ui textarea {
+  display: block;
+  margin-block: 0.5rem 0.75rem;
+  border-color: var(--line);
+  background: var(--bg);
+}
+.ui-gallery .mayura-ui button {
+  margin: 0.25rem 0.5rem 0.25rem 0;
+  background: var(--bg);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.ui-gallery .mayura-ui button:hover:not(:disabled) { background: var(--bg-soft); }
+.ui-gallery .mayura-ui button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+.ui-gallery .mayura-ui form button {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
+}
+.ui-gallery .mayura-ui form button:hover:not(:disabled) { background: var(--fg); opacity: 0.85; }
+.ui-gallery .mayura-ui pre {
+  margin-block: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--code);
+  padding: 1rem;
+  font: 0.8125rem/1.7 var(--font-mono);
+}
+.ui-gallery .mayura-ui summary { cursor: pointer; font-size: 0.875rem; }
+.ui-gallery .mayura-ui small { display: block; margin-top: 0.5rem; font-size: 0.8125rem; }
+.ui-gallery :focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }

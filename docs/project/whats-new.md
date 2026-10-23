@@ -1,7 +1,64 @@
 ---
-title: "What's new in Mayura 1.1"
-description: "Mayura 1.1: a model registry, voice, files, sandboxes, browsers, authentication and API keys, mayura deploy, edge runtimes and 85 integration packages."
+title: "What's new in Mayura 1.2"
+description: "Persistent threads, exact approvals, agent handoffs, fine-grained authorization, six framework starters, AI gateways and 105 extensions."
 ---
+
+Mayura **1.2.0 is published** under `latest`: `mayura` plus 105 optional
+[integration packages](../reference/integrations.md). All 106 packages were published through trusted publishing
+with verified integrity and provenance; existing `next` tags were preserved. See the
+[release evidence](../guides/release-readiness.md) for the qualified source and remaining interoperability limits.
+
+## Conversations that continue
+
+[Threads](../guides/threads.md) retain scoped conversation history in your database. A run can pause for an
+[exact tool approval](../guides/approvals-and-human-input.md), save a checkpoint, and resume through another host.
+Thread/run recording and recovery preserve completed turns without replaying tool writes. Bounded compaction
+journals the summary's source, model and cost; uncertain paid work requires inspection rather than another call.
+
+[Agent handoffs](../guides/agent-handoffs.md) continue the thread and budget while switching to separately declared
+agent permissions. The initial profile is buffered, text-only, non-speculative root runs.
+
+## Authorization throughout the runtime
+
+[Fine-grained authorization](../guides/authorization.md) adds a shared policy contract, built-in RBAC, audit events
+and OpenTelemetry integration. Scoped server routes, agent/tool execution, workflows, memory, retrieval, threads,
+approvals and compaction use that contract. Optional adapters cover OpenFGA, Cedar, Permit.io, Oso and an external
+HTTP policy service. Resource decisions supplement explicit runtime grants; they do not replace them.
+
+## Start with an application
+
+[Six framework starters](../guides/framework-starters.md) generate working notebooks for
+[Next.js](../guides/nextjs.md), [Hono](../guides/hono.md), [React Router](../guides/react-router.md),
+[TanStack Start](../guides/tanstack-start.md), [SvelteKit](../guides/sveltekit.md) and [Nuxt](../guides/nuxt.md).
+They include scoped threads, exact note approvals, an offline model fixture, a separate indexing worker and
+deployment source. [Choose a starter](../guides/choosing-a-starter.md) compares all 11 applications.
+
+[Copy-in React components](../guides/copy-in-ui.md) provide thread history, approval and run controls as source you
+own. [Headless stores](../guides/react.md) support native Svelte and Vue views. Hooks and subscriptions observe;
+submissions and approval decisions remain explicit actions.
+
+## Gateways and retrieval
+
+Six [AI gateway packages](../guides/ai-gateways.md) connect Vercel AI Gateway, Cloudflare AI Gateway, OpenRouter,
+Portkey, Helicone and LiteLLM with scoped models, explicit credentials and bounded costs.
+
+The **experimental [RAG profile](../guides/rag.md)** adds scoped citations, durable ingestion and embedding claims,
+parent/contextual retrieval, hybrid/query expansion, six vector adapters, three rerankers and offline evaluation.
+Real vector/reranker service interoperability remains unqualified.
+
+The **experimental [AG-UI adapter](../guides/ag-ui.md)** projects run events, thread messages, state snapshots/deltas
+and approval interrupts. Durable frontend-tool claims and result outboxes support safe native-owner recovery without
+automatically replaying browser writes. Reference-client, CopilotKit and rendered notebook interoperability remain
+outside the completed qualification.
+
+## Upgrade and qualification
+
+Install the coordinated release with `npm install mayura@1.2.0`; select matching `@mayurajs/*@1.2.0` packages only
+where needed. Review [versioning](versioning.md), [support](support.md) and the
+[release validation status](../guides/release-readiness.md) before changing a production host. The full main CI
+matrix and V1.1 upgrade check passed; this does not qualify every external provider, browser flow or deployment.
+
+## Mayura 1.1
 
 Mayura 1.1 adds new capabilities to `mayura` and 85 optional [integration packages](../reference/integrations.md) that
 connect it to other services. It is a minor release: nothing documented in 1.0 changes, and a 1.0 database works with

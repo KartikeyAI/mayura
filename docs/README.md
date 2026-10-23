@@ -11,7 +11,8 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Introduction](introduction.md): what Mayura is and how its parts fit together.
 - [Quickstart](quickstart.md): create a project, or add a first agent to your own.
 - [Installation](installation.md): requirements, optional packages and TypeScript settings.
-- [V1.2 release validation status](guides/release-readiness.md): completed local and CI checks, limitations and remaining release gates.
+- [V1.2 release validation status](guides/release-readiness.md): stable publication, all 106 trusted publishers, preserved prerelease tags and remaining limits.
+- [Choose a starter](guides/choosing-a-starter.md): pick a complete application, a framework notebook or a focused template.
 - [Using Mayura with AI coding agents](ai-agents.md): documentation your assistant can read offline.
 
 ## Concepts
@@ -24,9 +25,17 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Costs and budgets](concepts/costs-and-budgets.md): prices, cost caps and shared budgets.
 - [Workflows](concepts/workflows.md): multi-step work, in memory or durable.
 
-- [Framework starters](guides/framework-starters.md): six notebook applications with scoped threads, exact approvals and workers.
-
 - [Retrieval augmented generation](guides/rag.md): scoped evidence, durable ingestion, vector stores and reranking.
+
+## Frameworks and starters
+
+- [Framework starters](guides/framework-starters.md): shared notebook architecture, identity, persistence and workers.
+- [Next.js](guides/nextjs.md): App Router, React thread history and tool approvals.
+- [Hono](guides/hono.md): Fetch routing, Vite React and alternate runtime source.
+- [React Router](guides/react-router.md): resource routes and owned React conversation controls.
+- [TanStack Start](guides/tanstack-start.md): server routes, a React notebook and a separate worker.
+- [SvelteKit](guides/sveltekit.md): native Svelte controls and headless conversation stores.
+- [Nuxt](guides/nuxt.md): Nitro routing and native Vue conversation controls.
 
 ## Agents and models
 

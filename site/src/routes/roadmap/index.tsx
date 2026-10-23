@@ -33,16 +33,25 @@ const stages: Stage[] = [
     ],
   },
   {
-    label: 'Next', title: 'From backend to product', status: 'next',
-    summary: 'The themes of the next release. Details are still being decided.',
+    label: '1.2', title: 'From backend to product', status: 'shipped',
+    summary: 'Published October 23, 2026: conversations, authorization, six framework starters and 105 extensions.',
     items: [
       { title: 'Conversations', text: 'Threads that keep chat history in your own database, runs that pause for a person to approve a tool call, and handoffs between agents.' },
       { title: 'Authorization', text: 'Who may run which agent, tool or workflow and see which data, with role-based access and external policy services.' },
       { title: 'Framework starters', text: 'mayura init projects for Next.js, Hono, React Router, TanStack Start, SvelteKit and Nuxt.' },
-      { title: 'UI components', text: 'Chat, approvals, citations, run progress and live views, copied into your project for you to own and edit.' },
-      { title: 'Agent UI protocols', text: 'AG-UI and similar protocols, so Mayura agents work with the clients built on them.' },
+      { title: 'UI components', text: 'React thread history, approvals and run controls as source you own; headless stores for Svelte and Vue.' },
+      { title: 'Agent UI protocols · experimental', text: 'A bounded AG-UI adapter with run events, state updates, approval interrupts and durable frontend-tool claims. Reference-client and browser qualification remains outstanding.' },
       { title: 'AI gateways', text: 'Vercel AI Gateway, Cloudflare AI Gateway, OpenRouter, Portkey, Helicone and LiteLLM, each an optional package.' },
-      { title: 'Retrieval (RAG)', text: 'Document ingestion, embedders, vector stores, a retrieval tool with citations, reranking and retrieval metrics.' },
+      { title: 'Retrieval (RAG) · experimental', text: 'Scoped document ingestion, embeddings, vector adapters, citations, reranking and offline evaluation. Real-service interoperability remains unqualified.' },
+    ],
+  },
+  {
+    label: 'Next', title: 'Qualify more real-world paths', status: 'next',
+    summary: 'Priorities for broader qualification, without promised delivery dates.',
+    items: [
+      { title: 'External services', text: 'Paid providers and gateways, real authorization policies, and vector/reranker services under deployment conditions.' },
+      { title: 'Browser and client interoperability', text: 'Rendered starter flows, accessibility, AG-UI reference clients and CopilotKit compatibility.' },
+      { title: 'Deployment profiles', text: 'Live framework deployments and the Hono-specific Bun, Deno and Workers/D1 application paths.' },
     ],
   },
   {
@@ -71,7 +80,7 @@ function Roadmap() {
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
           What has shipped, what comes next and what is planned after that. These are themes, not promises or dates:
           plans change as we learn. Every release keeps the same rules: nothing allowed by default, a hard budget on
-          every run, and no breaking changes within 1.x.
+          every run, and semantic versioning for documented stable APIs. Experimental profiles keep their stated limits.
         </p>
 
         <ol className="relative mt-14 space-y-12 border-l border-line pl-8">
@@ -94,10 +103,14 @@ function Roadmap() {
               </ul>
               {stage.label === '1.1' && (
                 <p className="mt-4 text-sm">
-                  <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} className="font-medium text-primary hover:underline">What’s new in 1.1</Link>
+                  <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-11" className="font-medium text-primary hover:underline">Mayura 1.1 history</Link>
                   <span className="text-muted"> · </span>
                   <Link to="/integrations/" className="font-medium text-primary hover:underline">Browse the integrations</Link>
                 </p>
+              )}
+              {stage.label === '1.2' && (
+                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} className="font-medium text-primary hover:underline">What’s new in 1.2</Link>
+                  <span className="text-muted"> · </span><Link to="/docs/$/" params={{ _splat: 'guides/release-readiness' }} className="font-medium text-primary hover:underline">Release evidence and limits</Link></p>
               )}
             </li>
           ))}

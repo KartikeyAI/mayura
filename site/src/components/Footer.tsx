@@ -7,6 +7,8 @@ const columns = [
   { title: 'Learn', links: [
     { label: 'Introduction', slug: 'introduction' },
     { label: 'Quickstart', slug: 'quickstart' },
+    { label: 'Choose a starter', slug: 'guides/choosing-a-starter' },
+    { label: 'Framework guides', slug: 'guides/framework-starters' },
     { label: 'Concepts', slug: 'concepts/agent' },
     { label: 'Durable workflows', slug: 'guides/durable-workflows' },
   ] },

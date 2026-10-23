@@ -2,8 +2,23 @@
 title: "Mayura with Next.js"
 description: "Serve Mayura's agent API from a Next.js route handler, stream runs into React components, and run durable workflows next to your app."
 date: 2026-09-29
+updated: 2026-10-23
 tags: Next.js, React, streaming
 ---
+
+## Start with the V1.2 notebook
+
+For a new application, generate the maintained Next.js starter instead of assembling each part below:
+
+```sh
+npx mayura@1.2.0 init --starter nextjs --directory ./my-notebook --apply
+```
+
+It includes App Router routing, React thread history, exact note approvals, an offline model fixture and a separate
+indexing worker. Follow the [Next.js starter guide](../../../docs/guides/nextjs.md) for setup, local sessions,
+storage and deployment boundaries. The manual integration below is useful when embedding Mayura into an existing
+application; it is not the persistent notebook's full authentication or recovery implementation.
+
 
 Mayura's server is a standard `fetch(request)` handler, so a Next.js app can serve it from a single route handler. There
 is no separate API server to deploy, and no proxy between your pages and your agents: the browser calls

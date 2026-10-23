@@ -14,8 +14,8 @@ npx mayura init
 
 The wizard asks three things:
 
-1. **A starter or a template.** Starters are complete projects with tests: four are servers with a worker, a UI and
-   deployment files, and one (`cli-agent`) is an assistant you run in your terminal. Templates are single files that show one feature.
+1. **A starter or a template.** Choose from four server applications, six framework notebooks with persistent chat
+   and exact approvals, or the `cli-agent` terminal assistant. Templates are small projects showing one feature.
 2. **A model provider.** Offline (no key needed; rule-based stand-in models), OpenAI, Anthropic, an
    OpenAI-compatible provider such as Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together or Fireworks, Azure
    OpenAI, or any other compatible endpoint.
@@ -30,7 +30,9 @@ npm install
 npm run dev
 ```
 
-`npm run dev` runs `mayura dev`: it builds the project, starts it, and rebuilds and restarts whenever you save. See
+For the server starters, `npm run dev` runs `mayura dev`: it builds, starts and watches the project. Framework
+notebooks have their own dev server and first need `npm run setup` for a local session. Follow
+[Choose a starter](guides/choosing-a-starter.md) and the generated README for the right sequence, or
 [mayura init](cli/init.md) for every starter and template.
 
 ## Option 2: add Mayura to your project

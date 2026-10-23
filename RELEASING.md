@@ -14,20 +14,22 @@ RAG and voice) are published as separate npm packages from the same release, in 
 dependencies must be listed there, reviewed, before a release accepts them. `pnpm test:bundle` also installs each
 extension offline next to the bundle and type-checks it, and `mayura` is published first.
 
-## V1.2 preparation
+## V1.2 released
 
-The [V1.2 validation status](docs/guides/release-readiness.md) records local checks and the successful
-[39-job main qualification](https://github.com/KartikeyAI/mayura/actions/runs/39903621300) of full-release safeguards at
-`a9b5c565167170e4b35b5f42cf7df58a64b485e8`. The coordinated **1.2.0** version/changelog is prepared in a PR;
-its source still needs review, full qualification and green main checks after merging before publication.
+**1.2.0 was published on 2026-10-23** for `mayura` and all 105 `@mayurajs/*` extensions under `latest`.
+The [stable release workflow](https://github.com/KartikeyAI/mayura/actions/runs/39934428405) succeeded through
+`release.yml` and the protected `release` environment using npm trusted publishing, with **106 OIDC uploads accepted**.
+All 106 public versions were independently checked against the saved archives for SHA-512 integrity, provenance
+and `latest=1.2.0`. Every existing `next` tag was preserved, including the 22-package `1.2.0-rc.1` channel; packages
+without a `next` tag still have none. This supersedes the earlier 22-package OIDC evidence and 84 configuration-only checks.
 
-The [22-package trusted RC1 publication](https://github.com/KartikeyAI/mayura/actions/runs/39884720470) succeeded at
-`ba4a1e868904453e533e57e2876d64ab8536c454`. RC1 is available under `next`; all existing `latest` tags were preserved.
-The full stable set contains 106 packages. RC1 exercised OIDC for 22, not the other 84. Read-only npm checks on
-2026-10-23 confirmed the expected repository/workflow/environment and direct-publish settings for those 84, without
-changing them. The CLI does not expose activation/expiry status, and those packages still lack first-publication
-OIDC evidence. Recheck eligibility before releasing and recreate expired configurations. Preserve experimental
-AG-UI/RAG labels and the documented external-service and browser limitations.
+The [39-job main qualification](https://github.com/KartikeyAI/mayura/actions/runs/39928903180) and
+[full 106-package rehearsal](https://github.com/KartikeyAI/mayura/actions/runs/39932634159) passed at the published
+source, `ac32daa412d7209066530cfdc9542d820d054b86`. The
+[v1.2.0 tag and stable GitHub Release](https://github.com/KartikeyAI/mayura/releases/tag/v1.2.0) identify that commit.
+The `release-all-1.2.0` workflow artifact retains the source-bound archives, publication receipt, qualification,
+450-component SBOM and release notes. See the [V1.2 validation status](docs/guides/release-readiness.md) for evidence
+scope and the experimental AG-UI/RAG, external-service and browser limitations that remain after publication.
 
 ## How a release happens
 

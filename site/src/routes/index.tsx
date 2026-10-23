@@ -17,8 +17,9 @@ import {
   BrowserPreview, CostArt, MemoryArt, ModelsArt, PolicyPreview, RunPreview, SandboxPreview, ServePreview, StreamingArt, TestPreview,
   TraceArt, VisionArt, WorkflowPreview,
 } from '../components/Visuals';
-import { formatDate, sectionOrder, sections } from '../lib/content';
+import { formatDate, sections } from '../lib/content';
 import { pageMeta, site } from '../lib/site';
+import { frameworkStarters, integrationPackageCount } from '../lib/release';
 
 export const Route = createFileRoute('/')({
   head: () => pageMeta({ title: `${site.name}: ${site.tagline}`, description: site.description, path: '/' }),
@@ -34,6 +35,7 @@ function Home() {
       <Tour />
       <Features />
       <NewInRelease />
+      <FrameworkStarters />
       <GetStarted />
       <Reading />
       <Faq />
@@ -85,8 +87,8 @@ function CopyCommand({ command }: { command: string }) {
 // ---- Hero -----------------------------------------------------------------------------------------------------------
 
 const stats = [
-  ['85', 'integration packages'],
-  ['8', 'model provider packages'],
+  [String(integrationPackageCount), 'integration packages'],
+  ['6', 'framework starters'],
   ['7', 'databases for durable state'],
   ['5', 'runtimes, edge included'],
 ];
@@ -99,7 +101,7 @@ function Hero() {
         <Link {...docs('project/whats-new')}
           className="inline-flex items-center gap-2 rounded-full border border-line bg-bg/70 py-1 pr-3 pl-1 text-xs text-muted backdrop-blur transition hover:text-fg">
           <span className="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">New</span>
-          Mayura 1.1: voice, browsers, sandboxes and 85 integrations
+          Mayura 1.2 is here: conversations, approvals and 105 integrations
           <Icon name="arrow" className="size-3.5" />
         </Link>
         <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
@@ -292,24 +294,24 @@ function Features() {
   );
 }
 
-// ---- New in 1.1 -----------------------------------------------------------------------------------------------------
+// ---- New in 1.2 -----------------------------------------------------------------------------------------------------
 
 const additions: { icon: IconName; title: string; body: string; slug: string }[] = [
-  { icon: 'models', title: 'Model registry', body: 'provider/model names, a dated price catalog, retries and fallback chains, and eight provider packages.', slug: 'guides/model-registry' },
-  { icon: 'mic', title: 'Voice', body: 'Transcribe speech and speak text with seven providers, priced and bounded per call.', slug: 'guides/voice' },
-  { icon: 'folder', title: 'Files', body: 'S3, R2, Google Cloud Storage, Azure, Vercel Blob and more, with versions and file tools.', slug: 'guides/files' },
-  { icon: 'box', title: 'Sandboxes', body: 'Isolated Linux machines for agents, on Docker or twelve hosted providers.', slug: 'guides/sandboxes' },
-  { icon: 'globe', title: 'Browsers', body: 'Real browsers for agents, local or hosted by ten services, kept to allowed origins.', slug: 'guides/browsers' },
-  { icon: 'key', title: 'Sign-in and API keys', body: 'Eleven identity providers, better-auth, and API keys in your own database.', slug: 'guides/authentication' },
-  { icon: 'eye', title: 'Tracing services', body: 'GenAI spans for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog.', slug: 'guides/observability' },
-  { icon: 'upload', title: 'Deploy anywhere', body: 'mayura deploy to eleven platforms, and edge runtimes: Workers, Vercel Edge, Deno and Bun.', slug: 'cli/deploy' },
+  { icon: 'chat', title: 'Persistent conversations', body: 'Scoped thread history, durable run records and compaction with recorded summary provenance.', slug: 'guides/threads' },
+  { icon: 'check', title: 'Exact tool approvals', body: 'Review the proposed input, approve or reject, and resume from a saved checkpoint.', slug: 'guides/approvals-and-human-input' },
+  { icon: 'team', title: 'Agent handoffs', body: 'Transfer a conversation with a continuing budget and separate permissions for each agent.', slug: 'guides/agent-handoffs' },
+  { icon: 'shield', title: 'Fine-grained authorization', body: 'Built-in RBAC and optional OpenFGA, Cedar, Permit.io, Oso and HTTP policy adapters.', slug: 'guides/authorization' },
+  { icon: 'braces', title: 'UI source you own', body: 'React thread history and approval controls, plus headless stores for other frameworks.', slug: 'guides/copy-in-ui' },
+  { icon: 'models', title: 'Six AI gateways', body: 'Vercel, Cloudflare, OpenRouter, Portkey, Helicone and LiteLLM, with explicit budgets and credentials.', slug: 'guides/ai-gateways' },
+  { icon: 'folder', title: 'Retrieval with citations', body: 'Experimental: scoped evidence, durable ingestion, vector adapters, reranking and offline evaluation.', slug: 'guides/rag' },
+  { icon: 'workflow', title: 'AG-UI adapter', body: 'Experimental: run events, state updates and approval interrupts, with durable frontend-tool claims.', slug: 'guides/ag-ui' },
 ];
 
 function NewInRelease() {
   return (
     <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
       <div className="mx-auto max-w-7xl">
-        <Heading strong="New in Mayura 1.1." soft="85 integration packages, and more an agent can do." />
+        <Heading strong="New in Mayura 1.2." soft="From an agent run to a working application." />
         <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {additions.map(item => (
             <Link key={item.title} {...docs(item.slug)} className="group bg-raised p-7 transition hover:bg-soft">
@@ -323,8 +325,51 @@ function NewInRelease() {
           <Link to="/integrations/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium backdrop-blur transition hover:border-muted/50">
             Browse the integrations
           </Link>
-          <SecondaryButton slug="project/whats-new">What’s new in 1.1</SecondaryButton>
+          <SecondaryButton slug="project/whats-new">What’s new in 1.2</SecondaryButton>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/** A native select keeps framework discovery keyboard-friendly without hiding any guide links. */
+function FrameworkStarters() {
+  const [selected, setSelected] = useState<string>('nextjs');
+  const selectId = useId();
+  const starter = frameworkStarters.find(item => item.id === selected) ?? frameworkStarters[0];
+  return (
+    <section className="border-t border-line bg-soft/40 px-4 py-24 sm:px-6 sm:py-32">
+      <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:gap-20">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-primary">Six framework starters · No API key needed</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] sm:text-[2.6rem]">Start in your framework.</h2>
+          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">A working notebook with persistent threads,
+            exact note approvals and a separate indexing worker. Run the offline flow first, then connect your identity and models.</p>
+          <label htmlFor={selectId} className="mt-8 block text-sm font-medium">Choose a framework</label>
+          <select id={selectId} value={selected} onChange={event => setSelected(event.target.value)}
+            className="mt-2 w-full max-w-sm rounded-lg border border-line bg-bg px-3 py-3 text-fg">
+            {frameworkStarters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-code p-4">
+            <CopyCommand command={`npx mayura@1.2.0 init --starter ${starter.id} --directory ./my-notebook --apply`} />
+          </div>
+          <p className="mt-3 text-sm text-muted">{starter.detail}</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <PrimaryButton slug={`guides/${starter.id}`}>Follow the {starter.name} guide</PrimaryButton>
+            <SecondaryButton slug="guides/choosing-a-starter">Compare all 11 starters</SecondaryButton>
+          </div>
+        </div>
+        <ul className="divide-y divide-line self-start border-y border-line">
+          {frameworkStarters.map(item => (
+            <li key={item.id}>
+              <Link {...docs(`guides/${item.id}`)} className="group flex items-center justify-between gap-4 py-5">
+                <div><h3 className="font-semibold group-hover:text-primary">{item.name}</h3>
+                  <p className="mt-1 text-sm text-muted">{item.detail}</p></div>
+                <Icon name="arrow" className="size-4 shrink-0 text-muted group-hover:text-primary" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -355,7 +400,7 @@ function GetStarted() {
             Get started in seconds <span className="text-muted">with a project that already works.</span>
           </h2>
           <p className="mt-5 text-lg leading-relaxed text-muted">
-            Each starter is complete, with tests, a worker and deployment files. Your API key goes into
+            Start with a tested application shape, then follow its setup and deployment guide. Your API key goes into
             <code className="mx-1 font-mono text-[0.9em] text-fg">.env</code>and nowhere else.
           </p>
           <ol className="mt-10 space-y-5">
@@ -394,14 +439,14 @@ function GetStarted() {
 // ---- Reading --------------------------------------------------------------------------------------------------------
 
 function Reading() {
-  const latest = sectionOrder.flatMap(section => articles[section])
-    .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title)).slice(0, 3);
+  const featured = ['choose-a-starter', 'persistent-chat-approvals', 'agent-handoffs-and-authorization']
+    .flatMap(slug => articles.guides.filter(entry => entry.slug === slug));
   return (
     <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
       <div className="mx-auto max-w-7xl">
         <Heading strong="Learn by building." soft="Guides, comparisons and research from the people who make Mayura." />
         <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {latest.map(entry => (
+          {featured.map(entry => (
             <Link key={`${entry.section}/${entry.slug}`} to={`/${entry.section}/$slug/` as '/guides/$slug/'} params={{ slug: entry.slug }}
               className="group flex flex-col rounded-2xl border border-line bg-raised p-6 transition hover:border-muted/40">
               <span className="self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary first-letter:uppercase">{sections[entry.section].noun}</span>
@@ -414,7 +459,7 @@ function Reading() {
             <div>
               <span className="rounded-full bg-fg px-2.5 py-0.5 text-xs font-medium text-bg">Roadmap</span>
               <h3 className="mt-4 font-semibold tracking-tight group-hover:text-primary">What comes next</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">Conversations and approvals, authorization, framework starters, UI components, AI gateways and retrieval.</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted">See what shipped in 1.2, the experimental profiles, and the qualifications still ahead.</p>
             </div>
             <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary">See the roadmap <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" /></span>
           </Link>
@@ -432,13 +477,13 @@ function Reading() {
 const questions: { q: string; a: ReactNode }[] = [
   { q: 'What is Mayura?', a: <>A TypeScript framework for AI agents, typed tools and durable workflows. You describe an agent with schemas, give it tools and a model, and run it under an allow-list of permissions and limits. It is one npm package, <code>mayura</code>, with a CLI of the same name.</> },
   { q: 'Do I need to install anything else?', a: <>No. <code>npm install mayura</code> is enough to build agents: schemas use <code>z</code> from <code>mayura</code> (it is Zod). Optional parts such as SQLite or PostgreSQL storage, the QuickJS sandbox and React hooks each need one extra package, only if you use them. Other services, from more model providers and databases to hosted browsers and identity providers, come as <Link to="/integrations/" className="text-primary hover:underline"><code>@mayurajs/*</code> packages</Link>.</> },
-  { q: 'What can Mayura connect to?', a: <>85 optional packages, released with every version: model providers, voice, databases, file storage, tracing services, sandboxes, hosted browsers, sign-in providers, API key services and deploy targets. Each reads nothing from the environment and runs under the same permissions and budgets as the rest of your app. Browse them in the <Link to="/integrations/" className="text-primary hover:underline">integrations directory</Link>.</> },
+  { q: 'What can Mayura connect to?', a: <>{integrationPackageCount} optional packages: providers, AI gateways, vector stores, rerankers, authorization policies, voice, databases, files, tracing, sandboxes, browsers, identity and deploy targets. Configure credentials explicitly and review each adapter’s permissions and limits in the <Link to="/integrations/" className="text-primary hover:underline">integrations directory</Link>.</> },
   { q: 'Which models can I use?', a: <>Through the model registry, OpenAI, Anthropic, Google Gemini, Amazon Bedrock, Azure OpenAI, Mistral, Groq and Ollama, each a provider package with a dated price catalog, named as <code>provider/model</code>. Any OpenAI-compatible API works too, such as DeepSeek, xAI, OpenRouter, Together, Fireworks and local servers. Retries and fallback chains move a call to the next model when one fails.</> },
   { q: 'Can agents run code or use a browser?', a: <>Yes, in a sandbox (Docker, or one of twelve hosted providers such as E2B, Daytona and Modal) or a real browser (local Chrome, or one of ten hosted services). Both are off until you grant them, have lifetimes and limits, and keep to the network or origins you allow. See <Link {...docs('guides/sandboxes')} className="text-primary hover:underline">Sandboxes</Link> and <Link {...docs('guides/browsers')} className="text-primary hover:underline">Browsers</Link>.</> },
   { q: 'How does Mayura keep agents in bounds?', a: <>A run can use a model, tool or effect only when you grant it, every run has cost, step, tool-call and time limits, and every input and output is validated. When a side effect may or may not have happened, the run ends <code>outcome_unknown</code> instead of retrying blindly.</> },
   { q: 'Can I test without an API key?', a: <>Yes. Scripted models from <code>mayura/testing</code> replay fixed responses, so agents, tools and workflows run offline in your tests.</> },
   { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel (AWS Lambda and Cloud Run functions experimental). It also runs on edge runtimes: Vercel Edge, Cloudflare Workers, Deno and Bun. <code>mayura deploy</code> ships to Docker, Kubernetes and eleven platforms through their own tools. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
-  { q: 'Is Mayura ready for production?', a: <>Yes. Mayura 1.x is stable: every entry point follows semantic versioning, so upgrades within 1.x do not break documented APIs, storage changes only through explicit migrations, and every release is checked to resume the runs the previous one started. See <Link {...docs('project/versioning')} className="text-primary hover:underline">Versioning and stability</Link>.</> },
+  { q: 'Is Mayura ready for production?', a: <>Mayura 1.2 is published under <code>latest</code>, with all 106 packages verified through trusted publishing. The documented stable APIs follow <Link {...docs('project/versioning')} className="text-primary hover:underline">the versioning policy</Link>. RAG and AG-UI retain experimental profiles; live integrations and your deployment need their own qualification. Read the <Link {...docs('guides/release-readiness')} className="text-primary hover:underline">release evidence and limitations</Link>.</> },
   { q: 'Is Mayura open source?', a: <>Yes, under the Apache-2.0 license, on <a href={site.repository} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">GitHub</a>.</> },
 ];
 
