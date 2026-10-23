@@ -4,6 +4,17 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Release engineering
+
+- Full releases publish the coordinated version already committed through a reviewed, qualified PR. The publisher
+  no longer commits, rebases or pushes protected main; only verified publication can create its version tag and
+  GitHub Release. Explicit `dry_run` rehearsals work while publishing is enabled.
+- Full-set OIDC publication validates every archive and dependency before writes, requires exact-main push
+  qualification, preserves the non-target distribution channel and checks registry integrity/provenance. Frozen
+  same-run recovery receipts prevent replaying accepted or uncertain uploads after failures or scanning delays.
+- Release readiness records the green 39-job main qualification and successful 22-package `1.2.0-rc.1` trusted
+  publication, while retaining the remaining 84-package OIDC qualification and experimental interoperability limits.
+
 ### Changed
 
 - The protected release workflow can publish the fixed 22-package RC set through OIDC with provenance, exact-main
