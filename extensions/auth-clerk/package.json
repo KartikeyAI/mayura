@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/auth-clerk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Clerk session tokens as Mayura server identities, verified with Clerk's published keys or its PEM key.",
   "type": "module",

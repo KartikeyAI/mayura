@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-digitalocean",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "DigitalOcean App Platform as a mayura deploy target: a pre-deploy migration, the server and a worker, released by image tag.",
   "type": "module",

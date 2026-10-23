@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-cloudflare",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Cloudflare as a mayura deploy target: the app in Containers, or the serverless module on Workers, with wrangler.",
   "type": "module",

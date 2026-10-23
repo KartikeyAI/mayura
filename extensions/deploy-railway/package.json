@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/deploy-railway",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Railway as a mayura deploy target: server and worker services, each migrating before it goes live.",
   "type": "module",

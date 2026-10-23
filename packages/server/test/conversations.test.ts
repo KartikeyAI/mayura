@@ -99,11 +99,17 @@ describe('scoped thread routes and run approvals', () => {
     expect((await call(api, `/v1/runs/${id}/approvals`, 'POST', { ...answer(view), actorId: 'someone-else' })).status).toBe(400);
     expect((await call(api, `/v1/runs/${id}/approvals`, 'POST', { ...answer(view), digest: 'a'.repeat(64) })).status).toBe(409);
     expect((await call(api, `/v1/runs/${id}/approvals`, 'POST', answer(view))).status).toBe(202);
-    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-    await vi.waitFor(async () => expect((await json(await call(api, `/v1/runs/${id}`))).status).toBe('succeeded'));
+    // Tool execution precedes durable completion (journal/checkpoint and terminal-record writes).
+    // Keep the background flow and real SQLite I/O, but do not impose waitFor's one-second default on fsync.
+    await vi.waitFor(async () => {
+      const response = await call(api, `/v1/runs/${id}`); expect(response.status).toBe(200);
+      expect((await json(response)).status).toBe('succeeded');
+    }, { timeout: process.env['CI'] === 'true' && process.platform === 'win32' ? 10_000 : 3_000, interval: 20 });
+    expect(execute).toHaveBeenCalledTimes(1);
     const entries = (await json(await call(api, '/v1/threads/thread-1/entries'))).entries;
     expect(entries.filter((entry: any) => entry.kind === 'approval')).toMatchObject([{ actorId: 'alice', decision: 'approved' }]);
     expect((await call(api, `/v1/runs/${id}/approvals`, 'POST', answer(view))).status).toBe(409);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('resumes on another server after shutdown, with one durable event sequence and one recorded turn', async () => {

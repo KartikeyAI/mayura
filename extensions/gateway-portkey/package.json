@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/gateway-portkey",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Portkey models for Mayura, with explicit credentials, bounded calls and gateway cost accounting.",
   "type": "module",

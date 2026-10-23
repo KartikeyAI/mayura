@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-codesandbox",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "CodeSandbox (Together) sandboxes for mayura/sandbox, through the CodeSandbox SDK.",
   "type": "module",

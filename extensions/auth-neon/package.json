@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/auth-neon",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Neon Auth (managed better-auth) JWTs as Mayura server identities, verified with your project's published keys.",
   "type": "module",
