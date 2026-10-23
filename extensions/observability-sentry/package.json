@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/observability-sentry",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Sentry for Mayura's traces, with Sentry's gen_ai span ops, over Sentry's OTLP endpoint.",
   "type": "module",

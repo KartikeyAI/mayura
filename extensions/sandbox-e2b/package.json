@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-e2b",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "E2B sandboxes for mayura/sandbox, over E2B's HTTP APIs.",
   "type": "module",

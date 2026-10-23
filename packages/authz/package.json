@@ -1,5 +1,5 @@
 {
-  "name": "@mayura/authz", "version": "1.1.0", "private": true,
+  "name": "@mayura/authz", "version": "1.2.0", "private": true,
   "description": "Scoped, deny-by-default role-based authorization over Mayura's core contract.",
   "type": "module", "sideEffects": false, "files": ["dist", "src", "README.md"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-railway",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Railway Sandboxes for mayura/sandbox, through Railway's TypeScript SDK.",
   "type": "module",

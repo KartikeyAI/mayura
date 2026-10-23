@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-23
+
 ### Release engineering
 
 - Full releases publish the coordinated version already committed through a reviewed, qualified PR. The publisher
