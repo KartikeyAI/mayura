@@ -54,13 +54,15 @@ export function selectReleaseArchives(manifest, names, version, sourceCommit, ar
     assert.equal(pkg.name, name); assert.equal(pkg.version, version);
     assert.equal(pkg.repository?.url, 'git+https://github.com/KartikeyAI/mayura.git');
     assert.equal(pkg.private, undefined); assert.equal(pkg.scripts, undefined);
-    assert.equal(pkg.publishConfig?.access, 'public'); assert.equal(pkg.publishConfig?.provenance, true);
-    for (const [dependency, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })) {
-      if (dependency === 'mayura' || dependency.startsWith('@mayurajs/')) {
-        assert(names.includes(dependency), `Missing release dependency: ${dependency}`);
-        assert([version, '^' + version].includes(range), `Wrong dependency version: ${dependency}`);
-        if (Object.hasOwn(pkg.dependencies ?? {}, dependency) || Object.hasOwn(pkg.optionalDependencies ?? {}, dependency)) {
-          assert(names.indexOf(dependency) < index, `Release dependency must be published first: ${dependency}`);
+    assert.deepEqual(pkg.publishConfig, { access: 'public', provenance: true }, 'Archive cannot override the registry, tag or publication settings.');
+    for (const kind of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      for (const [dependency, range] of Object.entries(pkg[kind] ?? {})) {
+        if (dependency === 'mayura' || dependency.startsWith('@mayurajs/')) {
+          assert(names.includes(dependency), `Missing release dependency: ${dependency}`);
+          assert([version, '^' + version].includes(range), `Wrong dependency version: ${dependency}`);
+          if (kind !== 'peerDependencies') {
+            assert(names.indexOf(dependency) < index, `Release dependency must be published first: ${dependency}`);
+          }
         }
       }
     }

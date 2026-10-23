@@ -50,8 +50,10 @@ test('all repository packages are selected; archive, identity and dependency dri
     assert.throws(() => selectFullRelease(m, names, version, sourceCommit, f.read));
   }
   for (const change of [p => p.scripts = { prepublishOnly: 'unreviewed' }, p => p.repository.url = 'https://example.com/fork',
+    p => p.publishConfig.tag = 'unreviewed', p => p.publishConfig.registry = 'https://example.com/',
     p => p.dependencies = { '@mayurajs/missing': version }, p => p.dependencies = { '@mayurajs/provider-openai': version },
-    p => p.peerDependencies = { mayura: '^1.1.0' }]) assert.throws(() => fixture(version, change).entries());
+    p => p.peerDependencies = { mayura: '^1.1.0' },
+    p => { if (p.name !== 'mayura') p.dependencies = { mayura: '^1.1.0' }; }]) assert.throws(() => fixture(version, change).entries());
   assert.throws(() => selectFullRelease(f.manifest, names, version, 'b'.repeat(40), f.read));
 });
 
