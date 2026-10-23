@@ -2,6 +2,7 @@
 title: "Mayura vs the Vercel AI SDK"
 description: "The AI SDK and Mayura compared for production agents: a toolkit for models, streaming and chat UI, and a runtime that enforces grants, budgets and durable steps."
 date: 2026-10-12
+updated: 2026-10-23
 tags: comparison, AI SDK, Vercel, TypeScript
 ---
 
@@ -22,22 +23,34 @@ documentation, repository and npm listing, and link the sources at the end. If s
 please [tell us](https://github.com/KartikeyAI/mayura/issues).
 
 *Compared on October 12, 2026: the AI SDK (`ai`) 7.0.137, `@ai-sdk/workflow` 2.0.69 and the Workflow SDK (`workflow`)
-5.2.0, against Mayura 1.1.0.*
+5.2.0. Mayura's side is updated for published 1.2.0 on October 23. AI SDK versions, adoption figures and other details
+retain the baseline date; the tool approval documentation was rechecked on October 23.*
+
+## What changes with Mayura 1.2
+
+Mayura now includes persistent threads, approvals inside agent runs, React conversation source and headless stores
+used by six framework notebooks. It also ships explicit gateway adapters, including Vercel AI Gateway, and
+experimental RAG and AG-UI profiles. See [the release overview](../../../docs/project/whats-new.md).
+
+The AI SDK documents [tool approval](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling) alongside tool
+execution and streaming. Both can gate a proposed action for review. Compare who verifies identity, where pending
+work is persisted, how spending is bounded and what happens after an uncertain write; neither a UI hook nor an
+approval button establishes all four by itself.
 
 ## At a glance
 
 | | AI SDK | Mayura |
 |---|---|---|
-| **Maturity** | Since 2023, version 7 in June 2026; about 27,000 GitHub stars and 31M weekly npm downloads for `ai` | 1.0 in September 2026, 1.1 in October 2026; a new project |
+| **Maturity** | Since 2023, version 7 in June 2026; about 27,000 GitHub stars and 31M weekly npm downloads for `ai` | Stable 1.2.0 published October 23, 2026; first 1.0 in September 2026; a new project |
 | **License** | Apache-2.0 (`ai`, `@ai-sdk/workflow` and `workflow`) | Apache-2.0, all of it |
 | **Models** | A provider specification with more than 40 official provider packages and about 60 listed community providers; the Vercel AI Gateway is the default global provider, with `provider/model` strings | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint |
 | **Scope** | Model calls of many kinds (text, structured output, embeddings, images, video, speech, transcription, reranking), streaming, chat UI hooks, agents | Agents, typed tools, durable workflows, memory, guardrails, an HTTP server and client, plus voice, vision, files, sandboxes, browsers, sign-in and API keys |
-| **Tool access** | Tools run when the model calls them; `toolApproval` can approve, deny or ask a person per call, and `@ai-sdk/policy-opa` moves those rules into OPA policies | Nothing allowed by default: each model, tool, capability and effect kind is an explicit grant |
+| **Tool access** | Tools run when the model calls them; `toolApproval` can approve, deny or ask a person per call, and `@ai-sdk/policy-opa` moves those rules into OPA policies | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | Stop conditions checked after each step: `ToolLoopAgent` stops after 20 steps by default, `WorkflowAgent` has no default limit; a custom condition can estimate cost from token usage | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
-| **Human approval** | `user-approval` through `toolApproval` on `ToolLoopAgent`; `needsApproval` on `WorkflowAgent` tools survives suspension | Approval steps in durable workflows, bound to the exact input by a digest; typed human requests |
+| **Human approval** | `user-approval` through `toolApproval` on `ToolLoopAgent`; `needsApproval` on `WorkflowAgent` tools survives suspension | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
 | **Durable execution** | `ToolLoopAgent` runs in memory and loses progress on a crash; `WorkflowAgent` makes each tool call a durable step with automatic retries | Every step recorded before and after it runs; at-most-once dispatch; abandoned steps settled as unknown, never re-run; pinned definitions |
 | **Workflows** | Patterns written in code (sequential, parallel, routing, orchestrator-worker, evaluator loops); durable functions with the Workflow SDK's `'use workflow'` and `'use step'` | Durable graphs declared as data, with approvals, human requests, timers, signals, sagas and loops |
-| **Memory** | Provider memory tools (such as Anthropic's), memory providers (Letta, Mem0, Supermemory, Hindsight, MongoDB) or a tool you write | Scoped long-term memory with provenance and sensitivity, and lexical, semantic and hybrid search; Mem0, Supermemory and OpenViking as remote indexes |
+| **Memory** | Provider memory tools (such as Anthropic's), memory providers (Letta, Mem0, Supermemory, Hindsight, MongoDB) or a tool you write | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
 | **Storage** | None in `ai`; Workflow SDK "Worlds" for local development, Vercel, PostgreSQL and community backends | SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, Cloudflare D1 and DynamoDB |
 | **Observability** | OpenTelemetry through `@ai-sdk/otel`; about 20 observability integrations listed | Metadata-only run events, OpenTelemetry export, and packages for Langfuse, LangSmith, Datadog, Arize, Sentry, Better Stack and PostHog |
 | **MCP** | Client over HTTP, SSE or stdio, with tools, resources and prompts; MCP apps | Wraps individual MCP tools as ordinary tools, under your permissions and budget |
@@ -108,15 +121,15 @@ it means someone occasionally reconciles a run.
 - **Models.** Far more providers out of the box, one interface across them, and the AI Gateway for reaching many
   through one key.
 - **User interfaces.** `useChat` and related hooks for React, Vue and Svelte, a stream protocol, resumable streams and
-  generative UI. Mayura's React bindings show runs, workflow progress and forms for human requests; they are not a
-  chat toolkit.
+  generative UI. Mayura 1.2 includes React thread history/approval source and headless stores for other frameworks;
+  it does not provide the AI SDK's full generative UI and modality surface.
 - **Modalities.** Image and video generation, reranking and realtime, besides text, speech and transcription. Mayura
   has voice and vision, and no image or video generation.
-- **Conversations.** Agents work on message arrays, and chat history is a first-class idea in AI SDK UI. Mayura has no
-  thread store: a chat app passes earlier turns in the run's input.
+- **Conversation UI.** Agents work on message arrays, with chat hooks across frameworks. Mayura now has scoped
+  persistent threads, compaction and notebook interfaces, with a deliberately bounded conversation contract.
 - **Approval inside an agent.** `toolApproval` pauses an ordinary `ToolLoopAgent` before selected tool calls. In
-  Mayura, approvals are steps of durable workflows, and an agent run can't pause for a person; the agent starts a
-  workflow that holds the sensitive step, as in [the refund guide](../guides/refund-approval.md).
+  Mayura 1.2, an agent run can pause for an exact-input approval and resume from a stored checkpoint. Workflow
+  approvals remain available for a longer business process, as in [the refund guide](../guides/refund-approval.md).
 - **Reach.** Harnesses that run Claude Code or Codex behind the same interface, a much larger community, and a longer
   track record. Other agent frameworks build on its providers, so what you learn carries over.
 

@@ -15,6 +15,11 @@ points you import only when you need them, and other services (more model provid
 hosted sandboxes and browsers, identity providers, observability services and deploy targets) come as optional
 [`@mayurajs/*` packages](reference/integrations.md).
 
+V1.2 adds persistent conversations, exact tool approvals, agent handoffs and fine-grained authorization.
+Start with one of the [six framework notebooks](guides/framework-starters.md), or
+[choose another application starter](guides/choosing-a-starter.md). The
+[release overview](project/whats-new.md) covers the 105 extensions and the experimental RAG/AG-UI profiles.
+
 ## The building blocks
 
 | Block | What it is | Start here |

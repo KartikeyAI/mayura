@@ -49,7 +49,7 @@ function Highlighted({ text, words }: { text: string; words: string[] }) {
     : <Fragment key={i}>{part}</Fragment>)}</>;
 }
 
-export function SearchButton() {
+export function SearchButton({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -66,10 +66,11 @@ export function SearchButton() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} onPointerEnter={() => void loadIndex()} aria-label="Search docs"
-        className="flex h-9 items-center gap-2 rounded-lg border border-line bg-raised px-2.5 text-sm text-muted hover:border-muted/40 hover:text-fg sm:w-56">
+        className={compact ? 'grid size-9 place-items-center rounded-lg text-muted hover:bg-soft hover:text-fg'
+          : 'flex h-9 items-center gap-2 rounded-lg border border-line bg-raised px-2.5 text-sm text-muted hover:border-muted/40 hover:text-fg xl:w-56'}>
         <SearchIcon />
-        <span className="hidden sm:inline">Search docs</span>
-        <kbd className="ml-auto hidden rounded border border-line px-1.5 font-sans text-[0.7rem] sm:inline">Ctrl K</kbd>
+        {!compact && <><span className="hidden xl:inline">Search docs</span>
+          <kbd className="ml-auto hidden rounded border border-line px-1.5 font-sans text-[0.7rem] xl:inline">Ctrl K</kbd></>}
       </button>
       {/* Rendered into <body>: the header's backdrop-filter makes it the containing block of any fixed element
           inside it, which would shrink the full-screen overlay to the header's height. */}

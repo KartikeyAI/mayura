@@ -4,6 +4,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+### Documentation
+
+- Refresh the website for V1.2 with a framework starter chooser, current feature and integration coverage,
+  and a roadmap that distinguishes published capabilities from experimental qualification work.
+- Add individual guides for all six framework starters, starter selection and practical V1.2 feature walkthroughs;
+  update the four framework comparisons with dated primary sources and current Mayura capabilities.
+
 ## [1.2.0] - 2026-10-23
 
 ### Release engineering
@@ -16,8 +23,22 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - Full-set OIDC publication validates every archive and dependency before writes, requires exact-main push
   qualification, preserves the non-target distribution channel and checks registry integrity/provenance. Frozen
   same-run recovery receipts prevent replaying accepted or uncertain uploads after failures or scanning delays.
-- Release readiness records the green 39-job main qualification and successful 22-package `1.2.0-rc.1` trusted
-  publication, while retaining the remaining 84-package OIDC qualification and experimental interoperability limits.
+- Stable `1.2.0` publication succeeded for all 106 packages through `release.yml` and the protected `release`
+  environment using npm trusted publishing. Public registry checks verified archive integrity, provenance and
+  `latest=1.2.0` for every package, with all existing `next` tags preserved. Experimental interoperability limits remain.
+
+### Stable publication status (2026-10-23)
+
+- All 39 jobs in [final main qualification](https://github.com/KartikeyAI/mayura/actions/runs/39928903180) passed at
+  `ac32daa412d7209066530cfdc9542d820d054b86`; the [full rehearsal](https://github.com/KartikeyAI/mayura/actions/runs/39932634159)
+  passed on the same source with `package_set=all` and `dry_run=true`.
+- [Stable publication](https://github.com/KartikeyAI/mayura/actions/runs/39934428405) accepted and verified all 106
+  OIDC uploads, completing trusted-publishing qualification for every package. The
+  [v1.2.0 tag and stable GitHub Release](https://github.com/KartikeyAI/mayura/releases/tag/v1.2.0) identify that source.
+  The source-bound archives, receipt, qualification, SBOM and notes are retained as release evidence.
+- Every `next` tag matched its pre-publication baseline, including the 22-package `1.2.0-rc.1` channel; absent
+  `next` tags stayed absent. Stable publication leaves the external-service, experimental AG-UI/RAG and browser
+  qualification limitations documented below unchanged.
 
 ### Changed
 
@@ -50,7 +71,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   package-trust setup helper, including prerelease-only packages without a `latest` tag, and documented
   first-publication requirements for new extensions.
 
-### Validation status (2026-10-21)
+### Historical validation status (2026-10-21)
 
 - Full release-branch CI passed: all 13 jobs in [qualification run 39576846216](https://github.com/KartikeyAI/mayura/actions/runs/39576846216)
   succeeded at `f443c76e822eef27b143d318d748ed513599e00c`, covering six Linux/macOS/Windows Node 22/24 consumers,
@@ -66,7 +87,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
   examples, the website, secret scan and license/SBOM checks passed locally.
 - Paid provider/gateway checks, real authorization/vector service interoperability, the AG-UI reference-client/browser
   flow and live deployments remain outstanding. AG-UI and RAG
-  retain their documented experimental status. No version bump, publication or release tag has been performed.
+  retain their documented experimental status. This snapshot preceded the completed stable publication recorded above.
 - See [release validation status](docs/guides/release-readiness.md) for evidence scope and remaining release gates.
 
 ### Fixed

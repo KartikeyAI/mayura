@@ -16,6 +16,10 @@ scripted offline tests, a separate workflow worker, deployment files and an envi
 | `sveltekit` | Catch-all `+server.ts` | Native Svelte with headless stores | Node worker |
 | `nuxt` | Nitro catch-all with a Web Request/Response bridge | Native Vue with headless stores | Node worker |
 
+Follow the dedicated setup for [Next.js](nextjs.md), [Hono](hono.md), [React Router](react-router.md),
+[TanStack Start](tanstack-start.md), [SvelteKit](sveltekit.md) or [Nuxt](nuxt.md).
+For other application shapes, see [Choose a starter](choosing-a-starter.md).
+
 ## Generate and connect
 
 ```sh
@@ -84,7 +88,7 @@ and generates, packs, installs and tests each server contract offline. Like the 
 are qualified in the workspace; generated packed installs qualify the Mayura server contract separately.
 The shared runtime checks passed on Bun, Deno, workerd and Vercel Edge; they do not qualify the Hono-specific Bun/Deno entry points or a deployed Workers/D1 application. Those profiles and rendered browser interaction checks remain outstanding.
 
-Tests, type checks, framework builds and mounted HTTP approval/worker flows passed locally on Windows using Node 24.15.0 for framework qualification. Rendered browser checks, live deployments and the full Linux/macOS and Node 22/24 CI matrix remain outstanding. TanStack's Node adapter uses a pinned Nitro beta; framework compiler integrations use TypeScript 6 tooling. Keep the starter's declared Node version and repeat qualification on the target deployment. See [release validation status](release-readiness.md).
+Tests, type checks, framework builds and mounted HTTP approval/worker flows passed locally on Windows using Node 24.15.0 for framework qualification. The final V1.2 main qualification passed all 39 jobs, including Linux/macOS/Windows Node 22/24 consumer lanes. This does not establish rendered browser or live deployment qualification. TanStack's Node adapter uses a pinned Nitro beta; framework compiler integrations use TypeScript 6 tooling. Keep the starter's declared Node version and repeat qualification on the target deployment. See [release validation status](release-readiness.md).
 
 The Stagehand/OpenAI/Zod and Mistral/OpenTelemetry peer conflicts are resolved in the workspace lockfile. An exact
 local pnpm metadata hook gives the legacy OpenAI 4 SDK its own supported Zod 3 dependency; Mayura, Stagehand and
