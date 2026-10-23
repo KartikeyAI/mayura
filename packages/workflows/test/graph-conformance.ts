@@ -20,9 +20,9 @@ const permissionList = ['tool:graph.effect', 'effect:write'];
 const literal = (value: unknown) => ({ kind: 'literal' as const, value: jsonValue(value) });
 const refLiteral = (value: readonly ExecutionRef[]) => ({ kind: 'literal' as const, value });
 const step = (stepId: string) => ({ kind: 'step' as const, stepId, path: [] });
-const action = (execute: (input: unknown) => unknown = input => input, costMicros = 1) => defineTool({
+const action = (execute: (input: unknown) => unknown = input => input, costMicros = 1, timeoutMs = 15_000) => defineTool({
   id: 'graph.effect', version: '1', description: 'Controlled local graph effect',
-  input: z.unknown(), output: z.unknown(), effects: 'write', capabilities: [], costMicros, timeoutMs: 15_000, execute,
+  input: z.unknown(), output: z.unknown(), effects: 'write', capabilities: [], costMicros, timeoutMs, execute,
 });
 const waitGraph = (references: readonly ExecutionRef[], id = 'graph.wait') => defineWorkflowGraph({
   id, version: '1', input: z.unknown(), output: z.unknown(),
@@ -498,16 +498,18 @@ export function graphWorkflowConformance(name: string, factory: () => Promise<Gr
     }, 30_000);
 
     it('withholds near-limit tool output before future wait observations can exhaust aggregate headroom', async () => {
-      const source = await target(); const tools = Array.from({ length: 16 }, (_value, index) => ({ kind: 'tool' as const, id: `large-${index}`, tool: action(() => 'x'.repeat(62_000)), input: literal(null) }));
+      const source = await target(); const tools = Array.from({ length: 16 }, (_value, index) => ({ kind: 'tool' as const, id: `large-${index}`, tool: action(() => 'x'.repeat(62_000), 1, stressTimeout(30_000)), input: literal(null) }));
       const waits = Array.from({ length: 112 }, (_value, index) => ({ kind: 'wait' as const, id: `wait-${index}`, targets: refLiteral([source.reference]), dependsOn: tools.map(node => node.id) }));
       const definition = defineWorkflowGraph({ id: 'graph.headroom-limit', version: '1', input: z.unknown(), output: z.unknown(), nodes: [...tools, ...waits], result: step('wait-111') });
       // This checks aggregate bounds rather than the minimum lease's throughput envelope.
       // The 16-effect / near-one-MiB public path took 58.75 s in a focused paired run;
-      // allow a bounded 120 s runner window (360 s on Windows CI). Production
-      // deadlines, the explicit fixture lease and every headroom/receipt assertion stay fixed. Each write here persists
+      // allow a bounded 120 s runner window (360 s on Windows CI). Every headroom, cost and receipt assertion stays fixed.
+      // Tool deadlines also cover durable pre-dispatch writes; a 15 s fixture deadline can expire before execution on
+      // Windows. Allow 30 s (90 s on Windows CI), with a 300 s fixture lease so renewal cannot race a slow storage call.
+      // These are test-owned settings; production deadlines remain unchanged. Each write here persists
       // close to 1 MiB of state; on a slow Windows runner one took longer than the 10 s default storage deadline, which
       // the runtime rightly reports as STORAGE_UNAVAILABLE (reproduced with a short deadline), so it gets the 30 s maximum.
-      const engine = runtime({ maxConcurrentJobs: 1, leaseMs: 30_000, storageTimeoutMs: 30_000 }); const run = await engine.submit(definition, { input: null, idempotencyKey: 'headroom-limit' });
+      const engine = runtime({ maxConcurrentJobs: 1, leaseMs: 300_000, storageTimeoutMs: 30_000 }); const run = await engine.submit(definition, { input: null, idempotencyKey: 'headroom-limit' });
       const blocked = await engine.runUntilSettled(definition, run.id); expect(blocked.status).toBe('blocked');
       const withheld = Object.values(blocked.steps).filter(node => node.kind === 'tool' && node.status === 'blocked');
       expect(withheld.length).toBeGreaterThan(0);
