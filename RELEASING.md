@@ -83,6 +83,31 @@ job names. Automatic release planning continues to require the entire **Mayura q
 on the exact pushed `main` commit. At the current matrix sizes there are 39 jobs including the gate; release tooling must
 use the gate and workflow conclusion rather than assuming a fixed job count.
 
+## Scoped prereleases for the reviewed 22-package set
+
+For the RC bootstrap set in `compatibility/prerelease-22.json`, dispatch **Mayura release** on `main` with an explicit
+version such as `1.2.0-rc.1` and `package_set=prerelease-22`. This mode accepts only `1.2.0-rc.N` after `rc.0` and always
+publishes to `next`. Set `MAYURA_RELEASE=enabled` and approve the **Publish reviewed 22-package prerelease** job in
+the protected `release` environment. The default `all` option retains the normal full-release behavior.
+
+The scoped job uses npm 11.21.1, OIDC and provenance, with no npm token secret. It verifies green push qualification,
+including the aggregate gate, for the exact dispatched main commit before uploading. Every selected archive must
+match its checksum, identity, repository and dependency closure. Each package must already have its `rc.0` bootstrap;
+the job snapshots every existing `latest` tag and checks that it stays unchanged. A new package's first publication can
+receive an automatic `latest` tag even with `--tag next`, so this lane cannot introduce unbootstrapped names.
+
+This is a partial package publication: it does not commit a global version bump, create a Git tag, or create a GitHub
+Release for the other packages. Scoped runs have their own serialized queue, independent of pending full releases.
+Approve only the scoped job for an RC-set operation.
+
+The `prerelease-22-<version>` Actions artifact contains the selected immutable archives, qualification evidence and
+receipt. Use **Re-run jobs** on the original workflow run to recover that artifact, rather than starting a fresh dispatch
+for a partial operation. Accepted uploads are polled for registry visibility
+and provenance without re-uploading; cancellation or a lost response leaves an uncertain receipt that must be
+reconciled before further uploads. A different archive for an existing version is rejected. npm scanning can delay
+availability; the job waits up to 20 minutes after submission. Unvalidated trusted publishers require their first
+successful OIDC publication within 48 hours of configuration; see the [npm trusted-publishing documentation](https://docs.npmjs.com/trusted-publishers/).
+
 ## Nothing is published until you turn it on
 
 Until the repository variable `MAYURA_RELEASE` is `enabled`, every run is a complete **dry run**: it builds, verifies

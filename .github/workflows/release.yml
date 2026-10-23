@@ -20,10 +20,16 @@ on:
         description: 'Exact version to release, such as 1.0.0 or 1.0.0-rc.1 (empty: work it out from the commits)'
         required: false
         default: ''
+      package_set:
+        description: 'all: normal release; prerelease-22: the reviewed 22-package RC set, preserving latest tags'
+        type: choice
+        options: [all, prerelease-22]
+        default: all
 permissions:
   contents: read
 concurrency:
-  group: mayura-release
+  # Scoped RCs have their own serialized queue; an old full-release approval cannot block their activation window.
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.package_set == 'prerelease-22' && 'mayura-release-prerelease-22' || 'mayura-release' }}
   cancel-in-progress: false
 env:
   SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -51,9 +57,17 @@ jobs:
         with:
           node-version: 24.14.1
       - id: next
+        # Validate the explicit partial-release version before building any archives.
+        # The publisher independently checks the same boundary before registry writes.
         env:
           REQUESTED: ${{ inputs.version }}
-        run: node scripts/version.mjs next --version "$REQUESTED"
+          PACKAGE_SET: ${{ inputs.package_set }}
+        run: |
+          if [ "$PACKAGE_SET" = prerelease-22 ] && ! [[ "$REQUESTED" =~ ^1\.2\.0-rc\.[1-9][0-9]*$ ]]; then
+            echo 'The reviewed set requires an explicit 1.2.0-rc.N after rc.0.' >&2
+            exit 1
+          fi
+          node scripts/version.mjs next --version "$REQUESTED"
       - name: Summary
         env:
           VERSION: ${{ steps.next.outputs.version }}
@@ -91,7 +105,17 @@ jobs:
           pnpm release:artifacts
           node scripts/sbom.mjs
       - name: Publish (dry run)
-        run: node scripts/publish-staged.mjs --tag ${{ needs.plan.outputs.tag }}
+        env:
+          PACKAGE_SET: ${{ inputs.package_set }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          if [ "$PACKAGE_SET" = prerelease-22 ]; then
+            manifest=$(find .artifacts -maxdepth 2 -name release-manifest.json -print -quit)
+            node scripts/publish-prerelease.mjs --manifest "$manifest" --version "$VERSION"
+          else
+            node scripts/publish-staged.mjs --tag "$TAG"
+          fi
       - name: Release notes
         env:
           VERSION: ${{ needs.plan.outputs.version }}
@@ -99,7 +123,7 @@ jobs:
 
   release:
     needs: plan
-    if: needs.plan.outputs.version != '' && needs.plan.outputs.publish == 'true'
+    if: needs.plan.outputs.version != '' && needs.plan.outputs.publish == 'true' && inputs.package_set != 'prerelease-22'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: release
@@ -153,6 +177,7 @@ jobs:
           if [ "$committed" = true ]; then
             git push origin HEAD:main || { git fetch origin main && git rebase origin/main && git push origin HEAD:main; }
           fi
+
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -169,3 +194,63 @@ jobs:
             gh release create "v$VERSION" --verify-tag --title "Mayura $VERSION" --notes-file release-notes.md \
               $([ "$TAG" = next ] && echo --prerelease) $assets
           fi
+
+  prerelease-22:
+    name: Publish reviewed 22-package prerelease
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && inputs.package_set == 'prerelease-22' && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: read
+      actions: read # Verify exact-main qualification and recover this run's receipt on retry.
+      id-token: write # npm trusted publishing; no npm token secret.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0 # Upgrade compatibility needs the previous release tag and its tree.
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - run: npm install --global npm@11.21.1 pnpm@10.17.1 --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Recover this run's immutable archives and receipt
+        if: github.run_attempt != '1'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prerelease-22-${{ needs.plan.outputs.version }}
+          path: .artifacts/prerelease-22
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+      - name: Build and verify prerelease archives
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/version.mjs set "$VERSION"
+          pnpm build
+          pnpm upgrade:compat
+          pnpm release:artifacts
+          node scripts/sbom.mjs
+      - name: Publish the reviewed set through OIDC and verify latest tags
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          manifest=$(find .artifacts -maxdepth 2 -name release-manifest.json ! -path '.artifacts/prerelease-22/*' -print -quit)
+          node scripts/publish-prerelease.mjs --manifest "$manifest" --version "$VERSION" --publish
+      - name: Preserve archives and receipt, including uncertain uploads
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prerelease-22-${{ needs.plan.outputs.version }}
+          path: |
+            .artifacts/prerelease-22/release-manifest.json
+            .artifacts/prerelease-22/receipt.json
+            .artifacts/prerelease-22/qualification.json
+            .artifacts/prerelease-22/tarballs/*.tgz
+          overwrite: true
+          if-no-files-found: warn
+          retention-days: 7
