@@ -6,7 +6,12 @@ import { createSqliteStore } from '@mayura/storage-sqlite';
 import { createAggregateFrontendToolStore } from '../dist/index.js';
 const scope = { principalId: 'alice', projectId: 'shop' }; const agentId = 'support'; const runId = 'native-1';
 let directory: string; let store: ReturnType<typeof createSqliteStore>;
-beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mayura-frontend-journal-')); store = createSqliteStore({ filename: join(directory, 'journal.sqlite') }); await store.initialize(); });
+beforeEach(async () => {
+  // Native I/O and CAS races stay real, while a slow fsync cannot expire a one-second logical claim.
+  // Expiry and retention assertions below advance this clock explicitly.
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+  directory = await mkdtemp(join(tmpdir(), 'mayura-frontend-journal-')); store = createSqliteStore({ filename: join(directory, 'journal.sqlite') }); await store.initialize();
+});
 afterEach(async () => { vi.useRealTimers(); await store.close();
   if (!resolve(directory).startsWith(`${resolve(tmpdir())}${sep}mayura-frontend-journal-`)) throw new Error('Unsafe cleanup path'); await rm(directory, { recursive: true, force: true }); });
 const journal = () => createAggregateFrontendToolStore(store, { permissions: { allow: ['frontend-tools:store'] } });
@@ -48,10 +53,10 @@ describe('durable frontend claim and result journal', () => {
     expect((await journal().accept(key, result)).status).toBe('settled');
   });
   it('does not reopen expired claims, accepts late claimed evidence within retention, and redacts content without deleting tombstones', async () => {
-    vi.useFakeTimers(); const { a, b, key, input } = await registered(); const claimId = 'b'.repeat(43); await a.claim(key, claimId);
-    await vi.advanceTimersByTimeAsync(1001); await expect(b.claim(key, 'c'.repeat(43))).rejects.toMatchObject({ code: 'CONFLICT' });
+    const { a, b, key, input } = await registered(); const claimId = 'b'.repeat(43); await a.claim(key, claimId);
+    vi.setSystemTime(Date.now() + 1001); await expect(b.claim(key, 'c'.repeat(43))).rejects.toMatchObject({ code: 'CONFLICT' });
     await b.accept(key, { claimId, threadId: 'thread-1', continuationRunId: 'ui-2', requestDigest: 'e'.repeat(64), value: { selected: 7 }, failed: false });
-    await vi.advanceTimersByTimeAsync(5000); expect(await a.purgeExpired(scope, agentId, runId)).toBe(1);
+    vi.setSystemTime(Date.now() + 5000); expect(await a.purgeExpired(scope, agentId, runId)).toBe(1);
     expect(await b.read(key)).toMatchObject({ purged: true, input: null, status: 'settled', outbox: { value: null, requestDigest: 'e'.repeat(64) } });
     expect((await b.register(input)).token).toBe(key.token); await expect(b.claim(key, 'c'.repeat(43))).rejects.toMatchObject({ code: 'CONFLICT' });
   });

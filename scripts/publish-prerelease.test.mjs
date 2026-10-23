@@ -134,6 +134,7 @@ test('the selected workflow job uses the protected OIDC environment without glob
   const scoped = workflow.split(/^  prerelease-22:\s*$/mu)[1];
   assert(scoped); assert.match(scoped, /environment: release/u); assert.match(scoped, /id-token: write/u);
   assert.match(scoped, /contents: read/u); assert.match(scoped, /publish-prerelease\.mjs/u);
+  assert.match(scoped, /fetch-depth: 0/u);
   assert.doesNotMatch(scoped, /git push|gh release|publish-staged\.mjs|secrets\.NPM/u);
   assert.match(workflow.split(/^  release:\s*$/mu)[1].split(/^  prerelease-22:/mu)[0], /inputs\.package_set != 'prerelease-22'/u);
 });

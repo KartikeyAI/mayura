@@ -8,6 +8,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 - The protected release workflow can publish the fixed 22-package RC set through OIDC with provenance, exact-main
   qualification, immutable recovery receipts and checks that preserve all existing `latest` tags.
+- Frontend journal fixtures use an explicit logical clock while native SQLite I/O and claim races remain real,
+  avoiding accidental one-second claim expiry on slow runners while preserving expiry and retention assertions.
 - Cross-platform qualification separates consumers from two Vitest and two bundle shards per OS/Node combination.
   Shared checks run once, PR branch pushes no longer duplicate the full matrix, and an aggregate qualification gate
   requires all lanes to succeed, including database, runtime and container coverage.
