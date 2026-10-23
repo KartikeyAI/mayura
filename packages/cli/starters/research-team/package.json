@@ -20,7 +20,7 @@
   "dependencies": {
     "better-sqlite3": "13.0.3",
     "mayura": "workspace:*",
-    "pg": "8.23.0"
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
