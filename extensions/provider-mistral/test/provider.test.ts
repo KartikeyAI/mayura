@@ -17,6 +17,9 @@ const sse = (events: unknown[]) => new Response(new ReadableStream({ start(contr
 } }), { headers: { 'content-type': 'text/event-stream' } });
 
 type Seen = { url: string; body: JsonObject; headers: Headers }[];
+// Real fetch retains an in-flight request. Without this root, Node's weak linked-signal
+// listeners can lose a fake request to GC before the caller's cancellation reaches it.
+const pendingRequests = new Set<Request>();
 function transport(scenario: ModelScenario | { kind: 'raw'; body: unknown; status?: number } | { kind: 'events'; events: unknown[] }, seen: Seen = []): typeof globalThis.fetch {
   return async input => {
     const request = input as Request;
@@ -26,13 +29,17 @@ function transport(scenario: ModelScenario | { kind: 'raw'; body: unknown; statu
       case 'raw': return json(scenario.body, scenario.status ?? 200);
       case 'events': return sse(scenario.events);
       case 'network': throw new TypeError('fetch failed');
-      case 'hang': return new Promise<Response>((_resolve, reject) => {
-        const abort = () => reject(new DOMException('aborted', 'AbortError'));
-        // Real fetch rejects an already-aborted request too. SDK/body preparation may
-        // finish after cancellation, before this fake transport subscribes to the signal.
-        if (request.signal.aborted) abort();
-        else request.signal.addEventListener('abort', abort, { once: true });
-      });
+      case 'hang': {
+        pendingRequests.add(request);
+        try {
+          return await new Promise<Response>((_resolve, reject) => {
+            const abort = () => reject(new DOMException('aborted', 'AbortError'));
+            // Body preparation may finish after cancellation, before this subscription.
+            if (request.signal.aborted) abort();
+            else request.signal.addEventListener('abort', abort, { once: true });
+          });
+        } finally { pendingRequests.delete(request); }
+      }
       case 'http': return json({ object: 'error', message: scenario.detail, type: 'invalid_request_error' }, scenario.status);
       case 'invalid': return json(completion({ content: `not json: ${scenario.detail}` }, 'stop', usage(1, 1)));
       case 'refusal': return json(completion({ content: '{"answer":' }, 'length', usage(5, 1)));

@@ -321,15 +321,21 @@ describe('runs paused to a checkpoint store', () => {
   });
 
   it('does not count the wait against maxDurationMs', async () => {
-    const { tool, execute } = refundTool();
-    const engine = runtime({ limits: { maxCostMicros: 100, maxDurationMs: 150 } });
-    const run = engine.submit(agentWith(priced([call('c1', 40), done('ok')]), [tool]), { input: { question: 'Refund' } });
-    const digest = (await until(run, 'approval.requested')).metadata['digest'] as string;
-    await until(run, 'run.paused');
-    await new Promise(done => setTimeout(done, 300));
-    await engine.approve(run, { callId: 'c1', digest, decision: 'approved', actorId: 'm' });
-    expect((await run.result()).status).toBe('succeeded');
-    expect(execute).toHaveBeenCalledOnce();
+    // Real SQLite fsync can exceed a 150 ms run budget on hosted Windows. Move only
+    // the wall clock while paused; retain real persistence, timers and resumption.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { tool, execute } = refundTool();
+      const engine = runtime({ limits: { maxCostMicros: 100, maxDurationMs: 30_000 } });
+      const run = engine.submit(agentWith(priced([call('c1', 40), done('ok')]), [tool]), { input: { question: 'Refund' } });
+      const digest = (await until(run, 'approval.requested')).metadata['digest'] as string;
+      await until(run, 'run.paused');
+      vi.setSystemTime(Date.now() + 60_000);
+      expect(engine.inspect(run).status).toBe('waiting');
+      await engine.approve(run, { callId: 'c1', digest, decision: 'approved', actorId: 'm' });
+      expect((await run.result()).status).toBe('succeeded');
+      expect(execute).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
   });
 
   it('finishes the paused batch from the answered call, and pauses again for a later call', async () => {
