@@ -8,6 +8,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ### Release engineering
 
+- Release workflows retain the explicitly selected archives, receipts, SBOM and notes under `.artifacts`;
+  rehearsals fail if no evidence files are found instead of silently succeeding without a downloadable artifact.
 - Full releases publish the coordinated version already committed through a reviewed, qualified PR. The publisher
   no longer commits, rebases or pushes protected main; only verified publication can create its version tag and
   GitHub Release. Explicit `dry_run` rehearsals work while publishing is enabled.
