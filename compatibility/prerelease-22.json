@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "packages": [
+    "mayura",
+    "@mayurajs/provider-openai",
+    "@mayurajs/authz-cedar",
+    "@mayurajs/authz-http",
+    "@mayurajs/authz-openfga",
+    "@mayurajs/authz-oso",
+    "@mayurajs/authz-permit",
+    "@mayurajs/gateway-cloudflare",
+    "@mayurajs/gateway-helicone",
+    "@mayurajs/gateway-litellm",
+    "@mayurajs/gateway-openrouter",
+    "@mayurajs/gateway-portkey",
+    "@mayurajs/gateway-vercel",
+    "@mayurajs/reranker-cohere",
+    "@mayurajs/reranker-jina",
+    "@mayurajs/reranker-voyage",
+    "@mayurajs/vector-chroma",
+    "@mayurajs/vector-libsql",
+    "@mayurajs/vector-pgvector",
+    "@mayurajs/vector-pinecone",
+    "@mayurajs/vector-qdrant",
+    "@mayurajs/vector-weaviate"
+  ]
+}
