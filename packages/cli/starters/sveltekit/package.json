@@ -24,7 +24,7 @@
   "dependencies": {
     "mayura": "workspace:*",
     "better-sqlite3": "13.0.3",
-    "pg": "8.23.0",
+    "pg": "8.23.1",
     "svelte": "^5.57.1"
   },
   "devDependencies": {

@@ -24,7 +24,7 @@
   "dependencies": {
     "mayura": "workspace:*",
     "better-sqlite3": "13.0.3",
-    "pg": "8.23.0",
+    "pg": "8.23.1",
     "nuxt": "4.5.2",
     "vue": "3.5.44",
     "h3": "1.15.11"
