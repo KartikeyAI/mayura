@@ -54,12 +54,14 @@ jobs:
         if: >-
           ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
         shell: bash
+        env:
+          PINECONE_ALLOWANCE_JSON: ${{ vars.PINECONE_ALLOWANCE_JSON }}
         run: |
           test "$GITHUB_RUN_ATTEMPT" = 1
           node --input-type=module <<'JS'
-          import {readFile,writeFile} from 'node:fs/promises';
+          import {writeFile} from 'node:fs/promises';
           import {verifyFreeAllowance} from './scripts/pinecone-regional-controls.mjs';
-          const allowance=verifyFreeAllowance(JSON.parse(await readFile('compatibility/pinecone-free-allowance.json','utf8')));
+          const allowance=verifyFreeAllowance(JSON.parse(process.env.PINECONE_ALLOWANCE_JSON));
           await writeFile('.artifacts/regional-output/allowance.json',JSON.stringify(allowance,null,2)+'\n');
           console.log('Fresh Starter allowance covers the full byte ceiling and safety reserve.');
           JS
