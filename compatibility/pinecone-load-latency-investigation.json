@@ -1,0 +1,1163 @@
+{
+  "format": 1,
+  "kind": "pinecone-starter-load-qualification",
+  "startedAt": "2026-10-25T05:46:01.347Z",
+  "status": "failed",
+  "ragStatus": "experimental",
+  "productionReady": false,
+  "apiVersion": "2025-10",
+  "resource": {
+    "name": "mayura-ragq-c99e61dd6caa44c58f74cf452890c378",
+    "owner": "c99e61dd-6caa-44c5-8f74-cf452890c378",
+    "dimensions": 1536,
+    "metric": "cosine",
+    "cloud": "aws",
+    "region": "us-east-1"
+  },
+  "limits": {
+    "maxCostMicros": 0,
+    "maxAdapterOperations": 1200,
+    "maxProvisionRequests": 32,
+    "maxCleanupRequests": 32,
+    "fixtureVectors": 6500,
+    "maxDataRequests": 1200,
+    "maxRequestBytes": 314572800,
+    "maxResponseBytes": 209715200,
+    "maxReadUnits": 10000,
+    "maxWorkDurationMs": 840000
+  },
+  "billing": {
+    "plan": "Starter",
+    "verification": "User confirmed; project key cannot audit billing or remaining monthly allowance.",
+    "inferenceCalls": 0,
+    "pricingSource": "https://www.pinecone.io/pricing/"
+  },
+  "requests": {
+    "provision": 3,
+    "cleanup": 5,
+    "data": 1092
+  },
+  "indexCleanup": "passed",
+  "loadProfile": {
+    "records": 5000,
+    "decoys": 500,
+    "totalVectors": 6500,
+    "dimensions": 1536,
+    "durationMs": 300000,
+    "qps": 2,
+    "concurrency": 4,
+    "maxQueued": 16,
+    "maxOperations": 1200,
+    "requiredOperations": 1150,
+    "maxP95Ms": 1000,
+    "minMeanRecallAt10": 0.95,
+    "minPerQueryRecallAt10": 0.8,
+    "scorePolicy": "provider-approximate",
+    "auditBatchSize": 32
+  },
+  "usage": {
+    "requestBytes": 248194177,
+    "responseBytes": 167195912,
+    "reportedReadUnits": 1439,
+    "readsWithUsage": 833,
+    "readsWithoutUsage": 0,
+    "reservedReadUnits": 8330
+  },
+  "qualification": {
+    "format": 1,
+    "kind": "pinecone-starter-sustained-load",
+    "profile": {
+      "records": 5000,
+      "decoys": 500,
+      "totalVectors": 6500,
+      "dimensions": 1536,
+      "durationMs": 300000,
+      "qps": 2,
+      "concurrency": 4,
+      "maxQueued": 16,
+      "maxOperations": 1200,
+      "requiredOperations": 1150,
+      "maxP95Ms": 1000,
+      "minMeanRecallAt10": 0.95,
+      "minPerQueryRecallAt10": 0.8,
+      "scorePolicy": "provider-approximate",
+      "auditBatchSize": 32
+    },
+    "workDurationMs": 840000,
+    "corpus": {
+      "kind": "Public Mayura documentation chunks, repeated deterministically to workload size",
+      "sourceFiles": [
+        {
+          "path": "docs/ai-agents.md",
+          "sha256": "15349968032ab6ff54f181b195d17f8052c779d0708c27ccd69938aec2682560"
+        },
+        {
+          "path": "docs/cli/deploy.md",
+          "sha256": "c6b8c96d2f8a2e427380dcb5e65ebcf7959d558c7aaf01939cbb9201e4b333dd"
+        },
+        {
+          "path": "docs/cli/dev.md",
+          "sha256": "cce4fce08680f09cb9c3457502fae87599ad1d808dc25a4a0c42c507583084d2"
+        },
+        {
+          "path": "docs/cli/init.md",
+          "sha256": "716ab610a062b95409f2b4ac8d588de0aa0fed76458601d873ee0bcd44b3376c"
+        },
+        {
+          "path": "docs/cli/operations.md",
+          "sha256": "262c9bb10092fc9379e21e0c33408a13f2ccc780691ae255ad2abb6ee9737c1b"
+        },
+        {
+          "path": "docs/cli/overview.md",
+          "sha256": "ec56d48fdfc475beed1235246559c46fcd8729ac01538f0ea2a661996d5662b8"
+        },
+        {
+          "path": "docs/cli/run.md",
+          "sha256": "d77723febfc1d6ec8192b939394cef5149fbb873cf11a15c5055c7a2d7abe268"
+        },
+        {
+          "path": "docs/concepts/agent.md",
+          "sha256": "8a8e989a1379c0ed67bee33615219031efd214da134af93a4800747d663c28d4"
+        },
+        {
+          "path": "docs/concepts/costs-and-budgets.md",
+          "sha256": "7718af8ae2ae725e5d60a0b5f2619673a8202627be21cdb51b0a6b0fd012ff00"
+        },
+        {
+          "path": "docs/concepts/outcomes.md",
+          "sha256": "49f1800142cf556c2834dd8cea08bc553e8459f5d8cf9075cb4b836dd8071ab8"
+        },
+        {
+          "path": "docs/concepts/permissions.md",
+          "sha256": "938ebbb6164c471c58864f8e031a7d15625f09bfae34eb711c42ab6e9b66670d"
+        },
+        {
+          "path": "docs/concepts/runtime.md",
+          "sha256": "f6a924ee73e26db710d697fbe45706181b12602513fab6e2ef2a66cf71d07535"
+        },
+        {
+          "path": "docs/concepts/tools.md",
+          "sha256": "529af20f0f80217df67863cdf18232ce0c88131dde7879511e04b07493e40470"
+        },
+        {
+          "path": "docs/concepts/workflows.md",
+          "sha256": "b2669c135a571a1a5a8a239b33e82b399eae1bb9bcc3624648cd8a19228ee4ec"
+        },
+        {
+          "path": "docs/guides/ag-ui.md",
+          "sha256": "1663e1823cc9e59f8927a16110bf6efd5081d74fe49e64b1c93e8c857f68b883"
+        },
+        {
+          "path": "docs/guides/agent-handoffs.md",
+          "sha256": "f1aa2c78615a1c6434081c655d4b6fadae84acbe81ebfb13dd2ba7145be59024"
+        },
+        {
+          "path": "docs/guides/ai-gateways.md",
+          "sha256": "17366cfa332a8db7adb27496a28be93e27a8abae57177f994c2b73f014fe4ca8"
+        },
+        {
+          "path": "docs/guides/approvals-and-human-input.md",
+          "sha256": "c4f0983af5021df35e79f610bb98e35f3b28d000adbd07632e82c23a85f11276"
+        },
+        {
+          "path": "docs/guides/artifacts.md",
+          "sha256": "e04a82c617cd7e291f0602216ed74eeaefb1d533b9e004309495ad4b6c2ef077"
+        },
+        {
+          "path": "docs/guides/authentication.md",
+          "sha256": "41c26565e31a8e4466e7b693162038081137a25e4d06dc947e1cf47ea3d7d4f4"
+        },
+        {
+          "path": "docs/guides/authorization.md",
+          "sha256": "191ce2e5512e32267d356c1e667abbf9a5c7bfb820ee3c8adde5b755059fb403"
+        },
+        {
+          "path": "docs/guides/browsers.md",
+          "sha256": "a685a9d5278bda06dabc7b396858f5e9216366053cf64a0460a2cef861cb6685"
+        },
+        {
+          "path": "docs/guides/child-agents.md",
+          "sha256": "f300a1a618c3b5369b2d7bcc024b842a3bc8ef17f9b10546f50e870fb02d256d"
+        },
+        {
+          "path": "docs/guides/choosing-a-starter.md",
+          "sha256": "7b56fa795cdb1d0885ffca0707c5bfd2b4ef4ca0b011fa8f43db0d8320009eea"
+        },
+        {
+          "path": "docs/guides/code-mode.md",
+          "sha256": "16f945b8538b876ad7b096bce7014213a97422616eb5e2e4e99e22367ac96f87"
+        },
+        {
+          "path": "docs/guides/copy-in-ui.md",
+          "sha256": "a0a8813ca7427e379136f14e358c47c17ef70f1fd09017d6777878cfeca1f3f4"
+        },
+        {
+          "path": "docs/guides/deployment.md",
+          "sha256": "3ec012ff63213d79738332763b7a5d8f9efc70d59aeb790c1fd7b1670069b343"
+        },
+        {
+          "path": "docs/guides/durable-workflows.md",
+          "sha256": "a1f885acf932a073aa54abe9c3241bd6378b7dd4a255043150dda828126f0a9f"
+        },
+        {
+          "path": "docs/guides/files.md",
+          "sha256": "36b42fa893f9ce57611d9df5a55de7c2f09c73bc70b54740516434b1c78b29f6"
+        },
+        {
+          "path": "docs/guides/framework-starters.md",
+          "sha256": "813d80bababd837ce95e1ee7f1b6f03f21b2d87b9fd533768965c4cab3d376db"
+        },
+        {
+          "path": "docs/guides/guardrails.md",
+          "sha256": "c6d1e4b32b9985189fe336882fd72e0e67c96086fbe83ccd840d63b1fec97053"
+        },
+        {
+          "path": "docs/guides/helpers.md",
+          "sha256": "c7da7ef43094b0213de11f6f193733cc901d09e8e6230de0e338716769f4ae79"
+        },
+        {
+          "path": "docs/guides/hono.md",
+          "sha256": "8e77bef64d1ae846188c1a406dad51af1f9692ae38482a8ace6bfd25b55a0469"
+        },
+        {
+          "path": "docs/guides/lifecycle-hooks.md",
+          "sha256": "28be8326378680b6e0fdfa270ae025198a0ea2a247390f7a59b136bb78589f53"
+        },
+        {
+          "path": "docs/guides/mcp.md",
+          "sha256": "1581bde45620b06f27dae15779e114a134bde65060c72b94bf81481484a236d6"
+        },
+        {
+          "path": "docs/guides/memory-and-context.md",
+          "sha256": "4001547e1042158d93ea0d19f0634bdb2d880e2f0c397e76346490a5747198fd"
+        },
+        {
+          "path": "docs/guides/model-providers.md",
+          "sha256": "a4f71e410fca7891b95bf9dfa31e5fdfc77a74c8d3d90e4173a872a72e6e5b99"
+        },
+        {
+          "path": "docs/guides/model-registry.md",
+          "sha256": "ef9632bc379a345fb8b5555e7e0ddcee2a07c41aaa43882a79da01b999d09b2c"
+        },
+        {
+          "path": "docs/guides/model-routing.md",
+          "sha256": "39934f2e54fc57d2768bc85b067736f83683692037fcec6ac0c4b46cc076b646"
+        },
+        {
+          "path": "docs/guides/nextjs.md",
+          "sha256": "f6047bec7f793fe758a1b89af0c7baa5e0124f190fd6a7f5b50b51050c357ff0"
+        },
+        {
+          "path": "docs/guides/nuxt.md",
+          "sha256": "55af448929202ec36d05214c7aab2d5edeaf6d06a26524b5b53e5a968eac9edc"
+        },
+        {
+          "path": "docs/guides/observability.md",
+          "sha256": "36c0ff6667cb20820cd474c0893ba41912f8c13398f2b78accfbfa2a8da1d934"
+        },
+        {
+          "path": "docs/guides/operator-console.md",
+          "sha256": "4f766c864e1ee3bb1226addae643afd1a5985ac79a38aecb2785403e001d47b3"
+        },
+        {
+          "path": "docs/guides/rag.md",
+          "sha256": "a2e9498f498afdb184dc442ad95b8b9f014d61f3d69df925fb065efc5ed451db"
+        },
+        {
+          "path": "docs/guides/react-router.md",
+          "sha256": "97cb2ef6fa71d476961597960012ccb2c0bf1f0f6ed03bb84f56e359479d26e9"
+        },
+        {
+          "path": "docs/guides/react.md",
+          "sha256": "e8a49e3bc8122946af9ea61c54cb8931dcc090bbceed2f5a2f1e4818aa1a671e"
+        },
+        {
+          "path": "docs/guides/release-readiness.md",
+          "sha256": "d79f21cc114da8878548b0e95b2368f8bb4c7a0ffa88a2301845013fdb185ade"
+        },
+        {
+          "path": "docs/guides/sagas-and-loops.md",
+          "sha256": "25e7450b2312ee4e548114510654dd91c013959e8c3884ec91ac097016b53ef2"
+        },
+        {
+          "path": "docs/guides/sandboxes.md",
+          "sha256": "1516a08084633f8918a1f9e51580e487c646f3dd1254a059059b8f88493e0762"
+        },
+        {
+          "path": "docs/guides/server-and-client.md",
+          "sha256": "8101188c0202c52cfcbf2bcb1d72c7e0e809ea9d821c494d48aaaed5b97acd61"
+        },
+        {
+          "path": "docs/guides/skills.md",
+          "sha256": "014cd99dc4214c99424ec7d8b92dac72c62515ee0ecfee6de4e7b74100f2b336"
+        },
+        {
+          "path": "docs/guides/storage.md",
+          "sha256": "a8375c845d9e9255723c780cb7046a56ce69f281668980d63d6909edf5c32f6d"
+        },
+        {
+          "path": "docs/guides/streaming.md",
+          "sha256": "91abee4cbf7419c9f46ed050d31700025034662b1bbc5dc1450f9c0ea05a55dc"
+        },
+        {
+          "path": "docs/guides/sveltekit.md",
+          "sha256": "64276dd5f0c975eb60cbf63375f5ec2e7986e17320279711808d11e26efb54ef"
+        },
+        {
+          "path": "docs/guides/tanstack-start.md",
+          "sha256": "19351e3f77f9b6492220f3d2d1b22fb8f72c3429b36b52fd24edf8c4dcf66be0"
+        },
+        {
+          "path": "docs/guides/terminal.md",
+          "sha256": "f9d576c135f4a7ea9b987a8efb8f0359634d86dd61791926591e21061aff043c"
+        },
+        {
+          "path": "docs/guides/testing.md",
+          "sha256": "ce33bbaf4c03d574301d86c6f7b4f83d659ee806e0ddb94ee9f4efdd5728d1af"
+        },
+        {
+          "path": "docs/guides/threads.md",
+          "sha256": "98a80fbde525cb70865515b085a9dd36dc0c1c0304f0a6cd28626d8fa09c6754"
+        },
+        {
+          "path": "docs/guides/vision.md",
+          "sha256": "faaa5e2e0b14b567ecbb2b6775324d0f3f45c5632407d949d3cc980d83fad6a6"
+        },
+        {
+          "path": "docs/guides/voice.md",
+          "sha256": "0d1d3617f610d5bf99efb69bff4450d160a2b21a629a46e62ae3cc6c415a2713"
+        },
+        {
+          "path": "docs/guides/webhooks.md",
+          "sha256": "92a0f33e1ec919ab131d243767c6eacfa4136e5b7ee378a35a1012110db208ed"
+        },
+        {
+          "path": "docs/guides/workflow-composition.md",
+          "sha256": "b95c54a3029ba56a1ea71fe03be8089e624873632f7c94dfe7343b8470f0c26b"
+        },
+        {
+          "path": "docs/guides/workflow-operations.md",
+          "sha256": "98c5736f250c80e33a630b0cd751897e25831d8a89c00691a5faa8886dcba131"
+        },
+        {
+          "path": "docs/installation.md",
+          "sha256": "6499a17faa9a51251c21f23512d20d156e78de5875ff4f3be003c1efc33d03c5"
+        },
+        {
+          "path": "docs/integrations/auth-auth0.md",
+          "sha256": "78ddfb3ed917859df2c53bfe289ba8329aa5c131913d3ccc73191b97b384a4de"
+        },
+        {
+          "path": "docs/integrations/auth-clerk.md",
+          "sha256": "74130393dd1f38db05c6228ef15b506385db92d06c432154f136748d4ef969fa"
+        },
+        {
+          "path": "docs/integrations/auth-cognito.md",
+          "sha256": "9b4dee0121ed7883557acb7afe986c71ec3dace1cf4fd1d15c925c922a048f02"
+        },
+        {
+          "path": "docs/integrations/auth-entra.md",
+          "sha256": "2611c1944d135a4d1bfb5dc2c7a406363ca564bf2a712f5a4a6bdd57e7af00b1"
+        },
+        {
+          "path": "docs/integrations/auth-facebook.md",
+          "sha256": "09edd46032cc56d57c0fc47fcc3bb6371250eab1ceb79b1b1d61242f93acb369"
+        },
+        {
+          "path": "docs/integrations/auth-firebase.md",
+          "sha256": "d4e64ea9f5792a396e2d80476236b4e3b183da9a308307f32bd2e091866ab2c9"
+        },
+        {
+          "path": "docs/integrations/auth-google.md",
+          "sha256": "ee00b4ffea4ac3f85e92ba499cb03207d08fb0eb45bbae9e041791c6d0576ee7"
+        },
+        {
+          "path": "docs/integrations/auth-neon.md",
+          "sha256": "7575ea86318205b5e79a51cf3613e2c635c52ff0385cdd941938f1dda4da1f19"
+        },
+        {
+          "path": "docs/integrations/auth-okta.md",
+          "sha256": "12b96976a665e4057d2f570be0eef07cdc063a7a14868d11084e84588483a170"
+        },
+        {
+          "path": "docs/integrations/auth-supabase.md",
+          "sha256": "e559d23acf3a42b49b08b27f191b900f8778ad15443c2c8295b2eeb86e4c83ba"
+        },
+        {
+          "path": "docs/integrations/auth-workos.md",
+          "sha256": "c3ff6b1500cf7f14aa6a2680318708731bac31134f3c7b1c0ce4d368c082fbfb"
+        },
+        {
+          "path": "docs/integrations/authz-cedar.md",
+          "sha256": "59892ea352192fbbca1f2d880ece7d2e41c96bfe8e24ee6cfc8854ada2b67593"
+        },
+        {
+          "path": "docs/integrations/authz-http.md",
+          "sha256": "1fd3932d3320a85713af6e8f46577c2570c68478172595288382a01c4bf275e0"
+        },
+        {
+          "path": "docs/integrations/authz-openfga.md",
+          "sha256": "db456442064cb3f5ee76d186b8d9b2b18c7741459c27ec44e4c89ad0386879ec"
+        },
+        {
+          "path": "docs/integrations/authz-oso.md",
+          "sha256": "868260d4ea8d4292ee6eb006018998c30214f0af1da2d7f0ac22b5ab0bd8518b"
+        },
+        {
+          "path": "docs/integrations/authz-permit.md",
+          "sha256": "0e503b97c2554b36ce7b28c7d831bba84da734a369a7f1d66c56a821bcbc8d94"
+        },
+        {
+          "path": "docs/integrations/browser-agent-browser.md",
+          "sha256": "aaf875aa6d82a7ec0b95b2395ba23ede2d532312800ceaa9ccaea76f3460ff0a"
+        },
+        {
+          "path": "docs/integrations/browser-anchor.md",
+          "sha256": "54bb077abbee2469144e7ed88859c4bab4387f2b1380827eaf8e537c65c1decf"
+        },
+        {
+          "path": "docs/integrations/browser-browser-use.md",
+          "sha256": "72b57dbc495484c7da41ef38acdd754da355d456a6372f0b5c556f8c3f818447"
+        },
+        {
+          "path": "docs/integrations/browser-browserbase.md",
+          "sha256": "d45e75a58878069a5ebb78f693668eb7039a5841578f5cbb19f04923de1c7546"
+        },
+        {
+          "path": "docs/integrations/browser-browserless.md",
+          "sha256": "acc5bb93abe4c9209f3d1f9f35fb1f5dcc515d6f229e9513891475885ead1c7e"
+        },
+        {
+          "path": "docs/integrations/browser-browserview.md",
+          "sha256": "74fc15a919a71e6cc073b18e48e6cfb9e24302994533099991ed5008161e2c4e"
+        },
+        {
+          "path": "docs/integrations/browser-cloudflare.md",
+          "sha256": "e719e9b878c1e8f12bbf6e551aafb33ebab2ae42351524fd32d0fed6c462940b"
+        },
+        {
+          "path": "docs/integrations/browser-firecrawl.md",
+          "sha256": "6fba081399aff6179cc6c77994211385ee9de158a8a8b631b2aba5fa044e515c"
+        },
+        {
+          "path": "docs/integrations/browser-hyperbrowser.md",
+          "sha256": "e0c6803f93586b02668915a18a4361ab90c082f9e5370c735a416882729902e2"
+        },
+        {
+          "path": "docs/integrations/browser-kernel.md",
+          "sha256": "2eaa6a77926f17fb4019c3e48e66ecba4428c6423b34610491ed2f2348f7657c"
+        },
+        {
+          "path": "docs/integrations/browser-stagehand.md",
+          "sha256": "6828753a4240178b3e33bc043fab90411a43cdd4a597e9d2edf3d2910beecd08"
+        },
+        {
+          "path": "docs/integrations/browser-steel.md",
+          "sha256": "c852006073afe4cb4e7ff8ddb82ed2ef94f0100e179b100ae6a50ddc8f7ef2e0"
+        },
+        {
+          "path": "docs/integrations/browser-viewer.md",
+          "sha256": "56c270d2285e397e3478125c77bf5e2aada29840fc7e588e3125a8643741d0d2"
+        },
+        {
+          "path": "docs/integrations/cloudflare-quick-action.md",
+          "sha256": "daa60638b4a33766ada0a9294f430a2723d12cc17d4bdfbd33c1a174c0936786"
+        },
+        {
+          "path": "docs/integrations/deploy-agentcore.md",
+          "sha256": "020f7a3ec8154ce5f50d1bf92cba968b6878d264e3ea7e249826848f44cd5a8f"
+        },
+        {
+          "path": "docs/integrations/deploy-aws-ecs.md",
+          "sha256": "309505b16033033e9933e26552ec7c8171191809d712ac2f56e6f6c85863bad2"
+        },
+        {
+          "path": "docs/integrations/deploy-aws-lambda.md",
+          "sha256": "8ed684ec660b0347dca598d4cac8bd01ad95665f8ff53937130b245b3e64ce5d"
+        },
+        {
+          "path": "docs/integrations/deploy-azure.md",
+          "sha256": "72b4d759e1a2793fd313e75ba66dc734edf164ea50a1f11ccee2355177176394"
+        },
+        {
+          "path": "docs/integrations/deploy-cloudflare.md",
+          "sha256": "641d886f580bc8489115bfea5811db2b97905bc9226a5ca2430f5b5d8be5ef79"
+        },
+        {
+          "path": "docs/integrations/deploy-cloudrun.md",
+          "sha256": "92d3a51d57fa6cf974ba05c7809a92613c8851f4abd3094d92c9a37825d4fc33"
+        },
+        {
+          "path": "docs/integrations/deploy-digitalocean.md",
+          "sha256": "99beb1764bd482fc0f8a5cefbff9e11b8dc9510938e798a5e8df102979ebeba4"
+        },
+        {
+          "path": "docs/integrations/deploy-fly.md",
+          "sha256": "eb8af827a402ffd30d2a93bdf443c6b1a3f3474c61f16ca3b7d3dcc1749367e6"
+        },
+        {
+          "path": "docs/integrations/deploy-railway.md",
+          "sha256": "1da14fa2528d85fde9d18b10e4e1c88e6a49e7a34720352a1180cb5036a44fc4"
+        },
+        {
+          "path": "docs/integrations/deploy-render.md",
+          "sha256": "0a277dd8cbffbe28fc8bcf2403aaf4ccc90447ddc8373dc3044621f59ee33872"
+        },
+        {
+          "path": "docs/integrations/deploy-vercel.md",
+          "sha256": "031e37024c5099a3df1c5d4f44f761726e909d28fef75c671971ad22371e6b5f"
+        },
+        {
+          "path": "docs/integrations/filestorage-agentfs.md",
+          "sha256": "a8db650831aa1c530cd9ece02fa24d0e816d5d46e09bee59f58ccf07687cf17d"
+        },
+        {
+          "path": "docs/integrations/filestorage-azure-blob.md",
+          "sha256": "710425fce3c8f4be729fcab57cee77ea6034ded60d195f39e2b711414fcc6eac"
+        },
+        {
+          "path": "docs/integrations/filestorage-files-sdk.md",
+          "sha256": "d9f714042e87aa1101ec12aecd88715f0df9099b7fd6821476b769428f3c4552"
+        },
+        {
+          "path": "docs/integrations/filestorage-gcs.md",
+          "sha256": "feacbe4527d6a5034417ba35dff9fa806d01a6ddb1ef61db6dc51428cf57173b"
+        },
+        {
+          "path": "docs/integrations/filestorage-google-drive.md",
+          "sha256": "872b5d61e59104dd43002c5c41b2f017e3084ef6bc2c17159f3c5cfdca54d263"
+        },
+        {
+          "path": "docs/integrations/filestorage-mesa.md",
+          "sha256": "81d9f977697ae7503e8338dfe4c16887fbe7c89afe1f82d71f725fb02af2f4bd"
+        },
+        {
+          "path": "docs/integrations/filestorage-r2.md",
+          "sha256": "1abd3d44aba9d4f995f9240764c9aa6aa28381e91f0c575eb2399c7745b65cfa"
+        },
+        {
+          "path": "docs/integrations/filestorage-vercel-blob.md",
+          "sha256": "5bd0a8246ad5922db21e377b2afbf76a6b4c9398d631f394bb11fc7f45482aac"
+        },
+        {
+          "path": "docs/integrations/gateway-cloudflare.md",
+          "sha256": "6e13e00861991a9c4134e7ffaae815aac5748579329eaceb552210d33871387a"
+        },
+        {
+          "path": "docs/integrations/gateway-helicone.md",
+          "sha256": "aebdc43a4ee02ca1f19a87c082ec624564917dfd62fedcf57553b544d5a2371f"
+        },
+        {
+          "path": "docs/integrations/gateway-litellm.md",
+          "sha256": "afdf67c5adf537f574389ef0a4c748812e464d762fd48263ab6c5bfc6a871361"
+        },
+        {
+          "path": "docs/integrations/gateway-openrouter.md",
+          "sha256": "aa8610ab49e1f21b196dd3b645004c710618c96cfb10cedac1041c469dd2cbaa"
+        },
+        {
+          "path": "docs/integrations/gateway-portkey.md",
+          "sha256": "bcbddd868a4210f0678d8311538b74d84ad21c8c78c11b41de18dec34778dd4c"
+        },
+        {
+          "path": "docs/integrations/gateway-vercel.md",
+          "sha256": "a39d74bdd0012404a5473081864a6f8090e572e8c3211a2ba68a4988bd9c0638"
+        },
+        {
+          "path": "docs/integrations/km-reqkey.md",
+          "sha256": "2a281c1d69e22a624989606f84996dca76c8028fee5bad8ef01d0100616960de"
+        },
+        {
+          "path": "docs/integrations/km-unkey.md",
+          "sha256": "7b1d120f75466bc99a2ed74404687d784fe827043915f8a3c79ed178ef2cd39d"
+        },
+        {
+          "path": "docs/integrations/observability-arize.md",
+          "sha256": "c08f38d14bca13544352190238b22247a1274a07d5b42546af0b004c9e1f8099"
+        },
+        {
+          "path": "docs/integrations/observability-betterstack.md",
+          "sha256": "50c3a154a170815183598fd4283cc0be5ea659c156e74d8e1d0acb062277d8c1"
+        },
+        {
+          "path": "docs/integrations/observability-datadog.md",
+          "sha256": "e6db6382ce6ba1c3d46f52abee4776c379c7d56d73fad1ab53b372cb5ff3ba13"
+        },
+        {
+          "path": "docs/integrations/observability-langfuse.md",
+          "sha256": "0df7c20eb2bb5dbd3b88801b7e3fc85ef7698e17d8f39eb31f974988e302012a"
+        },
+        {
+          "path": "docs/integrations/observability-langsmith.md",
+          "sha256": "e8dc2278d423433e03567d360ca7f0acc114250432094223a05976ea2bfa40f1"
+        },
+        {
+          "path": "docs/integrations/observability-posthog.md",
+          "sha256": "79e9472362a1cddd3d6c2b29a083586ec326fb1a26d1e6cb6a2a5d65b996b9e3"
+        },
+        {
+          "path": "docs/integrations/observability-sentry.md",
+          "sha256": "512b5ec638d10d09b3cd404ff1198bbf1e3e1177f458b4083738b22ecd069e04"
+        },
+        {
+          "path": "docs/integrations/provider-anthropic.md",
+          "sha256": "76ff44c2fa81ea1018a88700cd056bb6c62a2b2abf4f330cf3a669453f62d4cf"
+        },
+        {
+          "path": "docs/integrations/provider-azure.md",
+          "sha256": "64cfda2fccb1ee4f7593132641bfb84ffe96ecf514b9150083e9e4c922e90573"
+        },
+        {
+          "path": "docs/integrations/provider-bedrock.md",
+          "sha256": "d90b8d36d29be43321cf9b8d1cff1668139f2f16c3c9ab336355cf2969356393"
+        },
+        {
+          "path": "docs/integrations/provider-google.md",
+          "sha256": "7be386e7aba49effb3e2f3375392b9616afe4dd7a674c70637fb34d77e0201ee"
+        },
+        {
+          "path": "docs/integrations/provider-groq.md",
+          "sha256": "ea6b5ac8fe56abbef184a458cb0060a0aeb6e66b8f09aa64250a49dcbc6f7707"
+        },
+        {
+          "path": "docs/integrations/provider-mistral.md",
+          "sha256": "5fd83c5b43723999850803c161944279b458ed39784e80de9306a704be36d84d"
+        },
+        {
+          "path": "docs/integrations/provider-ollama.md",
+          "sha256": "6e9b85c35a520340f35ed76cb641740739af6a80332e05bc0c477914a5f0c5f3"
+        },
+        {
+          "path": "docs/integrations/provider-openai.md",
+          "sha256": "ef8874d8a4cf0d8d1ba6fae87cce33feee7adab3dffe5349b4b2e985f3e7cb4a"
+        },
+        {
+          "path": "docs/integrations/reranker-cohere.md",
+          "sha256": "4c3c66e4d6faacc04841efd9d7422610e1c78a272b59fde8c1c15c233bb6ed34"
+        },
+        {
+          "path": "docs/integrations/reranker-jina.md",
+          "sha256": "c69eebe201eaea5315d4a729b8851575fc0754732ff254c602fb72eb17336379"
+        },
+        {
+          "path": "docs/integrations/reranker-voyage.md",
+          "sha256": "d46d2c43ce4e4c1982d8621d1b3b0b90b6ec2368b99a365116d9222e09414814"
+        },
+        {
+          "path": "docs/integrations/sandbox-agentcore.md",
+          "sha256": "6ce0e747b4a4e12739bd1017e0a20cfae49878df160a86cc3699a61ce7c34201"
+        },
+        {
+          "path": "docs/integrations/sandbox-apple-container.md",
+          "sha256": "8b5cb20bfef3efd138823e2b52c617373d94a6ce6cf7c5acebf0cb2c73c34d3f"
+        },
+        {
+          "path": "docs/integrations/sandbox-cloudflare.md",
+          "sha256": "aa6cf6ecfd631d3a02da47f2a80acd7fe0cf0338a6bb7d02280020f8d46209a2"
+        },
+        {
+          "path": "docs/integrations/sandbox-codesandbox.md",
+          "sha256": "aca62409065f8fcc05c6076f067afacc97a2cefd65c88b1e9d22c423c9df2a34"
+        },
+        {
+          "path": "docs/integrations/sandbox-daytona.md",
+          "sha256": "01eadc8da6090533d2df38bb576cf3b0722f94f4a121e59c848a5eb21c2a46b9"
+        },
+        {
+          "path": "docs/integrations/sandbox-e2b-desktop.md",
+          "sha256": "e04239313614b40bdbcc307cbc6c12f474637aa7c148ed3ad402e9bab48ee24d"
+        },
+        {
+          "path": "docs/integrations/sandbox-e2b.md",
+          "sha256": "540d289aa4ff6f1af9c348547022f70960c415a11790f35d9385492b8723a470"
+        },
+        {
+          "path": "docs/integrations/sandbox-fly.md",
+          "sha256": "12e4952ebdb5cbc8ecb3c68b752da9bbf1a882ca14f7961e1f18b0b1f2bfeb58"
+        },
+        {
+          "path": "docs/integrations/sandbox-modal.md",
+          "sha256": "89af11a11f5c26fa32d2ba565534580d07beb24ce4fdddd4e46eaf8b58ff6033"
+        },
+        {
+          "path": "docs/integrations/sandbox-northflank.md",
+          "sha256": "aab862ef9cb050193133895e9687aeb2845cc67a58f170baa1dface152fee16e"
+        },
+        {
+          "path": "docs/integrations/sandbox-railway.md",
+          "sha256": "b81dee68ec8aaad833677784d1aeba040f51571461ada8906cca92d6a56dccd2"
+        },
+        {
+          "path": "docs/integrations/sandbox-vercel.md",
+          "sha256": "5594af870e0b7cded9f8634682997259fea40a1aa6bb97b5f18a9ceb3dc63112"
+        },
+        {
+          "path": "docs/integrations/storage-d1.md",
+          "sha256": "a96dde3c081eaa196e6e38797a8b8f4382347c785837d91165749c2f73015acc"
+        },
+        {
+          "path": "docs/integrations/storage-dynamodb.md",
+          "sha256": "7a29d5a5506b165f067329b82a2e5c64efc467eb640a21f4733bce4c81609ebb"
+        },
+        {
+          "path": "docs/integrations/storage-libsql.md",
+          "sha256": "4162ee8e8397097eae0319333738aebc78b9eec4c8fe90114696a6407cddf6d4"
+        },
+        {
+          "path": "docs/integrations/storage-mongodb.md",
+          "sha256": "16cceebb7e45a6da751fae965a06edbbfcbca88184517f21d54cd75a6b6f07b6"
+        },
+        {
+          "path": "docs/integrations/storage-mysql.md",
+          "sha256": "0179de0b941df14a76dc06da2a3db5508113f599d79097eba52e48d16563835b"
+        },
+        {
+          "path": "docs/integrations/vector-chroma.md",
+          "sha256": "a00485acb58f976e0fa378bdcf46bd91fb78c1ece442ae39e0efc298b8a4b028"
+        },
+        {
+          "path": "docs/integrations/vector-libsql.md",
+          "sha256": "d16fdaba135acd867fd556120cd2d1ab030f2e66bc27a0bbb5ef0fb48af14d51"
+        },
+        {
+          "path": "docs/integrations/vector-pgvector.md",
+          "sha256": "bc823106846a4ede2b423325446e8b2367d3eed60baa4f594873073bed5b1591"
+        },
+        {
+          "path": "docs/integrations/vector-pinecone.md",
+          "sha256": "18af2a0bc7fbac30acbe91e13f5781645e6b550f299b434b6f1a0ef984b6e3b6"
+        },
+        {
+          "path": "docs/integrations/vector-qdrant.md",
+          "sha256": "8064283993c16151e79f543a7354bdeb0121e9460ba1f1a53ccfa3bc05e906b2"
+        },
+        {
+          "path": "docs/integrations/vector-weaviate.md",
+          "sha256": "94da503d4d9043d79b54011153374aac4df802fad0db5642c4e9d23bcc505e97"
+        },
+        {
+          "path": "docs/integrations/voice-assemblyai.md",
+          "sha256": "06ce30e519acb28861d795bbe6d532f9745ab4257d8b31a61e75398afbc31b42"
+        },
+        {
+          "path": "docs/integrations/voice-azure.md",
+          "sha256": "3f4544a6e1701c1c07ad4d9c97536ec6f1bc2e0c5cd46ae037055778df3913a0"
+        },
+        {
+          "path": "docs/integrations/voice-cartesia.md",
+          "sha256": "a3f5c641f26a88ff8f5e39a4e56443110dcbf7be623d3765a6c03e6e5d60d550"
+        },
+        {
+          "path": "docs/integrations/voice-deepgram.md",
+          "sha256": "b4fcc71216a389ceb8cca0d45f0235a92aa345e12ab0d32834311c410b8b2814"
+        },
+        {
+          "path": "docs/integrations/voice-elevenlabs.md",
+          "sha256": "96019de6d7eaf0d2b27f835a2a649f162a17af1c2ccef6fff92d60adf46b901d"
+        },
+        {
+          "path": "docs/integrations/voice-google.md",
+          "sha256": "883c42f0eb75baf77a364b91e3ea45d39356b78a9bfe2dcd950fcdd72b204bb7"
+        },
+        {
+          "path": "docs/integrations/voice-openai.md",
+          "sha256": "51cf052a501bc22741586aa03a032079a950f76af7b876d9e53c97543e7e92e4"
+        },
+        {
+          "path": "docs/introduction.md",
+          "sha256": "b62befa4d538c3e389d112c86449d7479c7a4f983a40ff8debfdb5aca05897b1"
+        },
+        {
+          "path": "docs/project/credits.md",
+          "sha256": "7698276b2cc87a868a2719f3a79746f4aced95968c86e9c37968984fe5c2682e"
+        },
+        {
+          "path": "docs/project/security.md",
+          "sha256": "68f2b002e7e0564084a069f18582b426268bbcd8214f923cec7f1c4f0e9aad46"
+        },
+        {
+          "path": "docs/project/support.md",
+          "sha256": "804348f6c5b55d5d9e9ae507bac093288d6fd8c8b1f0ab5a5caf99081ebec868"
+        },
+        {
+          "path": "docs/project/versioning.md",
+          "sha256": "06dfc41d4fb8d30d565f0f8bd4237bb2c698c845efcc68b1d800ecbda270de8b"
+        },
+        {
+          "path": "docs/project/whats-new.md",
+          "sha256": "b59a17b801313e10d073a4daf7820d52b89ef8d50c0c6b506c39dfccc92e7df7"
+        },
+        {
+          "path": "docs/quickstart.md",
+          "sha256": "8da704bcf2575ad0f6561696b4497248393591c61ccbfbfdbb736541ea0724ae"
+        },
+        {
+          "path": "docs/README.md",
+          "sha256": "3bb3229e2fd3407fd838bde92019973e7dae97f158b589177a8c4a12f1dd397b"
+        },
+        {
+          "path": "docs/reference/entry-points.md",
+          "sha256": "b93803196c7ab545aff8201c88b3656bcecd06dc70c2447923bcad1d20b35b2c"
+        },
+        {
+          "path": "docs/reference/integrations.md",
+          "sha256": "e84682be63195948eb3fe3a85f24f1055c09e1405abdb81adef6158ceede75db"
+        }
+      ],
+      "uniqueSourceChunks": 929,
+      "sha256": "c49da6b7196250e57523afb5b77e761078ca646084491eb421bfe66312cc5d4f",
+      "embeddings": "Seeded normalized synthetic clustered vectors; no embedding-model or semantic-quality claim"
+    },
+    "status": "failed",
+    "checks": [
+      {
+        "name": "bounded-document-corpus-ingestion",
+        "status": "passed",
+        "vectors": 6500
+      },
+      {
+        "name": "full-corpus-count-and-fetch-audit",
+        "status": "passed",
+        "audited": 6500
+      },
+      {
+        "name": "scoped-nearest-records",
+        "status": "passed"
+      },
+      {
+        "name": "warmup-reference-recall",
+        "status": "passed",
+        "meanRecallAt10": 0.975,
+        "minRecallAt10": 0.9
+      },
+      {
+        "name": "sustained-paced-retrieval",
+        "status": "failed",
+        "code": "LOAD_SLO_FAILED"
+      }
+    ],
+    "cleanup": "passed",
+    "ragStatus": "experimental",
+    "productionReady": false,
+    "warmup": {
+      "meanRecallAt10": 0.975,
+      "minRecallAt10": 0.9
+    },
+    "retrieval": {
+      "offeredQueries": 600,
+      "completedQueries": 600,
+      "errors": 0,
+      "late": 0,
+      "skipped": 0,
+      "maximumQueued": 5,
+      "latencyIncludesQueue": true,
+      "count": 600,
+      "p50Ms": 262.7109390000114,
+      "p95Ms": 1716.730654999963,
+      "p99Ms": 2605.254912000033,
+      "elapsedMs": 300000.61600499996,
+      "requestsPerSecond": 1.9999958933084327,
+      "meanRecallAt10": 0.9749999999999973,
+      "minRecallAt10": 0.9,
+      "schedulerLag": {
+        "count": 600,
+        "p50Ms": 0,
+        "p95Ms": 1.0631270000012591,
+        "p99Ms": 3.5094009999884292
+      },
+      "queueWait": {
+        "count": 600,
+        "p50Ms": 0,
+        "p95Ms": 1.880871000001207,
+        "p99Ms": 492.8631199999945
+      },
+      "eventLoop": {
+        "p99Ms": 14.491647,
+        "maxMs": 67.239935,
+        "utilization": 0.021147189774934277
+      },
+      "filters": {
+        "unfiltered": {
+          "count": 200,
+          "p50Ms": 262.10634099994786,
+          "p95Ms": 1674.304399000015,
+          "p99Ms": 2493.0027489999775,
+          "meanRecallAt10": 0.937500000000002,
+          "minRecallAt10": 0.9
+        },
+        "topic": {
+          "count": 200,
+          "p50Ms": 264.31110199994873,
+          "p95Ms": 1516.0083810000215,
+          "p99Ms": 2492.8470339999767,
+          "meanRecallAt10": 0.9875000000000004,
+          "minRecallAt10": 0.9
+        },
+        "topic-and-boolean": {
+          "count": 200,
+          "p50Ms": 262.1748779999907,
+          "p95Ms": 1936.0378880000208,
+          "p99Ms": 2605.254912000033,
+          "meanRecallAt10": 1,
+          "minRecallAt10": 1
+        }
+      }
+    },
+    "operations": 1092,
+    "scoreAccuracy": {
+      "policy": "provider-approximate",
+      "count": 6240,
+      "meanAbsoluteError": 0.00006217167061850585,
+      "maxAbsoluteError": 0.00021926331487465145
+    }
+  },
+  "queryTimings": {
+    "kind": "query-phase-timings",
+    "coverage": "All adapter queries, grouped by phase; missing socket events mean unavailable, not zero.",
+    "phases": {
+      "scoped-nearest-records": {
+        "queries": 4,
+        "totalAdapterMs": {
+          "count": 4,
+          "p50Ms": 257.99480099999346,
+          "p95Ms": 268.94478199997684,
+          "p99Ms": 268.94478199997684
+        },
+        "beforeFetchMs": {
+          "count": 4,
+          "p50Ms": 0.361527000030037,
+          "p95Ms": 1.1291830000118352,
+          "p99Ms": 1.1291830000118352
+        },
+        "socketWaitMs": {
+          "count": 4,
+          "p50Ms": 0.04853400000138208,
+          "p95Ms": 0.27093599998624995,
+          "p99Ms": 0.27093599998624995
+        },
+        "fetchToHeadersMs": {
+          "count": 4,
+          "p50Ms": 257.1524019999779,
+          "p95Ms": 268.14647799998056,
+          "p99Ms": 268.14647799998056
+        },
+        "sentToHeadersMs": {
+          "count": 4,
+          "p50Ms": 256.2759809999843,
+          "p95Ms": 267.62461200001417,
+          "p99Ms": 267.62461200001417
+        },
+        "bodyTransferAndBufferMs": {
+          "count": 4,
+          "p50Ms": 0.09904200001619756,
+          "p95Ms": 0.11595700000179932,
+          "p99Ms": 0.11595700000179932
+        },
+        "usageDecodeMs": {
+          "count": 4,
+          "p50Ms": 0.03702799999155104,
+          "p95Ms": 0.042314000020269305,
+          "p99Ms": 0.042314000020269305
+        },
+        "afterMeterMs": {
+          "count": 4,
+          "p50Ms": 0.3224129999871366,
+          "p95Ms": 0.5627659999881871,
+          "p99Ms": 0.5627659999881871
+        },
+        "reusedSocketQueries": 2,
+        "newSocketQueries": 2,
+        "socketTimingMissing": 0
+      },
+      "warmup-reference-recall": {
+        "queries": 24,
+        "totalAdapterMs": {
+          "count": 24,
+          "p50Ms": 264.5930239999434,
+          "p95Ms": 274.44770399999106,
+          "p99Ms": 276.8154869999853
+        },
+        "beforeFetchMs": {
+          "count": 24,
+          "p50Ms": 0.3162520000478253,
+          "p95Ms": 0.5434329999843612,
+          "p99Ms": 0.5872310000122525
+        },
+        "socketWaitMs": {
+          "count": 24,
+          "p50Ms": 0.04563000000780448,
+          "p95Ms": 0.1277229999541305,
+          "p99Ms": 0.14589099999284372
+        },
+        "fetchToHeadersMs": {
+          "count": 24,
+          "p50Ms": 263.20719899999676,
+          "p95Ms": 270.99219099996844,
+          "p99Ms": 275.25801500002854
+        },
+        "sentToHeadersMs": {
+          "count": 24,
+          "p50Ms": 261.91164199996274,
+          "p95Ms": 268.3857480000006,
+          "p99Ms": 270.33544599998277
+        },
+        "bodyTransferAndBufferMs": {
+          "count": 24,
+          "p50Ms": 0.22108600003411993,
+          "p95Ms": 1.388528999988921,
+          "p99Ms": 1.92322499997681
+        },
+        "usageDecodeMs": {
+          "count": 24,
+          "p50Ms": 0.07396599999628961,
+          "p95Ms": 0.10350799997104332,
+          "p99Ms": 0.1488649999955669
+        },
+        "afterMeterMs": {
+          "count": 24,
+          "p50Ms": 0.9104360000346787,
+          "p95Ms": 1.887774000002537,
+          "p99Ms": 2.062614999944344
+        },
+        "reusedSocketQueries": 24,
+        "newSocketQueries": 0,
+        "socketTimingMissing": 0
+      },
+      "sustained-paced-retrieval": {
+        "queries": 600,
+        "totalAdapterMs": {
+          "count": 600,
+          "p50Ms": 262.38718299998436,
+          "p95Ms": 1590.485553000006,
+          "p99Ms": 2485.6851649999153
+        },
+        "beforeFetchMs": {
+          "count": 600,
+          "p50Ms": 0.498128000064753,
+          "p95Ms": 2.2419890000019222,
+          "p99Ms": 5.973431000020355
+        },
+        "socketWaitMs": {
+          "count": 600,
+          "p50Ms": 0.06840200000442564,
+          "p95Ms": 0.6231990000233054,
+          "p99Ms": 1617.4747030000435
+        },
+        "fetchToHeadersMs": {
+          "count": 600,
+          "p50Ms": 259.8062220000429,
+          "p95Ms": 1583.393841000041,
+          "p99Ms": 2470.8989979999606
+        },
+        "sentToHeadersMs": {
+          "count": 600,
+          "p50Ms": 258.67510300001595,
+          "p95Ms": 1368.0461999999825,
+          "p99Ms": 2193.5916630000575
+        },
+        "bodyTransferAndBufferMs": {
+          "count": 600,
+          "p50Ms": 0.4400139999925159,
+          "p95Ms": 5.363510999944992,
+          "p99Ms": 24.76388500002213
+        },
+        "usageDecodeMs": {
+          "count": 600,
+          "p50Ms": 0.0856519999797456,
+          "p95Ms": 0.33562399994116277,
+          "p99Ms": 1.9350190000841394
+        },
+        "afterMeterMs": {
+          "count": 600,
+          "p50Ms": 0.9417109999340028,
+          "p95Ms": 5.987084000022151,
+          "p99Ms": 15.750261000008322
+        },
+        "reusedSocketQueries": 588,
+        "newSocketQueries": 12,
+        "socketTimingMissing": 0
+      }
+    }
+  },
+  "otherIndexNamesPreserved": true,
+  "completedAt": "2026-10-25T05:57:24.962Z",
+  "sourceHashes": {
+    "scripts/pinecone-live-check.mjs": "3e15783cf5b6fbad9d785fae01d0be0af5b2b69d44238123e7c5e757edacb1b3",
+    "scripts/live/rag-checks.mjs": "56788c46d4630eee417732899ffa91cc134ed2e1ce6e8b92e2efca1d47004af4",
+    "scripts/live/pinecone-load-checks.mjs": "2b233c84b51dcc0a7dd3af626ab794c95df38fc6d8c1870e12420e4d9ce1e9d1",
+    "scripts/live/rag-load-checks.mjs": "ffa29da49405cd521ef2688c209e289faf7a9f801eca0a7ac942c137b7afe48b",
+    "extensions/vector-pinecone/src/index.ts": "0a8d8f90aabd59228905748c692a6373a614dd548beb6e9ed0cd9ba266eddaf4",
+    "packages/rag/src/http.ts": "2cb5a8ed1ca4ac11be8c32a74c056ff6445e25ccd102e085ff8f1e11d6bdbbed",
+    "packages/rag/src/validation.ts": "809bf5c826d63758af1b884f552a07016ac6a6a3adf4361bbd9f1a9169a86fc8",
+    "scripts/live/pinecone-query-timings.mjs": "078931c9da35839724d3bbd975ed71ba2c4f9b0d67abf698bff548966bfe41c0"
+  },
+  "runtime": {
+    "node": "v24.14.1",
+    "platform": "linux",
+    "arch": "x64",
+    "kernel": "6.18.54.1-microsoft-standard-WSL2"
+  },
+  "execution": {
+    "runtimeHashes": {
+      "scripts/pinecone-live-check.mjs": "3e15783cf5b6fbad9d785fae01d0be0af5b2b69d44238123e7c5e757edacb1b3",
+      "scripts/live/pinecone-load-checks.mjs": "2b233c84b51dcc0a7dd3af626ab794c95df38fc6d8c1870e12420e4d9ce1e9d1",
+      "scripts/live/rag-checks.mjs": "56788c46d4630eee417732899ffa91cc134ed2e1ce6e8b92e2efca1d47004af4",
+      "scripts/live/rag-load-checks.mjs": "ffa29da49405cd521ef2688c209e289faf7a9f801eca0a7ac942c137b7afe48b",
+      "scripts/live/pinecone-query-timings.mjs": "078931c9da35839724d3bbd975ed71ba2c4f9b0d67abf698bff548966bfe41c0",
+      "extensions/vector-pinecone/src/index.ts": "0a8d8f90aabd59228905748c692a6373a614dd548beb6e9ed0cd9ba266eddaf4",
+      "extensions/vector-pinecone/dist/index.js": "ed096011656e37f166e393cdf469bebc96902ac5e0582e44ad722e7b1f452dff",
+      "packages/rag/src/http.ts": "2cb5a8ed1ca4ac11be8c32a74c056ff6445e25ccd102e085ff8f1e11d6bdbbed",
+      "packages/rag/src/validation.ts": "809bf5c826d63758af1b884f552a07016ac6a6a3adf4361bbd9f1a9169a86fc8",
+      "packages/rag/dist/host.js": "e4b521b6a755f2e4b4772244ef655f68bbe51de1a17c5d4b1d78369342d8a337",
+      "packages/rag/dist/http.js": "cbbdc7cbbfad206b02637365c40ae4b86993d0cf7cc0a449cc2727a8fe17fcb7",
+      "packages/rag/dist/validation.js": "d0844ef9ef4bfa40fe324768dfb445687962a44cbf2a09f4ba5593c3a45fbb2a",
+      "packages/rag/dist/vectors.js": "4e4bfcc5af53110bc1752086a93a3f7fd7d21e75c6950090107f9c8b2b4e9ff0",
+      "packages/core/dist/authorization-audit.js": "2a86c774a5f581af16f9cc5b17bd6ebece460453e7df190548ca4376d99163fb",
+      "packages/core/dist/authorization.js": "343adf6c0d861a60bf4043c8e2315db8ad57c15d35f662aae7141e111312765a",
+      "packages/core/dist/budget.js": "de4ac883798071645cb80f1b849e5775071894d240735b86cfe73f564ef30aba",
+      "packages/core/dist/bytes.js": "72299527b9e1fc61e4fb26febfdaeec0272b75b77076f07b8b274854330df04e",
+      "packages/core/dist/contracts.js": "dbb09a68cb01f484e6d0ce790ce333d805b16b34570e1de7dd46315e33593ee2",
+      "packages/core/dist/destination.js": "ae755e6845f8729cd44f10bc721c64b5a8ec63f83ce0bc3664e730ffab3ca852",
+      "packages/core/dist/errors.js": "793b26f7448b6b3690bcfb2a9142046f98be1712f72e51af53734364632a91ec",
+      "packages/core/dist/event-stream.js": "552c138d6f3b0df21d8fb4dcb4f87ecadc1058bef2d98107aebf346b5c3c365f",
+      "packages/core/dist/host.js": "902b1b6964ce6ea9d2b947c7608fee2915c24492d37c7cca79f283245f268ec6",
+      "packages/core/dist/index.js": "6d0f67fb43ebd35cdee43ab7c18ddead45c86f8af3d6d7c3b807fa9243adb29e",
+      "packages/core/dist/json.js": "bd4d3940f5881ce3104b042bfbbdd4b58ff6da58a3510bf71a2c7dff01507e1f",
+      "packages/core/dist/lifecycle.js": "880255650ecd4067b9247556e991e522b14602affe56c265518a34504fc60404",
+      "packages/core/dist/local-guards.js": "75183c680a0ec91b3a29b06f213348f77117b57487b65321ab2c9f71db2aa111",
+      "packages/core/dist/managed-guards.js": "c23a2f576f75b9b6e64971a57b7cb6deee535a12a616a719bb657266cf832091",
+      "packages/core/dist/media.js": "5e6b09ba4212e99ea08490a734627928e5b2f085877827b7494ac8308b2698df",
+      "packages/core/dist/model-schema.js": "7ca006b4337000a31f19b7fa51bf12a76747e3845dfbfc9f4af41a362d81ecff",
+      "packages/core/dist/pricing.js": "6054df46d63a99ac112d5e59989bafd5e4554980f30ec981ea88bbdaecb8086a",
+      "packages/core/dist/schema.js": "ad7d702d392d85a2292e0f1d01b2a66027cce8bd7494d4c4c5beb04970d75749",
+      "packages/core/dist/workflow-environment.js": "084d11971c169db37e3b3a2a0b580dd3bf3b3790d3745655241824e9f84b16f6",
+      "packages/core/dist/workflow-limits.js": "fa50b9b063ea4128e921c50bdce1c1626b5fad49dc6dfe3f63ce0e596c559ddf"
+    },
+    "sourceHashes": {
+      "scripts/pinecone-live-check.mjs": "3e15783cf5b6fbad9d785fae01d0be0af5b2b69d44238123e7c5e757edacb1b3",
+      "scripts/live/rag-checks.mjs": "56788c46d4630eee417732899ffa91cc134ed2e1ce6e8b92e2efca1d47004af4",
+      "scripts/live/pinecone-load-checks.mjs": "2b233c84b51dcc0a7dd3af626ab794c95df38fc6d8c1870e12420e4d9ce1e9d1",
+      "scripts/live/rag-load-checks.mjs": "ffa29da49405cd521ef2688c209e289faf7a9f801eca0a7ac942c137b7afe48b",
+      "extensions/vector-pinecone/src/index.ts": "0a8d8f90aabd59228905748c692a6373a614dd548beb6e9ed0cd9ba266eddaf4",
+      "packages/rag/src/http.ts": "2cb5a8ed1ca4ac11be8c32a74c056ff6445e25ccd102e085ff8f1e11d6bdbbed",
+      "packages/rag/src/validation.ts": "809bf5c826d63758af1b884f552a07016ac6a6a3adf4361bbd9f1a9169a86fc8",
+      "scripts/live/pinecone-query-timings.mjs": "078931c9da35839724d3bbd975ed71ba2c4f9b0d67abf698bff548966bfe41c0"
+    },
+    "changedSources": [
+      "scripts/pinecone-live-check.mjs",
+      "scripts/live/pinecone-load-checks.mjs"
+    ],
+    "freeAllowanceConfirmation": {
+      "date": "2026-10-25",
+      "minimumRemainingEgressMiB": 200,
+      "verification": "Operator confirmed from the Starter console before this run; no billing ledger access through the project key."
+    },
+    "image": "node@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c",
+    "bindings": "Import-only package facades; copied qualification, native adapter and runtime JavaScript bytes are unchanged.",
+    "resources": {
+      "cpus": 1,
+      "memoryMiB": 1024
+    },
+    "isolation": "Disposable Linux container on the same physical host; no exclusive-hardware claim."
+  }
+}
