@@ -51,7 +51,8 @@ jobs:
           cmp scripts/pinecone-regional-controls.mjs .artifacts/regional-capsule/regional-controls.mjs
           cmp scripts/pinecone-regional-entry.mjs .artifacts/regional-capsule/run-regional.mjs
       - name: Verify fresh console allowance before provisioning
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        if: >-
+          ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
         shell: bash
         run: |
           test "$GITHUB_RUN_ATTEMPT" = 1
@@ -63,10 +64,12 @@ jobs:
           console.log('Fresh Starter allowance covers the full byte ceiling and safety reserve.');
           JS
       - name: Pull the exact previously qualified Node runtime
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        if: >-
+          ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
         run: docker pull node@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
       - name: One bounded full profile; no workflow reruns
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        if: >-
+          ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
         shell: bash
         env:
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
