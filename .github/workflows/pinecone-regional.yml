@@ -1,2 +1,100 @@
-N¬iËb¢|²·£yË^uÛ¶‹§iÇ¦Ö›•êâ²D^jÊ'N¬¶¶§²h­±©ŞÂ\¦¡ØŸ‰çp¢¹–Œ¢{ZŠx§©ÚºÚ&jØœ¦ë!¶¸ êŞv,µçj¹©b~'¶*'®éí…êkŠŠÚ¦šè½©\¢÷«yÛay«Š×néİ•éè¶Øb±ÈZ¶¸ êÚØ­²š-z{bjW±µêçjW(š›­y©İ>)Şr‰ŞºÆ x:'¢Öò¥«,¶¬­èŞrØ¨Øk¢è!k
-+‘ªèºwh®)İŠ·œµì^rëb¢p¨Ø§¹ì"¶¬i÷«j[^®v­Š÷¨­Æ«¯*.µÈ^rK-¢šè½ëajÛay§-Š‰â±«­†ŠâÍçh®Z0®+$mçè­ëkÊ)àj¢œ*&¦W­zéÚ}÷œµçp¢¹0ŠØhºÖ¬’)à~ŠÜ¢wâ®f­Š‰Ñzš+µ©ò¶§‚ØZ¶·¦j)ìnZ‘ç\•ªâ,!Ê+pjÆå¡Éu¼šºÚ+zøÂ)ß¢¹­…ë¬zº¶«ŠÉÖ¬‘ú+jšk¢ö¥
+name: Regional Pinecone latency qualification
+on:
+  push:
+    branches: [codex/pinecone-regional-qualification]
+  workflow_dispatch:
+    inputs:
+      run_profile:
+        description: Run one full reviewed profile after checking free allowance
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: pinecone-regional-qualification
+  cancel-in-progress: false
+jobs:
+  regional:
+    name: Verified Virginia runner and unchanged Pinecone gates
+    runs-on: ubuntu-24.04
+    environment: pinecone-qualification
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - name: Verify controls offline
+        run: node --test scripts/pinecone-regional-controls.test.mjs
+      - name: Verify actual VM region before credentials or hosted work
+        shell: bash
+        run: |
+          mkdir -p .artifacts/regional-output
+          region=$(curl --fail --silent --show-error --noproxy '*' --max-time 5 --header 'Metadata: true' 'http://169.254.169.254/metadata/instance/compute/location?api-version=2025-04-07&format=text')
+          export VERIFIED_REGION="$region"
+          node --input-type=module <<'JS'
+          import {writeFile} from 'node:fs/promises';
+          import {regionalRunner} from './scripts/pinecone-regional-controls.mjs';
+          const runner={...regionalRunner(process.env.VERIFIED_REGION),verifiedAt:new Date().toISOString(),
+            commit:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT};
+          await writeFile('.artifacts/regional-output/runner.json',JSON.stringify(runner,null,2)+'\n');
+          console.log(`Verified runner region: ${runner.region}; cross-cloud Virginia proximity only.`);
+          JS
+      - name: Verify immutable runtime capsule
+        shell: bash
+        run: |
+          echo 'c22c3dbd04aa25093681acfbfbafa9f1c04022aac5f1cabbb8e9b4b64c6cf6fb  compatibility/pinecone-regional-capsule.tgz' | sha256sum --check
+          mkdir -p .artifacts/regional-capsule
+          tar -xzf compatibility/pinecone-regional-capsule.tgz -C .artifacts/regional-capsule
+          cmp scripts/pinecone-regional-controls.mjs .artifacts/regional-capsule/regional-controls.mjs
+          cmp scripts/pinecone-regional-entry.mjs .artifacts/regional-capsule/run-regional.mjs
+      - name: Verify fresh console allowance before provisioning
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        shell: bash
+        run: |
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          node --input-type=module <<'JS'
+          import {readFile,writeFile} from 'node:fs/promises';
+          import {verifyFreeAllowance} from './scripts/pinecone-regional-controls.mjs';
+          const allowance=verifyFreeAllowance(JSON.parse(await readFile('compatibility/pinecone-free-allowance.json','utf8')));
+          await writeFile('.artifacts/regional-output/allowance.json',JSON.stringify(allowance,null,2)+'\n');
+          console.log('Fresh Starter allowance covers the full byte ceiling and safety reserve.');
+          JS
+      - name: Pull the exact previously qualified Node runtime
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        run: docker pull node@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+      - name: One bounded full profile; no workflow reruns
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_profile) || (github.event_name == 'push' && github.event.head_commit.message == 'test(rag): run Pinecone regional qualification (one-shot-20261025)') }}
+        shell: bash
+        env:
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+        run: |
+          test -n "$PINECONE_API_KEY"
+          owner=$(cat /proc/sys/kernel/random/uuid)
+          name="mayura-pinecone-regional-$owner"
+          finish() {
+            actual=$(docker inspect --format '{{ index .Config.Labels "io.mayura.pinecone-qualification" }}' "$name" 2>/dev/null || true)
+            if [ "$actual" = "$owner" ]; then
+              docker stop --time 75 "$name" >/dev/null 2>&1 || true
+              docker rm "$name" >/dev/null 2>&1 || true
+            fi
+          }
+          trap finish EXIT
+          chmod 777 .artifacts/regional-output
+          docker run --rm --name "$name" --label "io.mayura.pinecone-qualification=$owner" \
+            --read-only --cpus 1 --memory 1g --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges \
+            --user 1000:1000 --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --mount "type=bind,source=$PWD/.artifacts/regional-capsule,target=/app,readonly" \
+            --mount "type=bind,source=$PWD/.artifacts/regional-output,target=/out" \
+            --env PINECONE_API_KEY --env GITHUB_RUN_ATTEMPT --workdir /app \
+            node@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c node run-regional.mjs
+      - name: Retain evidence, including failed qualification
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pinecone-regional-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .artifacts/regional-output/*.json
