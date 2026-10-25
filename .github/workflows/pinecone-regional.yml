@@ -28,6 +28,16 @@ jobs:
           node-version: 24.14.1
       - name: Verify controls offline
         run: node --test scripts/pinecone-regional-controls.test.mjs
+      - name: Exercise receipt permission recovery without hosted calls
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import {mkdir,writeFile,readFile} from 'node:fs/promises';
+          await mkdir('.artifacts/regional-output',{recursive:true});
+          const path='.artifacts/regional-output/retention-self-check.json';
+          await writeFile(path,JSON.stringify({kind:'offline-artifact-permission-fixture',networkCalls:0,ragStatus:'experimental',productionReady:false})+'\n',{mode:0o000});
+          try{await readFile(path);throw new Error('EXPECTED_READ_DENIAL');}catch(error){if(error.code!=='EACCES')throw error;}
+          JS
       - name: Verify actual VM region before credentials or hosted work
         shell: bash
         run: |
@@ -95,6 +105,30 @@ jobs:
             --mount "type=bind,source=$PWD/.artifacts/regional-output,target=/out" \
             --env PINECONE_API_KEY --env GITHUB_RUN_ATTEMPT --workdir /app \
             node@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c node run-regional.mjs
+      - name: Restore receipt ownership for the artifact uploader
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          receipts=(.artifacts/regional-output/*.json)
+          if (( ${#receipts[@]} )); then
+            sudo chown -- "$(id -u):$(id -g)" "${receipts[@]}"
+            chmod u=rw,go= "${receipts[@]}"
+          fi
+          node --input-type=module <<'JS'
+          import {existsSync,readFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const fixture='.artifacts/regional-output/retention-self-check.json';
+          if(existsSync(fixture)){JSON.parse(readFileSync(fixture,'utf8'));console.log('Receipt permission regression check passed.');}
+          const path='.artifacts/regional-output/pinecone-regional.json';
+          if(existsSync(path)){
+            const bytes=readFileSync(path);const r=JSON.parse(bytes);
+            console.log(JSON.stringify({kind:'sanitized-regional-log-backup',sha256:createHash('sha256').update(bytes).digest('hex'),
+              status:r.status,runtime:r.runtime,runner:r.execution.runner,profile:r.loadProfile,sourceHashes:r.sourceHashes,
+              checks:r.qualification?.checks,retrieval:r.qualification?.retrieval,queryTimings:r.queryTimings,
+              fixtureCleanup:r.qualification?.cleanup,indexCleanup:r.indexCleanup,ragStatus:'experimental',productionReady:false}));
+          }
+          JS
       - name: Retain evidence, including failed qualification
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
