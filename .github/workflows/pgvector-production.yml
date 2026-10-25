@@ -1,0 +1,63 @@
+name: Isolated pgvector production qualification
+on:
+  push:
+    branches: [codex/pgvector-isolated-qualification]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pgvector-production-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  production:
+    name: Full pgvector profile on a fresh hosted VM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        with:
+          node-version: 24.14.1
+      - run: pnpm build
+      - name: Verify controls before load
+        run: node --test scripts/pgvector-production-check.test.mjs scripts/compare-pgvector-production.test.mjs
+      - name: Verify exact qualification sources
+        run: node scripts/compare-pgvector-production.mjs --verify-source compatibility/pgvector-production-qualification.json
+      - name: Pull the same immutable local-service image
+        run: docker pull pgvector/pgvector@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21
+      - name: Record runner identity
+        shell: bash
+        run: |
+          mkdir -p .artifacts
+          node --input-type=module <<'JS'
+          import os from 'node:os';
+          import {writeFileSync} from 'node:fs';
+          writeFileSync('.artifacts/pgvector-runner.json', JSON.stringify({
+            commit:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,
+            runAttempt:process.env.GITHUB_RUN_ATTEMPT,node:process.version,
+            platform:process.platform,arch:process.arch,kernel:os.release(),
+            cpus:os.cpus().length,cpuModel:os.cpus()[0]?.model,memoryBytes:os.totalmem(),
+            imageOS:process.env.ImageOS,imageVersion:process.env.ImageVersion,
+            isolation:'Fresh GitHub-hosted VM; no parallel workload in this job. Physical host exclusivity is not asserted.',
+            ragStatus:'experimental',hostedQualified:false
+          },null,2)+'\n');
+          JS
+      - name: Full default workload and recovery gates
+        run: node scripts/pgvector-production-check.mjs --local --out .artifacts/pgvector-production-isolated.json
+      - name: Compare scheduler diagnostics without overriding qualification
+        if: ${{ always() }}
+        run: node scripts/compare-pgvector-production.mjs compatibility/pgvector-production-qualification.json .artifacts/pgvector-production-isolated.json .artifacts/pgvector-production-comparison.json
+      - name: Retain passing or failed evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pgvector-production-${{ github.sha }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            .artifacts/pgvector-production-isolated.json
+            .artifacts/pgvector-production-comparison.json
+            .artifacts/pgvector-runner.json

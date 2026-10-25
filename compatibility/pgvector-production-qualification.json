@@ -1,0 +1,681 @@
+{
+  "format": 1,
+  "kind": "pgvector-production-local-run",
+  "startedAt": "2026-10-25T02:56:26.243Z",
+  "runtime": {
+    "node": "v24.14.1",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "image": "pgvector/pgvector@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21",
+  "profile": {
+    "records": 10000,
+    "dimensions": 1536,
+    "durationMs": 300000,
+    "qps": 10,
+    "concurrency": 4,
+    "maxQueued": 32,
+    "maxOperations": 10000,
+    "decoys": 2500,
+    "requiredOperations": 3817,
+    "maxP95Ms": 1000,
+    "maxRecoveryMs": 30000
+  },
+  "resources": {
+    "containerCpus": 1,
+    "containerMemoryMiB": 1024
+  },
+  "status": "failed",
+  "containerCleanup": "passed",
+  "ragStatus": "experimental",
+  "hostedQualified": false,
+  "resourceIdentity": {
+    "containerName": "mayura-rag-production-a7004936-4967-439c-aacd-e3e60b2288eb",
+    "labelKey": "io.mayura.rag-qualification",
+    "labelValue": "a7004936-4967-439c-aacd-e3e60b2288eb"
+  },
+  "postgresSettings": {
+    "shared_buffers": "256MB",
+    "effective_cache_size": "512MB",
+    "max_parallel_workers_per_gather": "0",
+    "max_connections": "32"
+  },
+  "sourceHashes": {
+    "scripts/pgvector-production-check.mjs": "2248c0552a8b68f5ca89b6dd0f2eda551e8948e7da574d6224fcfa1517d538cf",
+    "scripts/live/pgvector-production-checks.mjs": "be15df43a56ac507152fe5aaa0e4deecd5d2e98ce7948c743d5172f83d829202",
+    "scripts/live/rag-load-checks.mjs": "ffa29da49405cd521ef2688c209e289faf7a9f801eca0a7ac942c137b7afe48b",
+    "scripts/rag-local-check.mjs": "a83e8536a944ee1b9a404823f77f163b1d5ba70ebb7207a70b0b636eb9cce1f9",
+    "extensions/vector-pgvector/src/index.ts": "ce4d94307df1fbeaaa82ede363fe2b10c155e01f388b6d2d46270333ffe9004c",
+    "packages/rag/src/validation.ts": "809bf5c826d63758af1b884f552a07016ac6a6a3adf4361bbd9f1a9169a86fc8"
+  },
+  "imageId": "sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21",
+  "repoDigests": [
+    "pgvector/pgvector@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21"
+  ],
+  "engine": {
+    "postgres": "17.8 (Debian 17.8-1.pgdg12+1)",
+    "pgvector": "0.8.1"
+  },
+  "qualification": {
+    "format": 1,
+    "kind": "pgvector-production-qualification",
+    "scope": "local Docker; synthetic corpus",
+    "profile": {
+      "records": 10000,
+      "dimensions": 1536,
+      "durationMs": 300000,
+      "qps": 10,
+      "concurrency": 4,
+      "maxQueued": 32,
+      "maxOperations": 10000,
+      "decoys": 2500,
+      "requiredOperations": 3817,
+      "maxP95Ms": 1000,
+      "maxRecoveryMs": 30000
+    },
+    "status": "failed",
+    "checks": [
+      {
+        "name": "bounded-corpus-ingestion",
+        "status": "passed",
+        "vectors": 17500,
+        "elapsedMs": 176280.72230000002
+      },
+      {
+        "name": "committed-corpus-inventory",
+        "status": "passed",
+        "count": 17500,
+        "bytes": 157114368
+      },
+      {
+        "name": "exact-reference-warmup",
+        "status": "passed"
+      },
+      {
+        "name": "sustained-load-before-restart",
+        "status": "failed",
+        "code": "LOAD_SLO_FAILED"
+      },
+      {
+        "name": "graceful-recovery",
+        "status": "passed",
+        "inventoryPreserved": true,
+        "exactQueriesVerified": 24
+      },
+      {
+        "name": "sustained-load-after-restart",
+        "status": "failed",
+        "code": "LOAD_SLO_FAILED"
+      },
+      {
+        "name": "crash-rollback-recovery",
+        "status": "passed",
+        "inventoryPreserved": true,
+        "exactQueriesVerified": 24
+      },
+      {
+        "name": "native-sql-plans",
+        "status": "passed"
+      }
+    ],
+    "loadWindows": [
+      {
+        "index": 1,
+        "requestedDurationMs": 150000,
+        "offeredQueries": 1500,
+        "completedQueries": 1431,
+        "errors": 0,
+        "skipped": 0,
+        "late": 69,
+        "maximumQueued": 8,
+        "diagnostics": {
+          "schedulerLag": {
+            "count": 1500,
+            "p50Ms": 7.111600000003818,
+            "p95Ms": 84.10430000000633,
+            "p99Ms": 301.5669999999809
+          },
+          "adapterLatency": {
+            "count": 1431,
+            "p50Ms": 81.8579000000027,
+            "p95Ms": 602.2627999999968,
+            "p99Ms": 979.1300000000047
+          },
+          "verificationLatency": {
+            "count": 1431,
+            "p50Ms": 0.0956000000005588,
+            "p95Ms": 0.1576999999815598,
+            "p99Ms": 0.24899999998160638
+          },
+          "eventLoop": {
+            "p95Ms": 22.953983,
+            "p99Ms": 38.830079,
+            "maxMs": 583.008255,
+            "utilization": 0.05354616113980726
+          },
+          "cpuMs": {
+            "user": 4234,
+            "system": 266
+          }
+        },
+        "queueWait": {
+          "count": 1431,
+          "p50Ms": 7.9223000000056345,
+          "p95Ms": 209.85979999997653,
+          "p99Ms": 614.017600000021
+        },
+        "latencyIncludesQueue": true,
+        "count": 1431,
+        "p50Ms": 94.68719999998575,
+        "p95Ms": 701.3808999999892,
+        "p99Ms": 1069.890699999989,
+        "elapsedMs": 150016.83039999998,
+        "requestsPerSecond": 9.53892970664977,
+        "recallAt10": 1,
+        "intervals": [
+          {
+            "offsetMs": 0,
+            "errors": 0,
+            "count": 293,
+            "p50Ms": 79.82180000000517,
+            "p95Ms": 570.2149999999965,
+            "p99Ms": 736.909799999994
+          },
+          {
+            "offsetMs": 30000,
+            "errors": 0,
+            "count": 271,
+            "p50Ms": 95.37229999998817,
+            "p95Ms": 713.8766999999934,
+            "p99Ms": 1212.612999999983
+          },
+          {
+            "offsetMs": 60000,
+            "errors": 0,
+            "count": 288,
+            "p50Ms": 91.66709999999148,
+            "p95Ms": 588.4941000000108,
+            "p99Ms": 983.3171999999904
+          },
+          {
+            "offsetMs": 90000,
+            "errors": 0,
+            "count": 287,
+            "p50Ms": 109.11569999996573,
+            "p95Ms": 816.9112999999779,
+            "p99Ms": 1134.3858999999939
+          },
+          {
+            "offsetMs": 120000,
+            "errors": 0,
+            "count": 292,
+            "p50Ms": 99.2715999999782,
+            "p95Ms": 813.9343999999692,
+            "p99Ms": 1412.6768000000156
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "requestedDurationMs": 150000,
+        "offeredQueries": 1500,
+        "completedQueries": 1462,
+        "errors": 0,
+        "skipped": 0,
+        "late": 38,
+        "maximumQueued": 5,
+        "diagnostics": {
+          "schedulerLag": {
+            "count": 1500,
+            "p50Ms": 6.837900000042282,
+            "p95Ms": 22.274200000043493,
+            "p99Ms": 214.67600000003586
+          },
+          "adapterLatency": {
+            "count": 1462,
+            "p50Ms": 66.54559999995399,
+            "p95Ms": 541.2284000000218,
+            "p99Ms": 845.8130000000237
+          },
+          "verificationLatency": {
+            "count": 1462,
+            "p50Ms": 0.08600000001024455,
+            "p95Ms": 0.14910000003874302,
+            "p99Ms": 0.23910000000614673
+          },
+          "eventLoop": {
+            "p95Ms": 21.168127,
+            "p99Ms": 34.701311,
+            "maxMs": 443.285503,
+            "utilization": 0.04087588439463516
+          },
+          "cpuMs": {
+            "user": 4610,
+            "system": 422
+          }
+        },
+        "queueWait": {
+          "count": 1462,
+          "p50Ms": 7.173800000047777,
+          "p95Ms": 105.51680000004126,
+          "p99Ms": 286.98140000004787
+        },
+        "latencyIncludesQueue": true,
+        "count": 1462,
+        "p50Ms": 76.15170000004582,
+        "p95Ms": 559.3772000000463,
+        "p99Ms": 869.6456000000471,
+        "elapsedMs": 150274.0922,
+        "requestsPerSecond": 9.728889248947995,
+        "recallAt10": 1,
+        "intervals": [
+          {
+            "offsetMs": 0,
+            "errors": 0,
+            "count": 286,
+            "p50Ms": 82.69370000000345,
+            "p95Ms": 596.3309000000008,
+            "p99Ms": 907.6385000000009
+          },
+          {
+            "offsetMs": 30000,
+            "errors": 0,
+            "count": 286,
+            "p50Ms": 80.32589999999618,
+            "p95Ms": 731.4910000000382,
+            "p99Ms": 985.2985000000335
+          },
+          {
+            "offsetMs": 60000,
+            "errors": 0,
+            "count": 299,
+            "p50Ms": 77.3803000000189,
+            "p95Ms": 572.7478000000119,
+            "p99Ms": 804.5770000000484
+          },
+          {
+            "offsetMs": 90000,
+            "errors": 0,
+            "count": 298,
+            "p50Ms": 71.32020000001648,
+            "p95Ms": 477.94190000003437,
+            "p99Ms": 610.1476000000257
+          },
+          {
+            "offsetMs": 120000,
+            "errors": 0,
+            "count": 293,
+            "p50Ms": 71.94450000004144,
+            "p95Ms": 550.9145000000135,
+            "p99Ms": 686.9107000000076
+          }
+        ]
+      }
+    ],
+    "recovery": [
+      {
+        "kind": "graceful",
+        "recoveryMs": 4480.862299999979,
+        "replayedWrites": 0,
+        "persistentVolumePreserved": true
+      },
+      {
+        "kind": "crash-rollback",
+        "recoveryMs": 2292.7212999999756,
+        "replayedWrites": 0,
+        "uncommittedRows": 0,
+        "persistentVolumePreserved": true
+      }
+    ],
+    "cleanup": "passed",
+    "ragStatus": "experimental",
+    "hostedQualified": false,
+    "sqlPlans": [
+      {
+        "sql": "SELECT chunk, 1-(embedding <=> $2::vector) AS score FROM \"production_chunks\" WHERE namespace=$1 AND metadata @> $3::jsonb ORDER BY embedding <=> $2::vector, id LIMIT $4",
+        "statistics": "ANALYZE before EXPLAIN",
+        "plan": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1720.6,
+              "Total Cost": 1720.62,
+              "Plan Rows": 10,
+              "Plan Width": 400,
+              "Actual Startup Time": 45.614,
+              "Actual Total Time": 45.618,
+              "Actual Rows": 10,
+              "Actual Loops": 1,
+              "Shared Hit Blocks": 61167,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1720.6,
+                  "Total Cost": 1745.6,
+                  "Plan Rows": 10000,
+                  "Plan Width": 400,
+                  "Actual Startup Time": 45.613,
+                  "Actual Total Time": 45.615,
+                  "Actual Rows": 10,
+                  "Actual Loops": 1,
+                  "Sort Key": [
+                    "((embedding <=> '[vector omitted]'::vector))",
+                    "id"
+                  ],
+                  "Sort Method": "top-N heapsort",
+                  "Sort Space Used": 33,
+                  "Sort Space Type": "Memory",
+                  "Shared Hit Blocks": 61167,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Relation Name": "production_chunks",
+                      "Alias": "production_chunks",
+                      "Startup Cost": 0,
+                      "Total Cost": 1504.5,
+                      "Plan Rows": 10000,
+                      "Plan Width": 400,
+                      "Actual Startup Time": 0.02,
+                      "Actual Total Time": 44.357,
+                      "Actual Rows": 10000,
+                      "Actual Loops": 1,
+                      "Filter": "((metadata @> '{}'::jsonb) AND (namespace = '<namespace>'::text))",
+                      "Rows Removed by Filter": 7500,
+                      "Shared Hit Blocks": 61167,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 17,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.108,
+            "Triggers": [],
+            "Execution Time": 45.634
+          }
+        ]
+      },
+      {
+        "sql": "SELECT chunk, 1-(embedding <=> $2::vector) AS score FROM \"production_chunks\" WHERE namespace=$1 AND metadata @> $3::jsonb ORDER BY embedding <=> $2::vector, id LIMIT $4",
+        "statistics": "ANALYZE before EXPLAIN",
+        "plan": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1466.24,
+              "Total Cost": 1466.26,
+              "Plan Rows": 10,
+              "Plan Width": 400,
+              "Actual Startup Time": 15.286,
+              "Actual Total Time": 15.291,
+              "Actual Rows": 10,
+              "Actual Loops": 1,
+              "Shared Hit Blocks": 8655,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1466.24,
+                  "Total Cost": 1469.39,
+                  "Plan Rows": 1262,
+                  "Plan Width": 400,
+                  "Actual Startup Time": 15.282,
+                  "Actual Total Time": 15.285,
+                  "Actual Rows": 10,
+                  "Actual Loops": 1,
+                  "Sort Key": [
+                    "((embedding <=> '[vector omitted]'::vector))",
+                    "id"
+                  ],
+                  "Sort Method": "top-N heapsort",
+                  "Sort Space Used": 32,
+                  "Sort Space Type": "Memory",
+                  "Shared Hit Blocks": 8655,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Relation Name": "production_chunks",
+                      "Alias": "production_chunks",
+                      "Startup Cost": 0,
+                      "Total Cost": 1438.96,
+                      "Plan Rows": 1262,
+                      "Plan Width": 400,
+                      "Actual Startup Time": 0.053,
+                      "Actual Total Time": 14.943,
+                      "Actual Rows": 1248,
+                      "Actual Loops": 1,
+                      "Filter": "((metadata @> '{\"topic\": \"t1\"}'::jsonb) AND (namespace = '<namespace>'::text))",
+                      "Rows Removed by Filter": 16252,
+                      "Shared Hit Blocks": 8655,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 15,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.178,
+            "Triggers": [],
+            "Execution Time": 15.318
+          }
+        ]
+      },
+      {
+        "sql": "SELECT chunk, 1-(embedding <=> $2::vector) AS score FROM \"production_chunks\" WHERE namespace=$1 AND metadata @> $3::jsonb ORDER BY embedding <=> $2::vector, id LIMIT $4",
+        "statistics": "ANALYZE before EXPLAIN",
+        "plan": [
+          {
+            "Plan": {
+              "Node Type": "Limit",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1454.01,
+              "Total Cost": 1454.04,
+              "Plan Rows": 10,
+              "Plan Width": 400,
+              "Actual Startup Time": 7.879,
+              "Actual Total Time": 7.882,
+              "Actual Rows": 10,
+              "Actual Loops": 1,
+              "Shared Hit Blocks": 6159,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 1454.01,
+                  "Total Cost": 1456.12,
+                  "Plan Rows": 842,
+                  "Plan Width": 400,
+                  "Actual Startup Time": 7.877,
+                  "Actual Total Time": 7.879,
+                  "Actual Rows": 10,
+                  "Actual Loops": 1,
+                  "Sort Key": [
+                    "((embedding <=> '[vector omitted]'::vector))",
+                    "id"
+                  ],
+                  "Sort Method": "top-N heapsort",
+                  "Sort Space Used": 34,
+                  "Sort Space Type": "Memory",
+                  "Shared Hit Blocks": 6159,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Relation Name": "production_chunks",
+                      "Alias": "production_chunks",
+                      "Startup Cost": 0,
+                      "Total Cost": 1435.82,
+                      "Plan Rows": 842,
+                      "Plan Width": 400,
+                      "Actual Startup Time": 0.035,
+                      "Actual Total Time": 7.743,
+                      "Actual Rows": 832,
+                      "Actual Loops": 1,
+                      "Filter": "((metadata @> '{\"topic\": \"t2\", \"published\": true}'::jsonb) AND (namespace = '<namespace>'::text))",
+                      "Rows Removed by Filter": 16668,
+                      "Shared Hit Blocks": 6159,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 17,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.106,
+            "Triggers": [],
+            "Execution Time": 7.898
+          }
+        ]
+      }
+    ],
+    "operations": 3666
+  },
+  "containerStateBeforeCleanup": {
+    "running": true,
+    "oomKilled": false,
+    "exitCode": 0
+  },
+  "completedAt": "2026-10-25T03:04:47.082Z",
+  "productionReady": false,
+  "evidenceContext": {
+    "qualificationComplete": false,
+    "reason": "Traffic gates failed with 69 and 38 late arrivals; zero query errors. Event-loop stalls reached 583 ms while Node CPU time was about 4.5-5 seconds per 150-second window. Exact recall, latency gates, both recoveries and cleanup passed.",
+    "rootCause": "Long event-loop stalls are measured; their OS/runtime cause is not established. Low verifier time and low Node CPU do not support verifier CPU saturation as the cause.",
+    "previousContainerCleanup": "The previously orphaned label-owned container was removed before these runs.",
+    "limitations": [
+      "Shared local host, synthetic data and bounded corpus.",
+      "Hosted qualification remains outstanding."
+    ]
+  }
+}
