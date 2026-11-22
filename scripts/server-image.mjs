@@ -15,6 +15,7 @@ import { createPacker } from './local-packages.mjs';
 
 const exec = promisify(execFile);
 const workspace = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+const { version } = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8'));
 // Supported Node.js lines, each pinned by digest. `--node 22` qualifies the same closure on the 22 LTS line.
 const baseImages = {
   24: 'node:24.14.1-alpine@sha256:8510330d3eb72c804231a834b1a8ebb55cb3796c3e4431297a24d246b8add4d5',
@@ -34,7 +35,7 @@ const external = {
   // The CLI's interactive prompts (loaded only by `mayura init` in a terminal), all MIT with no install scripts.
   '@clack/prompts': '1.8.1', '@clack/core': '1.5.1', sisteransi: '1.0.5', 'fast-wrap-ansi': '0.2.2', 'fast-string-width': '3.0.2', 'fast-string-truncated-width': '3.0.3',
   pg: '8.23.0', 'pg-connection-string': '2.14.0', 'pg-pool': '3.14.0', 'pg-protocol': '1.16.0', 'pg-types': '2.2.0', 'pg-int8': '1.0.1',
-  'postgres-array': '2.0.0', 'postgres-bytea': '1.0.1', 'postgres-date': '1.0.7', 'postgres-interval': '1.2.1', xtend: '4.0.2',
+  'postgres-array': '2.0.0', 'postgres-bytea': '1.0.1', 'postgres-date': '1.0.7', 'postgres-interval': '1.2.0', xtend: '4.0.2',
   pgpass: '1.0.5', split2: '4.2.0', 'pg-cloudflare': '1.4.0',
 };
 const inside = (parent, child) => { const value = relative(parent, child); return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value); };
@@ -66,7 +67,7 @@ async function main() {
   // Offline install of exactly the packed closure into the staged application.
   const app = join(output, 'context', 'app'); await mkdir(app, { recursive: true });
   const archive = name => pathToFileURL(packed.get(name).archive).href;
-  await writeFile(join(app, 'package.json'), JSON.stringify({ name: 'mayura-deployment', version: '1.2.1', private: true, type: 'module',
+  await writeFile(join(app, 'package.json'), JSON.stringify({ name: 'mayura-deployment', version, private: true, type: 'module',
     dependencies: Object.fromEntries(roots.map(([name]) => [name, archive(name)])), overrides: Object.fromEntries([...packed.keys()].map(name => [name, archive(name)])) }, null, 2));
   await writeFile(join(app, '.npmrc'), '');
   await node([npm, 'install', '--offline', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--userconfig', join(app, '.npmrc'), '--cache', join(output, 'npm-cache')], app, 300_000);
@@ -75,7 +76,7 @@ async function main() {
   for (const name of packed.keys()) assert(inside(await realpath(app), await realpath(join(app, 'node_modules', name))), 'Staged application contains a workspace symlink.');
   const dockerfile = [
     `FROM ${baseImage}`,
-    `LABEL org.opencontainers.image.title="Mayura server and worker" org.opencontainers.image.version="1.2.1" org.opencontainers.image.licenses="Apache-2.0" \\`,
+    `LABEL org.opencontainers.image.title="Mayura server and worker" org.opencontainers.image.version="${version}" org.opencontainers.image.licenses="Apache-2.0" \\`,
     `      org.opencontainers.image.base.name="${baseImage}"`,
     'WORKDIR /app', 'COPY --chown=65532:65532 app/ /app/', 'USER 65532:65532', 'ENV NODE_ENV=production', 'EXPOSE 8080 9090',
     'ENTRYPOINT ["node", "/app/node_modules/mayura/lib/cli/dist/bin.js"]', 'CMD ["serve", "--app", "/app/app.mjs"]', ''].join('\n');

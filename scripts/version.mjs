@@ -24,7 +24,7 @@ const current = () => JSON.parse(read('package.json')).version;
 /** Every file that names the version, besides the package manifests. Each must contain it exactly as package.json does. */
 const mentions = [
   'packages/exporter-otlp/src/signals.ts', 'packages/exporter-otlp/src/otlp-http-json.ts',
-  'packages/adapter-code-docker/image/Dockerfile', 'scripts/server-image.mjs', 'scripts/code-sandbox-image.mjs',
+  'packages/adapter-code-docker/image/Dockerfile', 'scripts/code-sandbox-image.mjs',
 ];
 /** The root manifest, every workspace package's and every extension's (the @mayurajs packages, released in lockstep). */
 const manifests = () => ['package.json', ...['packages', 'extensions'].flatMap(folder => existsSync(join(workspace, folder)) ? readdirSync(join(workspace, folder), { withFileTypes: true })
