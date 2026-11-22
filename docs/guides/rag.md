@@ -5,8 +5,18 @@ description: "Scoped retrieval tools, durable content-addressed ingestion, vecto
 
 `mayura/rag` adds retrieval without giving a model a database connection or letting it choose a principal, project,
 index or filter. Host code loads documents, stages embeddings and publishes a revision. A retrieval tool returns
-only authorized evidence and exact citation identities. This is an experimental 1.2 surface; source, examples and
-regression cases pass local offline validation, including builds, documentation and package checks. Real service qualification remains outstanding; see [release validation status](release-readiness.md).
+only authorized evidence and exact citation identities. The [qualified Modal + Pinecone Loki v28
+profile](rag-production.md#qualified-production-profile) is stable within its tested scope. Other RAG profiles
+remain experimental. See [release validation status](release-readiness.md) for the limits of the available evidence.
+
+## Retrieval configuration
+
+Chunk-level fusion remains the default. Use `fusionLevel: 'document'` to combine ranks by document and
+return a real passage as the citation witness. Use `distinctDocuments: true` to return at most one
+passage per document. Parent context still depends on published, authorized evidence.
+
+The in-memory vector store supports optional BM25, document-level lexical and semantic candidates,
+and max or mean aggregation of document cosine scores. The default stays chunk-level.
 
 ## Architecture
 

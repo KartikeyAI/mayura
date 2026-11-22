@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, MayuraError, type JsonValue } from '@mayura/core';
 import {
   StorageError, workflowManifest, workflowState, workflowGraphState,
@@ -72,7 +73,7 @@ export async function scheduledCallback<T>(operation: () => T | PromiseLike<T>, 
 
 /** Construct the original data-only definition material without changing its version hash. */
 export function scheduledManifest(definition: AnyWorkflow): WorkflowManifest {
-  return workflowManifest({ id: definition.id, version: definition.version,
+  return workflowManifest({ id: definition.id, version: definition.version, ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
     graph: definition.nodes.map(node => node.kind === 'join'
       ? { id: node.id, kind: node.kind, dependsOn: node.dependsOn }
       : { id: node.id, kind: node.kind, dependsOn: node.dependsOn ?? [], tool: node.tool.id,
@@ -111,7 +112,7 @@ function checkOwnedView(view: ScheduledStoredSnapshot, scope: string, id: string
   // checks and decoding need happen only once for this exact owned snapshot.
   if (ownedViews.has(view)) return view;
   if (!Array.isArray(view.jobs)
-    || view.jobs.length > 128 || !Number.isSafeInteger(view.record.version) || view.record.version < 1
+    || view.jobs.length > workflowNodeLimit(view.record.state['maxNodes']) || !Number.isSafeInteger(view.record.version) || view.record.version < 1
     || !/^[a-f0-9]{64}$/.test(view.manifestHash) || !/^[a-f0-9]{64}$/.test(view.resourceHash)
     || view.record.definitionHash !== view.manifestHash) throw new Error();
   const state = scheduledState(view.record, profile);

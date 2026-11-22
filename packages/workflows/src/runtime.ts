@@ -1,4 +1,6 @@
 import { workflowAuthorization } from './authorization.js';
+import { advanceWorkflowNodes } from './node-batches.js';
+import { workflowNodeLimit } from '@mayura/core';
 import type { Authorizer } from '@mayura/core';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
@@ -67,7 +69,7 @@ function outputs(state: State): Record<string, JsonValue> {
   catch { throw new MayuraError('CONFLICT', 'Stored workflow output failed integrity validation.'); }
 }
 function initialState(definition: AnyWorkflow, input: JsonValue, policy: string, maxCostMicros: number): State {
-  return { format: 2, definition: definition.digest, policy, input, status: 'running', maxCostMicros, spentMicros: 0, reservedMicros: 0, output: null,
+  return { format: 2, ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }), definition: definition.digest, policy, input, status: 'running', maxCostMicros, spentMicros: 0, reservedMicros: 0, output: null,
     steps: Object.fromEntries(definition.nodes.map(node => [node.id, { kind: node.kind, status: 'pending', callId: `step:${node.id}`, output: null, receipt: null, approval: null, costReserved: 0, candidateHash: null }])) };
 }
 
@@ -257,7 +259,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         await auth.execute(definition.digest, id);
         const before = await load(id); const state = stateFrom(before);
         if (state.definition !== definition.digest || before.definitionHash !== definition.digest || state.policy !== policy || state.maxCostMicros !== maxCostMicros) throw new MayuraError('CONFLICT', 'Definition or policy changed; explicit migration/review is required.');
-        if (Object.keys(state.steps).length !== definition.nodes.length || definition.nodes.some(node => !Object.hasOwn(state.steps, node.id))) throw new MayuraError('CONFLICT', 'Stored steps do not match the pinned definition.');
+        if (workflowNodeLimit(state.maxNodes) !== workflowNodeLimit(definition.maxNodes) || Object.keys(state.steps).length !== definition.nodes.length || definition.nodes.some(node => !Object.hasOwn(state.steps, node.id))) throw new MayuraError('CONFLICT', 'Stored steps do not match the pinned definition.');
         for (const node of definition.nodes) {
           const step = state.steps[node.id]!;
           if (step.kind !== node.kind || (node.kind === 'tool' && step.receipt && step.receipt.toolId !== node.tool.id) || (step.status === 'succeeded' && (node.dependsOn ?? []).some(dependency => state.steps[dependency]?.status !== 'succeeded'))) throw new MayuraError('CONFLICT', 'Stored step evidence does not match the pinned graph.');
@@ -266,9 +268,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
         // Each wave holds one drain admission until its effects and receipts settle.
         const release = gate.enter(); if (!release) return checkedSnapshot(before);
         try {
-          const results = await Promise.allSettled(definition.nodes.map(node => executeNode(id, node)));
-          const failure = results.find(result => result.status === 'rejected');
-          if (failure?.status === 'rejected') throw failure.reason;
+          await advanceWorkflowNodes(definition.nodes.filter(node => !terminalSteps.has(state.steps[node.id]!.status)), node => executeNode(id, node));
         } finally { release(); }
         let after = await load(id); const next = stateFrom(after); const steps = Object.values(next.steps);
         if (next.status === 'paused' || next.status === 'cancelled') return checkedSnapshot(after);
@@ -347,7 +347,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions) {
       const fresh = initialState(migration.to, state.input, policy, maxCostMicros);
       const carried: Record<string, Step> = {};
       for (const entry of plan.entries) if (entry.target) carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!]! : fresh.steps[entry.target]!;
-      const next: State = { ...state, definition: migration.to.digest, steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, carried[node.id]!])) };
+      const next: State = { ...state, maxNodes: migration.to.maxNodes === false ? false : workflowNodeLimit(migration.to.maxNodes), definition: migration.to.digest, steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, carried[node.id]!])) };
       next.reservedMicros = Object.values(next.steps).reduce((sum, step) => sum + step.costReserved, 0);
       try { assertWorkflowStateMatchesManifest(workflowState({ id, state: jsonValue(next) as JsonObject }), scheduledManifest(migration.to)); }
       catch { throw new MayuraError('CONFLICT', 'Migration refused: the migrated state does not satisfy the new definition.'); }

@@ -133,7 +133,7 @@ export class ScheduledWorkflowDatabase {
     // Lock every bounded owned job before touching any resource. Controls can safely visit them in any order afterwards.
     const jobIds = await tx.lockRunJobs(scope,id);
     const links = await tx.links(scope,id);
-    if (links.length > 128 || links.length !== jobIds.length || links.some((link,index) => link.job_id !== jobIds[index])) failed();
+    if (links.length > owner.manifest.graph.length || links.length !== jobIds.length || links.some((link,index) => link.job_id !== jobIds[index])) failed();
     const events: StoredEventInput[] = []; const clock = { value: owner.clockFloor }; const jobs: JobRecord[] = [];
     const local = this.scheduler.inSession(tx,id,events,undefined,clock);
     for (const link of links) {

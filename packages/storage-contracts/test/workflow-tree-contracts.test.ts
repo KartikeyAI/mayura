@@ -31,12 +31,14 @@ describe('workflow tree manifest contract', () => {
     expect(() => workflowTreeManifest({...tree,version:'x'.repeat(1_048_576)})).toThrow();
   });
 
-  it('owns explicit root authority/resources and creates strict format-4 state', () => {
-    const manifest=workflowTreeManifest(tree);const policy=workflowTreePolicy({scope:{principalId:'owner',projectId:'project'},permissions:['z','a'],policyVersion:'1',maxCostMicros:2,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:1_000});
+  it.each([undefined,256,false] as const)('owns explicit root authority/resources and creates strict format-4 state (%s)', (maxNodes) => {
+    const manifest=workflowTreeManifest({...tree,...(maxNodes===undefined?{}:{maxNodes})});const policy=workflowTreePolicy({scope:{principalId:'owner',projectId:'project'},permissions:['z','a'],policyVersion:'1',maxCostMicros:2,maxCalls:1,maxOutputBytes:1_024,approvalTtlMs:1_000});
     expect(policy.permissions).toEqual(['a','z']);expect(workflowTreeRootResources({},manifest)).toEqual({});
     const rootId='a'.repeat(64);const state=initialWorkflowTreeRootState(manifest,null,rootId,'b'.repeat(64),'c'.repeat(64),policy);
     const decoded=workflowTreeState({id:rootId,state:state as never});expect(decoded).toMatchObject({format:4,rootId,accountId:'root',budgetVersion:1,steps:{child:{kind:'child',child:null}}});
+    expect(decoded.maxNodes).toBe(maxNodes);
     expect(()=>assertWorkflowTreeRootState(decoded,manifest,policy,{})).not.toThrow();
+    expect(()=>assertWorkflowTreeRootState(decoded,{...manifest,maxNodes:maxNodes===false?256:false},policy,{})).toThrow();
     const changed=workflowTreeState({id:rootId,state:{...state,steps:{child:{...state.steps['child'],kind:'tool'}}} as never});
     expect(()=>assertWorkflowTreeRootState(changed,manifest,policy,{})).toThrow();
   });

@@ -1,9 +1,16 @@
 import { MayuraError } from '@mayura/core';
-import type { RagAccess, RagCatalog, RagEmbedder, RagHit, RagMetadata, RagQueryTransform, RagReranker, RetrievalResult, Retriever, VectorStore } from './contracts.js';
+import type { RagAccess, RagCatalog, RagEmbedder, RagHit, RagMetadata, RagQueryTransform, RagReranker, RagRevision, RetrievalResult, Retriever, VectorStore } from './contracts.js';
 import { access, cancelled, chunk, id, integer, matches, metadata, snapshot, text, vector } from './validation.js';
+import { surroundingEvidence } from './evidence-window.js';
 export interface RetrieverOptions extends RagAccess {
   readonly store: VectorStore; readonly catalog: RagCatalog; readonly embedder: RagEmbedder; readonly space: string;
   readonly parentDocuments?: boolean;
+  /** Select at most one authorized chunk per document, after optional reranking and before the result limit. */
+  readonly distinctDocuments?: boolean;
+  /** Opt-in document-level reciprocal-rank fusion: one authorized document vote per source list. Requires distinctDocuments. */
+  readonly fusionLevel?: 'chunk' | 'document';
+  /** Reciprocal-rank smoothing, 1–100; default 60. Lower values emphasize leading source ranks. */
+  readonly fusionRankConstant?: number;
   readonly mode?: 'semantic' | 'hybrid'; readonly filter?: RagMetadata; readonly limit: number; readonly candidateLimit: number;
   readonly transform?: RagQueryTransform; readonly reranker?: RagReranker;
   readonly maxQueries: number; readonly maxCostMicros: number; readonly timeoutMs: number; readonly maxConcurrent: number;
@@ -14,6 +21,9 @@ export function createRetriever(options: RetrieverOptions): Retriever {
   const limit = integer(options.limit,1,100); const candidates = integer(options.candidateLimit,limit,100);
   const queries = integer(options.maxQueries,1,4); const timeout = integer(options.timeoutMs,1,30_000); const cap = integer(options.maxConcurrent,1,128);
   const filter = metadata(options.filter ?? {}); const transform = options.transform; const reranker = options.reranker;
+  const rankConstant=integer(options.fusionRankConstant??60,1,100);
+  if (options.distinctDocuments !== undefined && typeof options.distinctDocuments !== 'boolean') throw new MayuraError('INVALID_CONFIG','Document diversity must be an explicit boolean.');
+  if(options.fusionLevel!==undefined&&!['chunk','document'].includes(options.fusionLevel)||options.fusionLevel==='document'&&options.distinctDocuments!==true)throw new MayuraError('INVALID_CONFIG','Document fusion requires explicit document diversity.');
   if(options.mode!==undefined && !['semantic','hybrid'].includes(options.mode) || transform && (!['rewrite','multi-query','hyde'].includes(transform.mode) || transform.mode==='multi-query' && queries<2)) throw new MayuraError('INVALID_CONFIG','Invalid RAG retrieval mode or query budget.');
   if(!['local','hosted'].includes(store.location)||!['local','hosted'].includes(embedder.location)||reranker&&!['local','hosted'].includes(reranker.location))throw new MayuraError('INVALID_CONFIG','RAG adapter location must be explicit.');
   integer(embedder.maxBatch,1,2048); integer(embedder.dimensions,1,4096); id(embedder.id);
@@ -47,14 +57,22 @@ export function createRetriever(options: RetrieverOptions): Retriever {
         }
       }
       const combined = new Map<string,RagHit>(); let seen = 0;
+      const documentScores=new Map<string,number>();
+      // Candidate chunks frequently share a document. Reuse its initial visibility snapshot within this
+      // request only; the release pass below still performs fresh reads to fence deletion/republication.
+      const publishedCandidates = new Map<string,RagRevision | undefined>();
       for (const list of lists) {
         if (!Array.isArray(list) || list.length > candidates) throw new MayuraError('INVALID_OUTPUT','RAG store exceeded its candidate budget.');
         const unique = new Set<string>();
+        const documentRanks=new Set<string>();
         for (let rank = 0; rank < list.length; rank++) {
           const hit = list[rank]!; const item = chunk(hit.chunk);
           if (!Number.isFinite(hit.score) || unique.has(item.id)) throw new MayuraError('INVALID_OUTPUT','Invalid or duplicate RAG search hit.'); unique.add(item.id);
           if (!matches(item.metadata,filter) || !boundary.profile.includes(item.sensitivity)) continue;
-          const published = await options.catalog.read(boundary.scope,item.documentId,signal); cancelled(signal);
+          if (!publishedCandidates.has(item.documentId)) {
+            publishedCandidates.set(item.documentId,await options.catalog.read(boundary.scope,item.documentId,signal));
+          }
+          const published = publishedCandidates.get(item.documentId); cancelled(signal);
           if (!published || published.deleted || published.revision !== item.revision || published.space !== space || !published.chunkIds.includes(item.id)) continue;
           if (options.authorization) {
             const decision = await options.authorization.authorize(boundary.scope,'read',{ kind:'rag_document',id:item.documentId,scope:boundary.scope },{ signal }); cancelled(signal);
@@ -63,23 +81,54 @@ export function createRetriever(options: RetrieverOptions): Retriever {
               continue;
             }
           }
-          seen++; const previous = combined.get(item.id); combined.set(item.id,{ chunk:item, score:(previous?.score ?? 0) + 1 / (60 + rank + 1) });
+          seen++; const previous = combined.get(item.id); combined.set(item.id,{ chunk:item, score:(previous?.score ?? 0) + 1 / (rankConstant + rank + 1) });
+          if(options.fusionLevel==='document'&&!documentRanks.has(item.documentId)){
+            documentRanks.add(item.documentId);documentScores.set(item.documentId,(documentScores.get(item.documentId)??0)+1/(rankConstant+documentRanks.size));
+          }
         }
       }
       let hits = [...combined.values()].sort((a,b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id)).slice(0,candidates);
+      if(options.fusionLevel==='document'){
+        // Choose an actual authorized passage as witness. Fusion never manufactures context or citations;
+        // rerankers see that passage, and the release fence still validates its exact revision/chunk ID.
+        const witnesses=new Map<string,RagHit>();
+        for(const hit of combined.values()){const old=witnesses.get(hit.chunk.documentId);
+          if(!old||hit.score>old.score||hit.score===old.score&&hit.chunk.id.localeCompare(old.chunk.id)<0)witnesses.set(hit.chunk.documentId,hit);}
+        hits=[...witnesses].map(([id,hit])=>({...hit,score:documentScores.get(id)!}))
+          .sort((a,b)=>b.score-a.score||a.chunk.id.localeCompare(b.chunk.id)).slice(0,candidates);
+      }
       if (reranker && hits.length) {
         if (reranker.location === 'hosted' && hits.some(hit => !boundary.hosted.includes(hit.chunk.sensitivity))) throw new MayuraError('PERMISSION_DENIED','RAG hosted reranking sensitivity is not admitted.');
-        for(const hit of hits)await boundary.authorize('read',hit.chunk.documentId,signal);
-        const ranked = await reranker.rank(query,hits.map(hit => (hit.chunk.context ? hit.chunk.context+'\n' : '')+hit.chunk.text),signal); cancelled(signal);
+        const admitted:RagHit[]=[],rerankTexts:string[]=[];
+        for(const hit of hits){
+          await boundary.authorize('read',hit.chunk.documentId,signal);
+          const context=options.parentDocuments?surroundingEvidence(hit,[...combined.values()]):undefined;
+          if(context){
+            // Parent context must be published before it crosses the reranker boundary, not only
+            // when it is returned. Deletion/republication can invalidate any contributing passage.
+            const current=await options.catalog.read(boundary.scope,hit.chunk.documentId,signal);cancelled(signal);
+            if(!current||current.deleted||current.revision!==hit.chunk.revision||current.space!==space||
+              !current.chunkIds.includes(hit.chunk.id)||!context.contributorIds.every(id=>current.chunkIds.includes(id)))continue;
+          }
+          admitted.push(hit);rerankTexts.push((hit.chunk.context?hit.chunk.context+'\n':'')+(context?.parent.text??hit.chunk.text));
+        }
+        hits=admitted;
+        const ranked = hits.length?await reranker.rank(query,rerankTexts,signal):[]; cancelled(signal);
         if (!Array.isArray(ranked) || ranked.length > hits.length || new Set(ranked.map(row => row.index)).size !== ranked.length) throw new MayuraError('INVALID_OUTPUT','Invalid RAG reranking result.');
-        hits = ranked.map(row => { integer(row.index,0,hits.length - 1); if (!Number.isFinite(row.score)) throw new MayuraError('INVALID_OUTPUT','Invalid reranking score.'); return { chunk:hits[row.index]!.chunk,score:row.score }; }).sort((a,b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id));
+        hits = ranked.map(row => { integer(row.index,0,hits.length - 1); if (!Number.isFinite(row.score)) throw new MayuraError('INVALID_OUTPUT','Invalid reranking score.'); return { hit:{chunk:hits[row.index]!.chunk,score:row.score},index:row.index }; })
+          .sort((a,b) => b.hit.score - a.hit.score || (options.distinctDocuments ? a.index - b.index : a.hit.chunk.id.localeCompare(b.hit.chunk.id))).map(row=>row.hit);
+      }
+      if(options.distinctDocuments){
+        const documents=new Set<string>();hits=hits.filter(hit=>{if(documents.has(hit.chunk.documentId))return false;documents.add(hit.chunk.documentId);return true;});
       }
       // Recheck publication and policy after hosted work before releasing evidence.
       const released: RagHit[] = [];
       for (const hit of hits.slice(0,limit)) {
+        const context=options.parentDocuments?surroundingEvidence(hit,[...combined.values()]):undefined;
         const current = await options.catalog.read(boundary.scope,hit.chunk.documentId,signal); cancelled(signal);
         if (!current || current.deleted || current.revision !== hit.chunk.revision || current.space !== space || !current.chunkIds.includes(hit.chunk.id)) continue;
-        await boundary.authorize('read',hit.chunk.documentId,signal); released.push({...hit,...(options.parentDocuments && hit.chunk.parent ? {parent:hit.chunk.parent} : {})});
+        if(context&&!context.contributorIds.every(id=>current.chunkIds.includes(id)))continue;
+        await boundary.authorize('read',hit.chunk.documentId,signal); released.push({...hit,...(options.parentDocuments && hit.chunk.parent ? {parent:context?.parent??hit.chunk.parent} : {})});
       }
       return snapshot({ hits:released, metrics:{ queries:texts.length,candidates:seen,returned:released.length,reservedCostMicros:cost,durationMs:Date.now() - started } });
     };

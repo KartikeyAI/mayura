@@ -14,6 +14,8 @@ export type WorkflowManifestNode =
       readonly approval: boolean; readonly input: WorkflowBinding };
 /** Data-only material reproducing the existing mayura:workflow:v1 definition digest. */
 export interface WorkflowManifest {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly id: string; readonly version: string; readonly graph: readonly WorkflowManifestNode[];
   readonly result: WorkflowBinding;
 }

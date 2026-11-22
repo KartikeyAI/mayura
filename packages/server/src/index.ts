@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { authorizationCursors, serverAuthorizationRoute, type ServerAuthorizationOptions } from './authorization.js';
 export type { ServerAuthorizationOptions } from './authorization.js';
 import { createThreadCompactionService, type ServerThreadCompactionOptions } from './thread-compaction.js';
@@ -37,6 +38,8 @@ export interface HumanRequestTransport {
     readonly requestDigest: string; readonly commandId: string; readonly value: JsonValue; readonly signal: AbortSignal }) => Promise<HumanRequestRecord>;
 }
 export interface WorkflowViewRecord {
+  /** Per-graph admission bound, defaulting to 128 when omitted. */
+  readonly maxNodes?: number | false;
   readonly format: 2 | 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string;
   readonly revision: number; readonly status: 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'blocked' | 'cancelled' | 'outcome_unknown';
   readonly nodes: readonly { readonly id: string; readonly kind: 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal'; readonly dependsOn: readonly string[] }[];
@@ -439,22 +442,24 @@ function workflowExact(value: JsonObject, keys: readonly string[]): void {
 function workflowRecord(value: unknown, expectedRunId: string): WorkflowViewRecord {
   let raw: JsonObject;
   try { raw = object(value, 262_144); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
-  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps']);
+  workflowExact(raw, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps', ...(Object.hasOwn(raw, 'maxNodes') ? ['maxNodes'] : [])]);
+  let maximum: number;
+  try { maximum = workflowNodeLimit(raw['maxNodes']); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
   const format = raw['format']; const nodes = raw['nodes']; const steps = raw['steps'];
   if (![2, 3, 4, 5].includes(format as number) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
     || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion'])
     || raw['runId'] !== expectedRunId || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1
-    || typeof raw['status'] !== 'string' || !workflowStatuses.has(raw['status']) || !Array.isArray(nodes) || nodes.length < 1 || nodes.length > 128
+    || typeof raw['status'] !== 'string' || !workflowStatuses.has(raw['status']) || !Array.isArray(nodes) || nodes.length < 1 || nodes.length > maximum
     || !Array.isArray(steps) || steps.length !== nodes.length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
   const admittedKinds = workflowKinds[format as keyof typeof workflowKinds]; const graph = new Map<string, readonly string[]>(); const nodeKinds = new Map<string, string>(); let edges = 0;
   for (const candidate of nodes) {
     let node: JsonObject; try { node = object(candidate, 32_768); } catch { throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID'); }
     workflowExact(node, ['id', 'kind', 'dependsOn']);
     if (typeof node['id'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(node['id']) || graph.has(node['id'])
-      || typeof node['kind'] !== 'string' || !admittedKinds.has(node['kind']) || !Array.isArray(node['dependsOn']) || node['dependsOn'].length > 127
+      || typeof node['kind'] !== 'string' || !admittedKinds.has(node['kind']) || !Array.isArray(node['dependsOn']) || node['dependsOn'].length > maximum - 1
       || node['dependsOn'].some(item => typeof item !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(item))
       || new Set(node['dependsOn']).size !== node['dependsOn'].length) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
-    edges += node['dependsOn'].length; if (edges > 512) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
+    edges += node['dependsOn'].length; if (edges > (Number.isFinite(maximum) ? maximum : nodes.length) * 4) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');
     graph.set(node['id'], node['dependsOn'] as readonly string[]); nodeKinds.set(node['id'], node['kind']);
   }
   for (const [id, dependencies] of graph) if (dependencies.some(dependency => dependency === id || !graph.has(dependency))) throw new HttpFailure(503, 'WORKFLOW_TRANSPORT_INVALID');

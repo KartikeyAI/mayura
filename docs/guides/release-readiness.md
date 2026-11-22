@@ -3,13 +3,9 @@ title: "V1.2 release validation status"
 description: "Completed local and CI qualification, experimental surfaces and the checks still required before releasing Mayura V1.2."
 ---
 
-Stable V1.2 is prepared for review and is not yet published. The implementation and full-release safeguards are
-merged into `main`, whose full qualification passed on **2026-10-23** at
-`a9b5c565167170e4b35b5f42cf7df58a64b485e8`. The coordinated **1.2.0** version PR needs its own qualification and
-green main checks after merging. The reviewed 22-package set was previously published as
-**1.2.0-rc.1 under `next`**, through trusted publishing, with all existing `latest` tags unchanged. The local and
-earlier release-branch snapshots below remain historical evidence; none establishes interoperability with
-unqualified real external services.
+**1.2.0 was published** for all 106 packages through trusted publishing. The [V1.2.1 release candidate](#release-preparation)
+adds configurable workflow graph limits and marks the [Modal + Pinecone Loki v28 RAG profile](rag-production.md#qualified-production-profile)
+stable for its tested scope. Other RAG profiles remain experimental. The earlier snapshots below record the 1.2.0 qualification.
 
 ## Completed CI qualification
 
@@ -104,7 +100,7 @@ concurrent builds and unit-suite load. The subsequent complete CI pass is record
 - **Authorization:** OpenFGA, Cedar, Permit.io and Oso passed offline tests and package checks. Real provider/native
   engine interoperability, deployed policies and revision consistency remain host responsibilities and unqualified
   here. Amazon Verified Permissions is outside the implemented Cedar adapter.
-- **RAG:** the [experimental RAG surface](rag.md) passed offline tests, including fake vector transports/SQL executors
+- **RAG:** the [RAG surface](rag.md) as shipped in 1.2.0 passed offline tests, including fake vector transports/SQL executors
   and local SQLite native-memory checks. This does not establish real vector/reranker service compatibility, SQL
   query plans, deployment limits or read-after-write visibility on eventually consistent services.
 - **AG-UI:** the [experimental bounded profile](ag-ui.md) passed adapter and native server tests. The opt-in reference
@@ -122,17 +118,7 @@ sufficient evidence for that claim.
 
 ## Release preparation
 
-1. Full-release publisher/recovery changes are merged and qualified on main; review these updated release records.
-2. Review the prepared coordinated **1.2.0** version/changelog PR, committed without `[skip ci]`, merge through normal branch
-   protection and require the pushed main commit's complete qualification to pass. The publisher does not write main.
-3. Verify trusted publishing for all 106 packages, the protected `release` environment, tag creation permission and
-   publishing enablement. Preserve the experimental labels and limitations above.
-4. Rehearse **1.2.0** with `package_set=all` and `dry_run=true`, regenerating archives, checksums, SBOM and notes from
-   the final source. Dry runs do not validate unexercised package trust.
-5. Approve publication from that qualified main commit with `dry_run=false`. Verify all 106 versions, `latest` tags,
-   provenance and the source-bound tag/GitHub Release. Recover partial publication from the original run's saved
-   archives and receipt, without replaying accepted or uncertain uploads.
-
-This version PR sets source manifests and version references to **1.2.0** and prepares the changelog. It does not
-publish to npm, change distribution tags, create `v1.2.0` or create a stable GitHub Release. Stable publication and
-deployment remain outstanding; RC1 availability is not evidence of live-service or rendered browser qualification.
+V1.2.1 is prepared as a coordinated patch release for `mayura` and all 105 extensions. Before publication,
+require the PR and its resulting main commit to pass the full Qualification gate. Then rehearse the same main
+commit with `package_set=all`, `version=1.2.1` and `dry_run=true`. Review the archives, checksums, SBOM and release
+notes before approving the protected trusted-publishing job. Publish to `latest` while preserving existing `next` tags.

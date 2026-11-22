@@ -1,4 +1,5 @@
 export * from './errors.js';
+export { DEFAULT_WORKFLOW_MAX_NODES, MAX_WORKFLOW_NODES, workflowNodeLimit } from './workflow-limits.js';
 export * from './json.js';
 export * from './schema.js';
 export { jsonSchemaOf } from './model-schema.js';

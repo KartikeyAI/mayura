@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowBinding, WorkflowManifestNode } from './scheduled-workflow-contracts.js';
@@ -53,6 +54,8 @@ export type WorkflowLifecycleManifestNode = (WorkflowManifestNode & { readonly w
 
 /** Immutable data-only definition material for explicit lifecycle suspension nodes. */
 export interface WorkflowLifecycleManifest {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly format: 5;
   readonly id: string;
   readonly version: string;
@@ -106,6 +109,8 @@ export interface WorkflowLifecycleSignalStep {
 export type WorkflowLifecycleStep = WorkflowLifecycleToolStep | WorkflowLifecycleHumanStep | WorkflowLifecycleTimerStep | WorkflowLifecycleSignalStep;
 
 export interface WorkflowLifecycleState {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly format: 5;
   readonly definition: string;
   readonly policy: string;
@@ -205,10 +210,10 @@ function digestBinding(value: JsonValue | undefined, ids: ReadonlySet<string>, d
 export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleManifest {
   try {
     const manifest = object(jsonValue(value));
-    fields(manifest, ['format', 'id', 'version', 'graph', 'result']);
+    fields(manifest, [...['format', 'id', 'version', 'graph', 'result'], ...(Object.hasOwn(manifest, 'maxNodes') ? ['maxNodes'] : [])]);
     if (manifest['format'] !== 5 || !Array.isArray(manifest['graph'])) invalid();
     const graph = manifest['graph'];
-    if (graph.length < 1 || graph.length > 128) invalid();
+    if (graph.length < 1 || graph.length > workflowNodeLimit(manifest['maxNodes'])) invalid();
 
     const projected = graph.map(raw => {
       const node = object(raw);
@@ -219,7 +224,7 @@ export function workflowLifecycleManifest(value: unknown): WorkflowLifecycleMani
       if (node['kind'] !== 'human' && node['kind'] !== 'timer' && node['kind'] !== 'signal') invalid();
       return { kind: 'join', id: node['id'], dependsOn: node['dependsOn'] };
     });
-    const common = workflowManifest({ id: manifest['id'], version: manifest['version'], graph: projected, result: manifest['result'] });
+    const common = workflowManifest({ id: manifest['id'], version: manifest['version'], ...(manifest['maxNodes'] === undefined ? {} : { maxNodes: manifest['maxNodes'] }), graph: projected, result: manifest['result'] });
     const ids = new Set(common.graph.map(node => node.id));
     let humans = 0; let timers = 0; const signals = new Set<string>();
 
@@ -276,7 +281,7 @@ export function initialWorkflowLifecycleState(
     const manifest = workflowLifecycleManifest(definition);
     hash(definitionHash); hash(policyHash); integer(maxCostMicros);
     return jsonValue({
-      format: 5, definition: definitionHash, policy: policyHash, input, status: 'running',
+      format: 5, ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }), definition: definitionHash, policy: policyHash, input, status: 'running',
       steps: Object.fromEntries(manifest.graph.map(node => [node.id,
         node.kind === 'human'
           ? { kind: 'human', status: 'pending', callId: `step:${node.id}`, output: null,
@@ -303,14 +308,14 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
     if (!idDescriptor || !('value' in idDescriptor) || !stateDescriptor || !('value' in stateDescriptor)) invalid();
     const runId = identity(idDescriptor.value, 512);
     const state = object(jsonValue(stateDescriptor.value));
-    fields(state, ['format', 'definition', 'policy', 'input', 'status', 'steps', 'maxCostMicros', 'spentMicros', 'reservedMicros', 'output']);
+    fields(state, [...['format', 'definition', 'policy', 'input', 'status', 'steps', 'maxCostMicros', 'spentMicros', 'reservedMicros', 'output'], ...(Object.hasOwn(state, 'maxNodes') ? ['maxNodes'] : [])]);
     if (state['format'] !== 5 || !lifecycleStatuses.has(state['status'] as WorkflowLifecycleStatus)) invalid();
     const definitionHash = hash(state['definition']); const policyHash = hash(state['policy']);
     const input = jsonValue(state['input']);
     const maxCostMicros = integer(state['maxCostMicros']); const spentMicros = integer(state['spentMicros']); const reservedMicros = integer(state['reservedMicros']);
     if (spentMicros > maxCostMicros - reservedMicros) invalid();
     const steps = object(state['steps']); const entries = Object.entries(steps);
-    if (entries.length < 1 || entries.length > 128) invalid();
+    if (entries.length < 1 || entries.length > workflowNodeLimit(state['maxNodes'])) invalid();
     const common: Record<string, JsonValue> = {}; let computedReserved = 0; let waiting = 0;
     for (const [id, raw] of entries) {
       if (!idPattern.test(id) || forbidden.has(id)) invalid();
@@ -378,7 +383,7 @@ export function workflowLifecycleState(record: Pick<StoredRecord, 'id' | 'state'
     }
     if (computedReserved !== reservedMicros) invalid();
     if (Object.keys(common).length > 0) workflowState({ id: runId, state: {
-      format: 2, definition: definitionHash, policy: policyHash, input, status: 'running',
+      format: 2, ...(state['maxNodes'] === undefined ? {} : { maxNodes: state['maxNodes'] }), definition: definitionHash, policy: policyHash, input, status: 'running',
       steps: common, maxCostMicros, spentMicros, reservedMicros, output: null,
     } });
     if (state['status'] === 'waiting' && waiting === 0) invalid();
@@ -397,7 +402,7 @@ export function assertWorkflowLifecycleStateMatchesManifest(
   try {
     const manifest = workflowLifecycleManifest(definition);
     const value = object(jsonValue(state)); const steps = object(value['steps']);
-    if (Object.keys(steps).length !== manifest.graph.length) invalid();
+    if (workflowNodeLimit(state.maxNodes) !== workflowNodeLimit(manifest.maxNodes) || Object.keys(steps).length !== manifest.graph.length) invalid();
     for (const node of manifest.graph) {
       const step = object(steps[node.id]);
       if (step['kind'] !== node.kind) invalid();

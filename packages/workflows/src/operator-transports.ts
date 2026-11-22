@@ -118,6 +118,7 @@ export type WorkflowOperatorStatus = 'running' | 'waiting' | 'paused' | 'succeed
 export type WorkflowOperatorNodeKind = 'tool' | 'join' | 'wait' | 'child' | 'human' | 'timer' | 'signal';
 export type WorkflowOperatorStepStatus = 'pending' | 'waiting' | 'approved' | 'dispatching' | 'succeeded' | 'failed' | 'blocked' | 'unknown' | 'skipped' | 'timed_out';
 export interface WorkflowOperatorView {
+  readonly maxNodes?: number | false;
   readonly format: 3 | 4 | 5; readonly definitionId: string; readonly definitionVersion: string; readonly runId: string; readonly revision: number;
   readonly status: WorkflowOperatorStatus;
   readonly nodes: readonly { readonly id: string; readonly kind: WorkflowOperatorNodeKind; readonly dependsOn: readonly string[] }[];
@@ -162,7 +163,7 @@ export interface WorkflowOperatorTarget {
 }
 /** A signal as the operator API delivers it: the verified operator is its sender. */
 export interface WorkflowOperatorSignal { readonly signalName: string; readonly signalId: string; readonly value: JsonValue; readonly actorId: string }
-interface Registered { readonly id: string; readonly version: string; readonly digest: string; readonly nodes: readonly { readonly id: string; readonly kind: string; readonly dependsOn?: readonly string[] }[] }
+interface Registered { readonly maxNodes?: number | false; readonly id: string; readonly version: string; readonly digest: string; readonly nodes: readonly { readonly id: string; readonly kind: string; readonly dependsOn?: readonly string[] }[] }
 /** Maps the authenticated operator to the credential the runtime's `verifyHuman` accepts; without it approvals are unavailable. */
 export type WorkflowApprovalCredential = (actorId: string) => unknown;
 
@@ -174,6 +175,7 @@ type Subjects = ReadonlyMap<string, NonNullable<WorkflowOperatorApproval['subjec
 const project = (format: 3 | 4 | 5, definition: Registered, snapshot: { readonly id: string; readonly version: number; readonly status: string;
   readonly steps: Readonly<Record<string, { readonly status: string; readonly child?: { readonly runId: string } | null;
     readonly approval?: unknown }>> }, subjects: Subjects = new Map()): WorkflowOperatorView => Object.freeze({
+  ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
   format, definitionId: definition.id, definitionVersion: definition.version, runId: snapshot.id, revision: snapshot.version, status: snapshot.status as WorkflowOperatorStatus,
   nodes: definition.nodes.map(node => ({ id: node.id, kind: node.kind as WorkflowOperatorNodeKind, dependsOn: [...(node.dependsOn ?? [])] })),
   steps: definition.nodes.map(node => { const step = snapshot.steps[node.id]!;

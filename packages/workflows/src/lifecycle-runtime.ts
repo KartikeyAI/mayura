@@ -1,4 +1,6 @@
 import { workflowAuthorization } from './authorization.js';
+import { workflowNodeLimit } from '@mayura/core';
+import { advanceWorkflowNodes } from './node-batches.js';
 import type { Authorizer } from '@mayura/core';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate,
   type ExecutionReceipt, type JsonObject, type JsonValue, type Permissions, type Scope } from '@mayura/core';
@@ -751,9 +753,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         // Each wave holds one drain admission until its effects and receipts settle.
         const release = gate.enter(); if (!release) return checkedSnapshot(before);
         try {
-          const results = await Promise.allSettled(definition.nodes.map(node => executeNode(id, definition, node)));
-          const failure = results.find(result => result.status === 'rejected');
-          if (failure?.status === 'rejected') throw failure.reason;
+          await advanceWorkflowNodes(definition.nodes.filter(node => !terminalStepStatuses.has(state.steps[node.id]!.status)), node => executeNode(id, definition, node));
         } finally { release(); }
         let after = await load(id); const next = stateFrom(after); const run = verifyDefinition(definition, after, next);
         const steps = Object.values(next.steps);
@@ -885,7 +885,7 @@ export function createWorkflowLifecycleRuntime(options: WorkflowLifecycleRuntime
         steps[entry.target] = entry.action === 'keep' || entry.action === 'accept'
           || (entry.action === 'update' && source?.kind === 'signal' && fresh.steps[entry.target]!.kind === 'signal') ? source! : fresh.steps[entry.target]!;
       }
-      const next: State = { ...state, definition: migration.to.digest, policy, maxCostMicros,
+      const next: State = { ...state, maxNodes: migration.to.maxNodes === false ? false : workflowNodeLimit(migration.to.maxNodes), definition: migration.to.digest, policy, maxCostMicros,
         steps: Object.fromEntries(migration.to.nodes.map(node => [node.id, steps[node.id]!])) };
       // Released holds: only carried tool steps keep reserved cost.
       next.reservedMicros = Object.values(next.steps).reduce((sum, step) => sum + (step.kind === 'tool' ? step.costReserved : 0), 0);

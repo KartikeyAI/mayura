@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from './workflow-limits.js';
 import { ClientError, type ClientJson, type MayuraClient } from './index.js';
 
 export type WorkflowViewFormat = 2 | 3 | 4 | 5;
@@ -15,6 +16,8 @@ export interface WorkflowViewStep {
   readonly approval?: WorkflowViewApproval;
 }
 export interface WorkflowViewInput {
+  /** Server-declared graph admission bound; defaults to 128. */
+  readonly maxNodes?: number | false;
   readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string;
   readonly runId: string; readonly revision: number; readonly status: WorkflowViewRunStatus;
   readonly nodes: readonly WorkflowViewNode[]; readonly steps: readonly WorkflowViewStep[];
@@ -38,6 +41,7 @@ function pendingApproval(value: unknown): value is WorkflowViewApproval {
 }
 export interface WorkflowGraphEdge { readonly from: string; readonly to: string }
 export interface WorkflowGraphProjection {
+  readonly maxNodes?: number | false;
   readonly format: WorkflowViewFormat; readonly definitionId: string; readonly definitionVersion: string;
   readonly runId: string; readonly revision: number; readonly status: WorkflowViewRunStatus;
   readonly nodes: readonly WorkflowGraphNode[]; readonly edges: readonly WorkflowGraphEdge[];
@@ -96,22 +100,24 @@ function frozenArray(value: unknown, maximum: number): readonly unknown[] {
 /** Validate one matched durable manifest/snapshot view and derive a bounded, content-free DAG projection. */
 export function createWorkflowGraphProjection(input: WorkflowViewInput): WorkflowGraphProjection {
   if (!input || typeof input !== 'object' || !Object.isFrozen(input)) return invalid();
-  const root = fields(input, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps']);
+  const root = fields(input, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps', ...(Object.hasOwn(input, 'maxNodes') ? ['maxNodes'] : [])]);
+  let maximum: number;
+  try { maximum = workflowNodeLimit(root['maxNodes']?.value); } catch { return invalid(); }
   const format = root['format']!.value as WorkflowViewFormat; const definitionId = root['definitionId']!.value as string;
   const definitionVersion = root['definitionVersion']!.value as string; const runId = root['runId']!.value as string;
   const revision = root['revision']!.value as number; const status = root['status']!.value as WorkflowViewRunStatus;
   if (![2, 3, 4, 5].includes(format) || typeof definitionId !== 'string' || !identifier.test(definitionId)
     || typeof definitionVersion !== 'string' || !version.test(definitionVersion) || typeof runId !== 'string' || !digest.test(runId)
     || !Number.isSafeInteger(revision) || revision < 1 || typeof status !== 'string' || !runStatuses.has(status)) return invalid();
-  const rawNodes = frozenArray(root['nodes']!.value, 128); const rawSteps = frozenArray(root['steps']!.value, 128);
+  const rawNodes = frozenArray(root['nodes']!.value, maximum); const rawSteps = frozenArray(root['steps']!.value, maximum);
   if (rawNodes.length !== rawSteps.length) return invalid();
   const nodes = new Map<string, { id: string; kind: WorkflowViewNodeKind; dependsOn: readonly string[]; index: number }>(); let edgeCount = 0;
   for (const [index, raw] of rawNodes.entries()) {
     if (!raw || typeof raw !== 'object' || !Object.isFrozen(raw)) return invalid(); const item = fields(raw, ['id', 'kind', 'dependsOn']);
     const id = item['id']!.value as string; const kind = item['kind']!.value as WorkflowViewNodeKind; const dependencies = item['dependsOn']!.value;
     if (typeof id !== 'string' || !identifier.test(id) || nodes.has(id) || typeof kind !== 'string' || !kinds[format].has(kind)) return invalid();
-    const list = frozenArrayAllowEmpty(dependencies, 127); if (new Set(list).size !== list.length || list.some(value => typeof value !== 'string' || !identifier.test(value))) return invalid();
-    edgeCount += list.length; if (edgeCount > 512) return invalid(); nodes.set(id, { id, kind, dependsOn: list as readonly string[], index });
+    const list = frozenArrayAllowEmpty(dependencies, maximum - 1); if (new Set(list).size !== list.length || list.some(value => typeof value !== 'string' || !identifier.test(value))) return invalid();
+    edgeCount += list.length; if (edgeCount > (Number.isFinite(maximum) ? maximum : rawNodes.length) * 4) return invalid(); nodes.set(id, { id, kind, dependsOn: list as readonly string[], index });
   }
   for (const node of nodes.values()) if (node.dependsOn.some(dependency => dependency === node.id || !nodes.has(dependency))) return invalid();
   const steps = new Map<string, { id: string; kind: WorkflowViewNodeKind; status: WorkflowViewStepStatus; childRunId: string | null; approval: WorkflowViewApproval | null }>();
@@ -148,7 +154,7 @@ export function createWorkflowGraphProjection(input: WorkflowViewInput): Workflo
     terminal: statuses.filter(value => terminal.has(value)).length, succeeded: statuses.filter(value => value === 'succeeded').length,
     active: statuses.filter(value => ['approved', 'dispatching'].includes(value)).length, waiting: statuses.filter(value => value === 'waiting').length,
     failed: statuses.filter(value => failed.has(value)).length });
-  return Object.freeze({ format, definitionId, definitionVersion, runId, revision, status,
+  return Object.freeze({ ...(root['maxNodes'] === undefined ? {} : { maxNodes: root['maxNodes']!.value as number | false }), format, definitionId, definitionVersion, runId, revision, status,
     nodes: Object.freeze(projected), edges: Object.freeze(edges), progress });
 }
 
@@ -248,7 +254,7 @@ export function createWorkflowCommandController(options: WorkflowCommandControll
       let next: WorkflowGraphProjection;
       try { next = createWorkflowGraphProjection(result); } catch { throw new ClientError('INVALID_RESPONSE'); }
       if (next.runId !== projection.runId || next.definitionId !== projection.definitionId || next.definitionVersion !== projection.definitionVersion
-        || next.revision < projection.revision) throw new ClientError('INVALID_RESPONSE');
+        || workflowNodeLimit(next.maxNodes) !== workflowNodeLimit(projection.maxNodes) || next.revision < projection.revision) throw new ClientError('INVALID_RESPONSE');
       publish({ status: 'succeeded', workflowRevision: next.revision, workflowStatus: next.status, errorCode: null }); return result;
     } catch (error) {
       const safe = safeWorkflowCommandError(error);

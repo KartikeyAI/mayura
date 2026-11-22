@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { assertSchema, freezeJson, jsonValue, MayuraError, type InferInput, type InferOutput, type JsonObject, type JsonValue, type Schema } from '@mayura/core';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { workflowHashMaterial } from '@mayura/storage-contracts';
@@ -11,10 +12,14 @@ export type WorkflowNode =
   | { readonly kind: 'tool'; readonly id: string; readonly tool: AnyTool; readonly input: Binding; readonly dependsOn?: readonly string[]; readonly approval?: boolean }
   | { readonly kind: 'join'; readonly id: string; readonly dependsOn: readonly string[] };
 export interface WorkflowOptions<I extends Schema, O extends Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly id: string; readonly version: string; readonly input: I; readonly output: O;
   readonly nodes: readonly WorkflowNode[]; readonly result: Binding;
 }
 export interface WorkflowDefinition<I extends Schema = Schema, O extends Schema = Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly id: string; readonly version: string; readonly digest: string;
   readonly input: Schema<InferInput<I>, InferOutput<I>>;
   readonly output: Schema<InferInput<O>, InferOutput<O>>;
@@ -52,7 +57,9 @@ function checkedBinding(binding: Binding, ids: Set<string>): Binding {
 export function defineWorkflow<I extends Schema, O extends Schema>(options: WorkflowOptions<I, O>): WorkflowDefinition<I, O> {
   if (!options || !identifier.test(options.id) || typeof options.version !== 'string' || !options.version.length || options.version.length > 128) throw new MayuraError('INVALID_CONFIG', 'Workflow id/version must be bounded identifiers.');
   assertSchema(options.input); assertSchema(options.output);
-  if (!Array.isArray(options.nodes) || options.nodes.length === 0 || options.nodes.length > 128) throw new MayuraError('INVALID_CONFIG', 'A workflow requires 1–128 nodes.');
+  if (!Array.isArray(options.nodes) || options.nodes.length === 0 || options.nodes.length > workflowNodeLimit(options.maxNodes)) throw new MayuraError('INVALID_CONFIG', 'A workflow requires nodes within its configured maxNodes bound.');
+  workflowNodeLimit(options.maxNodes);
+  const nodeLimit = options.maxNodes === undefined ? {} : { maxNodes: options.maxNodes };
   const ids = new Set(options.nodes.map(node => node.id));
   if (ids.size !== options.nodes.length || [...ids].some(id => !identifier.test(id) || ['constructor', 'prototype', '__proto__'].includes(id))) throw new MayuraError('INVALID_CONFIG', 'Step identifiers must be unique and bounded.');
   const nodes = options.nodes.map(node => {
@@ -86,7 +93,7 @@ export function defineWorkflow<I extends Schema, O extends Schema>(options: Work
     const standard = schema['~standard'];
     return Object.freeze({ '~standard': Object.freeze({ version: 1 as const, vendor: standard.vendor, validate: standard.validate.bind(standard) }) }) as Schema<InferInput<S>, InferOutput<S>>;
   };
-  const definition = Object.freeze({ id: options.id, version: options.version, digest: digest('mayura:workflow:v1', { id: options.id, version: options.version, graph, result }), input: snapshot(options.input), output: snapshot(options.output), nodes: Object.freeze(nodes), result });
+  const definition = Object.freeze({ ...nodeLimit, id: options.id, version: options.version, digest: digest('mayura:workflow:v1', { id: options.id, version: options.version, ...nodeLimit, graph, result }), input: snapshot(options.input), output: snapshot(options.output), nodes: Object.freeze(nodes), result });
   definitions.add(definition);
   return definition;
 }

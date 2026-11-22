@@ -15,11 +15,15 @@ export interface WorkflowTreeChildNode {
 }
 export type WorkflowTreeNode = WorkflowNode | WorkflowTreeChildNode;
 export interface WorkflowTreeOptions<I extends Schema,O extends Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly id: string; readonly version: string; readonly input: I; readonly output: O;
   readonly nodes: readonly WorkflowTreeNode[]; readonly result: Binding;
 }
 declare const workflowTreeBrand: unique symbol;
 export interface WorkflowTreeDefinition<I extends Schema=Schema,O extends Schema=Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly [workflowTreeBrand]: true; readonly format: 4; readonly id: string; readonly version: string; readonly digest: string;
   readonly input: Schema<InferInput<I>,InferOutput<I>>; readonly output: Schema<InferInput<O>,InferOutput<O>>;
   readonly nodes: readonly WorkflowTreeNode[]; readonly result: Binding;
@@ -35,6 +39,7 @@ export function assertWorkflowTree(definition: AnyWorkflowTree): void {
 function manifestFor(definition: AnyWorkflow): WorkflowManifest {
   assertWorkflow(definition);
   const manifest = workflowManifest({ id:definition.id,version:definition.version,
+    ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
     graph:definition.nodes.map(node => node.kind === 'join'
       ? {kind:'join',id:node.id,dependsOn:node.dependsOn}
       : {kind:'tool',id:node.id,dependsOn:node.dependsOn ?? [],tool:node.tool.id,toolVersion:node.tool.version,
@@ -44,9 +49,10 @@ function manifestFor(definition: AnyWorkflow): WorkflowManifest {
   return manifest;
 }
 
-export function treeManifest(definition: Pick<AnyWorkflowTree,'id'|'version'|'nodes'|'result'>): WorkflowTreeManifest {
+export function treeManifest(definition: Pick<AnyWorkflowTree,'id'|'version'|'nodes'|'result'|'maxNodes'>): WorkflowTreeManifest {
   try {
     return workflowTreeManifest({ format:4,id:definition.id,version:definition.version,
+      ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
       graph:definition.nodes.map(node => node.kind === 'join'
         ? {kind:'join',id:node.id,dependsOn:node.dependsOn}
         : node.kind === 'tool'
@@ -69,7 +75,7 @@ export function defineWorkflowTree<I extends Schema,O extends Schema>(options: W
     else if (node.kind === 'child') { assertWorkflow(node.workflow); children.set(node.id,node.workflow); }
     else if (node.kind !== 'join') throw new MayuraError('INVALID_CONFIG','Unknown workflow-tree node kind.');
   }
-  const manifest = treeManifest(options as unknown as Pick<AnyWorkflowTree,'id'|'version'|'nodes'|'result'>);
+  const manifest = treeManifest(options as unknown as Pick<AnyWorkflowTree,'id'|'version'|'nodes'|'result'|'maxNodes'>);
   const nodes = Object.freeze(manifest.graph.map(node => node.kind === 'tool'
     ? Object.freeze({...node,tool:tools.get(node.id)!})
     : node.kind === 'child'
@@ -79,7 +85,8 @@ export function defineWorkflowTree<I extends Schema,O extends Schema>(options: W
     const standard = schema['~standard'];
     return Object.freeze({'~standard':Object.freeze({version:1 as const,vendor:standard.vendor,validate:standard.validate.bind(standard)})}) as Schema<InferInput<S>,InferOutput<S>>;
   };
-  const definition = Object.freeze({format:4 as const,id:manifest.id,version:manifest.version,
+  const definition = Object.freeze({
+    ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }),format:4 as const,id:manifest.id,version:manifest.version,
     digest:digest('mayura:workflow-tree:v1',manifest),input:snapshot(options.input),output:snapshot(options.output),nodes,result:manifest.result}) as WorkflowTreeDefinition<I,O>;
   definitions.add(definition); return definition;
 }

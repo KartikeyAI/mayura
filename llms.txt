@@ -31,6 +31,7 @@ Rules that matter when writing Mayura code:
 - [Workflows](docs/concepts/workflows.md): What a Mayura workflow is, when to use one instead of a single agent run, and which workflow entry point to start with.
 - [Framework starters](docs/guides/framework-starters.md): Generate Next.js, Hono, React Router, TanStack Start, SvelteKit or Nuxt notebooks with scoped threads and in-run approvals.
 - [Retrieval augmented generation](docs/guides/rag.md): Scoped retrieval tools, durable content-addressed ingestion, vector adapters, citations and bounded reranking.
+- [RAG production qualification](docs/guides/rag-production.md): Production qualification evidence and deployment boundaries for the Modal and Pinecone Loki v28 profile.
 
 ## Agents and models
 

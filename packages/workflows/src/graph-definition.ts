@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { assertSchema, MayuraError, type InferInput, type InferOutput, type Schema } from '@mayura/core';
 import { assertTool, type AnyTool } from '@mayura/tools';
 import { workflowGraphManifest, type WorkflowGraphManifest, type WorkflowGraphTargetBinding } from '@mayura/storage-contracts';
@@ -10,11 +11,15 @@ export type WorkflowGraphNode = WorkflowNode | {
   readonly targets: WorkflowGraphTargetBinding;
 };
 export interface WorkflowGraphOptions<I extends Schema, O extends Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly id: string; readonly version: string; readonly input: I; readonly output: O;
   readonly nodes: readonly WorkflowGraphNode[]; readonly result: Binding;
 }
 declare const graphDefinitionBrand: unique symbol;
 export interface WorkflowGraphDefinition<I extends Schema = Schema, O extends Schema = Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly [graphDefinitionBrand]: true;
   readonly format: 3; readonly id: string; readonly version: string; readonly digest: string;
   readonly input: Schema<InferInput<I>, InferOutput<I>>;
@@ -31,9 +36,10 @@ export function assertWorkflowGraph(definition: AnyWorkflowGraph): void {
 }
 
 /** Build the exact versioned, data-only material admitted by the storage contract. */
-export function graphManifest(definition: Pick<AnyWorkflowGraph, 'id' | 'version' | 'nodes' | 'result'>): WorkflowGraphManifest {
+export function graphManifest(definition: Pick<AnyWorkflowGraph, 'id' | 'version' | 'nodes' | 'result' | 'maxNodes'>): WorkflowGraphManifest {
   try {
     return workflowGraphManifest({ format: 3, id: definition.id, version: definition.version,
+      ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
       graph: definition.nodes.map(node => node.kind === 'tool'
         ? { id: node.id, kind: node.kind, dependsOn: node.dependsOn ?? [], tool: node.tool.id,
             toolVersion: node.tool.version, effects: node.tool.effects, capabilities: node.tool.capabilities,
@@ -47,7 +53,7 @@ export function graphManifest(definition: Pick<AnyWorkflowGraph, 'id' | 'version
 
 /** Define a finite format-3 graph; existing format-2 factories retain their exact contract. */
 export function defineWorkflowGraph<I extends Schema, O extends Schema>(options: WorkflowGraphOptions<I, O>): WorkflowGraphDefinition<I, O> {
-  if (!options || !Array.isArray(options.nodes) || options.nodes.length < 1 || options.nodes.length > 128) throw new MayuraError('INVALID_CONFIG', 'A workflow graph requires 1–128 nodes.');
+  if (!options || !Array.isArray(options.nodes) || options.nodes.length < 1 || options.nodes.length > workflowNodeLimit(options.maxNodes)) throw new MayuraError('INVALID_CONFIG', 'A workflow graph requires nodes within its configured maxNodes bound.');
   assertSchema(options.input); assertSchema(options.output);
   const tools = new Map<string, AnyTool>();
   for (const node of options.nodes) {
@@ -63,7 +69,8 @@ export function defineWorkflowGraph<I extends Schema, O extends Schema>(options:
     const standard = schema['~standard'];
     return Object.freeze({ '~standard': Object.freeze({ version: 1 as const, vendor: standard.vendor, validate: standard.validate.bind(standard) }) }) as Schema<InferInput<S>, InferOutput<S>>;
   };
-  const definition = Object.freeze({ format: 3 as const, id: manifest.id, version: manifest.version,
+  const definition = Object.freeze({
+    ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }), format: 3 as const, id: manifest.id, version: manifest.version,
     digest: digest('mayura:workflow:v2', manifest), input: snapshot(options.input), output: snapshot(options.output), nodes,
     result: manifest.result }) as WorkflowGraphDefinition<I, O>;
   definitions.add(definition); return definition;

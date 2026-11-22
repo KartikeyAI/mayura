@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { assertSchema, MayuraError, type InferInput, type InferOutput, type Schema } from '@mayura/core';
 import { schemaDigest, workflowLifecycleManifest, type WorkflowLifecycleHumanKind, type WorkflowLifecycleManifest } from '@mayura/storage-contracts';
 import { assertTool, type AnyTool } from '@mayura/tools';
@@ -61,6 +62,8 @@ export type WorkflowLifecycleNode = (WorkflowNode & { readonly when?: Binding })
   | WorkflowLifecycleSignalNode;
 
 export interface WorkflowLifecycleOptions<I extends Schema, O extends Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly id: string;
   readonly version: string;
   readonly input: I;
@@ -71,6 +74,8 @@ export interface WorkflowLifecycleOptions<I extends Schema, O extends Schema> {
 
 declare const lifecycleDefinitionBrand: unique symbol;
 export interface WorkflowLifecycleDefinition<I extends Schema = Schema, O extends Schema = Schema> {
+  /** Per-graph bound: defaults to 128; finite maximum 512; false disables node-count admission. */
+  readonly maxNodes?: number | false;
   readonly [lifecycleDefinitionBrand]: true;
   readonly format: 5;
   readonly id: string;
@@ -111,12 +116,13 @@ function derivedDigest(node: WorkflowLifecycleHumanNode): string {
 
 /** Build the strict data-only format-5 material; response and payload validators are never persisted. */
 export function lifecycleManifest(
-  definition: Pick<AnyWorkflowLifecycle, 'id' | 'version' | 'nodes' | 'result'>,
+  definition: Pick<AnyWorkflowLifecycle, 'id' | 'version' | 'nodes' | 'result' | 'maxNodes'>,
 ): WorkflowLifecycleManifest {
   try {
     return workflowLifecycleManifest({
       format: 5,
       id: definition.id,
+      ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }),
       version: definition.version,
       graph: definition.nodes.map(node => {
         // Present only when declared, so a definition without conditions keeps its digest.
@@ -150,8 +156,8 @@ export function lifecycleManifest(
 export function defineWorkflowLifecycle<I extends Schema, O extends Schema>(
   options: WorkflowLifecycleOptions<I, O>,
 ): WorkflowLifecycleDefinition<I, O> {
-  if (!options || !Array.isArray(options.nodes) || options.nodes.length < 1 || options.nodes.length > 128) {
-    throw new MayuraError('INVALID_CONFIG', 'A workflow lifecycle requires 1–128 nodes.');
+  if (!options || !Array.isArray(options.nodes) || options.nodes.length < 1 || options.nodes.length > workflowNodeLimit(options.maxNodes)) {
+    throw new MayuraError('INVALID_CONFIG', 'A workflow lifecycle requires nodes within its configured maxNodes bound.');
   }
   assertSchema(options.input); assertSchema(options.output);
   const tools = new Map<string, Extract<WorkflowLifecycleNode, { readonly kind: 'tool' }>['tool']>();
@@ -189,6 +195,7 @@ export function defineWorkflowLifecycle<I extends Schema, O extends Schema>(
     });
   })) as readonly WorkflowLifecycleNode[];
   const definition = Object.freeze({
+    ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }),
     format: 5 as const,
     id: manifest.id,
     version: manifest.version,

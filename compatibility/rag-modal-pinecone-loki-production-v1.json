@@ -1,0 +1,63 @@
+{
+  "kind": "modal-pinecone-loki-production-qualification-v1",
+  "profile": "Modal + Pinecone / Loki v28",
+  "status": "stable-for-bound-profile",
+  "registrationDigest": "e9f3c091c867997a1d4f014ab642261433fdce06625b9329a8f6944dd18f3098",
+  "gates": {
+    "documentPreparation": true,
+    "semanticQualityAndLatency": true,
+    "nomic120": true,
+    "native600": true,
+    "recovery": true,
+    "scopeSecurity": true,
+    "campaignCleanup": true
+  },
+  "metrics": {
+    "semanticCases": 40,
+    "semanticRankingP95UpperBoundMs": 4724.509093000001,
+    "semanticRankingP95GateMs": 5000,
+    "nomicQueries": 120,
+    "nomicAcquisitionP95Ms": 417.1267410000146,
+    "nativeQueries": 600,
+    "nativeP95Ms": 45.09477400002652,
+    "recoveryCheckpoints": 7,
+    "maximumRecoveryMs": 25428.19582
+  },
+  "cleanup": {
+    "currentSandboxes": 10,
+    "historicalDocumentSandboxes": 2,
+    "supersededLoadSandboxes": 3,
+    "campaignApps": 14,
+    "campaignSandboxes": 23,
+    "preexistingAppsVerifiedByExactId": 1,
+    "ownedIndexesRemaining": 0,
+    "retainedFilesPreviouslyVerified": 56,
+    "originalAuditPassed": false,
+    "policy": "current-provider-inventory-and-exact-historical-shutdown-v2",
+    "providerInventoryObservedAtMs": 1795385059736
+  },
+  "evidence": {
+    "cleanupBinding": "0c097e4fbb06df638e3a898240d79e28d95f442c4c1b3bb1deac651e6e015902",
+    "originalCleanup": "0914fe6f1745c3bf69a41d753c83b7912d15a207768f8c28431e48eb9556f21b",
+    "originalAudit": "275ea32d0ed770e39fe0dd99170f3894f33a9bab63495dd1c9c082b825ee4ae0",
+    "providerInventory": "c4a132f7cf602b8c66e5cf205f11f8d0f4ce909404487cc6e0ecfeccf903958c",
+    "documentPreparation": "79caab2062036f2764d20b5db741fd629057df872ea7b1b7b07c3caa515846d7",
+    "olderNomic": "507e52129c731e027eda8ca58de4ebfbf54b34aa3149da8da3bd8ad0947f7a97",
+    "olderNative": "da8591d812bdc95396d11c833604594241c88fdd97928fb1d2c8cd858a223d19",
+    "exactAppReceiptSha256": "ec71980ef7618c21985db45284e2a088d5e9de5b81f1990c5fff7559478cedd6",
+    "semantic": "bd9f127c2a6faff7d3a741faae9304b94672f7ac55e779ee26bd6bc743b6bc0e",
+    "load": "229d95bb11d9e0607a97e38a50f06ad45f9e7f50ad8b31f834c58cf8acffb71e",
+    "nativeRetention": "1b5fc06b9a7be3a209fddb44c329e10a8aba6318f51a8c3ce7a3deaf53ae4e51",
+    "recovery": "a7633c1208527c7630259a2ad0f356d17e202a6f4a30862381d1263b70c3b9df",
+    "recoveryRetention": "7ec1772a122f25c3d8b1d815126f3dae2d1cd479445d8ac16b79676a3917fb4f",
+    "scopeSecurity": "a061cd194ecd45ee1272e968ef2d04928624e221943a0c32967e47a5dcdd04ee"
+  },
+  "originalLoadQueries": 600,
+  "originalQualityAndLatencyGatesChanged": false,
+  "budgetsChanged": false,
+  "newQueries": 0,
+  "newProviderReads": 0,
+  "paidCalls": 0,
+  "originalReceiptsPreserved": true,
+  "digest": "a4a103b33fc18f80af5c4e2164d9c4b61d71299a39e3f827887190b51f1b03a8"
+}

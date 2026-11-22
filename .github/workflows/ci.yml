@@ -24,6 +24,7 @@ jobs:
         with:
           node-version: 24.14.1
       - run: node scripts/ci-step.mjs -- node scripts/secret-scan.mjs
+      - run: node scripts/ci-step.mjs -- node scripts/rag-modal-production-release-v1.mjs --verify-report
       - run: node scripts/ci-step.mjs -- pnpm typecheck
       - run: node scripts/ci-step.mjs -- pnpm console:check
       - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs

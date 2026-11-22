@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from './workflow-limits.js';
 import { validHistoryEvent } from './history-event.js';
 /** Browser-safe wire values; this package has no privileged runtime or Node imports. */
 import { conversationMethods, approvalEvent, readApproval, approvalCommand, type ConversationClient, type RemoteApproval, type RunApprovalCommand } from './conversations.js';
@@ -438,7 +439,9 @@ function json(value: unknown, maximum: number): ClientJson {
   } catch { throw new ClientError('INVALID_JSON'); }
 }
 function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
-  const raw = record(value); const expected = ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps'];
+  const raw = record(value); let maximum: number;
+  try { maximum = workflowNodeLimit(raw['maxNodes']); } catch { return fail(); }
+  const expected = [...(Object.hasOwn(raw, 'maxNodes') ? ['maxNodes'] : []), 'format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps'];
   if (!Object.isFrozen(raw) || Object.keys(raw).length !== expected.length || expected.some(key => !Object.hasOwn(raw, key))) return fail();
   const format = raw['format']; const nodes = raw['nodes']; const steps = raw['steps'];
   const admittedKinds: Readonly<Record<number, readonly string[]>> = { 2: ['tool', 'join'], 3: ['tool', 'join', 'wait'], 4: ['tool', 'join', 'child'], 5: ['tool', 'join', 'human', 'timer', 'signal'] };
@@ -447,16 +450,16 @@ function workflowView(value: unknown, expectedId: string): WorkflowViewInput {
   if (typeof format !== 'number' || ![2, 3, 4, 5].includes(format) || typeof raw['definitionId'] !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(raw['definitionId'])
     || typeof raw['definitionVersion'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(raw['definitionVersion']) || raw['runId'] !== expectedId
     || typeof raw['revision'] !== 'number' || !Number.isSafeInteger(raw['revision']) || raw['revision'] < 1 || typeof raw['status'] !== 'string' || !runStatuses.includes(raw['status'])
-    || !Array.isArray(nodes) || !Object.isFrozen(nodes) || nodes.length < 1 || nodes.length > 128 || !Array.isArray(steps) || !Object.isFrozen(steps) || steps.length !== nodes.length) return fail();
+    || !Array.isArray(nodes) || !Object.isFrozen(nodes) || nodes.length < 1 || nodes.length > maximum || !Array.isArray(steps) || !Object.isFrozen(steps) || steps.length !== nodes.length) return fail();
   const ids = new Map<string, WorkflowViewNodeKind>(); let edgeCount = 0;
   for (const candidate of nodes) {
     if (!candidate || typeof candidate !== 'object' || !Object.isFrozen(candidate)) return fail(); const node = Object.getOwnPropertyDescriptors(candidate);
     if (Reflect.ownKeys(node).length !== 3 || ['id', 'kind', 'dependsOn'].some(key => !node[key] || !('value' in node[key]!))) return fail();
     const nodeId = node['id']!.value; const kind = node['kind']!.value; const dependencies = node['dependsOn']!.value;
     if (typeof nodeId !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(nodeId) || ids.has(nodeId) || typeof kind !== 'string' || !admittedKinds[format]!.includes(kind)
-      || !Array.isArray(dependencies) || !Object.isFrozen(dependencies) || dependencies.length > 127 || new Set(dependencies).size !== dependencies.length
+      || !Array.isArray(dependencies) || !Object.isFrozen(dependencies) || dependencies.length > maximum - 1 || new Set(dependencies).size !== dependencies.length
       || dependencies.some(dependency => typeof dependency !== 'string' || !/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(dependency))) return fail();
-    edgeCount += dependencies.length; if (edgeCount > 512) return fail(); ids.set(nodeId, kind as WorkflowViewNodeKind);
+    edgeCount += dependencies.length; if (edgeCount > (Number.isFinite(maximum) ? maximum : nodes.length) * 4) return fail(); ids.set(nodeId, kind as WorkflowViewNodeKind);
   }
   const seen = new Set<string>();
   for (const candidate of steps) {

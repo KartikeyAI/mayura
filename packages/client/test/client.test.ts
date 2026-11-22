@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { createClient, ClientError, escapeHtmlText, type ClientEvent, type ClientJson, type ClientOptions, type ClientSchema } from '../src/index.js';
 import { createAgentServer, type AgentServer, type AgentServerOptions } from '../../server/src/index.js';
-import { createWorkflowGraphProjection } from '../src/workflows.js';
+import { createWorkflowCommandController, createWorkflowGraphProjection } from '../src/workflows.js';
 import { defineAgent } from '../../runtime/dist/index.js';
 import { defineTool } from '../../tools/dist/index.js';
 import { createSqliteStore } from '../../storage/dist/index.js';
@@ -214,6 +214,39 @@ describe('browser human request client', () => {
 });
 
 describe('browser durable workflow view client', () => {
+  it('carries a real 513-node graph through storage, operator transport, scoped HTTP, client, projection and approval', async () => {
+    const store = createSqliteStore({ filename: ':memory:' }); await store.initialize();
+    const scope = { principalId: 'developer', projectId: 'project' };
+    const any: Schema<JsonValue> = { '~standard': { version: 1, vendor: 'large-http-e2e', validate: value => ({ value: value as JsonValue }) } };
+    const execute = vi.fn((input: JsonValue) => input);
+    const tool = defineTool({ id: 'large.write', version: '1', description: 'Offline write', input: any, output: any, effects: 'write', capabilities: [], costMicros: 0, execute });
+    const joins = Array.from({ length: 512 }, (_,index) => ({ kind: 'join' as const, id: `n${index}`, dependsOn: [] }));
+    const workflow = defineWorkflowLifecycle({ id: 'large-http', version: '1', input: any, output: any, maxNodes: false,
+      nodes: [...joins, { kind: 'tool', id: 'write', dependsOn: joins.map(node => node.id), tool, approval: true, input: { kind: 'input', path: [] } }],
+      result: { kind: 'step', stepId: 'write', path: [] } });
+    const runtime = createWorkflowLifecycleFleetRuntime({ store, scope, permissions: { allow: ['tool:large.write','effect:write'] }, policyVersion: '1', maxCostMicros: 0,
+      verifyHuman: async () => ({ id: 'reviewer', projectId: scope.projectId, canApprove: true }) });
+    try {
+      const run = await runtime.submit(workflow, { input: 7, idempotencyKey: 'large-http' });
+      expect((await runtime.runUntilSettled(workflow,run.id)).status).toBe('waiting');
+      const transports = createWorkflowOperatorTransports({ store, scope, journal: createWorkflowCommandJournal({ store, scope }),
+        targets: [lifecycleOperatorTarget({ runtime, store, scope, definitions: [workflow], approvalCredential: actor => ({ actor }) })] });
+      const { client } = fixture(transports);
+      const received = await client.workflow(run.id); expect(received.maxNodes).toBe(false); expect(received.nodes).toHaveLength(513);
+      const { maxNodes: _limit, ...withoutOptIn } = received;
+      expect(() => createWorkflowGraphProjection(Object.freeze(withoutOptIn))).toThrow();
+      const invalid = fixture({ workflowViews: { inspect: async () => ({ ...received,maxNodes: 513 }) as never } });
+      await expect(invalid.client.workflow(run.id)).rejects.toMatchObject({ status: 503,code: 'WORKFLOW_TRANSPORT_INVALID' });
+      const projection = createWorkflowGraphProjection(received); expect(projection.nodes).toHaveLength(513); expect(projection.edges).toHaveLength(512);
+      const controller = createWorkflowCommandController({ client, workflow: received });
+      const approval = received.steps.find(step => step.id === 'write')!.approval!;
+      await controller.approve({ nodeId: 'write', approvalDigest: approval.digest }, { commandId: 'large-approve' });
+      expect(await runtime.runUntilSettled(workflow,run.id)).toMatchObject({ status: 'succeeded',output: 7 });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(createWorkflowGraphProjection(await client.workflow(run.id)).progress.succeeded).toBe(513);
+    } finally { runtime.close(); await store.close(); }
+  }, process.env['CI'] === 'true' && process.platform === 'win32' ? 180_000 : 60_000);
+
   const runId = 'a'.repeat(64); const view = { format: 4 as const, definitionId: 'deployment', definitionVersion: '1', runId, revision: 2,
     status: 'running' as const, nodes: [{ id: 'prepare', kind: 'tool' as const, dependsOn: [] }, { id: 'child', kind: 'child' as const, dependsOn: ['prepare'] }],
     steps: [{ id: 'prepare', kind: 'tool' as const, status: 'succeeded' as const }, { id: 'child', kind: 'child' as const, status: 'waiting' as const, childRunId: 'b'.repeat(64) }] };
