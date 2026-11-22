@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/filestorage-r2",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Cloudflare R2 through a Workers binding, for Mayura's file stores.",
   "type": "module",

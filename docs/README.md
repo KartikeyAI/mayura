@@ -27,6 +27,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Framework starters](guides/framework-starters.md): six notebook applications with scoped threads, exact approvals and workers.
 
 - [Retrieval augmented generation](guides/rag.md): scoped evidence, durable ingestion, vector stores and reranking.
+- [RAG production qualification](guides/rag-production.md): the stable Modal and Pinecone profile and its verified limits.
 
 ## Agents and models
 

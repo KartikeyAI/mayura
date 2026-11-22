@@ -4,6 +4,23 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-23
+
+### Workflow graphs
+
+- Configure the per-graph node limit across definition, client admission, storage and recovery. The
+  default remains 128. A trusted host can opt out of that individual limit with the documented
+  environment helper. Independent byte, concurrency and workflow-tree bounds still apply.
+
+### Retrieval
+
+- Qualify the registered Modal + Pinecone Loki v28 profile for production. The source-reviewed
+  40-case evaluation, Nomic120, full native600, recovery, scope security and campaign cleanup passed.
+  The versioned verifier preserves the original audit and reuses provider receipts. Other RAG
+  configurations remain experimental.
+- Add opt-in document-level fusion and candidate scoring, BM25 and publication-checked parent context.
+  The default retrieval ranking remains chunk-based.
+
 ## [1.2.0] - 2026-10-23
 
 ### Release engineering

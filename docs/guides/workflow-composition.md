@@ -129,7 +129,7 @@ earlier steps; `runtime.inspect(run)` lists what executed. Cancelling does not u
 ## Good to know
 
 - A graph with an `approval: true` step is refused. Approvals need a durable workflow.
-- The graph has at most 128 nodes and no cycles. For data-dependent branching, let an agent decide.
+- The graph has at most 128 nodes by default and no cycles. V1.2.1 adds an explicit `maxNodes` up to 512; see [graph size](../concepts/workflows.md#configuring-graph-size). For data-dependent branching, let an agent decide.
 - The same `defineWorkflow` graph can also run durably through the earlier runtimes in `mayura/workflows`, but new
   durable work should use `defineWorkflowLifecycle`; see [Durable workflows](durable-workflows.md).
 

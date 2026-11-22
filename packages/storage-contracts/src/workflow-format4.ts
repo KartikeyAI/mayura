@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowManifest, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
@@ -17,6 +18,8 @@ export interface WorkflowTreeStep {
   candidateHash: string|null; child: WorkflowTreeChildLink|null;
 }
 export interface WorkflowTreeState {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly format: 4; readonly rootId: string; readonly accountId: string;
   readonly definition: string; readonly policy: string; readonly input: JsonValue;
   status: WorkflowTreeStatus; readonly steps: Record<string,WorkflowTreeStep>;
@@ -34,10 +37,10 @@ function fields(value: JsonObject,names: readonly string[]): void { if (Object.k
 
 function initial(
   rootId: string, accountId: string, definitionHash: string, policyHash: string, input: JsonValue,
-  nodes: readonly {readonly id:string;readonly kind:'tool'|'join'|'child'}[], maxCostMicros: number, maxCalls: number,
+  nodes: readonly {readonly id:string;readonly kind:'tool'|'join'|'child'}[], maxCostMicros: number, maxCalls: number, maxNodes?: number | false,
 ): WorkflowTreeState {
   hash(rootId); hash(definitionHash); hash(policyHash); integer(maxCostMicros); integer(maxCalls,1);
-  return freezeJson(jsonValue({format:4,rootId,accountId,definition:definitionHash,policy:policyHash,input,status:'running',
+  return freezeJson(jsonValue({format:4,...(maxNodes === undefined ? {} : {maxNodes}),rootId,accountId,definition:definitionHash,policy:policyHash,input,status:'running',
     steps:Object.fromEntries(nodes.map(node=>[node.id,{kind:node.kind,status:'pending',callId:`step:${node.id}`,
       output:null,receipt:null,approval:null,costReserved:0,candidateHash:null,child:null}])),
     maxCostMicros,maxCalls,spentMicros:0,reservedMicros:0,budgetVersion:1,output:null})) as unknown as WorkflowTreeState;
@@ -45,12 +48,12 @@ function initial(
 
 export function initialWorkflowTreeRootState(definition: WorkflowTreeManifest,input: JsonValue,rootId:string,definitionHash:string,policyHash:string,policy:WorkflowTreePolicyManifest): WorkflowTreeState {
   const manifest=workflowTreeManifest(definition); const authority=workflowTreePolicy(policy);
-  return initial(rootId,'root',definitionHash,policyHash,jsonValue(input,{maxBytes:authority.maxOutputBytes}),manifest.graph,authority.maxCostMicros,authority.maxCalls);
+  return initial(rootId,'root',definitionHash,policyHash,jsonValue(input,{maxBytes:authority.maxOutputBytes}),manifest.graph,authority.maxCostMicros,authority.maxCalls,manifest.maxNodes);
 }
 
 export function initialWorkflowTreeLeafState(definition: WorkflowManifest,input: JsonValue,rootId:string,accountId:string,definitionHash:string,policyHash:string,policy:WorkflowTreePolicyManifest): WorkflowTreeState {
   const manifest=workflowManifest(definition); const authority=workflowTreePolicy(policy);
-  return initial(rootId,accountId,definitionHash,policyHash,jsonValue(input,{maxBytes:authority.maxOutputBytes}),manifest.graph,authority.maxCostMicros,authority.maxCalls);
+  return initial(rootId,accountId,definitionHash,policyHash,jsonValue(input,{maxBytes:authority.maxOutputBytes}),manifest.graph,authority.maxCostMicros,authority.maxCalls,manifest.maxNodes);
 }
 
 /** Strict structural decoder; manifest/owner/account projections are checked by storage under the root lock. */
@@ -59,13 +62,13 @@ export function workflowTreeState(record: Pick<StoredRecord,'id'|'state'>): Work
     const idDescriptor=Object.getOwnPropertyDescriptor(record,'id'); const stateDescriptor=Object.getOwnPropertyDescriptor(record,'state');
     if(!idDescriptor||!('value'in idDescriptor)||!stateDescriptor||!('value'in stateDescriptor)) corrupt(); hash(idDescriptor.value);
     const state=object(jsonValue(stateDescriptor.value));
-    fields(state,['format','rootId','accountId','definition','policy','input','status','steps','maxCostMicros','maxCalls','spentMicros','reservedMicros','budgetVersion','output']);
+    fields(state, [...['format','rootId','accountId','definition','policy','input','status','steps','maxCostMicros','maxCalls','spentMicros','reservedMicros','budgetVersion','output'], ...(Object.hasOwn(state, 'maxNodes') ? ['maxNodes'] : [])]);
     if(state['format']!==4||!['running','waiting','paused','succeeded','failed','blocked','cancelled','outcome_unknown'].includes(state['status'] as string)) corrupt();
     hash(state['rootId']); hash(state['definition']); hash(state['policy']);
     if(typeof state['accountId']!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(state['accountId'])) corrupt();
     integer(state['maxCostMicros']); integer(state['maxCalls'],1); const spent=integer(state['spentMicros']); const reserved=integer(state['reservedMicros']); integer(state['budgetVersion'],1);
     if(spent+reserved>Number(state['maxCostMicros'])) corrupt();
-    const steps=object(state['steps']); if(!Object.keys(steps).length||Object.keys(steps).length>128) corrupt(); let projected=0;
+    const steps=object(state['steps']); if(!Object.keys(steps).length||Object.keys(steps).length>workflowNodeLimit(state['maxNodes'])) corrupt(); let projected=0;
     for(const [nodeId,raw] of Object.entries(steps)) {
       if(!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(nodeId)) corrupt(); const step=object(raw);
       fields(step,['kind','status','callId','output','receipt','approval','costReserved','candidateHash','child']);
@@ -83,14 +86,14 @@ export function workflowTreeState(record: Pick<StoredRecord,'id'|'state'>): Work
 
 export function assertWorkflowTreeRootState(state:WorkflowTreeState,definition:WorkflowTreeManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan):void {
   try{const manifest=workflowTreeManifest(definition);const authority=workflowTreePolicy(policy);workflowTreeRootResources(resources,manifest);
-    if(state.accountId!=='root'||state.rootId===undefined||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
+    if(state.accountId!=='root'||state.rootId===undefined||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||workflowNodeLimit(state.maxNodes)!==workflowNodeLimit(manifest.maxNodes)||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
     for(const node of manifest.graph)if(state.steps[node.id]?.kind!==node.kind)corrupt();
   }catch{return corrupt();}
 }
 
 export function assertWorkflowTreeLeafState(state:WorkflowTreeState,definition:WorkflowManifest,policy:WorkflowTreePolicyManifest,resources:WorkflowResourcePlan):void {
   try{const manifest=workflowManifest(definition);const authority=workflowTreePolicy(policy);workflowResources(resources,manifest);
-    if(state.accountId==='root'||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
+    if(state.accountId==='root'||state.maxCostMicros!==authority.maxCostMicros||state.maxCalls!==authority.maxCalls||workflowNodeLimit(state.maxNodes)!==workflowNodeLimit(manifest.maxNodes)||Object.keys(state.steps).length!==manifest.graph.length)corrupt();
     for(const node of manifest.graph)if(state.steps[node.id]?.kind!==node.kind)corrupt();
   }catch{return corrupt();}
 }

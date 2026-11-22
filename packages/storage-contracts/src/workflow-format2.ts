@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type StoredRecord } from './contracts.js';
 import type { WorkflowBinding, WorkflowManifest, WorkflowPolicyManifest, WorkflowResourcePlan } from './scheduled-workflow-contracts.js';
@@ -11,6 +12,8 @@ export interface WorkflowFormat2Step {
 }
 /** Exact legacy durable representation. Scheduler ownership must live outside this format. */
 export interface WorkflowFormat2State {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   format: 2; definition: string; policy: string; input: JsonValue; status: WorkflowFormat2Status;
   steps: Record<string, WorkflowFormat2Step>; maxCostMicros: number; spentMicros: number; reservedMicros: number; output: JsonValue;
 }
@@ -88,17 +91,17 @@ function receipt(value: unknown): ExecutionReceipt {
 /** Deeply snapshot the exact data-only graph material used by legacy definition hashing. */
 export function workflowManifest(value: unknown): WorkflowManifest {
   try {
-    const manifest = object(jsonValue(value)); fields(manifest, ['id', 'version', 'graph', 'result']);
+    const manifest = object(jsonValue(value)); fields(manifest, [...['id', 'version', 'graph', 'result'], ...(Object.hasOwn(manifest, 'maxNodes') ? ['maxNodes'] : [])]);
     // Workflow IDs historically permit these names; only step IDs prohibit prototype keys.
     if (typeof manifest['id'] !== 'string' || !nodeId.test(manifest['id'])) invalid();
     text(manifest['version'], 128);
-    const graph = list(manifest['graph'], 128); if (graph.length === 0) invalid();
+    const graph = list(manifest['graph'], workflowNodeLimit(manifest['maxNodes'])); if (graph.length === 0) invalid();
     const ids = new Set<string>();
     for (const raw of graph) { const id = stepIdentity(object(raw)['id']); if (ids.has(id)) invalid(); ids.add(id); }
     const dependencies = new Map<string, readonly string[]>();
     for (const raw of graph) {
       const node = object(raw); const id = stepIdentity(node['id']);
-      const deps = list(node['dependsOn'], 128).map(stepIdentity);
+      const deps = list(node['dependsOn'], graph.length).map(stepIdentity);
       if (new Set(deps).size !== deps.length || deps.some(dependency => !ids.has(dependency))) invalid();
       dependencies.set(id, deps);
       if (node['kind'] === 'join') fields(node, ['id', 'kind', 'dependsOn']);
@@ -173,11 +176,11 @@ export function workflowState(record: Pick<StoredRecord, 'id' | 'state'>): Workf
     // Read own data descriptors so external storage accessors cannot execute at this boundary.
     const idDescriptor = Object.getOwnPropertyDescriptor(record, 'id'); const stateDescriptor = Object.getOwnPropertyDescriptor(record, 'state');
     if (!idDescriptor || !('value' in idDescriptor) || !stateDescriptor || !('value' in stateDescriptor)) corrupt();
-    const runId = identity(idDescriptor.value); const state = object(jsonValue(stateDescriptor.value)); fields(state, stateKeys);
+    const runId = identity(idDescriptor.value); const state = object(jsonValue(stateDescriptor.value)); fields(state, [...stateKeys, ...(Object.hasOwn(state, 'maxNodes') ? ['maxNodes'] : [])]);
     if (state['format'] !== 2 || !statuses.has(state['status'] as string)) corrupt();
     hash(state['definition']); hash(state['policy']);
     const maxCost = integer(state['maxCostMicros']); const spent = integer(state['spentMicros']); const totalReserved = integer(state['reservedMicros']);
-    const steps = object(state['steps']); const entries = Object.entries(steps); if (entries.length === 0 || entries.length > 128) corrupt();
+    const steps = object(state['steps']); const entries = Object.entries(steps); if (entries.length === 0 || entries.length > workflowNodeLimit(state['maxNodes'])) corrupt();
     let reserved = 0;
     for (const [id, raw] of entries) {
       stepIdentity(id); const step = object(raw); fields(step, stepKeys);
@@ -214,7 +217,7 @@ export function assertWorkflowStateMatchesManifest(state: WorkflowFormat2State, 
     const manifest = workflowManifest(definition);
     // Callers must decode the state first; this helper additionally snapshots to reject accessors.
     const value = object(jsonValue(state)); const steps = object(value['steps']);
-    if (Object.keys(steps).length !== manifest.graph.length) corrupt();
+    if (workflowNodeLimit(state.maxNodes) !== workflowNodeLimit(manifest.maxNodes) || Object.keys(steps).length !== manifest.graph.length) corrupt();
     for (const node of manifest.graph) {
       const step = object(steps[node.id]);
       if (step['kind'] !== node.kind || (node.kind === 'tool' && step['receipt'] !== null && object(step['receipt'])['toolId'] !== node.tool)) corrupt();
@@ -234,7 +237,7 @@ export function assertWorkflowStateMatchesManifest(state: WorkflowFormat2State, 
 export function initialWorkflowState(definition: WorkflowManifest, input: JsonValue, definitionHash: string, policyHash: string, maxCostMicros: number): WorkflowFormat2State {
   try {
     const manifest = workflowManifest(definition); hash(definitionHash); hash(policyHash); integer(maxCostMicros);
-    const state: WorkflowFormat2State = { format: 2, definition: definitionHash, policy: policyHash, input: jsonValue(input), status: 'running',
+    const state: WorkflowFormat2State = { format: 2, ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }), definition: definitionHash, policy: policyHash, input: jsonValue(input), status: 'running',
       maxCostMicros, spentMicros: 0, reservedMicros: 0, output: null,
       steps: Object.fromEntries(manifest.graph.map(node => [node.id, { kind: node.kind, status: 'pending', callId: `step:${node.id}`,
         output: null, receipt: null, approval: null, costReserved: 0, candidateHash: null }])) };

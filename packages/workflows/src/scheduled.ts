@@ -1,4 +1,5 @@
 import { workflowAuthorization } from './authorization.js';
+import { workflowNodeLimit } from '@mayura/core';
 import { Budget, MayuraError, assertPositiveInteger, freezeJson, jsonValue, validate, type ExecutionReceipt, type ExecutionSettlement, type JsonObject, type JsonValue, type Schema, type InferInput, type Scope } from '@mayura/core';
 import { invokeTool } from '@mayura/tools';
 import { bindToolApproval } from '@mayura/tools/host';
@@ -696,7 +697,7 @@ export function createScheduledDriver(options: ScheduledWorkflowRuntimeOptions |
         carried[entry.target] = entry.action === 'keep' || entry.action === 'accept' ? state.steps[entry.source!] : fresh.steps[entry.target];
       }
       const steps = Object.fromEntries((to.manifest as WorkflowManifest | WorkflowGraphManifest).graph.map(node => [node.id, carried[node.id]]));
-      const next = { ...state, definition: migration.to.digest, steps,
+      const next = { ...state, maxNodes: migration.to.maxNodes === false ? false : workflowNodeLimit(migration.to.maxNodes), definition: migration.to.digest, steps,
         reservedMicros: Object.values(steps).reduce<number>((sum, step) => sum + (step as { costReserved: number }).costReserved, 0) };
       // One attempt at the planned version: a concurrent change needs a fresh review, and a storage refusal keeps its reason.
       let result: ScheduledStoredSnapshot;

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/authz-oso",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Scoped Oso Cloud authorization checks with bounded transport and shared core audit integration.",
   "type": "module",

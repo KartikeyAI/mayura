@@ -453,7 +453,7 @@ const runtime = createWorkflowLifecycleFleetRuntime({
 - **Errors.** Every error the runtimes and stores throw is a `MayuraError` with a stable `code`. Reusing an
   idempotency key with other input, another definition version or other runtime settings is `CONFLICT`; resubmit the
   identical request to get the existing run. See [Storage](storage.md#errors).
-- **Limits.** At most 128 steps, 32 human steps, 64 timers and 64 signal steps per definition; prompts up to 1 KiB.
+- **Limits.** 128 steps by default; V1.2.1 adds an explicit `maxNodes` up to 512 (see [graph size](../concepts/workflows.md#configuring-graph-size)). At most 32 human steps, 64 timers and 64 signal steps per definition; prompts up to 1 KiB.
 - `runUntilSettled` runs steps in the calling process. A plain runtime starts no background timers; waiting runs move
   only when something calls it again.
 

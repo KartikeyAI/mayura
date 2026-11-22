@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, MayuraError, type JsonObject, type JsonValue } from '@mayura/core';
 
 export interface OperationalClientOptions {
@@ -47,6 +48,7 @@ export interface OperationalWorkflowStep {
   readonly approval?: OperationalWorkflowApproval;
 }
 export interface OperationalWorkflow {
+  readonly maxNodes?: number | false;
   readonly format: OperationalWorkflowFormat; readonly definitionId: string; readonly definitionVersion: string;
   readonly runId: string; readonly revision: number; readonly status: OperationalWorkflowStatus;
   readonly nodes: readonly OperationalWorkflowNode[]; readonly steps: readonly OperationalWorkflowStep[];
@@ -224,13 +226,15 @@ function run(value: unknown, expectedId: string): OperationalRun {
 }
 
 function workflow(value: unknown, expectedId: string): OperationalWorkflow {
-  const item = record(value); exact(item, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps']);
+  const item = record(value); exact(item, ['format', 'definitionId', 'definitionVersion', 'runId', 'revision', 'status', 'nodes', 'steps', ...(Object.hasOwn(item, 'maxNodes') ? ['maxNodes'] : [])]);
+  let maximum: number;
+  try { maximum = workflowNodeLimit(item['maxNodes']); } catch { return fail(); }
   const format = item['format'] as OperationalWorkflowFormat; const definitionId = item['definitionId']; const definitionVersion = item['definitionVersion'];
   if (![2, 3, 4, 5].includes(format) || typeof definitionId !== 'string' || !workflowNodeIdentifier.test(definitionId)
     || typeof definitionVersion !== 'string' || !workflowVersion.test(definitionVersion) || item['runId'] !== expectedId
     || !Number.isSafeInteger(item['revision']) || (item['revision'] as number) < 1
     || !['running', 'waiting', 'paused', 'succeeded', 'failed', 'blocked', 'cancelled', 'outcome_unknown'].includes(String(item['status']))
-    || !Array.isArray(item['nodes']) || item['nodes'].length < 1 || item['nodes'].length > 128
+    || !Array.isArray(item['nodes']) || item['nodes'].length < 1 || item['nodes'].length > maximum
     || !Array.isArray(item['steps']) || item['steps'].length !== item['nodes'].length) return fail();
   const allowedKinds: Readonly<Record<OperationalWorkflowFormat, ReadonlySet<OperationalWorkflowNodeKind>>> = {
     2: new Set(['tool', 'join']), 3: new Set(['tool', 'join', 'wait']), 4: new Set(['tool', 'join', 'child']), 5: new Set(['tool', 'join', 'human', 'timer', 'signal']),
@@ -239,9 +243,9 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
   for (const raw of item['nodes']) {
     const source = record(raw); exact(source, ['id', 'kind', 'dependsOn']); const nodeId = source['id']; const kind = source['kind'] as OperationalWorkflowNodeKind;
     if (typeof nodeId !== 'string' || !workflowNodeIdentifier.test(nodeId) || nodes.has(nodeId) || !allowedKinds[format].has(kind)
-      || !Array.isArray(source['dependsOn']) || source['dependsOn'].length > 127) return fail();
+      || !Array.isArray(source['dependsOn']) || source['dependsOn'].length > maximum - 1) return fail();
     const dependsOn = source['dependsOn'].map(value => { if (typeof value !== 'string' || !workflowNodeIdentifier.test(value)) return fail(); return value; });
-    if (new Set(dependsOn).size !== dependsOn.length || (edges += dependsOn.length) > 512) return fail();
+    if (new Set(dependsOn).size !== dependsOn.length || (edges += dependsOn.length) > (Number.isFinite(maximum) ? maximum : item['nodes'].length) * 4) return fail();
     nodes.set(nodeId, Object.freeze({ id: nodeId, kind, dependsOn: Object.freeze(dependsOn) }));
   }
   for (const node of nodes.values()) if (node.dependsOn.some(parent => parent === node.id || !nodes.has(parent))) return fail();
@@ -268,7 +272,7 @@ function workflow(value: unknown, expectedId: string): OperationalWorkflow {
     steps.set(stepId as string, Object.freeze({ id: stepId as string, kind, status, ...(childRunId === undefined ? {} : { childRunId: childRunId as string }),
       ...(approval === undefined ? {} : { approval }) }));
   }
-  return Object.freeze({ format, definitionId, definitionVersion, runId: expectedId, revision: item['revision'] as number,
+  return Object.freeze({ ...(item['maxNodes'] === undefined ? {} : { maxNodes: item['maxNodes'] as number | false }), format, definitionId, definitionVersion, runId: expectedId, revision: item['revision'] as number,
     status: item['status'] as OperationalWorkflowStatus, nodes: Object.freeze([...nodes.values()]), steps: Object.freeze([...steps.values()]) });
 }
 

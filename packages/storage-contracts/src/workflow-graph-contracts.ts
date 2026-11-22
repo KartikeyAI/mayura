@@ -13,6 +13,8 @@ export type WorkflowGraphManifestNode = WorkflowManifestNode | {
 };
 /** The explicit format and v2 hash domain keep legacy definitions byte-compatible. */
 export interface WorkflowGraphManifest {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly format: 3; readonly id: string; readonly version: string;
   readonly graph: readonly WorkflowGraphManifestNode[]; readonly result: WorkflowBinding;
 }

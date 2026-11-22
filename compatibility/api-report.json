@@ -970,7 +970,7 @@
       },
       "OperationalWorkflow": {
         "kind": "interface",
-        "declaration": "423e5645b686c0b2"
+        "declaration": "102e57054ad9ae92"
       },
       "OperationalWorkflowFormat": {
         "kind": "type",
@@ -1676,7 +1676,7 @@
       },
       "WorkflowGraphProjection": {
         "kind": "interface",
-        "declaration": "0b9560e9cbcfd3c3"
+        "declaration": "a162e33e9e55846b"
       },
       "WorkflowSignalIntent": {
         "kind": "interface",
@@ -1692,7 +1692,7 @@
       },
       "WorkflowViewInput": {
         "kind": "interface",
-        "declaration": "e24a8109352c4cf4"
+        "declaration": "2656187bdf43ba29"
       },
       "WorkflowViewNode": {
         "kind": "interface",
@@ -2226,6 +2226,10 @@
         "kind": "function",
         "declaration": "174cae4817c0944f"
       },
+      "DEFAULT_WORKFLOW_MAX_NODES": {
+        "kind": "const",
+        "declaration": "837ae71bc84af571"
+      },
       "Effect": {
         "kind": "type",
         "declaration": "7b9d2dbbf70fa59e"
@@ -2333,6 +2337,10 @@
       "ManagedModerationVerdict": {
         "kind": "interface",
         "declaration": "e69a1509ea1c5769"
+      },
+      "MAX_WORKFLOW_NODES": {
+        "kind": "const",
+        "declaration": "7cfaeb3c1fb318ab"
       },
       "MayuraError": {
         "kind": "class",
@@ -2485,6 +2493,10 @@
       "withMedia": {
         "kind": "function",
         "declaration": "d3cc60a33e1cbdfa"
+      },
+      "workflowNodeLimit": {
+        "kind": "function",
+        "declaration": "5f058da0aa0d4e43"
       }
     },
     "@mayura/core/host": {
@@ -2631,6 +2643,10 @@
       "utf8ByteLength": {
         "kind": "function",
         "declaration": "611a0b0d9bc15d79"
+      },
+      "workflowNodeLimitsFromEnv": {
+        "kind": "function",
+        "declaration": "7a34b1e4688617b7"
       }
     },
     "@mayura/exporter-otlp": {
@@ -3668,7 +3684,7 @@
       },
       "inMemoryVectorStore": {
         "kind": "function",
-        "declaration": "75366e8fe153d931"
+        "declaration": "b664c73df5196599"
       },
       "LoadDocumentOptions": {
         "kind": "interface",
@@ -3740,7 +3756,7 @@
       },
       "RetrieverOptions": {
         "kind": "interface",
-        "declaration": "e00c2815b5dc9a8b"
+        "declaration": "d632dd01d34d3a8f"
       }
     },
     "@mayura/rag/host": {
@@ -4406,6 +4422,10 @@
         "kind": "function",
         "declaration": "f02a7b59244e565b"
       },
+      "DEFAULT_WORKFLOW_MAX_NODES": {
+        "kind": "const",
+        "declaration": "837ae71bc84af571"
+      },
       "defineAgent": {
         "kind": "function",
         "declaration": "6e04b6f267094503"
@@ -4573,6 +4593,10 @@
       "ManagedModerationVerdict": {
         "kind": "interface",
         "declaration": "e69a1509ea1c5769"
+      },
+      "MAX_WORKFLOW_NODES": {
+        "kind": "const",
+        "declaration": "7cfaeb3c1fb318ab"
       },
       "MayuraError": {
         "kind": "class",
@@ -4898,6 +4922,10 @@
         "kind": "function",
         "declaration": "693927acd44cb36a"
       },
+      "workflowNodeLimit": {
+        "kind": "function",
+        "declaration": "5f058da0aa0d4e43"
+      },
       "z": {
         "kind": "external",
         "declaration": "6ea3f2088e5ce74f"
@@ -5070,7 +5098,7 @@
       },
       "WorkflowViewRecord": {
         "kind": "interface",
-        "declaration": "0df07788071bb602"
+        "declaration": "001dd5744d25d3d7"
       },
       "WorkflowViewTransport": {
         "kind": "interface",
@@ -5860,7 +5888,7 @@
       },
       "WorkflowFormat2State": {
         "kind": "interface",
-        "declaration": "0053c2ee5f129dc1"
+        "declaration": "6457fbd7f3f265b6"
       },
       "WorkflowFormat2Status": {
         "kind": "type",
@@ -5936,7 +5964,7 @@
       },
       "WorkflowGraphManifest": {
         "kind": "interface",
-        "declaration": "f51fa3d631c9714e"
+        "declaration": "15b100c55275536c"
       },
       "WorkflowGraphManifestNode": {
         "kind": "type",
@@ -5996,7 +6024,7 @@
       },
       "WorkflowLifecycleManifest": {
         "kind": "interface",
-        "declaration": "64ee27f9f56e16df"
+        "declaration": "45a5ea9f8e213964"
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
@@ -6024,7 +6052,7 @@
       },
       "WorkflowLifecycleState": {
         "kind": "interface",
-        "declaration": "6e7f2661c2a9f4bb"
+        "declaration": "d2c7b4d96b848f96"
       },
       "WorkflowLifecycleStatus": {
         "kind": "type",
@@ -6084,7 +6112,7 @@
       },
       "WorkflowManifest": {
         "kind": "interface",
-        "declaration": "cb4348e431b9b3af"
+        "declaration": "69271533671f5d4f"
       },
       "WorkflowManifestNode": {
         "kind": "type",
@@ -6240,7 +6268,7 @@
       },
       "WorkflowTreeManifest": {
         "kind": "interface",
-        "declaration": "91fad2f024c7543c"
+        "declaration": "22b1d3323155774c"
       },
       "WorkflowTreeManifestNode": {
         "kind": "type",
@@ -6328,7 +6356,7 @@
       },
       "WorkflowTreeState": {
         "kind": "interface",
-        "declaration": "10c6a1cda98639bf"
+        "declaration": "091f277aad2abc8e"
       },
       "WorkflowTreeStatus": {
         "kind": "type",
@@ -7010,7 +7038,7 @@
       },
       "WorkflowFormat2State": {
         "kind": "interface",
-        "declaration": "0053c2ee5f129dc1"
+        "declaration": "6457fbd7f3f265b6"
       },
       "WorkflowFormat2Status": {
         "kind": "type",
@@ -7086,7 +7114,7 @@
       },
       "WorkflowGraphManifest": {
         "kind": "interface",
-        "declaration": "f51fa3d631c9714e"
+        "declaration": "15b100c55275536c"
       },
       "WorkflowGraphManifestNode": {
         "kind": "type",
@@ -7146,7 +7174,7 @@
       },
       "WorkflowLifecycleManifest": {
         "kind": "interface",
-        "declaration": "64ee27f9f56e16df"
+        "declaration": "45a5ea9f8e213964"
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
@@ -7174,7 +7202,7 @@
       },
       "WorkflowLifecycleState": {
         "kind": "interface",
-        "declaration": "6e7f2661c2a9f4bb"
+        "declaration": "d2c7b4d96b848f96"
       },
       "WorkflowLifecycleStatus": {
         "kind": "type",
@@ -7234,7 +7262,7 @@
       },
       "WorkflowManifest": {
         "kind": "interface",
-        "declaration": "cb4348e431b9b3af"
+        "declaration": "69271533671f5d4f"
       },
       "WorkflowManifestNode": {
         "kind": "type",
@@ -7390,7 +7418,7 @@
       },
       "WorkflowTreeManifest": {
         "kind": "interface",
-        "declaration": "91fad2f024c7543c"
+        "declaration": "22b1d3323155774c"
       },
       "WorkflowTreeManifestNode": {
         "kind": "type",
@@ -7478,7 +7506,7 @@
       },
       "WorkflowTreeState": {
         "kind": "interface",
-        "declaration": "10c6a1cda98639bf"
+        "declaration": "091f277aad2abc8e"
       },
       "WorkflowTreeStatus": {
         "kind": "type",
@@ -8748,7 +8776,7 @@
       },
       "WorkflowDefinition": {
         "kind": "interface",
-        "declaration": "221655d9884bd702"
+        "declaration": "01bd60c03b975121"
       },
       "WorkflowDrainOptions": {
         "kind": "interface",
@@ -8920,11 +8948,11 @@
       },
       "WorkflowOperatorView": {
         "kind": "interface",
-        "declaration": "419c6bb72d884f0c"
+        "declaration": "cb75e8310b087b76"
       },
       "WorkflowOptions": {
         "kind": "interface",
-        "declaration": "a6005279197f787c"
+        "declaration": "df96a66f13e832c6"
       },
       "WorkflowOutput": {
         "kind": "type",
@@ -9120,7 +9148,7 @@
       },
       "WorkflowGraphDefinition": {
         "kind": "interface",
-        "declaration": "06facf9784f8625a"
+        "declaration": "8f5dd86fbb409bec"
       },
       "WorkflowGraphDiscovery": {
         "kind": "interface",
@@ -9148,7 +9176,7 @@
       },
       "WorkflowGraphOptions": {
         "kind": "interface",
-        "declaration": "5b35ad41523b9f8e"
+        "declaration": "17c7401b9c2bb7a8"
       },
       "WorkflowGraphOutput": {
         "kind": "type",
@@ -9222,7 +9250,7 @@
       },
       "treeManifest": {
         "kind": "function",
-        "declaration": "564014aa92e6e5fa"
+        "declaration": "190f7edbf0d614c5"
       },
       "WorkflowDrainOptions": {
         "kind": "interface",
@@ -9266,7 +9294,7 @@
       },
       "WorkflowTreeDefinition": {
         "kind": "interface",
-        "declaration": "ff22f8e746480649"
+        "declaration": "fdef8441e83169c0"
       },
       "WorkflowTreeDiscovery": {
         "kind": "interface",
@@ -9298,7 +9326,7 @@
       },
       "WorkflowTreeOptions": {
         "kind": "interface",
-        "declaration": "623bf4c3cebb8b8e"
+        "declaration": "a381ca85350daf99"
       },
       "WorkflowTreeOutput": {
         "kind": "type",
@@ -9376,7 +9404,7 @@
       },
       "lifecycleManifest": {
         "kind": "function",
-        "declaration": "2060514f1128bedd"
+        "declaration": "f75243202c27c21b"
       },
       "MigrationCommand": {
         "kind": "interface",
@@ -9404,7 +9432,7 @@
       },
       "WorkflowLifecycleDefinition": {
         "kind": "interface",
-        "declaration": "21a4622e836ca778"
+        "declaration": "4ab3bca73402e6b8"
       },
       "WorkflowLifecycleFleetCandidate": {
         "kind": "interface",
@@ -9492,7 +9520,7 @@
       },
       "WorkflowLifecycleManifest": {
         "kind": "interface",
-        "declaration": "64ee27f9f56e16df"
+        "declaration": "45a5ea9f8e213964"
       },
       "WorkflowLifecycleManifestNode": {
         "kind": "type",
@@ -9504,7 +9532,7 @@
       },
       "WorkflowLifecycleOptions": {
         "kind": "interface",
-        "declaration": "daf2246822189a10"
+        "declaration": "7df3aba69be356ea"
       },
       "WorkflowLifecycleOutput": {
         "kind": "type",

@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type StoredRecord } from './contracts.js';
 import { executionCompletion, executionRef, type ExecutionCompletion, type ExecutionRef } from './execution-wait-contracts.js';
@@ -46,7 +47,7 @@ function binding(raw: JsonValue | undefined, ids: ReadonlySet<string>, wait = fa
 }
 /** Common tool/join graph validation is reused only for those nodes; waits keep their own exact codec. */
 function commonManifest(definition: WorkflowGraphManifest): WorkflowManifest {
-  return { id: definition.id, version: definition.version, graph: definition.graph.map(node => node.kind === 'wait'
+  return { id: definition.id, version: definition.version, ...(definition.maxNodes === undefined ? {} : { maxNodes: definition.maxNodes }), graph: definition.graph.map(node => node.kind === 'wait'
     ? { kind: 'join', id: node.id, dependsOn: node.dependsOn } : node), result: definition.result };
 }
 
@@ -54,8 +55,9 @@ function commonManifest(definition: WorkflowGraphManifest): WorkflowManifest {
 export function workflowGraphManifest(value: unknown): WorkflowGraphManifest {
   try {
     if (value !== null && typeof value === 'object' && ownedManifests.has(value)) return value as WorkflowGraphManifest;
-    const copy = object(jsonValue(value)); fields(copy, ['format', 'id', 'version', 'graph', 'result']);
-    if (copy['format'] !== 3 || !Array.isArray(copy['graph']) || copy['graph'].length < 1 || copy['graph'].length > 128) invalid();
+    const copy = object(jsonValue(value)); fields(copy, [...['format', 'id', 'version', 'graph', 'result'], ...(Object.hasOwn(copy, 'maxNodes') ? ['maxNodes'] : [])]);
+    if (copy['format'] !== 3 || !Array.isArray(copy['graph']) || copy['graph'].length < 1 || copy['graph'].length > workflowNodeLimit(copy['maxNodes'])) invalid();
+    workflowNodeLimit(copy['maxNodes']);
     const graph = copy['graph'].map(object); const ids = new Set(graph.map(node => id(node['id'])));
     if (ids.size !== graph.length) invalid();
     for (const node of graph) if (node['kind'] === 'wait') {
@@ -102,11 +104,11 @@ export function workflowGraphState(record: Pick<StoredRecord, 'id' | 'state'>): 
     const idDescriptor = Object.getOwnPropertyDescriptor(record, 'id'); const stateDescriptor = Object.getOwnPropertyDescriptor(record, 'state');
     if (!idDescriptor || !('value' in idDescriptor) || !stateDescriptor || !('value' in stateDescriptor)) corrupt();
     const runId = hash(idDescriptor.value); const state = object(jsonValue(stateDescriptor.value));
-    fields(state, ['format', 'definition', 'policy', 'input', 'status', 'steps', 'maxCostMicros', 'spentMicros', 'reservedMicros', 'output']);
+    fields(state, [...['format', 'definition', 'policy', 'input', 'status', 'steps', 'maxCostMicros', 'spentMicros', 'reservedMicros', 'output'], ...(Object.hasOwn(state, 'maxNodes') ? ['maxNodes'] : [])]);
     if (state['format'] !== 3 || !statuses.has(state['status'] as string)) corrupt();
     hash(state['definition']); const policy = hash(state['policy']);
     const maximum = integer(state['maxCostMicros']); const spent = integer(state['spentMicros']); const reservedTotal = integer(state['reservedMicros']);
-    const entries = Object.entries(object(state['steps'])); if (entries.length < 1 || entries.length > 128) corrupt();
+    const entries = Object.entries(object(state['steps'])); if (entries.length < 1 || entries.length > workflowNodeLimit(state['maxNodes'])) corrupt();
     let reserved = 0;
     for (const [nodeId, raw] of entries) {
       id(nodeId); const step = object(raw);
@@ -149,7 +151,7 @@ export function assertWorkflowGraphStateMatchesManifest(state: WorkflowGraphForm
     const manifest = workflowGraphManifest(definition); const value = object(jsonValue(state));
     if (value['format'] !== 3) corrupt();
     const steps = object(value['steps']); const pinned = workflowGraphTargets(manifest, value['input']);
-    if (Object.keys(steps).length !== manifest.graph.length || Object.values(pinned).flat().some(item => item.policyHash !== value['policy'])) corrupt();
+    if (workflowNodeLimit(state.maxNodes) !== workflowNodeLimit(manifest.maxNodes) || Object.keys(steps).length !== manifest.graph.length || Object.values(pinned).flat().some(item => item.policyHash !== value['policy'])) corrupt();
     for (const node of manifest.graph) {
       const step = object(steps[node.id]); if (step['kind'] !== node.kind) corrupt();
       const activated = step['status'] === 'succeeded' || (node.kind === 'wait' && ['waiting', 'failed'].includes(step['status'] as string));
@@ -175,7 +177,7 @@ export function initialWorkflowGraphState(definition: WorkflowGraphManifest, inp
     const manifest = workflowGraphManifest(definition); hash(definitionHash); hash(policyHash); integer(maxCostMicros);
     const admitted = jsonValue(input); const pinned = workflowGraphTargets(manifest, admitted);
     if (Object.values(pinned).flat().some(item => item.policyHash !== policyHash)) invalid();
-    return jsonValue({ format: 3, definition: definitionHash, policy: policyHash, input: admitted, status: 'running',
+    return jsonValue({ format: 3, ...(manifest.maxNodes === undefined ? {} : { maxNodes: manifest.maxNodes }), definition: definitionHash, policy: policyHash, input: admitted, status: 'running',
       maxCostMicros, spentMicros: 0, reservedMicros: 0, output: null,
       steps: Object.fromEntries(manifest.graph.map(node => [node.id, { kind: node.kind, status: 'pending', callId: `step:${node.id}`,
         output: null, receipt: null, approval: null, costReserved: 0, candidateHash: null }])) }) as unknown as WorkflowGraphFormat3State;

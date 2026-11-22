@@ -29,6 +29,13 @@ changing them. The CLI does not expose activation/expiry status, and those packa
 OIDC evidence. Recheck eligibility before releasing and recreate expired configurations. Preserve experimental
 AG-UI/RAG labels and the documented external-service and browser limitations.
 
+## V1.2.1 release candidate
+
+Review the configurable graph limit and the [qualified Modal + Pinecone RAG profile](docs/guides/rag-production.md).
+The committed receipt covers the pinned Loki v28 configuration. It does not expand the qualification to other profiles.
+After the version PR and its resulting main commit pass qualification, rehearse `version=1.2.1`, `package_set=all`,
+and `dry_run=true` before approving publication. The publication uses `latest` and preserves existing `next` tags.
+
 ## How a release happens
 
 1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and

@@ -1,3 +1,4 @@
+import { workflowNodeLimit } from '@mayura/core';
 import { freezeJson, jsonValue, type ExecutionReceipt, type JsonObject, type JsonValue } from '@mayura/core';
 import { StorageError, type AggregateStore, type StoredRecord } from './contracts.js';
 import type { Scope } from '@mayura/core';
@@ -20,6 +21,8 @@ export interface WorkflowTreeChildManifestNode {
 }
 export type WorkflowTreeManifestNode = WorkflowManifestNode | WorkflowTreeChildManifestNode;
 export interface WorkflowTreeManifest {
+  /** Explicit graph bound; omitted records retain the 128-node default. */
+  readonly maxNodes?: number | false;
   readonly format: 4; readonly id: string; readonly version: string;
   readonly graph: readonly WorkflowTreeManifestNode[]; readonly result: WorkflowBinding;
 }
@@ -141,9 +144,9 @@ export function workflowTreeManifest(value: unknown): WorkflowTreeManifest {
   try {
     if (value !== null && typeof value === 'object' && owned.has(value)) return value as WorkflowTreeManifest;
     const copy = object(jsonValue(value,{maxBytes:1_048_576,maxNodes:30_000,maxDepth:24}));
-    fields(copy,['format','id','version','graph','result']);
+    fields(copy,['format','id','version','graph','result',...(Object.hasOwn(copy,'maxNodes')?['maxNodes']:[])]);
     if (copy['format'] !== 4) invalid(); id(copy['id']); text(copy['version'],128);
-    const graph = list(copy['graph'],128).map(object); if (!graph.length) invalid();
+    const graph = list(copy['graph'],workflowNodeLimit(copy['maxNodes'])).map(object); if (!graph.length) invalid();
     const ids = new Set(graph.map(node => id(node['id']))); if (ids.size !== graph.length) invalid();
     let children = 0; let totalNodes = graph.length; let totalTools = 0;
     const projection: WorkflowManifestNode[] = [];
@@ -159,7 +162,7 @@ export function workflowTreeManifest(value: unknown): WorkflowTreeManifest {
         approval:false, input:node['input'] as unknown as WorkflowBinding });
     }
     if (children > 16 || totalNodes > 256 || totalTools > 128) invalid();
-    workflowManifest({ id:copy['id'],version:copy['version'],graph:projection,result:copy['result'] });
+    workflowManifest({ id:copy['id'],version:copy['version'],...(copy['maxNodes']===undefined?{}:{maxNodes:copy['maxNodes']}),graph:projection,result:copy['result'] });
     const result = freezeJson(copy) as unknown as WorkflowTreeManifest; owned.add(result); return result;
   } catch { return invalid(); }
 }
@@ -183,6 +186,7 @@ export function workflowTreeRootResources(value: unknown, definition: WorkflowTr
   try {
     const manifest = workflowTreeManifest(definition);
     const projection: WorkflowManifest = {id:manifest.id,version:manifest.version,
+      ...(manifest.maxNodes === undefined ? {} : {maxNodes:manifest.maxNodes}),
       graph:manifest.graph.map(node => node.kind === 'child'
         ? {kind:'join',id:node.id,dependsOn:node.dependsOn}
         : node),result:manifest.result};

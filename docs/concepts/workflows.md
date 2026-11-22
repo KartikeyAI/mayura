@@ -66,9 +66,68 @@ The pieces:
   are done run together.
 - **`result`** is a binding that picks the workflow's output, checked against the `output` schema.
 
-The graph is fixed when you define it: at most 128 nodes, no cycles, and no code runs between steps. Logic lives in the
+The graph is fixed when you define it: 128 nodes by default, no cycles, and no code runs between steps. Logic lives in the
 tools. For work whose width depends on data, a durable workflow can declare up to a fixed number of parallel slots
 (`fanOut`) and skip steps with a condition (`when`). See [Durable workflows](../guides/durable-workflows.md).
+
+## Configuring graph size
+
+Starting in V1.2.1, `defineWorkflow`, `defineWorkflowLifecycle`, `defineWorkflowGraph` and `defineWorkflowTree` accept
+an optional `maxNodes`: `false` or an integer from 1 through 512. Omission retains the 128-node admission limit. Set the bound
+explicitly when defining a larger graph; it does not automatically increase to match the supplied nodes.
+
+```ts
+import { z } from 'mayura';
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
+
+const workflow = defineWorkflowLifecycle({
+  id: 'wide-review', version: '1', input: z.null(), output: z.null(), maxNodes: 256,
+  nodes: Array.from({ length: 256 }, (_, index) => ({
+    kind: 'join' as const, id: `step${index}`, dependsOn: [],
+  })),
+  result: { kind: 'input', path: [] },
+});
+void workflow;
+```
+
+To disable the per-graph node-count constraint through environment configuration, set
+`MAYURA_WORKFLOW_DISABLE_MAX_NODES=true` (or `1`) and explicitly wire the host helper into each definition:
+
+```ts
+import { z } from 'mayura';
+import { workflowNodeLimitsFromEnv } from 'mayura/core/host';
+import { defineWorkflowLifecycle } from 'mayura/workflows/lifecycle';
+
+const workflow = defineWorkflowLifecycle({
+  id: 'unbounded-graph', version: '1', input: z.null(), output: z.null(),
+  ...workflowNodeLimitsFromEnv(process.env),
+  nodes: [{ kind: 'join', id: 'ready', dependsOn: [] }],
+  result: { kind: 'input', path: [] },
+});
+void workflow;
+```
+
+The helper accepts a host-owned environment map without reading ambient globals. Unset, empty, `false` and `0`
+return no override; other values are rejected. Its opt-in becomes the JSON-safe `maxNodes: false`, included in
+the definition identity and stored state. Changing the environment never changes an already-pinned run. Browser
+and edge hosts may pass their own configuration map, or set `maxNodes: false` explicitly. To override a numeric
+setting, spread the helper **after** that setting. Roll out matching workers and readers before submitting runs.
+
+The explicit bound becomes part of the definition digest and persisted state. Restarted workers validate the same
+bound; changing it for an existing run requires the normal reviewed migration process. Definitions that omit it keep
+their existing hashes and stored representation. Deploy readers, workers and clients from V1.2.1 together before
+submitting larger graphs: V1.2.0 readers reject the additional metadata.
+
+Increasing `maxNodes` does not increase spending, tool calls, output sizes, human/timer/signal counts or concurrency.
+The server and client graph views allow at most four dependency edges per configured node in total (per actual node
+when `maxNodes` is `false`); a node may depend
+on at most `maxNodes - 1` other nodes. Existing JSON byte limits still apply, so a dense graph or large accumulated
+outputs may reach a byte limit before reaching the node ceiling. Larger in-process and lifecycle graphs execute in
+small batches to bound storage queues and contention.
+
+Workflow trees still allow at most 16 children, 256 total nodes across root and children, and 128 tool nodes. A
+root's `maxNodes` does not raise these tree-wide limits, and each leaf declares its own per-graph bound. Saga step
+counts, loop iteration counts and graph wait-target limits are separate and retain their existing bounds.
 
 ## In-process or durable
 
