@@ -1,0 +1,23 @@
+# The demo ignores this file. Hosted commands load it from the project directory.
+MODAL_TOKEN_ID=
+MODAL_TOKEN_SECRET=
+RAG_MODAL_APP=mayura-rag-nomic-v1
+# Set this to the same named Modal environment used by modal deploy.
+RAG_MODAL_ENVIRONMENT=
+
+# Use a Modal Shared Endpoint for DeepSeek V4.1 Flash 1017. The wire model is
+# the endpoint's hostname, copied from its Playground/curl settings.
+RAG_MODAL_INFERENCE_TOKEN=
+RAG_MODAL_INFERENCE_MODEL=
+RAG_INPUT_MICROS_PER_MILLION_TOKENS=
+RAG_OUTPUT_MICROS_PER_MILLION_TOKENS=
+RAG_INFERENCE_MAX_CALL_MICROS=
+
+# Pre-create a dedicated self-provided 768-dimensional cosine index.
+RAG_PINECONE_HOST=
+RAG_PINECONE_API_KEY=
+RAG_PINECONE_CALL_MICROS=
+RAG_MODAL_EMBED_CALL_MICROS=
+RAG_PRINCIPAL_ID=
+RAG_PROJECT_ID=
+RAG_SQLITE_PATH=.data/rag.sqlite

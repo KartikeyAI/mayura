@@ -60,7 +60,9 @@ const tooLarge = (error: unknown): boolean => {
 /** The SDK's transport, bounded: no redirects, and a body larger than `limit` (four times that for a stream) fails. */
 function boundedFetch(transport: () => typeof globalThis.fetch, limit: number): typeof globalThis.fetch {
   return async (input, init) => {
-    const response = await transport()(new Request(input, { ...init, redirect: 'error' }));
+    const request = new Request(input, { ...init, redirect: 'error' });
+    request.signal.throwIfAborted();
+    const response = await transport()(request);
     const max = (response.headers.get('content-type') ?? '').includes('text/event-stream') ? limit * 4 : limit;
     const length = response.headers.get('content-length');
     if (length !== null && (!/^\d+$/u.test(length) || Number(length) > max)) { void response.body?.cancel().catch(() => undefined); throw new ResponseTooLarge(); }
@@ -71,6 +73,21 @@ function boundedFetch(transport: () => typeof globalThis.fetch, limit: number): 
     }));
     return new Response(counted, { status: response.status, statusText: response.statusText, headers: response.headers });
   };
+}
+
+/** The caller must be released even if the SDK or its transport doesn't settle on abort. */
+async function waitForSdk<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+  });
+  try {
+    return await Promise.race([cancelled, operation]);
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
 }
 /**
  * Removes the SDK's tracing hook, which reads MISTRAL_SDK_TELEMETRY and MISTRAL_OTLP_TRACES_ENDPOINT from the
@@ -179,10 +196,12 @@ function messagesFor(request: ModelRequest, aliases: ReadonlyMap<string, string>
 }
 
 /** Rebuilds the response a non-streamed call returns from a chat completion event stream, reporting text as it arrives. */
-async function assemble(events: AsyncIterable<unknown>, maxResponseBytes: number, onDelta: (text: string) => void): Promise<JsonObject> {
+async function assemble(events: AsyncIterable<unknown>, maxResponseBytes: number, onDelta: (text: string) => void, signal: AbortSignal): Promise<JsonObject> {
+  signal.throwIfAborted();
   let usage: JsonValue | undefined; let finish: JsonValue = null; let text = ''; let thinking = ''; let signature: string | undefined;
   const calls: { id: JsonValue; name: JsonValue; json: string }[] = [];
   for await (const raw of events) {
+    signal.throwIfAborted();
     const data = object(object(jsonValue(JSON.parse(JSON.stringify(raw)) as JsonValue, { maxBytes: maxResponseBytes }))['data']);
     if (data['usage'] !== undefined && data['usage'] !== null) usage = data['usage'];
     if (!Array.isArray(data['choices'])) return failed();
@@ -294,9 +313,11 @@ export function mistral(options: MistralProviderOptions): ModelProvider {
           jsonValue(body, { maxBytes: maxRequestBytes + encodedMediaBytes(request.messages) });
 
           const callOptions = { signal, headers, retries: noRetries };
-          const payload = onDelta
-            ? await assemble(await chat.stream({ ...body, stream: true } as never, callOptions), maxResponseBytes, onDelta)
-            : object(jsonValue(JSON.parse(JSON.stringify(await chat.complete(body as never, callOptions))) as JsonValue, { maxBytes: maxResponseBytes * 2 }));
+          const operation = onDelta
+            ? chat.stream({ ...body, stream: true } as never, callOptions).then(events => assemble(events, maxResponseBytes, onDelta, signal))
+            : chat.complete(body as never, callOptions).then(response =>
+              object(jsonValue(JSON.parse(JSON.stringify(response)) as JsonValue, { maxBytes: maxResponseBytes * 2 })));
+          const payload = await waitForSdk(operation, signal);
 
           const usage = object(payload['usage']);
           const inputTokens = integer(usage['promptTokens']); const outputTokens = integer(usage['completionTokens']);

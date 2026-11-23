@@ -1,6 +1,6 @@
 ---
 title: "Choose a starter"
-description: "Choose among 11 runnable Mayura applications, six framework notebooks and focused templates, then follow the right setup path."
+description: "Choose among runnable Mayura applications, six framework notebooks and focused templates, then follow the right setup path."
 ---
 
 Start with the application shape you need. A **starter** includes an application, tests and configuration;
@@ -22,6 +22,7 @@ You do not need a model API key to learn the approval and persistence flow.
 | Parallel research | `research-team` | Planner, researchers and writer with bounded shared spending |
 | Webhook-driven work | `event-automation` | Signed webhook admission and durable MCP tool work |
 | Interactive terminal use | `cli-agent` | Terminal conversation with confirmation for writes |
+| A retrieval agent with citations | [`rag-modal-pinecone`](rag-modal-pinecone-starter.md) | Durable Markdown ingestion, an offline demo and optional hosted retrieval |
 
 The six framework notebooks share one portable server application and the same scope, approval and recovery
 contract. Choose the framework your team already operates; choosing a framework does not change an agent's authority.

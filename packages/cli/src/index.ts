@@ -49,7 +49,7 @@ export const PEER_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Complete multi-file projects: offline by default, one environment switch to a real provider or PostgreSQL. */
-export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent', 'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt'] as const);
+export const STARTER_NAMES = Object.freeze(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent', 'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt', 'rag-modal-pinecone'] as const);
 export type StarterName = typeof STARTER_NAMES[number];
 
 const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze({
@@ -64,6 +64,7 @@ const starterDescriptions: Readonly<Record<StarterName, string>> = Object.freeze
   'tanstack-start': 'TanStack Start notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
   'sveltekit': 'SvelteKit notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
   'nuxt': 'Nuxt notebook: scoped persistent threads, exact in-run approvals, local deterministic models and background workflow processing.',
+  'rag-modal-pinecone': 'Retrieval agent with durable Markdown ingestion, exact citations, an offline demo and an opt-in Modal + Pinecone deployment.',
 });
 
 const id = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
@@ -73,6 +74,7 @@ const starterRoot = fileURLToPath(new URL('../starters/', import.meta.url));
 const starterLimits = Object.freeze({ files: 256, fileBytes: 262_144, totalBytes: 4_194_304 });
 // Build output, installs and local state never leave the repository copy of a starter.
 const starterSkipped = new Set(['node_modules', 'dist', 'build', '.data', 'coverage']);
+const starterWorkspaceDependencies = new Set(['mayura', '@mayurajs/storage-d1', '@mayurajs/vector-pinecone']);
 
 export interface ProjectToolRecord {
   readonly id: string; readonly version: string; readonly effects: 'none' | 'read' | 'write' | 'host'; readonly capabilities: readonly string[];
@@ -181,8 +183,8 @@ async function starterManifest(content: string, name: string): Promise<string> {
   for (const field of ['dependencies', 'devDependencies']) {
     const entries = manifest[field] as Record<string, string> | undefined;
     for (const [dependency, range] of Object.entries(entries ?? {})) {
-      if (range === 'workspace:*' && (dependency === 'mayura' || dependency === '@mayurajs/storage-d1')) entries![dependency] = version;
-      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may link only mayura and the reviewed D1 extension to the workspace.');
+      if (range === 'workspace:*' && starterWorkspaceDependencies.has(dependency)) entries![dependency] = version;
+      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may only link to reviewed Mayura packages.');
     }
   }
   return `${JSON.stringify(manifest, null, 2)}\n`;

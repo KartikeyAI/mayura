@@ -85,6 +85,28 @@ describe('@mayurajs/provider-mistral', () => {
   const final = { kind: 'final' as const, output: { answer: 'ok' }, inputTokens: 1, outputTokens: 1 };
   const tools = [{ id: 'orders.lookup', description: 'Look up an order.', inputJsonSchema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false } }];
 
+  it.each(['generate', 'stream'] as const)('settles a cancelled %s call when the SDK transport is still pending', async mode => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const dispatched = new Promise<void>(resolve => { started = resolve; });
+    let release!: (response: Response) => void;
+    const heldResponse = new Promise<Response>(resolve => { release = resolve; });
+    const adapter = mistral({ apiKey: 'fixture-key', fetch: () => { started(); return heldResponse; } }).model('mistral-test', settings);
+    const input = request({ signal: controller.signal });
+    const operation = mode === 'generate' ? adapter.generate(input) : adapter.stream!(input)[Symbol.asyncIterator]().next();
+    const pending = operation.catch((error: unknown) => error);
+    await dispatched;
+    controller.abort();
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([pending, new Promise(resolve => { deadline = setTimeout(() => resolve('still pending'), 1_000); })]);
+      expect(outcome).toMatchObject({ code: 'CANCELLED' });
+    } finally {
+      clearTimeout(deadline);
+      release(json(completion({ content: '{"answer":"late"}' }, 'stop', usage(1, 1))));
+    }
+  });
+
   it('sends a strict chat request to Mistral with the key, and nothing from the environment', async () => {
     vi.stubEnv('MISTRAL_API_KEY', 'key-from-env'); vi.stubEnv('MISTRAL_DEBUG', 'true');
     vi.stubEnv('MISTRAL_SDK_TELEMETRY', 'dedicated'); vi.stubEnv('MISTRAL_OTLP_TRACES_ENDPOINT', 'https://attacker.example/v1/traces');

@@ -1,0 +1,28 @@
+{
+  "name": "mayura-starter-rag-modal-pinecone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable retrieval and exact citations with a local demo and opt-in Modal + Pinecone.",
+  "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
+  "bin": { "rag": "dist/src/cli.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/*.test.js\"",
+    "dev": "tsc -p tsconfig.json && node dist/src/cli.js demo",
+    "demo": "node dist/src/cli.js demo",
+    "ingest": "node dist/src/cli.js ingest",
+    "ask": "node dist/src/cli.js ask"
+  },
+  "dependencies": {
+    "mayura": "workspace:*",
+    "@mayurajs/vector-pinecone": "workspace:*",
+    "better-sqlite3": "13.0.3",
+    "modal": "0.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "7.0.2"
+  }
+}

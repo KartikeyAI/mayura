@@ -1,0 +1,13 @@
+{
+  "format": "mayura.project.v1",
+  "name": "rag-modal-pinecone",
+  "template": "rag-modal-pinecone",
+  "definitions": [
+    { "kind": "workflow", "id": "rag.ingest", "version": "1", "source": "src/application.ts" },
+    { "kind": "agent", "id": "rag.answer", "version": "1", "source": "src/application.ts" }
+  ],
+  "tools": [
+    { "id": "rag.ingest.stage", "version": "1", "effects": "write", "capabilities": ["rag:index", "rag:embed"] },
+    { "id": "rag.ingest.publish", "version": "1", "effects": "write", "capabilities": ["rag:index"] }
+  ]
+}

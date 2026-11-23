@@ -31,9 +31,9 @@ export async function initWizard(p: Paint, io: WizardIo = {}, afterWrite?: Wizar
   if (prompts.isCancel(name)) return cancelled();
   prompts.log.message(p.dim(wrap(catalog.find(item => item.name === name)!.description, 76, '')), io);
 
-  // Starters run on real models once configured; templates use fixtures and need no provider.
+  // The RAG starter configures both hosted services in its own README.
   let provider: ProviderChoice | undefined; let providerLabel = '';
-  if (kind === 'starter') {
+  if (kind === 'starter' && name !== 'rag-modal-pinecone') {
     const chosen = await prompts.select({ ...io, message: 'Which model provider?', initialValue: 'offline', maxItems: 8,
       options: PROVIDERS.map(item => ({ value: item.id, label: item.label, hint: item.hint })) });
     if (prompts.isCancel(chosen)) return cancelled();
