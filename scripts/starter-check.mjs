@@ -58,6 +58,11 @@ if (!skipPacked) {
   const output = await workDirectory(join(await realpath(artifacts), 'starter-check-')); const tarballs = join(output, 'tarballs'); const cache = join(output, 'npm-cache');
   await mkdir(tarballs); await mkdir(cache);
   const { npm, packages, packClosure } = createPacker({ output, tarballs });
+  await packClosure([['mayura', join(workspace, 'packages', 'cli')]]);
+  const archive = archiveFiles(await readFile(fileURLToPath(packages.get('mayura').archive)));
+  const sharedRoot = 'lib/cli/starter-assets/';
+  const shared = JSON.parse(archive.get(`${sharedRoot}manifest.json`)?.toString('utf8') ?? '{}');
+  const generatedPath = path => path.split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/');
 
   for (const report of reports) {
     const { starter } = report; const directory = join(output, starter); const started = performance.now();
@@ -65,10 +70,16 @@ if (!skipPacked) {
     assert.equal((await readProject(join(directory, 'mayura.project.json'))).template, starter);
     // The published package (`mayura`, bundled) must ship every file the initializer copies from the repository copy.
     // AGENTS.md and CLAUDE.md are written by the initializer itself, unless a starter brings its own.
-    const published = await packClosure([['mayura', join(workspace, 'packages', 'cli')]]).then(() => packages.get('mayura'));
     const prefix = `lib/cli/starters/${starter}/`;
-    const shipped = new Set(archivePaths(await readFile(fileURLToPath(published.archive))).filter(path => path.startsWith(prefix))
-      .map(path => path.slice(prefix.length).split('/').map(part => part.startsWith('dot-') ? `.${part.slice(4)}` : part).join('/')));
+    const shipped = new Set([...archive.keys()].filter(path => path.startsWith(prefix))
+      .map(path => generatedPath(path.slice(prefix.length))));
+    for (const [raw, digest] of Object.entries(shared[starter] ?? {})) {
+      const path = generatedPath(raw);
+      assert(!shipped.has(path), `Duplicate starter asset in the archive: ${starter}/${path}.`);
+      const bytes = archive.get(`${sharedRoot}${digest}`);
+      assert(bytes && createHash('sha256').update(bytes).digest('hex') === digest, `Invalid shared starter asset: ${starter}/${path}.`);
+      shipped.add(path);
+    }
     const generated = ['AGENTS.md', 'CLAUDE.md'].filter(path => !shipped.has(path));
     assert.deepEqual(generated.filter(path => !plan.changes.some(change => change.path === path)), [], `${starter} is missing its guidance for coding assistants.`);
     assert.deepEqual([...shipped].sort(), plan.changes.map(change => change.path).filter(path => !generated.includes(path)).sort(), `mayura does not ship exactly the ${starter} files.`);
@@ -111,17 +122,17 @@ if (!skipPacked) {
   reports.output = output;
 }
 
-/** File paths in a packed npm archive (ustar), relative to its `package/` root. */
-function archivePaths(bytes) {
-  const tar = gunzipSync(bytes); const paths = [];
+/** Files in a packed npm archive (ustar), relative to its `package/` root. */
+function archiveFiles(bytes) {
+  const tar = gunzipSync(bytes); const files = new Map();
   for (let offset = 0; offset + 512 <= tar.length;) {
     const header = tar.subarray(offset, offset + 512); if (header.every(byte => byte === 0)) break;
     const text = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\u0000.*$/su, '');
     const name = [text(345, 155), text(0, 100)].filter(Boolean).join('/'); const size = Number.parseInt(text(124, 12).trim() || '0', 8);
-    if (header[156] === 48 || header[156] === 0) paths.push(name.replace(/^package\//u, ''));
+    if (header[156] === 48 || header[156] === 0) files.set(name.replace(/^package\//u, ''), tar.subarray(offset + 512, offset + 512 + size));
     offset += 512 + Math.ceil(size / 512) * 512;
   }
-  return paths;
+  return files;
 }
 
 /**
