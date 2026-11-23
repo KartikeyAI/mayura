@@ -4,21 +4,25 @@
 //   virtual:mayura-search          the text of every section of every page, loaded when someone opens search
 //   virtual:mayura-doc/<slug>      one rendered page: { slug, file, title, description, html, headings }
 //   virtual:mayura-snippet/<name>  a highlighted file from site/snippets/, for the landing page
+//   virtual:mayura-ui-sources      original UI source and highlighted TSX/CSS/install commands for the gallery
 // Everything is rendered at build time; in development an edit under docs/ or snippets/ reloads the page.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { format } from 'prettier';
 import type { Plugin } from 'vite';
 import { navigation as readNavigation, readPage } from '../../scripts/docs-index.mjs';
-import { codeBlock, getHighlighter, renderMarkdown, textOf, type Heading } from './markdown.ts';
+import { codeBlock, getHighlighter, highlight, renderMarkdown, textOf, type Heading } from './markdown.ts';
 
 const site = resolve(import.meta.dirname, '..');
 const docsRoot = resolve(site, '../docs');
 const snippetsRoot = resolve(site, 'snippets');
+const uiRoot = resolve(site, '../packages/cli/ui');
 
 const INDEX = 'virtual:mayura-docs';
 const SEARCH = 'virtual:mayura-search';
 const PAGE = 'virtual:mayura-doc/';
 const SNIPPET = 'virtual:mayura-snippet/';
+const UI_SOURCES = 'virtual:mayura-ui-sources';
 
 // scripts/docs-index.mjs is plain JavaScript; this is the shape its navigation() returns.
 const navigation = readNavigation as () => { title: string; pages: { path: string; title: string; description: string }[] }[];
@@ -93,11 +97,29 @@ export function docs({ base }: { base: string }): Plugin {
   return {
     name: 'mayura-docs',
     resolveId(id) {
-      if (id === INDEX || id === SEARCH || id.startsWith(PAGE) || id.startsWith(SNIPPET)) return `\0${id}`;
+      if (id === INDEX || id === SEARCH || id === UI_SOURCES || id.startsWith(PAGE) || id.startsWith(SNIPPET)) return `\0${id}`;
     },
     async load(id) {
       if (!id.startsWith('\0virtual:mayura-')) return;
       const name = id.slice(1);
+      if (name === UI_SOURCES) {
+        // Format and tokenize trusted repository source at build time; copy actions retain the original file.
+        const shiki = await getHighlighter();
+        const entries = await Promise.all(readdirSync(uiRoot).filter(file => /\.(?:tsx|css)$/u.test(file)).sort().map(async file => {
+          const path = join(uiRoot, file);
+          this.addWatchFile(path);
+          const source = readFileSync(path, 'utf8');
+          const language = file.endsWith('.css') ? 'css' : 'tsx';
+          const formatted = await format(source, {
+            filepath: path, parser: language === 'css' ? 'css' : 'typescript',
+            printWidth: 90, tabWidth: 2, singleQuote: true, trailingComma: 'all', semi: true, endOfLine: 'lf',
+          });
+          const command = `mayura add ui ${file.slice(0, -4)} --directory ./my-app --apply`;
+          return [file, { source, html: highlight(shiki, formatted, language),
+            commandHtml: language === 'tsx' ? highlight(shiki, command, 'bash') : '' }];
+        }));
+        return `export default ${JSON.stringify(Object.fromEntries(entries))};`;
+      }
       if (name === INDEX) {
         this.addWatchFile(join(docsRoot, 'README.md'));
         return index();
@@ -119,10 +141,10 @@ export function docs({ base }: { base: string }): Plugin {
       }
     },
     configureServer(server) {
-      server.watcher.add([docsRoot, snippetsRoot]);
-      server.watcher.on('change', file => {
+      server.watcher.add([docsRoot, snippetsRoot, uiRoot]);
+      server.watcher.on('all', (_event, file) => {
         const path = resolve(file);
-        if (!path.startsWith(docsRoot + sep) && !path.startsWith(snippetsRoot + sep)) return;
+        if (!path.startsWith(docsRoot + sep) && !path.startsWith(snippetsRoot + sep) && !path.startsWith(uiRoot + sep)) return;
         cache.clear();
         for (const environment of Object.values(server.environments)) {
           for (const [id, module] of environment.moduleGraph.idToModuleMap) {

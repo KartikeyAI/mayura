@@ -3,6 +3,7 @@ title: "Chroma vectors"
 description: "Scoped native vector storage for chroma."
 package: "@mayurajs/vector-chroma"
 vendor: "Chroma"
+logo: "chroma"
 website: "https://docs.trychroma.com"
 area: "vectors"
 ---

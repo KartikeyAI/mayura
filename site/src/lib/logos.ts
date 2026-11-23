@@ -2,11 +2,13 @@
 // are in public/logos/:
 //   - from svgl (https://github.com/pheralb/svgl, MIT) at commit ed75393 and f9b726c: plain names;
 //   - from Simple Icons (https://simpleicons.org, CC0) 16.35.0, coloured with the brand's colour: `si-*`;
-//   - the SVG icon each vendor publishes on its own website: `vendor-*`.
+//   - icons each vendor publishes on its own website: `vendor-*` (original SVG, PNG, ICO or WebP).
+// Sources and checksums for additions are recorded in public/logos/sources.json.
 // A brand with none of these gets a tile with its initials instead of an improvised logo. Every logo is a trademark of
 // its owner, shown only to say Mayura works with that product; none of them endorses Mayura.
 
-export interface LogoFiles { light: string; dark?: string }
+// Legacy entries omit the .svg suffix; official favicons retain their original image format.
+export interface LogoFiles { light: string; dark?: string; darkTile?: boolean }
 export type LogoSource = LogoFiles | { initials: string };
 
 export const logos: Record<string, LogoSource> = {
@@ -33,7 +35,7 @@ export const logos: Record<string, LogoSource> = {
   // Voice
   elevenlabs: { light: 'si-elevenlabs', dark: 'si-elevenlabs_dark' },
   deepgram: { light: 'si-deepgram' },
-  assemblyai: { initials: 'AA' },
+  assemblyai: { light: 'vendor-assemblyai.ico' },
   cartesia: { light: 'vendor-cartesia' },
   // Data and files
   turso: { light: 'turso-light', dark: 'turso-dark' },
@@ -43,25 +45,25 @@ export const logos: Record<string, LogoSource> = {
   sqlite: { light: 'sqlite' },
   'google-drive': { light: 'drive' },
   mesa: { light: 'vendor-mesa' },
-  'files-sdk': { initials: 'FS' },
+  'files-sdk': { light: 'vendor-files-sdk', dark: 'vendor-files-sdk-dark' },
   minio: { light: 'si-minio' },
   backblaze: { light: 'si-backblaze' },
   // Observability
   langfuse: { light: 'vendor-langfuse' },
   langsmith: { light: 'si-langchain' },
   datadog: { light: 'datadog' },
-  arize: { initials: 'AX' },
+  arize: { light: 'vendor-arize.png' },
   sentry: { light: 'sentry' },
   betterstack: { light: 'si-betterstack', dark: 'si-betterstack_dark' },
   posthog: { light: 'posthog' },
   opentelemetry: { light: 'si-opentelemetry', dark: 'si-opentelemetry_dark' },
   // Sandboxes and hosting
-  e2b: { initials: 'E2B' },
+  e2b: { light: 'vendor-e2b.png', darkTile: true },
   daytona: { light: 'vendor-daytona' },
   fly: { light: 'fly' },
   modal: { light: 'si-modal' },
   railway: { light: 'railway', dark: 'railway_dark' },
-  northflank: { initials: 'NF' },
+  northflank: { light: 'vendor-northflank' },
   codesandbox: { light: 'codesandbox-square' },
   render: { light: 'render_black', dark: 'render_white' },
   digitalocean: { light: 'digitalocean' },
@@ -70,11 +72,11 @@ export const logos: Record<string, LogoSource> = {
   // Browsers
   browserbase: { light: 'vendor-browserbase' },
   steel: { light: 'vendor-steel' },
-  hyperbrowser: { initials: 'HB' },
+  hyperbrowser: { light: 'vendor-hyperbrowser.ico' },
   browserless: { light: 'vendor-browserless' },
   kernel: { light: 'vendor-kernel' },
-  'browser-use': { initials: 'BU' },
-  anchor: { initials: 'AB' },
+  'browser-use': { light: 'vendor-browser-use.png', darkTile: true },
+  anchor: { light: 'vendor-anchor.png' },
   browserview: { light: 'vendor-browserview' },
   firecrawl: { light: 'firecrawl', dark: 'firecrawl-dark' },
   chrome: { light: 'chrome' },
@@ -91,6 +93,21 @@ export const logos: Record<string, LogoSource> = {
   unkey: { light: 'vendor-unkey' },
   reqkey: { light: 'vendor-reqkey' },
   'better-auth': { light: 'better-auth_light', dark: 'better-auth_dark' },
+  cedar: { light: 'vendor-cedar.png' },
+  openfga: { light: 'vendor-openfga' },
+  oso: { light: 'vendor-oso.png', darkTile: true },
+  permit: { light: 'vendor-permit.ico' },
+  // Retrieval and AI gateways; libSQL and pgvector use their parent database brands in page metadata.
+  chroma: { light: 'vendor-chroma.ico' },
+  pinecone: { light: 'vendor-pinecone.ico' },
+  qdrant: { light: 'qdrant-icon-light', dark: 'qdrant-icon-dark' },
+  weaviate: { light: 'vendor-weaviate.ico' },
+  cohere: { light: 'cohere' },
+  jina: { light: 'vendor-jina.png' },
+  voyage: { light: 'vendor-voyage' },
+  helicone: { light: 'vendor-helicone.webp' },
+  litellm: { light: 'vendor-litellm' },
+  portkey: { light: 'vendor-portkey.png' },
   // Runtimes, frameworks and protocols
   nodejs: { light: 'nodejs' },
   deno: { light: 'deno', dark: 'deno_dark' },
@@ -98,10 +115,13 @@ export const logos: Record<string, LogoSource> = {
   nextjs: { light: 'nextjs_icon_dark' },
   react: { light: 'react_light', dark: 'react_dark' },
   hono: { light: 'hono' },
+  tanstack: { light: 'tanstack_light', dark: 'tanstack_dark' },
+  svelte: { light: 'svelte' },
+  nuxt: { light: 'nuxt' },
   mcp: { light: 'model-context-protocol-light', dark: 'model-context-protocol-dark' },
   mem0: { light: 'vendor-mem0' },
   supermemory: { light: 'vendor-supermemory' },
-  openviking: { initials: 'OV' },
+  openviking: { light: 'vendor-openviking' },
   quickjs: { initials: 'QJS' },
   mayura: { light: '../favicon' },
 };

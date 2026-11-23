@@ -14,10 +14,10 @@ export function BrandLogo({ logo, size = 'md' }: { logo: string; size?: 'sm' | '
     );
   }
   const image = (file: string, className: string) => (
-    <img src={asset(`logos/${file}.svg`)} alt="" loading="lazy" decoding="async" className={`size-full object-contain ${className}`} />
+    <img src={asset(`logos/${/\.(?:svg|png|ico|webp)$/u.test(file) ? file : `${file}.svg`}`)} alt="" loading="lazy" decoding="async" className={`size-full object-contain ${className}`} />
   );
   return (
-    <span aria-hidden="true" className={`grid shrink-0 place-items-center border border-line bg-raised ${box}`}>
+    <span aria-hidden="true" className={`grid shrink-0 place-items-center border border-line ${source.darkTile ? 'bg-[#161616]' : 'bg-raised'} ${box}`}>
       {source.dark ? <>{image(source.light, 'dark:hidden')}{image(source.dark, 'hidden dark:block')}</> : image(source.light, '')}
     </span>
   );

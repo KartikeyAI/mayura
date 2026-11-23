@@ -3,6 +3,7 @@ title: "Pinecone vectors"
 description: "Scoped native vector storage for pinecone."
 package: "@mayurajs/vector-pinecone"
 vendor: "Pinecone"
+logo: "pinecone"
 website: "https://docs.pinecone.io"
 area: "vectors"
 ---

@@ -3,6 +3,7 @@ title: "Libsql vectors"
 description: "Scoped native vector storage for libsql."
 package: "@mayurajs/vector-libsql"
 vendor: "Libsql"
+logo: "turso"
 website: "https://docs.turso.tech"
 area: "vectors"
 ---

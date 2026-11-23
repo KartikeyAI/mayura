@@ -9,6 +9,9 @@ only authorized evidence and exact citation identities. The [qualified Modal + P
 profile](rag-production.md#qualified-production-profile) is stable within its tested scope. Other RAG profiles
 remain experimental. See [release validation status](release-readiness.md) for the limits of the available evidence.
 
+Follow [Build and deploy a retrieval agent](rag-deployment.md) to run the offline example and choose what to
+verify before connecting a hosted deployment.
+
 ## Retrieval configuration
 
 Chunk-level fusion remains the default. Use `fusionLevel: 'document'` to combine ranks by document and

@@ -1,5 +1,10 @@
 // Modules generated at build time by plugins/docs.ts.
 
+declare module 'virtual:mayura-ui-sources' {
+  const sources: Record<string, { source: string; html: string; commandHtml: string }>;
+  export default sources;
+}
+
 declare module 'virtual:mayura-docs' {
   /** From an integration page's frontmatter (docs/integrations/*.md). */
   export interface Integration { package: string; vendor: string; logo: string; website: string; area: string }

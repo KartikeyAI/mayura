@@ -3,6 +3,7 @@ title: "Voyage reranking"
 description: "Bounded indexed-result reranking with voyage."
 package: "@mayurajs/reranker-voyage"
 vendor: "Voyage"
+logo: "voyage"
 website: "https://docs.voyageai.com"
 area: "rerankers"
 ---

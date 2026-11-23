@@ -14,6 +14,9 @@ const origin = (process.env['SITE_ORIGIN'] ?? 'https://mayurajs.com').replace(/\
 
 export default defineConfig({
   base,
+  // Prerendering fetches Vite's preview URL. Pin the loopback family so Windows does not alternate
+  // between IPv6 localhost and an IPv4 listener while crawling pages concurrently.
+  preview: { host: '127.0.0.1' },
   // The gallery compiles ../packages/cli/ui source. Resolve its React imports from this site's installation,
   // matching tsconfig's type paths, without depending on workspace packages or loading a second React instance.
   resolve: { dedupe: ['react', 'react-dom'] },

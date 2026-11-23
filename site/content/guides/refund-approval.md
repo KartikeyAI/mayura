@@ -2,6 +2,7 @@
 title: "Build a refund agent that pays only after a person approves"
 description: "An AI agent triages refund requests, a durable workflow checks policy, and nothing is paid until an operator approves the exact payment. Built from the approval-workflow starter."
 date: 2026-09-29
+updated: 2026-10-23
 tags: approvals, durable workflows, permissions, starter
 ---
 
@@ -14,6 +15,10 @@ This guide builds that system from Mayura's `approval-workflow` starter. It runs
 end you'll have approved a refund in the operator console and know which lines of code make each guarantee hold.
 
 ## What you'll build
+
+In V1.2, an agent can also pause directly for an exact tool approval. Use
+[the persistent chat walkthrough](persistent-chat-approvals.md) for that shorter interaction. This guide keeps the
+durable business workflow because policy checks, human review, payment and notification form a longer process.
 
 1. Your support system sends a refund request to an **intake agent**.
 2. The agent classifies it, rates its risk and calls one tool, `refunds.open`, which checks the order and starts a

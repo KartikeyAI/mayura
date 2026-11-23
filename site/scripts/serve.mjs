@@ -11,6 +11,7 @@ const base = `/${(process.env.SITE_BASE ?? '').replace(/^\/+|\/+$/gu, '')}/`.rep
 const port = Number(process.env.PORT ?? 4173);
 const types = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.ico': 'image/x-icon', '.webp': 'image/webp',
   '.json': 'application/json', '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
 };
 

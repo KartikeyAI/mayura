@@ -1,0 +1,186 @@
+{
+  "retrieved": "2026-10-24",
+  "notice": "Brand assets belong to their respective owners and identify integrations, without implying endorsement.",
+  "assets": [
+    {
+      "file": "cohere.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/cohere.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "c7fba29253b3b598d149f764d2629344bd60e13abfbd770a4214331950936d67"
+    },
+    {
+      "file": "nuxt.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/nuxt.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "9323b7013d0e1da4762b76a87ff137a99ff240f9564623283205aaf84bec27bb"
+    },
+    {
+      "file": "svelte.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/svelte.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "9864a6c1b0d9c2f4f453b3c0c049c61b7f81e9b3dae8207d033e05472ef45682"
+    },
+    {
+      "file": "tanstack_light.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/tanstack_light.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "628d270c6ce84a773113fa4e8098d0ba194de7edddf07384dffe336098160868"
+    },
+    {
+      "file": "tanstack_dark.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/tanstack_dark.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "0f7d0805e1bf9a37d3e9203fb02b719cff2a3e469596a77b6414f57c435151cb"
+    },
+    {
+      "file": "qdrant-icon-light.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/qdrant-icon-light.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "e620b07335d021791abe6e1c8d46c4c64f1113d0717e79bb46e7228a6b3f8e1c"
+    },
+    {
+      "file": "qdrant-icon-dark.svg",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/qdrant-icon-dark.svg",
+      "source": "SVGL (MIT)",
+      "sha256": "1a061aa0ed894c8580b83e62934ae77d7d852d5020ba0d190b1c4daf7d713fad"
+    },
+    {
+      "file": "vendor-assemblyai.ico",
+      "url": "https://www.assemblyai.com/favicon.ico",
+      "source": "https://www.assemblyai.com/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "1bfbc6db93b41df593118cb1d149932b1950a975391c42a3f439105d0f4db5dc"
+    },
+    {
+      "file": "vendor-files-sdk.svg",
+      "url": "https://files-sdk.dev/icon.svg",
+      "source": "https://files-sdk.dev/",
+      "sha256": "698efc8cc26d5e34bd02ff311a3b39043432a2dd411ad165ff79945a475dcb09"
+    },
+    {
+      "file": "vendor-e2b.png",
+      "url": "https://e2b.dev/icon1.png?icon1.1ni6zqs1sltj9.png",
+      "source": "https://e2b.dev/",
+      "sha256": "706cb3803f17379aa24efb0eabe867caa2653a7fddd60914fd0358f8a23d2597"
+    },
+    {
+      "file": "vendor-hyperbrowser.ico",
+      "url": "https://www.hyperbrowser.ai/favicon.ico",
+      "source": "https://www.hyperbrowser.ai/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "4be3f8a07b852769414f3e138903891e08b4061ce830a9123e73dd3201f16c33"
+    },
+    {
+      "file": "vendor-browser-use.png",
+      "url": "https://browser-use.com/favicon-32x32.png",
+      "source": "https://browser-use.com/",
+      "sha256": "3cee151a6b9c7a5d565326704e2361dc5c63a0c656133bdd4ee6bb9fd500f4d5"
+    },
+    {
+      "file": "vendor-anchor.png",
+      "url": "https://cdn.prod.website-files.com/68e76a236cc487333075990b/68e76a236cc4873330759969_favicon.png",
+      "source": "https://anchorbrowser.io/",
+      "sha256": "821a826344cf81f66b98df5cece1d7c1fd260e1a0f4b1963778db17b0a468d17"
+    },
+    {
+      "file": "vendor-openviking.svg",
+      "url": "https://res.gcloudcache.com/volc-fe/openviking/playground/static/svg/favicon-BXHrVgog.svg",
+      "source": "https://www.openviking.ai/",
+      "sha256": "64182f9c85b0c9359051f7d08614d19d3b6d3b9526de980dee7dbcf95a9d7fcb"
+    },
+    {
+      "file": "vendor-cedar.png",
+      "url": "https://cedarpolicy.com/favicon.png",
+      "source": "https://cedarpolicy.com/",
+      "sha256": "925340121a2c0d3d4315805b886a76d5b9c0dc796671eda6273f02871e5fbd99"
+    },
+    {
+      "file": "vendor-openfga.svg",
+      "url": "https://openfga.dev/img/openfga-icon.svg",
+      "source": "https://openfga.dev/",
+      "sha256": "2b1d27a35c3108f54ec70390eb3ea25f7ecb8cc3b2dcdb1c08d701b4071ce128"
+    },
+    {
+      "file": "vendor-oso.png",
+      "url": "https://cdn.prod.website-files.com/5f148310b9588c295ed77f20/68fa67ab46dd1f61a6cabcd2_oso-bear-favicon.png",
+      "source": "https://www.osohq.com/",
+      "sha256": "c5244564bd1cace1f5abeca1cfc23bd2e243350935ad0e70d28c85bdb708a4d6"
+    },
+    {
+      "file": "vendor-permit.ico",
+      "url": "https://www.permit.io/favicon.ico?2753d112d5bcd555",
+      "source": "https://www.permit.io/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "eb5dc1e55419d81f84ebe79eb3fd9d7ae471b9429bf974711414d40d957661cc"
+    },
+    {
+      "file": "vendor-helicone.webp",
+      "url": "https://www.helicone.ai/static/logo.webp",
+      "source": "https://www.helicone.ai/",
+      "sha256": "1067737eba5f45550219bffb7869cc4de14e7e3114d8be8cc915672b53c1b7d0"
+    },
+    {
+      "file": "vendor-portkey.png",
+      "url": "https://framerusercontent.com/images/pkFK3AGXHirogqiN67JGtlnMVM.png",
+      "source": "https://portkey.ai/",
+      "sha256": "0e3926ca23aab39b51f4ca230d0b61bc098693800dd3664a4344f5b980b119d0"
+    },
+    {
+      "file": "vendor-jina.png",
+      "url": "https://jina.ai/icons/favicon-128x128.png",
+      "source": "https://jina.ai/",
+      "sha256": "1fc7fa5210f845fa4efa32dfe1f800063009919ac6a066df3825b80196baa316"
+    },
+    {
+      "file": "vendor-voyage.svg",
+      "url": "https://www.voyageai.com/icon.svg",
+      "source": "https://www.voyageai.com/",
+      "sha256": "dd27eee6d8329528f1fba7b86e0b4bf57389d081ce53a4e1d76bef036d1499ff"
+    },
+    {
+      "file": "vendor-chroma.ico",
+      "url": "https://www.trychroma.com/img/favicon.ico",
+      "source": "https://www.trychroma.com/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "133e69ee7c3b6914b5c48e3ea30d2f95afe519411396c49745c5618247815efa"
+    },
+    {
+      "file": "vendor-pinecone.ico",
+      "url": "https://www.pinecone.io/favicon.ico?favicon.16aah0kd0o17q.ico",
+      "source": "https://www.pinecone.io/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "0843757023990bf2f2af084c2cada83bd4cffec708c63a3e647404ee56204426"
+    },
+    {
+      "file": "vendor-weaviate.ico",
+      "url": "https://weaviate.io/img/favicon.ico",
+      "source": "https://weaviate.io/",
+      "note": "Original closest-to-64px frame retained in an ICO container, without resizing.",
+      "sha256": "a3dcd5a33b0581f5c99a595ad66d913cecf69d2ab01644210efebb48f95a2cc7"
+    },
+    {
+      "file": "vendor-files-sdk-dark.svg",
+      "url": "https://files-sdk.dev/icon-dark.svg",
+      "source": "https://files-sdk.dev/",
+      "sha256": "23caaa62a7ec9863445d979cc52ebd7088dfbc4db6f87164b9c341b5f96d03ed"
+    },
+    {
+      "file": "vendor-northflank.svg",
+      "url": "https://northflank.com/images/logo/logo.svg",
+      "source": "https://northflank.com/",
+      "sha256": "af693f07c940c2a5d91b7c8f12ed1450946e25129b370037f5a6c1b452102622"
+    },
+    {
+      "file": "vendor-litellm.svg",
+      "url": "https://docs.litellm.ai/img/brand/litellm-favicon.svg",
+      "source": "https://docs.litellm.ai/",
+      "sha256": "96e310f8ea03304d747b5684ba93f9917d69572b4fc9096f4732e5c4d1786799"
+    },
+    {
+      "file": "vendor-arize.png",
+      "url": "https://app.arize.com/favicon-32x32.png",
+      "source": "https://app.arize.com/",
+      "sha256": "5e919ed9f28a7117c1a0e65fdf1f36e24da68446bdbba847c25e50a86355c606"
+    }
+  ]
+}

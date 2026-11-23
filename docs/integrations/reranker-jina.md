@@ -3,6 +3,7 @@ title: "Jina reranking"
 description: "Bounded indexed-result reranking with jina."
 package: "@mayurajs/reranker-jina"
 vendor: "Jina"
+logo: "jina"
 website: "https://jina.ai/reranker"
 area: "rerankers"
 ---
