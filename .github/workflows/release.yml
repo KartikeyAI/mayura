@@ -124,7 +124,7 @@ jobs:
           node scripts/version.mjs set "$VERSION"
           pnpm build
           node scripts/secret-scan.mjs
-          pnpm upgrade:compat
+          pnpm upgrade:compat --fetch-baseline
           pnpm release:artifacts
           node scripts/sbom.mjs
       - name: Publish (dry run)
@@ -196,7 +196,7 @@ jobs:
           node scripts/release-finalize.mjs --prepared "$VERSION"
           pnpm build
           node scripts/secret-scan.mjs
-          pnpm upgrade:compat
+          pnpm upgrade:compat --fetch-baseline
           pnpm release:artifacts
           node scripts/sbom.mjs
           mkdir -p .artifacts/full-release
@@ -308,7 +308,7 @@ jobs:
         run: |
           node scripts/version.mjs set "$VERSION"
           pnpm build
-          pnpm upgrade:compat
+          pnpm upgrade:compat --fetch-baseline
           pnpm release:artifacts
           node scripts/sbom.mjs
       - name: Publish the reviewed set through OIDC and verify latest tags

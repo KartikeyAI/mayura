@@ -1,7 +1,8 @@
 // Upgrade compatibility (F6): durable state created by a baseline version must resume on this version.
-//   node scripts/upgrade-compat.mjs [--baseline <git ref>] [--keep]
+//   node scripts/upgrade-compat.mjs [--baseline <git ref>] [--fetch-baseline] [--keep]
 // The baseline defaults to the previous `v*` release tag (skipped when there is none). It is checked out into a temporary git worktree, installed
-// offline from the local pnpm store and built. The baseline starts a durable human-plus-timer run and writes compact
+// offline from the local pnpm store and built. Release runners can fetch the baseline lockfile first. The baseline
+// starts a durable human-plus-timer run and writes compact
 // memory; this checkout then resumes the run to completion and reads the memory. Nothing outside the temporary
 // directory changes.
 import assert from 'node:assert/strict';
@@ -42,7 +43,13 @@ const root = await mkdtemp(join(tmpdir(), 'mayura-upgrade-'));
 const tree = join(root, 'baseline'); const database = join(root, 'upgrade.sqlite');
 try {
   await git(['worktree', 'add', '--detach', tree, commit]);
-  await run(process.execPath, [pnpmCli(), 'install', '--frozen-lockfile', '--offline', '--ignore-scripts'], tree);
+  const pnpm = pnpmCli();
+  // A cold release runner only has the candidate's dependencies. Fetch historical tarballs into the same pnpm
+  // store from the baseline's frozen lockfile, with scripts disabled, before its offline install and execution.
+  if (process.argv.includes('--fetch-baseline')) {
+    await run(process.execPath, [pnpm, 'fetch', '--frozen-lockfile', '--ignore-scripts', '--registry=https://registry.npmjs.org/'], tree);
+  }
+  await run(process.execPath, [pnpm, 'install', '--frozen-lockfile', '--offline', '--ignore-scripts'], tree);
   await run(process.execPath, [join(tree, 'node_modules', 'typescript', 'bin', 'tsc'), '--build'], tree);
   assert(existsSync(join(workspace, 'packages', 'workflows', 'dist', 'lifecycle.js')), 'Build this checkout first (pnpm build).');
   const scenario = join(workspace, 'scripts', 'upgrade-scenario.mjs');
