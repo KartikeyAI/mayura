@@ -4,11 +4,22 @@
 import { Link } from '@tanstack/react-router';
 import { BrandLogo } from './BrandLogo';
 import { Icon } from './Icon';
+import { integrationPackageCount } from '../lib/release';
 
 interface Item { name: string; logo: string; slug: string; hash?: string }
 const page = (folder: string) => `integrations/${folder}`;
 
 const rows: { label: string; items: Item[] }[] = [
+  { label: 'Gateways and policies', items: [
+    { name: 'Vercel AI Gateway', logo: 'vercel', slug: page('gateway-vercel') },
+    { name: 'Cloudflare AI Gateway', logo: 'cloudflare', slug: page('gateway-cloudflare') },
+    { name: 'OpenRouter', logo: 'openrouter', slug: page('gateway-openrouter') },
+    { name: 'Portkey', logo: 'portkey', slug: page('gateway-portkey') },
+    { name: 'OpenFGA', logo: 'openfga', slug: page('authz-openfga') },
+    { name: 'Cedar', logo: 'cedar', slug: page('authz-cedar') },
+    { name: 'Permit.io', logo: 'permit', slug: page('authz-permit') },
+    { name: 'Oso', logo: 'oso', slug: page('authz-oso') },
+  ] },
   { label: 'Models', items: [
     { name: 'OpenAI', logo: 'openai', slug: page('provider-openai') },
     { name: 'Anthropic', logo: 'anthropic', slug: page('provider-anthropic') },
@@ -87,7 +98,7 @@ export function IntegrationsWall() {
     <section className="border-b border-line px-4 py-20 sm:px-6">
       <div className="mx-auto max-w-6xl">
         <h2 className="mx-auto max-w-3xl text-center text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-[2.6rem] sm:leading-[1.1]">
-          Works with what you already use. <span className="text-muted">85 integration packages, released with every version.</span>
+          Works with what you already use. <span className="text-muted">{integrationPackageCount} integration packages, released with every version.</span>
         </h2>
         <div className="mt-12 space-y-6">
           {rows.map(row => (

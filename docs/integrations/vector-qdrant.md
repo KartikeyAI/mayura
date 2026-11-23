@@ -3,6 +3,7 @@ title: "Qdrant vectors"
 description: "Scoped native vector storage for qdrant."
 package: "@mayurajs/vector-qdrant"
 vendor: "Qdrant"
+logo: "qdrant"
 website: "https://qdrant.tech/documentation"
 area: "vectors"
 ---

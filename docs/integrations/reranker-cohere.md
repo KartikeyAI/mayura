@@ -3,6 +3,7 @@ title: "Cohere reranking"
 description: "Bounded indexed-result reranking with cohere."
 package: "@mayurajs/reranker-cohere"
 vendor: "Cohere"
+logo: "cohere"
 website: "https://docs.cohere.com"
 area: "rerankers"
 ---

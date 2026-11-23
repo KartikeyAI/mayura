@@ -3,6 +3,7 @@ title: "Pgvector vectors"
 description: "Scoped native vector storage for pgvector."
 package: "@mayurajs/vector-pgvector"
 vendor: "Pgvector"
+logo: "postgresql"
 website: "https://github.com/pgvector/pgvector"
 area: "vectors"
 ---

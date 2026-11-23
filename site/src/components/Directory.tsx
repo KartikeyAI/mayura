@@ -32,6 +32,11 @@ export function Directory() {
           permissions and budgets as the rest of your app.
         </p>
 
+        <Link to="/docs/$/" params={{ _splat: 'guides/rag-deployment' }}
+          className="mt-4 inline-flex text-sm font-medium text-primary hover:underline">
+          See the qualified Pinecone RAG setup
+        </Link>
+
         <div className="sticky top-16 z-20 -mx-4 mt-10 border-b border-line bg-bg/90 px-4 py-4 backdrop-blur-md sm:-mx-6 sm:px-6">
           <label className="relative block max-w-xl">
             <span className="sr-only">Search integrations</span>

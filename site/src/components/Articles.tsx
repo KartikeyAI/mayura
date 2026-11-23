@@ -82,7 +82,7 @@ export function ArticleHub({ initial = 'all' }: { initial?: Section | 'all' }) {
 }
 
 function Kind({ entry }: { entry: ArticleSummary }) {
-  return <span className="inline-block rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary first-letter:uppercase">{sections[entry.section].noun}</span>;
+  return <span className="inline-block w-fit self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary first-letter:uppercase">{sections[entry.section].noun}</span>;
 }
 
 /** One article, laid out like a docs page, with its date and reading time. */

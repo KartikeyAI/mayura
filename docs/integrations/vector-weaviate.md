@@ -3,6 +3,7 @@ title: "Weaviate vectors"
 description: "Scoped native vector storage for weaviate."
 package: "@mayurajs/vector-weaviate"
 vendor: "Weaviate"
+logo: "weaviate"
 website: "https://docs.weaviate.io"
 area: "vectors"
 ---
