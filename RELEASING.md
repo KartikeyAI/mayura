@@ -44,6 +44,42 @@ See the [qualified Modal and Pinecone RAG profile](docs/guides/rag-production.md
 
 ## How a release happens
 
+### Production dependency audit
+
+`pnpm audit:production` runs in Shared checks under the required Qualification gate. It checks the frozen
+production dependency graph of `mayura` and every staged extension against npm advisories, including transitive
+and platform-specific optional dependencies. Workspace development packages and consumer-installed optional
+peers are outside this gate.
+
+High and critical findings always fail. A moderate finding fails unless
+[`compatibility/production-audit.json`](compatibility/production-audit.json) records its exact package `name`,
+`version`, npm advisory `id`, `reason`, `expiresOn` date (UTC), and GitHub PR `review` link. A maintainer
+records the approval in a GitHub review with a line in the form
+`Approve moderate <name>@<version> npm:<id> until <YYYY-MM-DD>`. CI verifies the receipt against GitHub.
+The exception expires at the start of the given UTC date. Remove it when the dependency is fixed.
+
+### Archive and installed-package checks
+
+The main archive has a 5,600,000-byte compressed limit, a 24,000,000-byte unpacked limit and a 2,500-file limit.
+The bundle check and release staging both apply the [package-size policy](compatibility/package-size-budget.json)
+to the actual npm archive. The archive keeps TypeScript sources and debugger maps. Identical starter files can
+share one archived copy; the CLI restores their exact bytes and the bundle check compares generated file digests.
+
+The installed-package gate compiles a strict TypeScript RAG consumer and exercises durable ingestion, ranking,
+citations, authorization, deletion, and adapter failures without service credentials. The protected release job
+repeats the npm installation from the public registry for every published package, matches the archive digests
+and runs registry signature and attestation verification before creating the GitHub Release.
+
+### Prerelease channel
+
+Stable publication preserves existing `next` tags. For v1.2.2, correct tags still pointing to `1.2.0-rc.1` in
+a separate registry change after the stable release is verified. Move those existing tags to `1.2.2` and leave
+packages without a `next` tag as they are. Snapshot the tags before changing them and verify each new `next`
+and existing `latest` afterward. The registry requires a maintainer npm session or a trusted publisher with
+explicit dist-tag permission. [npm dist-tag permission](https://docs.npmjs.com/trusted-publishers/#managing-dist-tags-with-trusted-publishing)
+
+### Release sequence
+
 1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and
    24, SQLite and PostgreSQL.
 2. When it passes, **Mayura release** (`.github/workflows/release.yml`) works out the next version from the commits

@@ -9,9 +9,18 @@ Pinecone vectors, and Modal DeepSeek for reranking and generation.
 
 ## Generate and run the demo
 
-Use a Mayura CLI that lists `rag-modal-pinecone` in its starter menu. The starter is new after the 1.2.1 release.
-To try it before the next package release, build the repository with `pnpm build` and run the built CLI from the
-workspace root.
+The starter is included in Mayura 1.2.2. Once that version is available on npm, generate the project with the
+published CLI.
+
+```sh
+npx mayura@1.2.2 init --starter rag-modal-pinecone --directory ./mayura-rag-starter --apply
+cd mayura-rag-starter
+npm install
+npm run dev
+npm test
+```
+
+For a source checkout, run `pnpm build` and use the built CLI from the workspace root.
 
 ```sh
 node packages/cli/dist/bin.js init --starter rag-modal-pinecone --directory ../mayura-rag-starter --apply

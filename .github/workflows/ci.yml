@@ -16,6 +16,9 @@ jobs:
     name: Shared checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -24,10 +27,13 @@ jobs:
         with:
           node-version: 24.14.1
       - run: node scripts/ci-step.mjs -- node scripts/secret-scan.mjs
+      - run: node scripts/ci-step.mjs -- pnpm audit:production
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - run: node scripts/ci-step.mjs -- node scripts/rag-modal-production-release-v1.mjs --verify-report
       - run: node scripts/ci-step.mjs -- pnpm typecheck
       - run: node scripts/ci-step.mjs -- pnpm console:check
-      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs
+      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/production-audit.test.mjs
       - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
       - run: node scripts/ci-step.mjs -- pnpm api:report
       - run: node scripts/ci-step.mjs -- node scripts/version.mjs check

@@ -9,7 +9,8 @@
 // you use the part that needs it.
 //   node scripts/bundle-package.mjs <output directory>
 import assert from 'node:assert/strict';
-import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +35,21 @@ export async function workspacePackages() {
   return found;
 }
 
+/** External dependencies and optional peers written to the published manifest. */
+export function bundledDependencies(packages) {
+  const dependencies = {};
+  const peers = {};
+  for (const { manifest } of packages) {
+    for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
+      if (!name.startsWith('@mayura/')) (required.has(name) ? dependencies : peers)[name] = range;
+    }
+    Object.assign(peers, manifest.peerDependencies);
+  }
+  // The published optional peers accept compatible versions from the workspace pin.
+  for (const [name, range] of Object.entries(peers)) if (/^\d+\.\d+\.\d+$/u.test(range)) peers[name] = `^${range}`;
+  return { dependencies, peers };
+}
+
 /** `@mayura/<name>[/<sub>]` -> { name, key } where key is the export key ('.' or './<sub>'). */
 function parseSpecifier(specifier) {
   const match = /^@mayura\/([a-z][a-z0-9-]*)(?:\/(.+))?$/u.exec(specifier); if (!match) return undefined;
@@ -41,10 +57,49 @@ function parseSpecifier(specifier) {
 }
 const target = (value, condition) => typeof value === 'string' ? value : value?.[condition] ?? value?.default;
 
+/** Keep one copy of identical starter files at the same relative path. Init restores the exact bytes. */
+async function shareStarterFiles(cli) {
+  const root = join(cli, 'starters');
+  const groups = new Map();
+  async function gather(starter, parts = []) {
+    const directory = join(root, starter, ...parts);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const next = [...parts, entry.name];
+      if (entry.isDirectory()) { await gather(starter, next); continue; }
+      assert(entry.isFile(), 'Only regular files can be shipped in starters.');
+      const path = join(directory, entry.name);
+      const bytes = await readFile(path);
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      const relativePath = next.join('/');
+      const key = `${relativePath}/${digest}`;
+      if (!groups.has(key)) groups.set(key, { digest, relativePath, bytes, copies: [] });
+      groups.get(key).copies.push({ starter, path });
+    }
+  }
+  for (const entry of (await readdir(root, { withFileTypes: true })).filter(item => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    await gather(entry.name);
+  }
+  const shared = join(cli, 'starter-assets');
+  const manifest = {};
+  await mkdir(shared);
+  for (const { digest, relativePath, bytes, copies } of groups.values()) {
+    if (copies.length < 2) continue;
+    await writeFile(join(shared, digest), bytes);
+    for (const { starter, path } of copies) {
+      (manifest[starter] ??= {})[relativePath] = digest;
+      await unlink(path);
+    }
+  }
+  const sorted = Object.fromEntries(Object.keys(manifest).sort().map(name =>
+    [name, Object.fromEntries(Object.entries(manifest[name]).sort(([a], [b]) => a.localeCompare(b)))]));
+  await writeFile(join(shared, 'manifest.json'), `${JSON.stringify(sorted)}\n`);
+}
+
 export async function bundle(output) {
   const packages = await workspacePackages(); const byName = new Map(packages.map(item => [item.name, item]));
   await mkdir(output, { recursive: true });
-  const exportsMap = {}; const peers = {}; const dependencies = {};
+  const exportsMap = {};
+  const { dependencies, peers } = bundledDependencies(packages);
   for (const { name, manifest, directory } of packages) {
     assert(existsSync(join(directory, 'dist')), `Build @mayura/${name} first (pnpm build).`);
     // What this package publishes: its dist, sources for maps, and any assets its `files` name (templates, starters, image).
@@ -59,15 +114,7 @@ export async function bundle(output) {
       const subpath = key === '.' ? `./${name}` : `./${name}/${key.slice(2)}`;
       exportsMap[subpath] = { types: `./lib/${name}/${target(value, 'types').replace(/^\.\//u, '')}`, import: `./lib/${name}/${target(value, 'import').replace(/^\.\//u, '')}` };
     }
-    for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
-      if (dependency.startsWith('@mayura/')) continue;
-      (required.has(dependency) ? dependencies : peers)[dependency] = range;
-    }
-    for (const [dependency, range] of Object.entries(manifest.peerDependencies ?? {})) peers[dependency] = range;
   }
-  // The workspace pins exact versions (what CI tests). A project installs optional peers itself and may already have
-  // another compatible version, so the published peers accept the same major (0.x: the same minor) from that version.
-  for (const [dependency, range] of Object.entries(peers)) if (/^\d+\.\d+\.\d+$/u.test(range)) peers[dependency] = `^${range}`;
   // Rewrite every @mayura/... specifier in JavaScript and declarations to a relative path.
   const rewrite = (file, text) => text.replace(/((?:from|import)\s*\(?\s*)(['"])(@mayura\/[^'"]+)\2/gu, (whole, prefix, quote, specifier) => {
     const parsed = parseSpecifier(specifier); assert(parsed, `Unexpected specifier ${specifier} in ${file}.`);
@@ -104,6 +151,7 @@ export async function bundle(output) {
   // `mayura` itself is the SDK, the usual starting point.
   exportsMap['.'] = { types: exportsMap['./sdk'].types, import: './sdk/index.js' }; exportsMap['./package.json'] = './package.json';
   const cli = packages.find(item => item.name === 'cli');
+  await shareStarterFiles(join(output, 'lib', cli.name));
   const manifest = {
     name: 'mayura', version: root.version,
     description: 'A TypeScript framework for agents, typed tools and durable workflows.',

@@ -1,19 +1,22 @@
 // Qualify the single `mayura` package as users get it: bundle, pack, install offline into a fresh project (with and
 // without the optional peers), import every entry point, type-check a strict consumer, and run the `mayura` command.
-//   node scripts/bundle-check.mjs [--shard <index>/<count>]
+//   node scripts/bundle-check.mjs [--shard <index>/<count> | --core-only]
 // Shard 1 owns the complete core checks; every extension belongs to exactly one shard.
 import assert from 'node:assert/strict';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bundle } from './bundle-package.mjs';
-import { STARTER_NAMES } from '../packages/cli/dist/index.js';
+import { planStarter, STARTER_NAMES } from '../packages/cli/dist/index.js';
 import { compilerPlatform, createPacker, run, workspace } from './local-packages.mjs';
 import { workDirectory } from './work-directory.mjs';
 import { bundleExtensions, bundleShard } from './ci-shards.mjs';
+import { packageSize } from './package-size.mjs';
 
-const shard = bundleShard(process.argv.slice(2));
+const args = process.argv.slice(2);
+const coreOnly = args.length === 1 && args[0] === '--core-only';
+const shard = bundleShard(coreOnly ? [] : args);
 const started = performance.now();
 
 const artifacts = join(workspace, '.artifacts'); await mkdir(artifacts, { recursive: true });
@@ -21,6 +24,7 @@ const output = await workDirectory(join(artifacts, 'bundle-check-')); const tarb
 const staged = join(output, 'mayura'); const summary = await bundle(staged);
 const { npm, packages, packClosure } = createPacker({ output, tarballs });
 const packed = JSON.parse((await run([npm, 'pack', staged, '--ignore-scripts', '--offline', '--pack-destination', tarballs, '--json'], workspace)).stdout);
+const size = packageSize(packed[0]);
 const archive = join(tarballs, packed[0].filename); const manifest = JSON.parse(await readFile(join(staged, 'package.json'), 'utf8'));
 // Third-party packages come from the local installation, resolved from the workspace packages that use them.
 const resolveFrom = name => { for (const directory of ['cli', 'server-node', 'storage-postgres', 'storage-sqlite', 'adapter-code-quickjs', 'client-react']) {
@@ -69,6 +73,13 @@ if (shard.index === 1) {
   assert.deepEqual(starters.starters.map(starter => starter.name), [...STARTER_NAMES]);
   const plan = JSON.parse((await run([bin, 'init', '--starter', 'research-team', '--directory', join(light, 'research')], light)).stdout);
   assert(plan.plan.changes.some(change => change.path === 'src/workflow.ts'), 'The CLI in the bundle must find its starters.');
+  for (const name of STARTER_NAMES) {
+    const target = join(light, name);
+    const source = await planStarter(name, target);
+    const { plan: installed } = JSON.parse((await run([bin, 'init', '--starter', name, '--directory', target], light)).stdout);
+    assert.deepEqual(installed.changes, source.changes, `Packed starter changed the generated files or contents for ${name}.`);
+    if (name === 'rag-modal-pinecone') assert(installed.changes.some(change => change.path === 'modal-app.py'));
+  }
 
   // 2. With every optional peer: every entry point loads, and a strict consumer type-checks against the declarations.
   const full = await project('full', true);
@@ -82,8 +93,11 @@ if (shard.index === 1) {
   `);
   await writeFile(join(full, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
     strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'], jsx: 'react-jsx' },
-    include: ['consumer.ts'] }, null, 2));
+    include: ['consumer.ts', 'rag-acceptance.mts'] }, null, 2));
+  await copyFile(join(workspace, 'scripts', 'rag-acceptance', 'consumer.mts'), join(full, 'rag-acceptance.mts'));
   await run([join(full, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(full, 'tsconfig.json'), '--pretty', 'false'], full, { timeout: 300_000 });
+  const rag = await run(['--experimental-strip-types', '--test', 'rag-acceptance.mts'], full, { timeout: 180_000 });
+  process.stdout.write(rag.stdout);
 }
 const coreMs = shard.index === 1 ? Math.round(performance.now() - coreStarted) : 0;
 
@@ -93,7 +107,7 @@ const { extensions } = await import('./extensions.mjs');
 const extensionResults = {};
 const extensionMs = {};
 const inventory = extensions();
-const selected = new Set(bundleExtensions(inventory.map(extension => extension.name), shard));
+const selected = new Set(coreOnly ? [] : bundleExtensions(inventory.map(extension => extension.name), shard));
 for (const extension of inventory.filter(extension => selected.has(extension.name))) {
   const extensionStarted = performance.now();
   const name = `@mayurajs/${extension.name}`;
@@ -119,7 +133,7 @@ for (const extension of inventory.filter(extension => selected.has(extension.nam
 }
 
 const files = (await readdir(join(staged, 'lib'))).length;
-console.log(JSON.stringify({ status: 'passed', package: `${manifest.name}@${manifest.version}`, tarballBytes: packed[0].size, unpackedBytes: packed[0].unpackedSize,
+console.log(JSON.stringify({ status: 'passed', package: `${manifest.name}@${manifest.version}`, tarballBytes: size.compressedBytes, unpackedBytes: size.unpackedBytes,
   archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: lightResults === null ? null : Object.keys(lightResults).length,
   rewritten: summary.rewritten, coreChecked: shard.index === 1, shard, totalExtensions: inventory.length, extensions: extensionResults,
   timings: { totalMs: Math.round(performance.now() - started), coreMs, extensions: extensionMs }, output }));

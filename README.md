@@ -34,6 +34,8 @@ with a CLI that scaffolds, runs and operates your project.
   run.
 - **Memory and context.** Native memory with keyword, semantic and hybrid search, plus Mem0, Supermemory and
   OpenViking adapters.
+- **Retrieval with citations.** Publish scoped documents through durable ingestion, retrieve exact evidence and
+  revoke source visibility before cleanup. [RAG quickstart](docs/guides/rag-quickstart.md)
 - **Skills, MCP and Code Mode.** Load `SKILL.md` skills on demand, call MCP tools, and run model-written code in a
   QuickJS or Docker sandbox.
 - **Multi-agent.** Child agents, agents as tools and speculative branches under one shared budget.

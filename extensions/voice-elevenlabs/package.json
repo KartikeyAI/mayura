@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/voice-elevenlabs",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "ElevenLabs speech-to-text and text-to-speech for Mayura's voice registry, over ElevenLabs' HTTP API.",
   "type": "module",

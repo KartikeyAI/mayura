@@ -29,9 +29,9 @@ const postgresImage = readFileSync(join(workspace, 'compose.test.yaml'), 'utf8')
 const roots = [['mayura', join(workspace, 'packages', 'cli')], ['pg', join(workspace, 'packages', 'storage-postgres')]];
 // Reviewed third-party closure: exact versions, no lifecycle scripts. Changes require a dependency review.
 const external = {
-  hono: '4.13.9', '@hono/node-server': '2.1.1',
+  hono: '4.13.20', '@hono/node-server': '2.1.11',
   // Schemas: `z` from the root import. MIT, no dependencies and no install scripts.
-  zod: '4.6.5',
+  zod: '4.6.7',
   // The CLI's interactive prompts (loaded only by `mayura init` in a terminal), all MIT with no install scripts.
   '@clack/prompts': '1.8.1', '@clack/core': '1.5.1', sisteransi: '1.0.5', 'fast-wrap-ansi': '0.2.2', 'fast-string-width': '3.0.2', 'fast-string-truncated-width': '3.0.3',
   pg: '8.23.0', 'pg-connection-string': '2.14.0', 'pg-pool': '3.14.0', 'pg-protocol': '1.16.0', 'pg-types': '2.2.0', 'pg-int8': '1.0.1',

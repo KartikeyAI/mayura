@@ -9,8 +9,8 @@ only authorized evidence and exact citation identities. The [qualified Modal + P
 profile](rag-production.md#qualified-production-profile) is stable within its tested scope. Other RAG profiles
 remain experimental. See [release validation status](release-readiness.md) for the limits of the available evidence.
 
-Follow [Build and deploy a retrieval agent](rag-deployment.md) to run the offline example and choose what to
-verify before connecting a hosted deployment.
+Follow the [RAG quickstart](rag-quickstart.md) to ingest, retrieve, verify a citation and delete a source from a
+registry install. Then use the [deployment guide](rag-deployment.md) to prepare a hosted setup.
 
 ## Retrieval configuration
 
@@ -176,6 +176,11 @@ macro-averages test-set recall and MRR. `citationCoverage` checks that cited chu
 it does not establish semantic entailment. Retrieval result metrics contain admitted query/candidate/result counts,
 declared cost reservation and duration, without raw query text, denied document identities or source content.
 
+For grounded answers, score citation correctness against the document revision and the exact evidence span. Then
+judge each claim against independently labeled support in those spans. Measure the unsupported-claim rate and
+answer faithfulness alongside retrieval recall and MRR. The package qualification uses deterministic fixtures for
+these distinctions. Use a representative held-out corpus and reviewed claims to evaluate your deployment.
+
 ## Vector adapters and qualification
 
 Built-in exact stores plus six optional integrations share the `VectorStore` contract:
@@ -190,4 +195,6 @@ The shared offline conformance suite passes locally for all eight stores: scope/
 ID replacement, scoped deletion, invalid dimensions and cancellation. Native protocol tests use fake transports;
 SQL protocol tests use fake executors, while native-memory tests use local in-memory SQLite. These cases, the offline runnable example, package checks and edge/runtime checks passed locally. Frozen dependency installation also passed with strict peers and lifecycle scripts disabled. Fake transports and executors do not qualify real service compatibility, SQL query plans or deployment limits.
 
-Remote indexes may acknowledge writes before making them searchable. Publication does not promise immediate full recall across eventually consistent services. Real service readiness and deployment behavior remain unqualified.
+Remote indexes may acknowledge writes before making them searchable. Give eventually consistent indexes time to
+catch up before evaluating recall. See the [qualification matrix](rag-production.md#qualification-matrix) for the
+pinned production profile and the status of other adapters and model combinations.

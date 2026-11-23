@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/filestorage-files-sdk",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Any Files SDK provider for Mayura's file stores.",
   "type": "module",

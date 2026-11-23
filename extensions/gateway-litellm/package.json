@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/gateway-litellm",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "LiteLLM models for Mayura, with explicit credentials, bounded calls and gateway cost accounting.",
   "type": "module",

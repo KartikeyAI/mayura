@@ -3,8 +3,9 @@ title: Build and deploy a retrieval agent
 description: Start offline, connect a scoped vector store, and qualify retrieval and citations on your own workload.
 ---
 
-Start with the [runnable Modal + Pinecone starter](rag-modal-pinecone-starter.md) for an offline demo,
-durable Markdown ingestion and an opt-in hosted walkthrough with exact citations.
+Start with the [RAG quickstart](rag-quickstart.md) to ingest, retrieve, verify citations and delete a source
+from an npm install. The [Modal + Pinecone starter](rag-modal-pinecone-starter.md) adds an offline demo
+and an opt-in hosted walkthrough.
 
 The repository also includes a single-file example in `examples/rag.mjs`. It ingests Markdown in a durable workflow, then answers with
 citation identities using a scripted model and a deterministic hashing embedder. After building the workspace, run:

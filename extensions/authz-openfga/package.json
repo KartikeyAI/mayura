@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/authz-openfga",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Scoped OpenFGA authorization checks with pinned models, bounded transport and core audit integration.",
   "type": "module",

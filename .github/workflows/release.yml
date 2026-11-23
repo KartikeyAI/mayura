@@ -123,6 +123,7 @@ jobs:
         run: |
           node scripts/version.mjs set "$VERSION"
           pnpm build
+          node scripts/secret-scan.mjs
           pnpm upgrade:compat
           pnpm release:artifacts
           node scripts/sbom.mjs
@@ -194,6 +195,7 @@ jobs:
         run: |
           node scripts/release-finalize.mjs --prepared "$VERSION"
           pnpm build
+          node scripts/secret-scan.mjs
           pnpm upgrade:compat
           pnpm release:artifacts
           node scripts/sbom.mjs
@@ -212,6 +214,8 @@ jobs:
         run: |
           manifest=$(find .artifacts -maxdepth 2 -name release-manifest.json ! -path '.artifacts/full-release/*' -print -quit)
           node scripts/publish-staged.mjs --manifest "$manifest" --tag "$TAG" --publish
+      - name: Verify registry signatures and clean installation
+        run: node scripts/registry-release-check.mjs --manifest .artifacts/full-release/release-manifest.json
       - name: Tag the qualified version commit
         env:
           VERSION: ${{ needs.plan.outputs.version }}
@@ -229,6 +233,7 @@ jobs:
             git tag -a "v$VERSION" -m "Mayura $VERSION"
           fi
           git push origin "refs/tags/v$VERSION"
+          test "$(git ls-remote origin "refs/tags/v$VERSION^{}" | cut -f1)" = "$SOURCE_SHA"
 
       - name: GitHub Release
         env:
@@ -238,7 +243,7 @@ jobs:
         run: |
           node scripts/release-finalize.mjs --published "$VERSION"
           staged=.artifacts/full-release
-          assets=("$staged"/tarballs/*.tgz "$staged/release-manifest.json" "$staged/sbom.cdx.json" "$staged/receipt.json" "$staged/qualification.json")
+          assets=("$staged"/tarballs/*.tgz "$staged/release-manifest.json" "$staged/sbom.cdx.json" "$staged/receipt.json" "$staged/qualification.json" "$staged/registry-verification.json")
           # A release that already exists (a resumed run) keeps its notes and gets its files attached again.
           if gh release view "v$VERSION" > /dev/null 2>&1; then
             gh release upload "v$VERSION" "${assets[@]}" --clobber
@@ -259,6 +264,7 @@ jobs:
             .artifacts/full-release/release-manifest.json
             .artifacts/full-release/receipt.json
             .artifacts/full-release/qualification.json
+            .artifacts/full-release/registry-verification.json
             .artifacts/full-release/sbom.cdx.json
             .artifacts/full-release/release-notes.md
             .artifacts/full-release/tarballs/*.tgz

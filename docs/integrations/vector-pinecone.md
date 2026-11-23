@@ -10,7 +10,9 @@ area: "vectors"
 
 `@mayurajs/vector-pinecone` implements the [RAG contracts](../guides/rag.md). Install it alongside `mayura`.
 Construction performs no I/O, credential discovery, provisioning or background work. All operations require an
-explicit host permission and a nonnegative `costMicros` ceiling. Offline tests and package checks passed locally. The [Modal + Pinecone Loki v28 profile](../guides/rag-production.md#qualified-production-profile) is stable for its registered workload and configuration.
+explicit host permission and a nonnegative `costMicros` ceiling. See the
+[qualification matrix](../guides/rag-production.md#qualification-matrix) for the stable Modal + Pinecone Loki v28
+configuration and its measured limits.
 
 `pineconeVectorStore` accepts `endpoint`, `headers`, `collection`, `dimensions`, `costMicros`, `permissions`,
 `timeoutMs`, `maxConcurrent` and optional test `fetch`. Grant `rag:transport:pinecone`. Credentials go in host-owned

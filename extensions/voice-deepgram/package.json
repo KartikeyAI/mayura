@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/voice-deepgram",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Deepgram speech-to-text and text-to-speech for Mayura's voice registry, over Deepgram's HTTP API.",
   "type": "module",
