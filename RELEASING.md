@@ -44,6 +44,22 @@ See the [qualified Modal and Pinecone RAG profile](docs/guides/rag-production.md
 
 ## How a release happens
 
+### Production dependency audit
+
+`pnpm audit:production` runs in Shared checks under the required Qualification gate. It checks the frozen
+production dependency graph of `mayura` and every staged extension against npm advisories, including transitive
+and platform-specific optional dependencies. Workspace development packages and consumer-installed optional
+peers are outside this gate.
+
+High and critical findings always fail. A moderate finding fails unless
+[`compatibility/production-audit.json`](compatibility/production-audit.json) records its exact package `name`,
+`version`, npm advisory `id`, `reason`, `expiresOn` date (UTC), and GitHub PR `review` link. A maintainer
+records the approval in a GitHub review with a line in the form
+`Approve moderate <name>@<version> npm:<id> until <YYYY-MM-DD>`. CI verifies the receipt against GitHub.
+The exception expires at the start of the given UTC date. Remove it when the dependency is fixed.
+
+### Release sequence
+
 1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and
    24, SQLite and PostgreSQL.
 2. When it passes, **Mayura release** (`.github/workflows/release.yml`) works out the next version from the commits

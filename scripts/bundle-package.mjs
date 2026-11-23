@@ -34,6 +34,21 @@ export async function workspacePackages() {
   return found;
 }
 
+/** External dependencies and optional peers written to the published manifest. */
+export function bundledDependencies(packages) {
+  const dependencies = {};
+  const peers = {};
+  for (const { manifest } of packages) {
+    for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
+      if (!name.startsWith('@mayura/')) (required.has(name) ? dependencies : peers)[name] = range;
+    }
+    Object.assign(peers, manifest.peerDependencies);
+  }
+  // The published optional peers accept compatible versions from the workspace pin.
+  for (const [name, range] of Object.entries(peers)) if (/^\d+\.\d+\.\d+$/u.test(range)) peers[name] = `^${range}`;
+  return { dependencies, peers };
+}
+
 /** `@mayura/<name>[/<sub>]` -> { name, key } where key is the export key ('.' or './<sub>'). */
 function parseSpecifier(specifier) {
   const match = /^@mayura\/([a-z][a-z0-9-]*)(?:\/(.+))?$/u.exec(specifier); if (!match) return undefined;
@@ -44,7 +59,8 @@ const target = (value, condition) => typeof value === 'string' ? value : value?.
 export async function bundle(output) {
   const packages = await workspacePackages(); const byName = new Map(packages.map(item => [item.name, item]));
   await mkdir(output, { recursive: true });
-  const exportsMap = {}; const peers = {}; const dependencies = {};
+  const exportsMap = {};
+  const { dependencies, peers } = bundledDependencies(packages);
   for (const { name, manifest, directory } of packages) {
     assert(existsSync(join(directory, 'dist')), `Build @mayura/${name} first (pnpm build).`);
     // What this package publishes: its dist, sources for maps, and any assets its `files` name (templates, starters, image).
@@ -59,15 +75,7 @@ export async function bundle(output) {
       const subpath = key === '.' ? `./${name}` : `./${name}/${key.slice(2)}`;
       exportsMap[subpath] = { types: `./lib/${name}/${target(value, 'types').replace(/^\.\//u, '')}`, import: `./lib/${name}/${target(value, 'import').replace(/^\.\//u, '')}` };
     }
-    for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
-      if (dependency.startsWith('@mayura/')) continue;
-      (required.has(dependency) ? dependencies : peers)[dependency] = range;
-    }
-    for (const [dependency, range] of Object.entries(manifest.peerDependencies ?? {})) peers[dependency] = range;
   }
-  // The workspace pins exact versions (what CI tests). A project installs optional peers itself and may already have
-  // another compatible version, so the published peers accept the same major (0.x: the same minor) from that version.
-  for (const [dependency, range] of Object.entries(peers)) if (/^\d+\.\d+\.\d+$/u.test(range)) peers[dependency] = `^${range}`;
   // Rewrite every @mayura/... specifier in JavaScript and declarations to a relative path.
   const rewrite = (file, text) => text.replace(/((?:from|import)\s*\(?\s*)(['"])(@mayura\/[^'"]+)\2/gu, (whole, prefix, quote, specifier) => {
     const parsed = parseSpecifier(specifier); assert(parsed, `Unexpected specifier ${specifier} in ${file}.`);
