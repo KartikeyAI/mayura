@@ -30,8 +30,9 @@ Rules that matter when writing Mayura code:
 - [Permissions](docs/concepts/permissions.md): Explicit allow-lists decide which models, tools, effects and capabilities a run may use. Nothing is allowed by default.
 - [Costs and budgets](docs/concepts/costs-and-budgets.md): Cap what a run can spend: costs in micros, per-call ceilings, the run cost limit, tool costs and shared budgets.
 - [Workflows](docs/concepts/workflows.md): What a Mayura workflow is, when to use one instead of a single agent run, and which workflow entry point to start with.
+- [RAG quickstart](docs/guides/rag-quickstart.md): Install Mayura, ingest Markdown, retrieve and verify an exact citation, then delete the source locally.
 - [Retrieval augmented generation](docs/guides/rag.md): Scoped retrieval tools, durable content-addressed ingestion, vector adapters, citations and bounded reranking.
-- [RAG production qualification](docs/guides/rag-production.md): Production qualification evidence and deployment boundaries for the Modal and Pinecone Loki v28 profile.
+- [RAG production qualification](docs/guides/rag-production.md): Compare the qualified Modal and Pinecone Loki v28 profile with experimental RAG configurations, and see measured scale, recall, and latency.
 - [Build and deploy a retrieval agent](docs/guides/rag-deployment.md): Start offline, connect a scoped vector store, and qualify retrieval and citations on your own workload.
 - [Run the Modal + Pinecone RAG starter](docs/guides/rag-modal-pinecone-starter.md): Generate the Mayura RAG starter, run its offline demo, and connect private Modal inference and a scoped Pinecone index.
 

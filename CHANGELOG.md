@@ -7,6 +7,7 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 - Add the `rag-modal-pinecone` starter with a credential-free demo, durable Markdown ingestion and cited answers.
 - Upgrade Zod to 4.6.7, Hono to 4.13.20, and the Hono Node adapter to 2.1.11. Cover request boundaries and upgrade disconnects with defensive tests.
 - Gate qualification on npm production dependency advisories across `mayura` and every published extension. Moderate findings require a reviewed exception with a UTC expiry.
+- Add a runnable RAG quickstart covering exact citations and deletion, and document the qualification matrix with measured recall and latency.
 
 ## [1.2.1] - 2026-11-23
 
