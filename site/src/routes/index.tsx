@@ -393,7 +393,7 @@ function FrameworkStarters() {
           <p className="mt-3 text-sm text-muted">{starter.detail}</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <PrimaryButton slug={`guides/${starter.id}`}>Follow the {starter.name} guide</PrimaryButton>
-            <SecondaryButton slug="guides/choosing-a-starter">Compare all 11 starters</SecondaryButton>
+            <SecondaryButton slug="guides/choosing-a-starter">Compare all starters</SecondaryButton>
           </div>
         </div>
         <ul className="divide-y divide-line self-start border-y border-line">

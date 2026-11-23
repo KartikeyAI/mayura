@@ -43,7 +43,8 @@ below instead.
 
 ### Choosing a model provider
 
-For a starter, the wizard offers:
+The model-provider wizard offers the choices below. The [RAG starter](../guides/rag-modal-pinecone-starter.md)
+starts offline and uses its generated README to configure both hosted services.
 
 | Choice | What it asks for |
 |---|---|
@@ -126,6 +127,7 @@ it does not do. The server starters use SQLite locally and PostgreSQL when `DATA
 | `research-team` | Multi-agent research as one durable workflow: a planner, up to four parallel researchers over a source library and a writer whose citations are checked, under one shared budget. The report is stored as a content-addressed artifact, with optional OpenTelemetry traces. |
 | `event-automation` | Signed webhooks start durable workflow runs in which a triage agent acts on a ticket tracker through MCP tools under explicit permissions. Forged, stale and replayed deliveries start nothing, and assigning an urgent ticket waits for operator approval. |
 | `cli-agent` | A command-line assistant: `assistant chat`, or one request such as `assistant list files in src`, about the folder you run it in. File tools stay inside that folder and never open `.env` files, you confirm every write, skills load from `skills/`, and replies stream. `npm run dev` starts the chat. |
+| [`rag-modal-pinecone`](../guides/rag-modal-pinecone-starter.md) | A retrieval agent with durable Markdown ingestion and exact citations. `npm run dev` runs the offline demo. Use the generated README to configure Modal and Pinecone. |
 | `nextjs` | App Router notebook with persistent threads, exact note approvals and a separate indexing worker. |
 | `hono` | Hono/Vite React notebook with a Node path and additional Bun, Deno and Workers source. |
 | `react-router` | React Router resource routes and an owned React notebook interface. |

@@ -75,10 +75,12 @@ describe('@mayura/cli initialization', () => {
 });
 
 describe('@mayura/cli starters', () => {
+  const names = ['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent',
+    'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt', 'rag-modal-pinecone'];
   const version = async () => (JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string }).version;
 
   it('lists the starters as an immutable catalog', () => {
-    expect(starters().map(starter => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent', 'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt']);
+    expect(starters().map(starter => starter.name)).toEqual(names);
     expect(Object.isFrozen(starters())).toBe(true);
   });
 
@@ -124,7 +126,7 @@ describe('@mayura/cli starters', () => {
     expect((await run(['init', '--starter', 'unknown', '--directory', target])).code).toBe(1);
     const planned = await run(['init', '--starter', 'approval-workflow', '--directory', target]);
     expect(planned.code).toBe(0); expect(JSON.parse(planned.stdout)).toMatchObject({ status: 'planned', plan: { starter: 'approval-workflow' } });
-    expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(['approval-workflow', 'support-agent', 'research-team', 'event-automation', 'cli-agent', 'nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt']);
+    expect(JSON.parse((await run(['starters'])).stdout).starters.map((starter: { name: string }) => starter.name)).toEqual(names);
  
     // No command at all shows the help, even when piped (a script that forgot the command learns what they are).
     const bare = await run([]); expect(bare.code).toBe(0); expect(bare.stdout).toContain('mayura <command>');

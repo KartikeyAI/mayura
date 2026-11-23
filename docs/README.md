@@ -28,6 +28,7 @@ Mayura is a TypeScript framework for building AI agents, typed tools and durable
 - [Retrieval augmented generation](guides/rag.md): scoped evidence, durable ingestion, vector stores and reranking.
 - [RAG production qualification](guides/rag-production.md): the stable Modal and Pinecone profile and its verified limits.
 - [Build and deploy a retrieval agent](guides/rag-deployment.md): from offline testing to a scoped hosted deployment.
+- [Modal + Pinecone RAG starter](guides/rag-modal-pinecone-starter.md): run the demo and connect scoped hosted retrieval.
 
 ## Frameworks and starters
 

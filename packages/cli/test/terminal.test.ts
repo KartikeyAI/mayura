@@ -87,7 +87,7 @@ describe('provider settings', () => {
     const names = [...new Set(text.split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split('=')[0]!))];
     expect(names).toEqual(expect.arrayContaining(['MAYURA_MODEL_PROVIDER_ID', 'MAYURA_MODEL_ENDPOINT', 'MAYURA_MODEL_AUTH', 'MAYURA_MODEL_API_KEY',
       'MAYURA_MODEL_OUTPUT', 'MAYURA_MODEL_STRICT_TOOLS', 'MAYURA_MODEL_GATEWAY_TOKEN']));
-    for (const starter of starters().filter(starter => !['nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt'].includes(starter.name))) {
+    for (const starter of starters().filter(starter => !['nextjs', 'hono', 'react-router', 'tanstack-start', 'sveltekit', 'nuxt', 'rag-modal-pinecone'].includes(starter.name))) {
       const config = await readFile(fileURLToPath(new URL(`../starters/${starter.name}/src/config.ts`, import.meta.url)), 'utf8');
       for (const name of names) expect(config, `${starter.name} reads ${name}`).toContain(`'${name}'`);
     }

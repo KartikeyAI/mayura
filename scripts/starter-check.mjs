@@ -75,6 +75,7 @@ if (!skipPacked) {
     const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const cliVersion = JSON.parse(await readFile(join(workspace, 'packages', 'cli', 'package.json'), 'utf8')).version;
     assert.equal(manifest.dependencies.mayura, cliVersion, `${starter} must pin mayura to the CLI's version.`);
+    if (starter === 'rag-modal-pinecone') assert.equal(manifest.dependencies['@mayurajs/vector-pinecone'], cliVersion);
     for (const field of ['dependencies', 'devDependencies']) for (const name of Object.keys(manifest[field] ?? {})) assert(!name.startsWith('@mayura/'), `${starter} still depends on ${name}.`);
     const source = join(workspace, 'packages', 'cli', 'starters', starter);
     // Framework web toolchains are built and booted above. As with existing Vite starters, packed qualification
@@ -131,6 +132,12 @@ async function bootCommand(starter, directory, manifest) {
   const [name, entry] = Object.entries(manifest.bin)[0]; const command = join(directory, entry);
   const help = await run([command, '--help'], directory);
   assert.match(help.stdout, new RegExp(`Usage: ${name}`, 'u'), `${starter} --help did not describe the command.`);
+  if (starter === 'rag-modal-pinecone') {
+    const demo = JSON.parse((await run([command, 'demo'], directory)).stdout);
+    assert.match(demo.answer, /15 minutes/u);
+    assert.equal(demo.citations[0]?.reference, 'on-call.md');
+    return { command: name, request: 'cited answer' };
+  }
   const answered = JSON.parse((await run([command, '--json', 'list', 'files'], directory, { env: { ASSISTANT_ROOT: directory } })).stdout);
   assert.equal(answered.status, 'succeeded', `${starter} did not answer a request offline.`);
   return { command: name, request: answered.status };

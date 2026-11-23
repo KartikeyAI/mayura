@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+- Add the `rag-modal-pinecone` starter with a credential-free demo, durable Markdown ingestion and cited answers.
+
 ## [1.2.1] - 2026-11-23
 
 ### Workflow graphs
