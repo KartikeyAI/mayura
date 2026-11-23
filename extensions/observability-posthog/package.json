@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/observability-posthog",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "PostHog LLM analytics for Mayura's traces, over PostHog's OpenTelemetry endpoint for AI events.",
   "type": "module",

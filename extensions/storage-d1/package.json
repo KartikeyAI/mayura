@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/storage-d1",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Mayura storage on Cloudflare D1, as optimistic transactions over a Worker's D1 binding.",
   "type": "module",

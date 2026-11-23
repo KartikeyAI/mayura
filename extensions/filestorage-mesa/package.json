@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/filestorage-mesa",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Mesa (mesa.dev), a versioned filesystem for agents, for Mayura's file stores.",
   "type": "module",

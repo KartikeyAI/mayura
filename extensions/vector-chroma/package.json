@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/vector-chroma",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Scoped native vector storage for chroma.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/provider-ollama",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Ollama models for Mayura, local or in Ollama's cloud, through the official Ollama SDK.",
   "type": "module",

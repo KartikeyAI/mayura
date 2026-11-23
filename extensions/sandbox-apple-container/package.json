@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-apple-container",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Apple container (macOS) sandboxes for mayura/sandbox, through the container command line.",
   "type": "module",

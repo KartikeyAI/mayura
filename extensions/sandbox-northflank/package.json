@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-northflank",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Northflank sandboxes for mayura/sandbox, through Northflank's JavaScript client.",
   "type": "module",

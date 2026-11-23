@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/storage-dynamodb",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Mayura storage on Amazon DynamoDB, as optimistic transactions through the official AWS SDK.",
   "type": "module",
