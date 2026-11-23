@@ -159,7 +159,7 @@ async function main() {
     const bytes = await readFile(destination); const files = archive(bytes); const manifest = JSON.parse(files.get('package.json').toString('utf8'));
     assert.equal(manifest.name, name); assert.equal(manifest.version, original.version);
     assert.deepEqual(manifest.dependencies ?? {}, {}); assert.deepEqual(manifest.optionalDependencies ?? {}, {});
-    assert.deepEqual(manifest.peerDependencies ?? {}, name === '@hono/node-server' ? { hono: '^4' } : {});
+    assert.deepEqual(manifest.peerDependencies ?? {}, name === '@hono/node-server' ? { hono: '^4 || ^5.0.0-0' } : {});
     packages.set(name, { archive: pathToFileURL(destination).href, manifest });
     reports.push({ name, version: manifest.version, tarballBytes: bytes.length, files: files.size });
   }
