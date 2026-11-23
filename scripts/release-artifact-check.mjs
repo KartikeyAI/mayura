@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { bundle } from './bundle-package.mjs';
 import { extensions, reviewedDependencies, reviewedPeers, stageExtension } from './extensions.mjs';
+import { packageSize } from './package-size.mjs';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -77,6 +78,7 @@ const { stdout } = await exec(process.execPath, [npmCli(), 'pack', staging, '--p
 });
 const packed = JSON.parse(stdout);
 assert(Array.isArray(packed) && packed.length === 1 && typeof packed[0]?.filename === 'string');
+const size = packageSize(packed[0]);
 const archivePath = join(tarballs, packed[0].filename);
 const bytes = await readFile(archivePath);
 const files = archiveFiles(bytes);
@@ -108,7 +110,7 @@ for (const [path, content] of files) {
   assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in mayura: ${path}`);
   if (/^lib\/[^/]+\/dist\/.*\.(?:js|d\.ts)$/u.test(path)) assert(!/(?:from|import)\s*\(?\s*['"]@mayura\//u.test(content.toString('utf8')), `${path} still imports an @mayura package.`);
 }
-const reports = [{ name: 'mayura', version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size,
+const reports = [{ name: 'mayura', version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size, unpackedBytes: size.unpackedBytes,
   bundled: bundled.packages, entryPoints: bundled.entryPoints }];
 // Every @mayurajs extension: staged, packed and checked like mayura, and published after it (publish order follows
 // the manifest).

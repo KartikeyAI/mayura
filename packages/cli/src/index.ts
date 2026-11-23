@@ -3,6 +3,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MayuraError, freezeJson, jsonValue, type JsonObject } from '@mayura/core';
+import { sha256Hex } from '@mayura/core/host';
 import { agentGuide } from './agent-guide.js';
 import { assertSafeDirectory, canonicalTarget, digest, planChanges, writePlannedFiles } from './files.js';
 
@@ -154,26 +155,62 @@ export async function planProject(template: TemplateName, directory: string): Pr
 
 // Starter files that npm would drop or rename when packing (.gitignore, .github) are stored with a `dot-` prefix.
 const starterPath = (segments: readonly string[]): string => segments.map(segment => segment.startsWith('dot-') ? `.${segment.slice(4)}` : segment).join('/');
+const starterSegment = /^[A-Za-z0-9_+$\[\]][A-Za-z0-9._+$\[\]-]{0,99}$/u;
+
+/** Published copies can share identical source assets. A workspace starter uses its own full tree. */
+async function sharedStarterFiles(name: StarterName): Promise<Readonly<Record<string, string>>> {
+  const path = fileURLToPath(new URL('../starter-assets/manifest.json', import.meta.url));
+  try {
+    const details = await lstat(path);
+    if (!details.isFile() || details.size > 262_144) throw new MayuraError('INTEGRITY_VIOLATION', 'Shared starter manifest is invalid.');
+    const manifest = await readFile(path, 'utf8');
+    const entries = (JSON.parse(manifest) as Partial<Record<StarterName, Record<string, string>>>)[name];
+    if (entries === undefined) return {};
+    if (entries === null || typeof entries !== 'object' || Array.isArray(entries)) throw new MayuraError('INTEGRITY_VIOLATION', 'Shared starter entries are invalid.');
+    return entries;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+}
 
 async function collectStarter(name: StarterName): Promise<Map<string, string>> {
   const root = resolve(starterRoot, name); const files = new Map<string, string>(); let total = 0;
+  const collect = async (path: string, segments: readonly string[], expected?: string): Promise<void> => {
+    const details = await lstat(path);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > starterLimits.fileBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file type or size.');
+    total += details.size;
+    if (files.size >= starterLimits.files || total > starterLimits.totalBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter exceeds its file bounds.');
+    const bytes = await readFile(path);
+    let content: string;
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw new MayuraError('INTEGRITY_VIOLATION', 'Starter files must be UTF-8 text.'); }
+    if (expected !== undefined && sha256Hex(bytes) !== expected) throw new MayuraError('INTEGRITY_VIOLATION', 'Shared starter file differs from its manifest.');
+    const target = starterPath(segments);
+    if (files.has(target)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter file paths overlap.');
+    files.set(target, content);
+  };
   const walk = async (segments: readonly string[]): Promise<void> => {
     const entries = await readdir(resolve(root, ...segments), { withFileTypes: true });
     for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
       if (starterSkipped.has(entry.name) || entry.name.startsWith('.') || entry.name.endsWith('.tsbuildinfo')) continue;
-      if (!/^[A-Za-z0-9_+$\[\]][A-Za-z0-9._+$\[\]-]{0,99}$/u.test(entry.name)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file name.');
+      if (!starterSegment.test(entry.name)) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file name.');
       const next = [...segments, entry.name];
       if (entry.isDirectory()) { await walk(next); continue; }
-      const path = resolve(root, ...next); const details = await lstat(path);
-      if (!details.isFile() || details.isSymbolicLink() || details.size > starterLimits.fileBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter contains an unsupported file type or size.');
-      total += details.size;
-      if (files.size >= starterLimits.files || total > starterLimits.totalBytes) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter exceeds its file bounds.');
-      let content: string;
-      try { content = new TextDecoder('utf-8', { fatal: true }).decode(await readFile(path)); } catch { throw new MayuraError('INTEGRITY_VIOLATION', 'Starter files must be UTF-8 text.'); }
-      files.set(starterPath(next), content);
+      await collect(resolve(root, ...next), next);
     }
   };
-  await walk([]); return files;
+  await walk([]);
+  const sharedRoot = fileURLToPath(new URL('../starter-assets/', import.meta.url));
+  for (const [path, expected] of Object.entries(await sharedStarterFiles(name))) {
+    const segments = path.split('/');
+    if (!segments.every(segment => starterSegment.test(segment) && !starterSkipped.has(segment) && !segment.endsWith('.tsbuildinfo')) ||
+        typeof expected !== 'string' || !/^[a-f0-9]{64}$/u.test(expected)) {
+      throw new MayuraError('INTEGRITY_VIOLATION', 'Shared starter file has an invalid path or digest.');
+    }
+    await collect(resolve(sharedRoot, expected), segments, expected);
+  }
+  // Planning hashes the ordered changes. Keep the workspace and packaged file order identical.
+  return new Map([...files].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
 }
 
 /** The repository copy links Mayura packages with `workspace:*`; a generated project pins this CLI's exact release. */

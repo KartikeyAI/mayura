@@ -176,6 +176,11 @@ macro-averages test-set recall and MRR. `citationCoverage` checks that cited chu
 it does not establish semantic entailment. Retrieval result metrics contain admitted query/candidate/result counts,
 declared cost reservation and duration, without raw query text, denied document identities or source content.
 
+For grounded answers, score citation correctness against the document revision and the exact evidence span. Then
+judge each claim against independently labeled support in those spans. Measure the unsupported-claim rate and
+answer faithfulness alongside retrieval recall and MRR. The package qualification uses deterministic fixtures for
+these distinctions. Use a representative held-out corpus and reviewed claims to evaluate your deployment.
+
 ## Vector adapters and qualification
 
 Built-in exact stores plus six optional integrations share the `VectorStore` contract:
