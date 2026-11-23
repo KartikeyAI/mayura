@@ -19,7 +19,7 @@
     "mayura": "workspace:*",
     "@mayurajs/vector-pinecone": "workspace:*",
     "better-sqlite3": "13.0.3",
-    "modal": "0.11.0"
+    "modal": "0.11.2"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
