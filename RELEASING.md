@@ -70,6 +70,9 @@ citations, authorization, deletion, and adapter failures without service credent
 repeats the npm installation from the public registry for every published package, matches the archive digests
 and runs registry signature and attestation verification before creating the GitHub Release.
 
+The release workflow uses `pnpm upgrade:compat --fetch-baseline` to fetch dependencies from the previous release's
+frozen lockfile with lifecycle scripts disabled. Its baseline install and migration test then run offline.
+
 ### Prerelease channel
 
 Stable publication preserves existing `next` tags. For v1.2.2, correct tags still pointing to `1.2.0-rc.1` in
