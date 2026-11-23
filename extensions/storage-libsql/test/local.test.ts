@@ -2,12 +2,6 @@
 // file. Fixtures that expose a database file are the SQLite ones with their store swapped for libSQL on the same
 // file (a libSQL database is a SQLite file), keeping their fault hooks. Crash tests' child processes open the file
 // with libSQL too, except the cross-version compatibility suite, whose children are the SQLite adapter's versions.
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
-import { setFlagsFromString } from 'node:v8';
-import { runInNewContext } from 'node:vm';
-import { setImmediate, setTimeout as delay } from 'node:timers/promises';
 import { createClient } from '@libsql/client';
 import { expect, it, describe } from 'vitest';
 import type { JsonObject } from 'mayura';
@@ -31,39 +25,10 @@ import { graphDiscoveryConformance } from '../../../packages/workflows/test/grap
 import { graphSqliteFixture } from '../../../packages/workflows/test/graph-fixtures.js';
 import { scheduledWorkflowConformance } from '../../../packages/workflows/test/scheduled-conformance.js';
 import { scheduledSqliteFixture } from '../../../packages/workflows/test/scheduled-fixtures.js';
+import { cleanupClosedDatabase, database, url } from './local-database.js';
 
-/**
- * The native libSQL driver releases a closed database's file only when its statements are garbage-collected. Linux
- * and macOS remove an open file anyway; Windows refuses, so on Windows a fixture collects garbage before removing it.
- */
-const collect: () => void = process.platform === 'win32' ? (setFlagsFromString('--expose_gc'), runInNewContext('gc') as () => void) : () => undefined;
-const url = (filename: string) => `file:${filename.split(sep).join('/')}`;
 const opener = (filename: string) => () => createLibsqlStore({ url: url(filename) });
 
-/** Let native statement finalizers run between bounded Windows-only cleanup attempts. */
-async function cleanupClosedDatabase(cleanup: () => Promise<void>): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    // A collection in the closing call's microtask can still see its native statements.
-    // Yield first, then collect again on retry rather than merely retrying unlink.
-    if (process.platform === 'win32') { await setImmediate(); collect(); await setImmediate(); }
-    try { await cleanup(); return; }
-    catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (process.platform !== 'win32' || attempt >= 3 || !['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code ?? '')) throw error;
-      await delay(100 * (attempt + 1));
-    }
-  }
-}
-
-/** A fresh database file in its own temporary directory, removed afterwards. */
-async function database(prefix: string): Promise<{ filename: string; cleanup(): Promise<void> }> {
-  const directory = await mkdtemp(join(tmpdir(), `mayura-libsql-${prefix}-`));
-  return { filename: join(directory, 'store.db'), cleanup: async () => {
-    const target = resolve(directory);
-    if (!target.startsWith(`${resolve(tmpdir())}${sep}mayura-libsql-${prefix}-`)) throw new Error('Unexpected fixture path.');
-    await cleanupClosedDatabase(() => rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-  } };
-}
 /**
  * A SQLite fixture with its store replaced by libSQL on the same file. Its raw query and lock hooks use libSQL too:
  * the SQLite fixtures' hooks use better-sqlite3, a second copy of SQLite, and on Linux and macOS two copies in one
@@ -147,18 +112,6 @@ durableBudgetConformance('libSQL', async () => { const base = await durableBudge
 scheduledWorkflowConformance('libSQL', async () => { const base = await scheduledSqliteFixture(); return onLibsql(base, (base.childConfig as { filename: string }).filename) as never; });
 graphWorkflowConformance('libSQL', async () => { const base = await graphSqliteFixture(); return onLibsql(base, (base.childConfig as { filename: string }).filename) as never; });
 graphDiscoveryConformance('libSQL', async () => { const base = await graphSqliteFixture(); return onLibsql(base, (base.childConfig as { filename: string }).filename) as never; });
-
-it('keeps a local file durable: write-ahead logging, full sync and foreign keys', async () => {
-  const { filename, cleanup } = await database('durability');
-  const store = opener(filename)(); await store.initialize(); await store.close();
-  const client = createClient({ url: url(filename) });
-  try {
-    const tx = await client.transaction('write');
-    const value = async (pragma: string) => (await tx.execute(`PRAGMA ${pragma}`)).rows[0]![0];
-    expect([await value('journal_mode'), await value('synchronous'), await value('foreign_keys')]).toEqual(['wal', 2, 1]);
-    await tx.rollback(); tx.close();
-  } finally { client.close(); await cleanup(); }
-});
 
 it('refuses options it cannot use, and a token or plain http to anything but a loopback address', () => {
   for (const options of [{}, { url: '' }, { url: 'file:x', client: {} }, { url: 'postgres://db.example/x' }, { url: 'http://db.example' }, { url: 'ws://db.example' },
