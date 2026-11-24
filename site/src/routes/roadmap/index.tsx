@@ -54,6 +54,15 @@ const stages: Stage[] = [
     ],
   },
   {
+    label: '1.2.2', title: 'Runnable RAG starter and release hardening', status: 'shipped',
+    summary: 'Published November 23, 2026 through npm trusted publishing.',
+    items: [
+      { title: 'Modal + Pinecone starter', text: 'Generate a retrieval agent with an offline Markdown demo, durable ingestion and exact source citations.' },
+      { title: 'Dependency security', text: 'Patched Zod and Hono dependencies and added production dependency audits across every published package.' },
+      { title: 'Registry verification', text: 'Added clean-install RAG acceptance, archive size checks and registry signature verification.' },
+    ],
+  },
+  {
     label: 'Next', title: 'Qualify more real-world paths', status: 'next',
     summary: 'Priorities for broader qualification, without promised delivery dates.',
     items: [
@@ -117,8 +126,12 @@ function Roadmap() {
                 </p>
               )}
               {stage.label === '1.2.1' && (
-                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} className="font-medium text-primary hover:underline">What’s new in 1.2.1</Link>
+                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-121" className="font-medium text-primary hover:underline">What’s new in 1.2.1</Link>
                   <span className="text-muted"> · </span><Link to="/docs/$/" params={{ _splat: 'guides/release-readiness' }} className="font-medium text-primary hover:underline">Release evidence and limits</Link></p>
+              )}
+              {stage.label === '1.2.2' && (
+                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/changelog' }} className="font-medium text-primary hover:underline">Read the changelog</Link>
+                  <span className="text-muted"> · </span><Link to="/docs/$/" params={{ _splat: 'guides/rag-modal-pinecone-starter' }} className="font-medium text-primary hover:underline">Run the RAG starter</Link></p>
               )}
             </li>
           ))}

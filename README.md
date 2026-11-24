@@ -52,7 +52,7 @@ with a CLI that scaffolds, runs and operates your project.
   configure it.
 - **Deploy anywhere.** `mayura deploy` to Docker, Compose, Kubernetes and eleven platforms, from Fly.io and Cloud Run
   to AWS Lambda and Cloudflare. Runs on Node.js, Bun, Deno, Cloudflare Workers and Vercel Edge.
-- **85 integration packages.** Optional `@mayurajs/*` packages, released with `mayura`: see the
+- **105 integration packages.** Optional `@mayurajs/*` packages, released with `mayura`: see the
   [list](docs/reference/integrations.md).
 - **Test offline.** Scripted models run agents, tools and workflows without a network or an API key.
 
@@ -181,6 +181,7 @@ Output is readable in a terminal and JSON when piped (or with `--json`). `mayura
 - [Guides](docs/README.md): model providers, streaming, durable workflows, storage, memory, guardrails, servers,
   React, deployment and more.
 - [CLI](docs/cli/overview.md) and the [entry point reference](docs/reference/entry-points.md).
+- [Changelog](docs/project/changelog.md) and [release validation](docs/guides/release-readiness.md).
 - [Using Mayura with AI coding agents](docs/ai-agents.md): `llms.txt`, and documentation that ships inside the package.
 
 The documentation also ships in the npm package (`node_modules/mayura/docs`), so your editor's AI assistant can read
@@ -192,6 +193,3 @@ Mayura is created by **Aryabh** ([dev@rokad.co](mailto:dev@rokad.co)). The team 
 
 Mayura is open source under the [Apache-2.0 license](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute,
 [SECURITY.md](SECURITY.md) to report a vulnerability and [SUPPORT.md](SUPPORT.md) for support.
-
-
-The release-1.2 development branch includes the offline `examples/ag-ui-chat` notebook and a copy-in React registry (`mayura add ui --list`). See [copy-in UI](docs/guides/copy-in-ui.md) and [AG-UI](docs/guides/ag-ui.md). Local Windows tests, builds and package checks pass. V1.2 remains unreleased; see the [release validation status](docs/guides/release-readiness.md) for results and remaining qualifications.

@@ -32,12 +32,15 @@ Use [Next.js](nextjs.md), [Hono](hono.md), [React Router](react-router.md), [Tan
 ## Generate a reviewed directory
 
 ```sh
-npx mayura@1.2.1 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
 ```
 
 Replace `nextjs` with the selected starter ID. The [initializer](../cli/init.md) supports a plan before writing and
 refuses unapproved replacement of existing files. Run from a directory you own; use the generated README for that
 starter's install, build and environment commands.
+
+For the retrieval application, follow the [RAG starter guide](rag-modal-pinecone-starter.md) to run its offline
+demo before connecting hosted services.
 
 For a framework notebook:
 

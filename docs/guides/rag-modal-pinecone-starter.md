@@ -9,8 +9,8 @@ Pinecone vectors, and Modal DeepSeek for reranking and generation.
 
 ## Generate and run the demo
 
-The starter is included in Mayura 1.2.2. Once that version is available on npm, generate the project with the
-published CLI.
+Use Node.js 24.14.1 or a later supported 24.x release. Generate the project directly from the published Mayura 1.2.2
+CLI.
 
 ```sh
 npx mayura@1.2.2 init --starter rag-modal-pinecone --directory ./mayura-rag-starter --apply
@@ -32,7 +32,9 @@ npm test
 
 The demo requires no API key and uses an in-memory vector store. It reads `fixtures/on-call.md` and prints a
 JSON answer that includes the incident-summary deadline and a citation with its document, revision, chunk ID,
-reference and exact offsets. The tests exercise the hosted protocol with local fixtures.
+reference and exact offsets. Use the offsets to locate the passage in the fixture. The tests exercise the hosted
+protocol with local fixtures. For an example that also deletes a source and checks that it stops appearing in
+retrieval, see the [RAG quickstart](rag-quickstart.md).
 
 ## Connect Modal and Pinecone
 

@@ -5,9 +5,10 @@ date: 2026-11-23
 tags: release, RAG, workflows, Pinecone
 ---
 
-Mayura **1.2.1 is available under `latest`**. This patch qualifies one production retrieval profile and lets
+Mayura **1.2.1** qualified one production retrieval profile and lets
 hosts configure larger workflow graphs across definitions, persistence and recovery. All 106 packages were published
-with npm trusted publishing. See the [GitHub release](https://github.com/KartikeyAI/mayura/releases/tag/v1.2.1).
+with npm trusted publishing. See the [GitHub release](https://github.com/KartikeyAI/mayura/releases/tag/v1.2.1)
+or the [changelog](../../../docs/project/changelog.md) for the current release.
 
 ```bash
 npm install mayura@1.2.1
