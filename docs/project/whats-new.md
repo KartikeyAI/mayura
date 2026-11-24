@@ -1,12 +1,21 @@
 ---
-title: "What's new in Mayura 1.2.1"
-description: "Qualified retrieval for the Modal and Pinecone Loki profile, configurable workflow graphs, and the capabilities shipped in Mayura 1.2."
+title: "What's new in Mayura 1.2.2"
+description: "A runnable Modal and Pinecone RAG starter, security fixes and release checks for every npm package."
 ---
 
-Mayura **1.2.1 is published** under `latest` for `mayura` and 105 optional
-[integration packages](../reference/integrations.md). All 106 packages were published through trusted publishing
-with verified integrity and provenance. All 22 existing `next` tags were preserved. See the
-[release evidence](../guides/release-readiness.md) for the qualified source and remaining interoperability limits.
+Mayura **1.2.2 is available on npm** for `mayura` and all 105 optional
+[integration packages](../reference/integrations.md). Upgrade Mayura and the extensions your application uses
+to the same version. See the [changelog](changelog.md) and [release evidence](../guides/release-readiness.md).
+
+- **Run a retrieval agent locally.** Generate the [Modal + Pinecone RAG starter](../guides/rag-modal-pinecone-starter.md)
+  with the published CLI. Its credential-free demo ingests Markdown and produces an answer with exact citations.
+- **Upgrade the HTTP and validation dependencies.** The release includes Zod 4.6.7, Hono 4.13.20 and
+  `@hono/node-server` 2.1.11. Qualification audits production dependencies across all 106 packages.
+- **Try RAG from an npm install.** The [RAG quickstart](../guides/rag-quickstart.md) covers ingestion,
+  retrieval, citation verification and deletion. Registry acceptance tests exercise recovery, scope enforcement
+  and provider failures using deterministic fixtures.
+
+## Mayura 1.2.1
 
 ## Production retrieval and configurable graphs
 
@@ -43,7 +52,7 @@ HTTP policy service. Resource decisions supplement explicit runtime grants; they
 [Next.js](../guides/nextjs.md), [Hono](../guides/hono.md), [React Router](../guides/react-router.md),
 [TanStack Start](../guides/tanstack-start.md), [SvelteKit](../guides/sveltekit.md) and [Nuxt](../guides/nuxt.md).
 They include scoped threads, exact note approvals, an offline model fixture, a separate indexing worker and
-deployment source. [Choose a starter](../guides/choosing-a-starter.md) compares all 11 applications.
+deployment source. Find the current application catalog in [Choose a starter](../guides/choosing-a-starter.md).
 
 [Copy-in React components](../guides/copy-in-ui.md) provide thread history, approval and run controls as source you
 own. [Headless stores](../guides/react.md) support native Svelte and Vue views. Hooks and subscriptions observe;
@@ -64,10 +73,10 @@ outside the completed qualification.
 
 ## Upgrade and qualification
 
-Install the coordinated release with `npm install mayura@1.2.1`. Select matching `@mayurajs/*@1.2.1` packages only
+Install the coordinated release with `npm install mayura@1.2.2`. Select matching `@mayurajs/*@1.2.2` packages only
 where needed. Review [versioning](versioning.md), [support](support.md) and the
-[release validation status](../guides/release-readiness.md) before changing a production host. The full main CI
-matrix and V1.1 upgrade check passed. Check the qualification scope for the external services you use.
+[release validation status](../guides/release-readiness.md) before changing a production host. The 1.2.2
+qualification included an upgrade from a 1.2.1 database. Check the qualification scope for the external services you use.
 
 ## Mayura 1.1
 

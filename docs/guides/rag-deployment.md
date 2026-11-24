@@ -4,7 +4,8 @@ description: Start offline, connect a scoped vector store, and qualify retrieval
 ---
 
 Start with the [RAG quickstart](rag-quickstart.md) to ingest, retrieve, verify citations and delete a source
-from an npm install. The [Modal + Pinecone starter](rag-modal-pinecone-starter.md) adds an offline demo
+from an npm install. To start with a complete application, generate the
+[Modal + Pinecone starter](rag-modal-pinecone-starter.md) with the Mayura 1.2.2 CLI. It includes an offline demo
 and an opt-in hosted walkthrough.
 
 The repository also includes a single-file example in `examples/rag.mjs`. It ingests Markdown in a durable workflow, then answers with

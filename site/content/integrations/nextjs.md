@@ -11,7 +11,7 @@ tags: Next.js, React, streaming
 For a new application, generate the maintained Next.js starter instead of assembling each part below:
 
 ```sh
-npx mayura@1.2.1 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
 ```
 
 It includes App Router routing, React thread history, exact note approvals, an offline model fixture and a separate

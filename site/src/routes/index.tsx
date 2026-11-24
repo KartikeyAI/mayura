@@ -103,7 +103,7 @@ function Hero() {
         <Link {...docs('project/whats-new')}
           className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-bg/70 px-3 py-1.5 text-xs text-muted backdrop-blur transition hover:text-fg">
           <span className="font-medium text-primary">v{site.version}</span>
-          <span>Qualified RAG and configurable workflow limits</span>
+          <span>Runnable RAG starter and security updates</span>
           <Icon name="arrow" className="size-3.5 shrink-0" />
         </Link>
         <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
@@ -150,7 +150,7 @@ function ProductionRetrieval() {
             profiles remain experimental.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <PrimaryButton slug="guides/rag-deployment">Build a retrieval agent</PrimaryButton>
+            <PrimaryButton slug="guides/rag-modal-pinecone-starter">Try the RAG starter</PrimaryButton>
             <SecondaryButton slug="guides/rag-production">Review qualification evidence</SecondaryButton>
           </div>
         </div>

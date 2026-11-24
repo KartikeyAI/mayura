@@ -1,7 +1,29 @@
 ---
-title: "V1.2.1 release validation status"
-description: "Verified publication of all 106 packages, the scoped production RAG qualification, and remaining interoperability limits."
+title: "V1.2.2 release validation status"
+description: "Main CI, npm publication, registry verification, production RAG qualification and remaining interoperability limits."
 ---
+
+## V1.2.2 publication
+
+**1.2.2 was published on November 23, 2026.** All 39 checks, including the Qualification gate, passed on
+[`main`](https://github.com/KartikeyAI/mayura/actions/runs/45167460889) at
+`01911fa26d4f21a2485c42a54b5b935b3d3701a6`. The
+[106-package rehearsal](https://github.com/KartikeyAI/mayura/actions/runs/45167517830) passed on that commit,
+including an upgrade from 1.2.1, secret scanning, and an SBOM with 450 components and no license findings.
+
+The [protected release workflow](https://github.com/KartikeyAI/mayura/actions/runs/45172105288) published all 106
+packages under `latest` through npm trusted publishing. It verified archive integrity, provenance, registry
+signatures and clean installation, including installed-package RAG acceptance. A temporary tarball 404
+interrupted the first clean-install check. The successful workflow attempt reused the saved publication
+receipt and qualified the same archives.
+
+The protected [`v1.2.2` tag and release](https://github.com/KartikeyAI/mayura/releases/tag/v1.2.2)
+identify the qualified commit and retain the archive manifest, SBOM and verification reports. A separate
+registry check confirmed that all 22 stale `next` tags moved from `1.2.0-rc.1` to `1.2.2`.
+
+The [RAG starter](rag-modal-pinecone-starter.md) is available through the published CLI. The
+[registered Modal and Pinecone Loki v28 profile](rag-production.md) retains its scoped production qualification.
+Other RAG profiles and the bounded AG-UI profile remain experimental.
 
 ## V1.2.1 publication
 

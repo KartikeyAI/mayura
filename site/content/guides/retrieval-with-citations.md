@@ -2,7 +2,7 @@
 title: "Design retrieval around evidence your application can authorize"
 description: "Build a retrieval agent with scoped ingestion, pinned revisions, exact citation identities and the qualified Modal and Pinecone profile."
 date: 2026-10-23
-updated: 2026-11-23
+updated: 2026-11-24
 tags: RAG, citations, authorization, Pinecone
 ---
 
@@ -27,8 +27,9 @@ discarded before reranking and again before disclosure.
 
 ## Begin without a remote service
 
-Follow [Build and deploy a retrieval agent](../../../docs/guides/rag-deployment.md) for the offline example and
-the host configuration you need for a deployment.
+Generate the [Modal + Pinecone starter](../../../docs/guides/rag-modal-pinecone-starter.md) from the Mayura 1.2.2
+CLI to run a complete offline demo. [Build and deploy a retrieval agent](../../../docs/guides/rag-deployment.md)
+explains the host configuration for your application.
 The bounded in-memory vector store provides exact cosine and lexical overlap; native memory offers a local SQLite
 path. The deterministic hashing embedder is useful for offline checks, but is not a semantic embedding model.
 

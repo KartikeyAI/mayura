@@ -1,12 +1,13 @@
 ---
 title: "Choose your Mayura starter"
-description: "Eleven starting points: six framework notebooks, four server applications and a terminal assistant. Pick the right path and run it offline first."
+description: "Choose from twelve starter applications, including framework notebooks, standalone services and a cited retrieval agent."
 date: 2026-10-23
+updated: 2026-11-24
 tags: starters, frameworks, Next.js, Hono, SvelteKit, Nuxt
 ---
 
-Mayura 1.2 includes 11 runnable applications. Choose the shape of your product first: a chat notebook inside a
-framework, a standalone service, an event-driven workflow or a terminal assistant. The six notebook starters let
+Mayura 1.2.2 includes twelve runnable applications. Choose a chat notebook, a standalone service, a retrieval
+agent, an event-driven workflow or a terminal assistant. The six notebook starters let
 you try persistent threads and exact tool approvals without a provider credential or a model bill.
 
 ## Use your team's framework
@@ -27,7 +28,7 @@ Your framework controls the application shell; the Mayura host controls identity
 ## Generate the notebook
 
 ```sh
-npx mayura@1.2.1 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
 cd my-notebook
 npm install
 npm run setup
@@ -47,6 +48,7 @@ Run `npm run worker` in another terminal. Use the Node version required by the g
 | `research-team` | You want planner/researcher/writer coordination with bounded shared spending |
 | `event-automation` | Signed webhooks should start durable work through MCP tools |
 | `cli-agent` | The interface belongs in a terminal, with confirmation for writes |
+| [`rag-modal-pinecone`](../../../docs/guides/rag-modal-pinecone-starter.md) | You need durable Markdown ingestion and cited answers |
 
 Follow each generated README: these applications do not all use the notebook's setup command or session token.
 For a small example of a single capability, choose a template in the initializer instead.

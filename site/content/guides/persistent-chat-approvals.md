@@ -14,7 +14,7 @@ with a deterministic note agent so you can inspect the entire flow without paid 
 Choose a framework in the [starter guide](choose-a-starter.md). For Next.js:
 
 ```sh
-npx mayura@1.2.1 init --starter nextjs --directory ./notes --apply
+npx mayura@1.2.2 init --starter nextjs --directory ./notes --apply
 cd notes
 npm install
 npm run setup

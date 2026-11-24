@@ -83,7 +83,8 @@ project and secret identity directory before use. Its frontend is built by Vite;
 
 ## Validation and remaining qualifications
 
-The starter suite passed locally for all 11 starters, including all six frameworks. It builds and boots each framework in the workspace, exercises its mounted approval flow,
+The original Mayura 1.2 starter suite passed locally for all 11 starters available at the time, including all six frameworks.
+It builds and boots each framework in the workspace, exercises its mounted approval flow,
 and generates, packs, installs and tests each server contract offline. Like the existing Vite starters, framework toolchains
 are qualified in the workspace; generated packed installs qualify the Mayura server contract separately.
 The shared runtime checks passed on Bun, Deno, workerd and Vercel Edge; they do not qualify the Hono-specific Bun/Deno entry points or a deployed Workers/D1 application. Those profiles and rendered browser interaction checks remain outstanding.

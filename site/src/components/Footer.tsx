@@ -14,11 +14,13 @@ const columns = [
   ] },
   { title: 'Build', links: [
     { label: 'Model providers', slug: 'guides/model-providers' },
+    { label: 'RAG quickstart', slug: 'guides/rag-quickstart' },
     { label: 'Server and client', slug: 'guides/server-and-client' },
     { label: 'Deployment', slug: 'guides/deployment' },
     { label: 'CLI', slug: 'cli/overview' },
   ] },
   { title: 'Project', links: [
+    { label: 'Changelog', slug: 'project/changelog' },
     { label: 'Versioning', slug: 'project/versioning' },
     { label: 'Security model', slug: 'project/security' },
     { label: 'Credits', slug: 'project/credits' },
