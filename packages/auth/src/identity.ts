@@ -1,6 +1,6 @@
 import { MayuraError } from '@mayura/core';
 import { sha256, toBase64Url } from '@mayura/core/host';
-import type { ServerIdentity } from '@mayura/server';
+import type { AgentServerOptions, ServerIdentity } from '@mayura/server';
 import { peekIssuer, type JwtClaims, type JwtHeader, type JwtVerifier } from './jwt.js';
 
 /** A permission Mayura's server knows. */
@@ -20,7 +20,7 @@ export interface IdentityGrant {
 
 /** Mayura's server `authenticate` callback, with a way to tell which tokens it is for. */
 export interface Authenticator {
-  (request: { readonly token: string; readonly signal: AbortSignal }): Promise<ServerIdentity | null>;
+  (request: Parameters<AgentServerOptions['authenticate']>[0]): Promise<ServerIdentity | null>;
   /** Whether this authenticator is for a token of this shape (an issuer, a key prefix), checked before any verification. */
   readonly accepts: (token: string) => boolean;
 }
@@ -134,7 +134,7 @@ export function chainAuthenticators(...authenticators: readonly Authenticator[])
   }
   const list = [...authenticators];
   const accepts = (token: string) => list.some(item => item.accepts(token));
-  const authenticate = async (request: { readonly token: string; readonly signal: AbortSignal }): Promise<ServerIdentity | null> => {
+  const authenticate = async (request: Parameters<Authenticator>[0]): Promise<ServerIdentity | null> => {
     const chosen = list.find(item => item.accepts(request.token));
     return chosen ? chosen(request) : null;
   };

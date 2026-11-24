@@ -230,7 +230,9 @@ await keys.revoke(record.keyId);
 
 `keyAuthenticator(keys, { cost, maxIdentityMs })` is the server callback: it accepts tokens with the manager's prefix,
 spends `cost` credits, and makes the key's grant the identity, for no longer than the key or `maxIdentityMs`. It works
-with any `KeyVerifier`, such as a key service's.
+with any `KeyVerifier`, such as a key service's. Stream rechecks use `cost: 0` and `checkOnly: true`.
+The built-in key manager reads the current grant from storage without consuming credits, request rate limits, or
+updating usage. External verifiers can honor `checkOnly` when their service offers a read-only verification API.
 
 Keys issued by a key service are checked with these packages, each a `KeyVerifier` for `keyAuthenticator`. Each sends
 only tokens with your keys' prefix to the service, never caches its answers (so a key revoked there is refused at

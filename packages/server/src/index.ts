@@ -249,8 +249,8 @@ export interface AgentServerOptions {
    * `requestTimeoutMs`: keep that under the platform's time limit, and give clients a `requestTimeoutMs` above it.
    */
   readonly runExecution?: 'background' | 'request';
-  /** Verify the token using trusted application authentication; never trust token claims without verification. */
-  readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
+  /** Verify the token using trusted application authentication. A stream recheck verifies access without admitting another request. */
+  readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal; readonly purpose?: 'stream-recheck' }) => Promise<ServerIdentity | null>;
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
@@ -893,14 +893,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }) } }, failure.status,
     retryAfterMs === undefined ? {} : { 'Retry-After': String(Math.max(1, Math.ceil(retryAfterMs / 1_000))) });
   };
-  const session = async (authorization: string, signal: AbortSignal): Promise<ServerIdentity> => {
+  const session = async (authorization: string, signal: AbortSignal, purpose?: 'stream-recheck'): Promise<ServerIdentity> => {
     if (!/^Bearer [\x21-\x7e]{1,8192}$/.test(authorization)) throw new HttpFailure(401, 'AUTH_REQUIRED');
     let supplied: ServerIdentity | null;
     assertActive(signal);
     if (authentications >= limits.maxRequests) throw new HttpFailure(429, 'AUTH_LIMIT');
     authentications++;
     const verification = Promise.resolve().then(() => {
-      assertActive(signal); return authenticate(Object.freeze({ token: authorization.slice(7), signal }));
+      assertActive(signal); return authenticate(Object.freeze({ token: authorization.slice(7), signal, ...(purpose ? { purpose } : {}) }));
     }).finally(() => { authentications--; });
     // A non-cooperative verifier retains its admission until it really completes.
     try { supplied = await bounded(verification, signal); }
@@ -1013,12 +1013,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           const next = await Promise.race([pending, new Promise<'beat'>(resolve => { beat = setTimeout(resolve, limits.streamHeartbeatMs, 'beat'); })]);
           if (ended) return;
           if (next !== 'beat' && next.done) { onDone?.(); finish(); return; }
-          const current = await session(target.bearer, controller.signal);
+          const current = await session(target.bearer, controller.signal, 'stream-recheck');
           if (current.scope.principalId !== identity.scope.principalId || current.scope.projectId !== identity.scope.projectId
             || !current.agentIds.includes(target.agentId) || !current.capabilities.includes('runs:read')) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
           await authorize(current, 'run', target.runId, 'read', controller.signal);
           if (ended) return;
-          if (identity.expiresAtMs <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
+          if (Math.min(identity.expiresAtMs, current.expiresAtMs) <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
           if (next === 'beat') { value.enqueue(encoder.encode(': keep-alive\n\n')); return; }
           pending = undefined;
           const event = JSON.stringify(jsonValue(next.value, { maxBytes: 16_384 }));

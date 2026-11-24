@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { chainAuthenticators } from '@mayura/auth';
 import type { Schema } from '@mayura/core';
 import { defineAgent } from '@mayura/runtime';
 import { createAgentServer, type AgentServer } from '@mayura/server';
@@ -42,6 +43,34 @@ describe('keyAuthenticator', () => {
     const { key, record } = await keys.create({ projectId: 'acme', ownerId: 'user/1', agentIds: [], capabilities: ['runs:read'], expiresInMs: 120_000 });
     await keys.update(record.keyId, { expiresAtMs: Date.now() + 5_000 });
     expect((await keyAuthenticator(keys)({ token: key, signal }))!.expiresAtMs - Date.now()).toBeLessThanOrEqual(5_000);
+  });
+
+  it('verifies an admitted stream without spending credits or recording another request', async () => {
+    const keys = await manager();
+    const { key, record } = await keys.create({ projectId: 'acme', ownerId: 'user/1', agentIds: ['echo'],
+      capabilities: ['runs:read', 'runs:submit'], credits: { remaining: 2 }, rateLimit: { limit: 2, windowMs: 60_000 } });
+    const schema: Schema<unknown> = { '~standard': { version: 1, vendor: 'test', validate: value => ({ value }) } };
+    const agent = defineAgent({ id: 'echo', version: '1', instructions: 'Fixture.', tools: [], input: schema, output: schema,
+      model: { id: 'fixture', capabilities: { tools: true, structuredOutput: true }, maxCostMicros: 0,
+        generate: async () => ({ type: 'final' as const, output: 1, usage: { costMicros: 0 } }) } });
+    const server = createAgentServer({ publicOrigin: 'https://agents.test', agents: [{ agent, permissions: { allow: ['model:fixture'] } }],
+      authenticate: chainAuthenticators(keyAuthenticator(keys)) });
+    servers.push(server);
+    const headers = { authorization: 'Bearer ' + key };
+    const created = await server.fetch(new Request('https://agents.test/v1/runs', { method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json', 'idempotency-key': 'rated-run' },
+      body: JSON.stringify({ agentId: 'echo', input: 'start' }) }));
+    expect(created.status).toBe(202);
+    const { id } = await created.json() as { id: string };
+    const response = await server.fetch(new Request('https://agents.test/v1/runs/' + id + '/events', { headers }));
+    expect(response.status).toBe(200);
+    expect((await keys.get(record.keyId))?.remaining).toBe(0);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    expect(decoder.decode((await reader.read()).value)).toContain('event: run.started');
+    await keys.revoke(record.keyId);
+    expect(decoder.decode((await reader.read()).value)).toContain('"code":"AUTH_INVALID"');
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('works with any key verifier, never asks one about keys it does not accept, and refuses bad options', async () => {

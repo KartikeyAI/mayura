@@ -15,8 +15,8 @@ export type KeyVerification =
 export interface KeyVerifier {
   /** Whether a token looks like one of this verifier's keys (by its prefix), checked before anything else. */
   accepts(key: string): boolean;
-  /** Checks a key, spending `cost` credits where the key has any. Throws only when keys cannot be checked. */
-  verify(key: string, options?: { readonly signal?: AbortSignal; readonly cost?: number }): Promise<KeyVerification>;
+  /** Checks a key. Supporting verifiers use checkOnly for a live grant check without recording request usage. */
+  verify(key: string, options?: { readonly signal?: AbortSignal; readonly cost?: number; readonly checkOnly?: boolean }): Promise<KeyVerification>;
 }
 
 export interface KeyAuthenticatorOptions {
@@ -38,9 +38,9 @@ export function keyAuthenticator(verifier: KeyVerifier, options: KeyAuthenticato
   const maxIdentityMs = options.maxIdentityMs ?? 60_000;
   if (!Number.isSafeInteger(maxIdentityMs) || maxIdentityMs < 1_000 || maxIdentityMs > 3_600_000) throw new MayuraError('INVALID_CONFIG', 'keyAuthenticator(): maxIdentityMs is 1,000 to 3,600,000.');
   const accepts = (token: string) => typeof token === 'string' && verifier.accepts(token);
-  const authenticate = async ({ token, signal }: { readonly token: string; readonly signal: AbortSignal }): Promise<ServerIdentity | null> => {
+  const authenticate = async ({ token, signal, purpose }: Parameters<Authenticator>[0]): Promise<ServerIdentity | null> => {
     if (!accepts(token)) return null;
-    const result = await verifier.verify(token, { signal, cost });
+    const result = await verifier.verify(token, purpose === 'stream-recheck' ? { signal, cost: 0, checkOnly: true } : { signal, cost });
     if (!result.ok) return null;
     return serverIdentity({ principalId: result.principalId, projectId: result.projectId, agentIds: result.agentIds, capabilities: result.capabilities },
       { credentialExpiresAtMs: result.expiresAtMs ?? Number.MAX_SAFE_INTEGER, maxIdentityMs });
