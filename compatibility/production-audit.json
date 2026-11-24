@@ -1,4 +1,8 @@
 {
   "version": 1,
-  "exceptions": []
+  "exceptions": [],
+  "unqualifiedOptionalProfiles": {
+    "@mayurajs/browser-stagehand": "Stagehand 3 resolves high-severity advisories. Stagehand 4 requires a separately qualified browser attachment profile.",
+    "@mayurajs/sandbox-codesandbox": "The supported CodeSandbox SDK resolves high-severity advisories."
+  }
 }

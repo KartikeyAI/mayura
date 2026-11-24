@@ -16,6 +16,10 @@ CodeSandbox SDK, `@codesandbox/sdk`, which you install yourself, and runs on Nod
 **CodeSandbox VMs reach the internet**, and this provider has no way to stop them, so it only makes sandboxes with the
 network `'all'`.
 
+**Production qualification is withheld.** The supported CodeSandbox SDK still resolves high-severity
+dependency advisories. Restrict use to isolated development environments until a clean supported dependency
+profile is verified.
+
 ## Install
 
 ```bash

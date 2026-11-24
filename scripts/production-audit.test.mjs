@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { evaluatePolicy, productionFindings, productionInventory } from './production-audit.mjs';
+import { evaluatePolicy, productionFindings, productionInventory, splitUnqualifiedProfiles } from './production-audit.mjs';
 
 function fixture() {
   const common = {
@@ -10,7 +10,7 @@ function fixture() {
     name: 'consumer', manifest: { name: '@mayurajs/consumer', dependencies: { '@mayurajs/shared': 'workspace:*' } },
   };
   const workspace = [{
-    name: 'sdk', manifest: { dependencies: { zod: '4.6.7', 'extra-peer': '1.0.0' } },
+    name: 'sdk', manifest: { dependencies: { zod: '4.6.7' } },
   }];
   const lock = {
     lockfileVersion: '9.0',
@@ -55,6 +55,44 @@ test('refuses a missing snapshot and a mismatched locked manifest', () => {
   assert.throws(() => productionInventory(lock, workspace, extensions), /Missing lockfile snapshot/u);
   workspace[0].manifest.dependencies.zod = '4.6.8';
   assert.throws(() => productionInventory(lock, workspace, extensions), /Missing locked dependency/u);
+});
+
+test('includes embedded browser dependencies and resolved optional peers in separate profiles', () => {
+  const { lock, workspace, extensions } = fixture();
+  workspace[0].manifest.peerDependencies = { react: '^19.0.0' };
+  extensions[0].manifest.peerDependencies = { mayura: 'workspace:^', 'vendor-sdk': '^2.0.0' };
+  lock.importers['.'] = { devDependencies: { react: { version: '19.0.1' }, 'vendor-sdk': { version: '2.0.1' } } };
+  lock.importers['packages/inspector-ui'] = { dependencies: { 'browser-widget': { specifier: '1.0.0', version: '1.0.0' } } };
+  for (const key of ['react@19.0.1', 'vendor-sdk@2.0.1', 'browser-widget@1.0.0', 'browser-child@1.0.0']) {
+    lock.packages[key] = {};
+    lock.snapshots[key] = {};
+  }
+  lock.snapshots['browser-widget@1.0.0'].dependencies = { 'browser-child': '1.0.0' };
+  const inventory = productionInventory(lock, workspace, extensions, { 'browser-widget': '1.0.0' });
+  assert.deepEqual([...inventory.roots.get('mayura')].sort(), ['browser-child@1.0.0', 'browser-widget@1.0.0', 'zod@4.6.7']);
+  assert(inventory.roots.get('mayura (optional peers)').has('react@19.0.1'));
+  assert(inventory.roots.get('@mayurajs/shared (optional peers)').has('vendor-sdk@2.0.1'));
+  assert(inventory.roots.get('@mayurajs/shared (optional peers)').has('browser-child@1.0.0'));
+  assert(!inventory.roots.get('@mayurajs/shared').has('vendor-sdk@2.0.1'));
+  delete lock.importers['.'].devDependencies['vendor-sdk'];
+  assert.throws(() => productionInventory(lock, workspace, extensions, { 'browser-widget': '1.0.0' }), /No locked runtime peer/u);
+});
+
+test('reports unqualified SDK matches and retains the release gate for shared findings', async () => {
+  const profile = '@mayurajs/shared (optional peers)';
+  const finding = { name: 'vendor-sdk', version: '2.0.1', severity: 'high', id: 1 };
+  const inventory = { optionalExtensionProfiles: new Set(['@mayurajs/shared']) };
+  const policy = { version: 1, exceptions: [], unqualifiedOptionalProfiles: { '@mayurajs/shared': 'Security hold' } };
+  const result = splitUnqualifiedProfiles(inventory, [
+    { ...finding, affected: [profile] },
+    { ...finding, id: 2, affected: [profile, 'mayura'] },
+  ], policy);
+  assert.deepEqual(result.unqualifiedFindings.map(item => item.affected), [[profile], [profile]]);
+  assert.deepEqual((await evaluatePolicy(result.qualifiedFindings, policy)).blocked,
+    [{ ...finding, id: 2, affected: ['mayura'] }]);
+  assert.throws(() => splitUnqualifiedProfiles(inventory, [], {
+    unqualifiedOptionalProfiles: { mayura: 'Invalid core exclusion' },
+  }), /Only an optional extension profile/u);
 });
 
 test('submits exactly the production inventory to npm and identifies every affected publication', async () => {

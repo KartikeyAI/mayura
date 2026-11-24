@@ -47,11 +47,13 @@ See the [qualified Modal and Pinecone RAG profile](docs/guides/rag-production.md
 ### Production dependency audit
 
 `pnpm audit:production` runs in Shared checks under the required Qualification gate. It checks the frozen
-production dependency graph of `mayura` and every staged extension against npm advisories, including transitive
-and platform-specific optional dependencies. Workspace development packages and consumer-installed optional
-peers are outside this gate.
+dependency graph of `mayura` and every staged extension against npm advisories. It includes transitive and
+platform-specific dependencies, the browser dependencies embedded in the inspector, and separate profiles
+for compatible optional peers pinned in the workspace. Deployments audit their actual consumer lockfile.
 
-High and critical findings always fail. A moderate finding fails unless
+High and critical findings fail all production-qualified profiles. An optional extension profile explicitly listed as
+unqualified in the policy is still audited and reported. Its status excludes it from production qualification, and any
+finding shared with a supported profile still gates the release. A moderate finding in a supported profile fails unless
 [`compatibility/production-audit.json`](compatibility/production-audit.json) records its exact package `name`,
 `version`, npm advisory `id`, `reason`, `expiresOn` date (UTC), and GitHub PR `review` link. A maintainer
 records the approval in a GitHub review with a line in the form

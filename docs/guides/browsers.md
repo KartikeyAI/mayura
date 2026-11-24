@@ -163,6 +163,7 @@ to others (remote debugging, profiles, extensions, proxies, the sandbox) are ref
 `stagehandTools(browser, { model })` in `@mayurajs/browser-stagehand` adds Stagehand 3's natural-language tools —
 `extract`, `observe` and, when enabled, `act` — on a Mayura browser, driving it alongside over `browser.cdp`. The
 browser's origins, lifetime and limits still hold, including for pages Stagehand opens.
+[The Stagehand SDK profile](../integrations/browser-stagehand.md) is currently for isolated development use.
 
 `agentBrowserTools(browser)` in `@mayurajs/browser-agent-browser` does the same with Vercel Labs' agent-browser command
 line: its snapshots with `@e` refs and its actions, from a short list of commands, each tool behind its permission.

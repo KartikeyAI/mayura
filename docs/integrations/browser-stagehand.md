@@ -14,8 +14,12 @@ area: "browsers"
 drives the same browser alongside Mayura over the browser's CDP endpoint (`browser.cdp`), so the browser's origins,
 lifetime and limits still hold, including for pages Stagehand opens.
 
-Stagehand 3 (`@browserbasehq/stagehand`, 3.7.3 or a later 3.x) is a peer you install yourself, loaded when a tool
+Stagehand 3 (`@browserbasehq/stagehand`, 3.7.4 or a later 3.x) is a peer you install yourself, loaded when a tool
 first needs it. Stagehand runs on Node only, so this package does too.
+
+**Production qualification is withheld.** Supported Stagehand 3 installs still resolve high-severity
+dependency advisories. Restrict use to isolated development environments. Stagehand 4 uses a different browser
+attachment architecture and requires separate qualification.
 
 ## Install
 

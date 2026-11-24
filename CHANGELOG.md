@@ -4,6 +4,9 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+- Audit locked optional runtime profiles and embedded inspector dependencies. Mark the Stagehand and
+  CodeSandbox SDK profiles unqualified for production while their advisories remain unresolved.
+
 ## [1.2.2] - 2026-11-23
 
 - Add the `rag-modal-pinecone` starter with a credential-free demo, durable Markdown ingestion and cited answers.

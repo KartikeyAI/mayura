@@ -4,6 +4,9 @@
 browser: `extract` (what a page says), `observe` (what can be done on it) and `act` (do what an instruction says).
 Stagehand drives the same browser over its CDP endpoint, so the browser's origins, lifetime and limits still hold.
 
+**Development only.** The supported Stagehand 3 SDK resolves high-severity dependency advisories. Stagehand 4
+requires a separate browser attachment qualification.
+
 ```bash
 npm install mayura @mayurajs/browser-stagehand @browserbasehq/stagehand@3
 ```
@@ -25,7 +28,7 @@ const tools = stagehandTools(browser, { model: { modelName: 'openai/gpt-5-mini',
 | `<name>.observe`: the elements and actions matching an instruction | `stagehand:<name>:read` | always |
 | `<name>.act`: do what an instruction says, such as "click sign in" | `stagehand:<name>:act` | `act: true` |
 
-- **Stagehand 3 is a peer you install yourself** (3.7.3 or a later 3.x; Stagehand 4 loads a Chrome extension that
+- **Stagehand 3 is a peer you install yourself** (3.7.4 or a later 3.x; Stagehand 4 loads a Chrome extension that
   hosted browsers cannot take). It is loaded when first needed. Node only, as Stagehand is.
 - One Stagehand per browser, attached when a tool first needs it, on the browser's active tab. It is kept alive:
   closing it leaves the browser to Mayura, which ends it with its lifetime or release.

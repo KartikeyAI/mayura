@@ -190,6 +190,9 @@ yourself and look for the quote.
 
 ## 6. Stagehand tools, if you want them
 
+The supported Stagehand SDK profile currently has unresolved dependency advisories. Use this section only in an
+isolated development environment.
+
 Reading pages as outlines works well for documentation. For pages where finding the right element is the hard part,
 [`@mayurajs/browser-stagehand`](../../../docs/integrations/browser-stagehand.md) adds Stagehand 3's natural-language
 tools on the same browser: `extract` ("the price of the first product"), `observe` ("the search box") and, when enabled,
