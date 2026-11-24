@@ -40,10 +40,23 @@ function etag(value: unknown, name: string): string {
   if (typeof value !== 'string' || !etagPattern.test(value)) throw new MayuraError('INVALID_INPUT', `${name} must be a version tag (etag) returned by the store.`);
   return value;
 }
-const contentTypePattern = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}(?:\s*;\s*[A-Za-z0-9!#$&^_.+-]+=(?:[A-Za-z0-9!#$&^_.+-]+|"[ -~]*"))*$/u;
+const mediaType = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/u;
+
+function isContentType(value: string): boolean {
+  const type = mediaType.exec(value);
+  if (!type) return false;
+  // Consume one parameter at a time. Quoted characters and escapes have disjoint prefixes.
+  const parameter = /[ \t]*;[ \t]*[A-Za-z0-9!#$&^_.+-]+=(?:[A-Za-z0-9!#$&^_.+-]+|"(?:[\t !#-\[\]-~]|\\[\t -~])*")/uy;
+  parameter.lastIndex = type[0].length;
+  while (parameter.lastIndex < value.length) {
+    if (!parameter.test(value)) return false;
+  }
+  return true;
+}
+
 function contentType(value: unknown): string {
   if (value === undefined) return 'application/octet-stream';
-  if (typeof value !== 'string' || value.length > 255 || !contentTypePattern.test(value)) throw new MayuraError('INVALID_INPUT', 'contentType must be a media type, such as text/csv.');
+  if (typeof value !== 'string' || value.length > 255 || !isContentType(value)) throw new MayuraError('INVALID_INPUT', 'contentType must be a media type, such as text/csv.');
   return value;
 }
 function metadata(value: unknown): Readonly<Record<string, string>> {

@@ -225,7 +225,7 @@ const manifests = { job: 'deploy/kubernetes/migrate-job.yaml', server: 'deploy/k
  * `<name>-migrate-<slug>` stays within Kubernetes' 63 (names are at most 40).
  */
 export function releaseSlug(tag: string): string {
-  const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 13).replace(/-+$/u, '');
+  const slug = tag.toLowerCase().replace(/[^a-z0-9-]+/gu, '-').replace(/^-+/u, '').slice(0, 13).replace(/-+$/u, '');
   return slug || 'release';
 }
 function render(manifest: string, path: string, image: string, slug: string): string {

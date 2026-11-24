@@ -104,6 +104,7 @@ describe('deploy plans', () => {
     expect(releaseSlug('2026.10.01-hotfix-for-the-big-outage')).toHaveLength(13);
     expect(`${'a'.repeat(40)}-migrate-${releaseSlug('2026.10.01-hotfix-for-the-big-outage')}`.length).toBeLessThanOrEqual(63);
     expect(releaseSlug('___')).toBe('release');
+    expect(releaseSlug('---ABCDEFGHIJKL---draft')).toBe('abcdefghijkl');
   });
 
   it('plans Compose and image-only releases', async () => {

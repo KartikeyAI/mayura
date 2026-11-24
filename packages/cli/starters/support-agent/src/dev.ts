@@ -8,6 +8,7 @@ import { MayuraError } from 'mayura/core';
 import { createNativeMemory } from 'mayura/memory';
 import { customerPrincipal, devSecrets, tokenDigest } from './auth.js';
 import { loadConfig } from './config.js';
+import { devRequestTarget, devUpstreamOptions } from './dev-request.js';
 import { demoCustomers } from './orders.js';
 import { startServer } from './server.js';
 import { openServices } from './services.js';
@@ -60,9 +61,9 @@ async function serveFile(pathname: string, response: ServerResponse): Promise<vo
 }
 
 /** Forward one API request (including the streamed run events) to the Mayura server, unchanged but for the host. */
-function proxy(request: IncomingMessage, response: ServerResponse): void {
+function proxy(request: IncomingMessage, response: ServerResponse, target: URL): void {
   const headers = { ...request.headers }; delete headers.host; delete headers.connection;
-  const upstream = forward(new URL(request.url ?? '/', server.origin), { method: request.method, headers }, reply => {
+  const upstream = forward({ ...devUpstreamOptions(server.origin, target), method: request.method, headers }, reply => {
     response.writeHead(reply.statusCode ?? 502, reply.headers); reply.pipe(response);
   });
   upstream.on('error', () => { if (!response.headersSent) response.writeHead(502).end(); else response.destroy(); });
@@ -84,9 +85,11 @@ async function session(request: IncomingMessage, response: ServerResponse): Prom
 }
 
 const web = createServer((request, response) => {
-  const { pathname } = new URL(request.url ?? '/', webOrigin);
   const handle = async (): Promise<void> => {
-    if (pathname.startsWith('/v1/')) return proxy(request, response);
+    const target = devRequestTarget(request.url, webOrigin);
+    if (!target) { response.writeHead(400, security).end(); return; }
+    const { pathname } = target;
+    if (pathname.startsWith('/v1/')) return proxy(request, response, target);
     if (pathname === '/dev/customers' && request.method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...security }).end(JSON.stringify({ customers: demoCustomers })); return;
     }
