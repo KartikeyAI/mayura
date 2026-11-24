@@ -617,9 +617,12 @@ policy version across replicas for portable cursors. Omission uses a random proc
 then invalidates those cursors. Rotation/version changes safely invalidate old cursors. Keys are copied at server/Node
 host construction and never appear in responses. Capability-only servers keep their existing cursor formats.
 
-Event streams check `run:read` when opened and again before every event/heartbeat disclosure. Revocation or policy
-failure emits terminal `stream.error` with `AUTHORIZATION_DENIED` and closes the stream. Previously authorized buffered
-bytes cannot be recalled. Client observation preserves this refusal instead of reconnecting it automatically.
+Native run event streams call the host's authenticator again before each event and idle heartbeat. Each check must
+still grant `runs:read`, the same principal and project, access to the same agent, and the configured `run:read` policy.
+A revoked token closes the observation with `AUTH_INVALID`. Changed scope, access or policy closes it with
+`AUTHORIZATION_DENIED`. The client treats either refusal as final for that observation. Already transmitted frames
+remain visible to the recipient. The authenticator's own cache determines when identity-provider revocation becomes
+visible to Mayura. Keep the authenticator safe to call repeatedly and pass its abort signal to any service it calls.
 `session().features` includes `authorization` when enabled; features/capabilities do not enumerate per-resource grants.
 The session describes only its verified caller and remains readable. Explicit public liveness, data-free inspector
 assets and valid CORS preflights retain their existing behavior. Unmapped authenticated routes fail closed.
