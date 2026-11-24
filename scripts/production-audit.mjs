@@ -12,12 +12,31 @@ const reviewLink = /^https:\/\/github\.com\/KartikeyAI\/mayura\/pull\/(\d+)#pull
 const repositoryRoles = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 const auditEndpoint = 'https://registry.npmjs.org/-/npm/v1/security/advisories/bulk';
 const dataFile = name => new URL(`../${name}`, import.meta.url);
+const optionalProfile = name => `${name} (optional peers)`;
+
+/** Use the exact compatible resolutions recorded in the workspace, including distinct peer contexts. */
+function peerEdges(lock, peers) {
+  const importers = Object.entries(lock.importers).filter(([path]) =>
+    path === '.' || path.startsWith('packages/') || path.startsWith('extensions/'));
+  return Object.entries(peers).flatMap(([name, range]) => {
+    const resolutions = new Set();
+    for (const [, importer] of importers) {
+      for (const dependencies of [importer.dependencies, importer.optionalDependencies, importer.devDependencies]) {
+        const version = dependencies?.[name]?.version;
+        if (typeof version === 'string' && semver.satisfies(version.split('(')[0], range)) resolutions.add(version);
+      }
+    }
+    assert(resolutions.size > 0, `No locked runtime peer satisfies ${name}@${range}.`);
+    return [...resolutions].sort().map(version => [name, version]);
+  });
+}
 
 /** Follow exact workspace resolutions for the dependencies installed by the published manifests. */
-export function productionInventory(lock, packages, releaseExtensions) {
+export function productionInventory(lock, packages, releaseExtensions, inspector = {}) {
   assert.equal(String(lock.lockfileVersion), '9.0', 'Unsupported pnpm lockfile version.');
   assert(lock.importers && lock.packages && lock.snapshots, 'Missing pnpm production dependency graph.');
   const roots = new Map();
+  const optionalExtensionProfiles = new Set();
   const edges = (importer, dependencies) => Object.entries(dependencies).map(([name, range]) => {
     const entry = lock.importers[importer]?.dependencies?.[name];
     assert(entry?.specifier === range && typeof entry.version === 'string', `Missing locked dependency ${name}@${range} in ${importer}.`);
@@ -51,9 +70,10 @@ export function productionInventory(lock, packages, releaseExtensions) {
       if (metadata.peerDependenciesMeta?.[dependency]?.optional !== true) visit(dependency, resolved, seen, inventory);
     }
   };
+  const mayuraManifest = bundledDependencies(packages);
   const base = new Set();
   const baseSeen = new Set();
-  for (const [name, range] of Object.entries(bundledDependencies(packages).dependencies)) {
+  for (const [name, range] of Object.entries(mayuraManifest.dependencies)) {
     const owners = packages.filter(({ manifest }) => manifest.dependencies?.[name] === range);
     assert(owners.length > 0, `Missing workspace owner for ${name}@${range}.`);
     for (const owner of owners) {
@@ -62,7 +82,19 @@ export function productionInventory(lock, packages, releaseExtensions) {
       }
     }
   }
+  // Included in Mayura's published server assets even when the host has no frontend dependencies.
+  const browserDependencies = Object.fromEntries(Object.entries(inspector).filter(([name]) => !name.startsWith('@mayura/')));
+  for (const [name, resolved] of edges('packages/inspector-ui', browserDependencies)) visit(name, resolved, baseSeen, base);
   roots.set('mayura', base);
+  const addOptionalProfile = (packageName, peers, dependencies) => {
+    const optional = peerEdges(lock, peers);
+    if (!optional.length) return;
+    const inventory = new Set(dependencies);
+    const seen = new Set();
+    for (const [name, resolved] of optional) visit(name, resolved, seen, inventory);
+    roots.set(optionalProfile(packageName), inventory);
+  };
+  addOptionalProfile('mayura', mayuraManifest.peers, base);
   for (const extension of releaseExtensions) {
     const importer = `extensions/${extension.name}`;
     const inventory = new Set(base); // The installed Mayura peer has the same release version.
@@ -76,8 +108,11 @@ export function productionInventory(lock, packages, releaseExtensions) {
       } else visit(name, resolved, seen, inventory);
     }
     roots.set(extension.manifest.name, inventory);
+    const peers = Object.fromEntries(Object.entries(extension.manifest.peerDependencies ?? {}).filter(([name]) => name !== 'mayura'));
+    addOptionalProfile(extension.manifest.name, peers, inventory);
+    if (Object.keys(peers).length) optionalExtensionProfiles.add(extension.manifest.name);
   }
-  return { roots, versions };
+  return { roots, versions, optionalExtensionProfiles };
 }
 
 function record(value) {
@@ -162,19 +197,48 @@ export async function evaluatePolicy(findings, policy, { now = Date.now(), appro
   return { blocked, excepted };
 }
 
+/** Unqualified SDK profiles remain visible, while findings in any supported profile still gate release. */
+export function splitUnqualifiedProfiles(inventory, findings, policy) {
+  assert(record(policy.unqualifiedOptionalProfiles), 'Missing optional qualification policy.');
+  const unqualified = new Map();
+  for (const [name, reason] of Object.entries(policy.unqualifiedOptionalProfiles)) {
+    assert(inventory.optionalExtensionProfiles.has(name), `Only an optional extension profile can be unqualified: ${name}.`);
+    assert(typeof reason === 'string' && reason.trim(), `Missing qualification rationale for ${name}.`);
+    unqualified.set(optionalProfile(name), reason);
+  }
+  const qualifiedFindings = [];
+  const unqualifiedFindings = [];
+  for (const finding of findings) {
+    const qualified = finding.affected.filter(profile => !unqualified.has(profile));
+    const withheld = finding.affected.filter(profile => unqualified.has(profile));
+    if (qualified.length) qualifiedFindings.push({ ...finding, affected: qualified });
+    if (withheld.length) unqualifiedFindings.push({ ...finding, affected: withheld });
+  }
+  return { qualifiedFindings, unqualifiedFindings, unqualified };
+}
+
 async function main() {
   const lock = parse(await readFile(dataFile('pnpm-lock.yaml'), 'utf8'));
   const root = JSON.parse(await readFile(dataFile('package.json'), 'utf8'));
   const policy = JSON.parse(await readFile(dataFile('compatibility/production-audit.json'), 'utf8'));
   const releaseExtensions = extensions();
   for (const extension of releaseExtensions) checkSource(extension, root.version);
-  const inventory = productionInventory(lock, await workspacePackages(), releaseExtensions);
+  const inspector = JSON.parse(await readFile(dataFile('packages/inspector-ui/package.json'), 'utf8'));
+  assert(record(inspector.dependencies), 'Missing embedded inspector dependency manifest.');
+  const inventory = productionInventory(lock, await workspacePackages(), releaseExtensions, inspector.dependencies);
   const findings = await productionFindings(inventory);
-  const { blocked, excepted } = await evaluatePolicy(findings, policy);
-  console.log(`Audited ${inventory.roots.size} published packages and ${[...inventory.versions.values()].reduce((total, versions) => total + versions.size, 0)} unique dependency versions.`);
+  const { qualifiedFindings, unqualifiedFindings, unqualified } = splitUnqualifiedProfiles(inventory, findings, policy);
+  const { blocked, excepted } = await evaluatePolicy(qualifiedFindings, policy);
+  const published = releaseExtensions.length + 1;
+  console.log(`Audited ${published} published packages, ${inventory.roots.size - published} optional peer profiles, embedded inspector assets, and ${[...inventory.versions.values()].reduce((total, versions) => total + versions.size, 0)} unique dependency versions.`);
   for (const item of [...blocked, ...excepted]) {
-    const owners = item.affected.includes('mayura') ? 'mayura and all extensions' : item.affected.join(', ');
+    const owners = item.affected.includes('mayura') ? 'mayura and its dependent profiles' : item.affected.join(', ');
     console.log(`${item.severity} ${exceptionKey(item)} (${owners})${item.expiresOn ? ` excepted until ${item.expiresOn}` : ''}`);
+  }
+  for (const [profile, reason] of unqualified) {
+    const matching = unqualifiedFindings.filter(item => item.affected.includes(profile));
+    console.log(`Unqualified for production: ${profile}. ${reason}`);
+    for (const item of matching) console.log(`  ${item.severity} ${exceptionKey(item)}`);
   }
   if (blocked.length > 0) process.exitCode = 1;
 }

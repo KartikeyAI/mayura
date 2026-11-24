@@ -3,6 +3,8 @@
 [CodeSandbox (Together) sandboxes](https://codesandbox.io/docs/sdk) for `mayura/sandbox`: Firecracker microVMs forked
 from a template, through the CodeSandbox SDK (`@codesandbox/sdk`).
 
+**Development only.** The supported CodeSandbox SDK resolves high-severity dependency advisories.
+
 ```bash
 npm install mayura @mayurajs/sandbox-codesandbox @codesandbox/sdk
 ```

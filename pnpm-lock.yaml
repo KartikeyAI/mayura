@@ -17,8 +17,8 @@ importers:
         specifier: 0.4.2
         version: 0.4.2
       '@browserbasehq/stagehand':
-        specifier: 3.7.3
-        version: 3.7.3(utf-8-validate@6.0.6)(zod@4.6.7)
+        specifier: 3.7.4
+        version: 3.7.4(utf-8-validate@6.0.6)(zod@4.6.7)
       '@bufbuild/protobuf':
         specifier: 2.16.0
         version: 2.16.0
@@ -677,8 +677,8 @@ importers:
   extensions/browser-stagehand:
     dependencies:
       '@browserbasehq/stagehand':
-        specifier: '>=3.7.3 <4'
-        version: 3.7.3(utf-8-validate@6.0.6)(zod@4.6.7)
+        specifier: '>=3.7.4 <4'
+        version: 3.7.4(utf-8-validate@6.0.6)(zod@4.6.7)
     devDependencies:
       mayura:
         specifier: workspace:*
@@ -1857,13 +1857,6 @@ importers:
       '@mayura/client':
         specifier: workspace:*
         version: link:../client
-    devDependencies:
-      '@tailwindcss/vite':
-        specifier: 4.3.3
-        version: 4.3.3(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
-      '@vitejs/plugin-react':
-        specifier: 6.1.1
-        version: 6.1.1(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -1888,6 +1881,13 @@ importers:
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: 4.3.3
+        version: 4.3.3(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
+      '@vitejs/plugin-react':
+        specifier: 6.1.1
+        version: 6.1.1(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
@@ -2848,8 +2848,8 @@ packages:
   '@browserbasehq/sdk@2.21.0':
     resolution: {integrity: sha512-zer0+HIS7EtDtfprU1jNCWk9DjU+ZyYaK2MVr9+m2Ydthoh2YHjPrjbTcLHNAIKmu5S6UCt+P0bzL5sm6t35VA==}
 
-  '@browserbasehq/stagehand@3.7.3':
-    resolution: {integrity: sha512-aaQRqnGtXLLAsWITdQpLTZui1or4UIrGXu8oMUh9hhKxr0d95iLPFOpipi0BZW+i0+GfFjQrT4ZMDnKANeLh3w==}
+  '@browserbasehq/stagehand@3.7.4':
+    resolution: {integrity: sha512-NhNrcrSDYXyzNqh4TE+EOdQVpX96WXZw2bS0ED8x0lyWYBnYta2gDOOHX53877yuLci3/fOR9cE+livZKasg7g==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       patchright-core: ^1.55.2
@@ -11467,7 +11467,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@browserbasehq/stagehand@3.7.3(utf-8-validate@6.0.6)(zod@4.6.7)':
+  '@browserbasehq/stagehand@3.7.4(utf-8-validate@6.0.6)(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 2.0.5
       '@anthropic-ai/sdk': 0.39.0
