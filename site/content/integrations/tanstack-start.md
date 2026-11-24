@@ -12,7 +12,7 @@ You can inspect and approve a proposed write before introducing paid inference.
 ## Start locally
 
 ```sh
-npx mayura@1.2.1 init --starter tanstack-start --directory ./my-notebook --apply
+npx mayura@1.2.2 init --starter tanstack-start --directory ./my-notebook --apply
 cd my-notebook
 npm install
 npm run setup
@@ -44,5 +44,5 @@ rendered browser and live deployment qualification remains a distinct responsibi
 
 - [TanStack Start setup and customization](../../../docs/guides/tanstack-start.md): generated files, approval flow, storage and checks.
 - [Framework architecture](../../../docs/guides/framework-starters.md): sessions, shared storage and durable recovery.
-- [Choose a starter](../guides/choose-a-starter.md): all 11 starting points.
+- [Choose a starter](../guides/choose-a-starter.md): the full starter catalog.
 - [Release evidence and limitations](../../../docs/guides/release-readiness.md).

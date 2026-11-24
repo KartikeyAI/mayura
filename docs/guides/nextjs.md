@@ -13,7 +13,7 @@ Use Node 24.14.1 or a later supported 24.x version. Run the initializer from a d
 inspect its plan before applying it to an existing project.
 
 ```sh
-npx mayura@1.2.1 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
 cd my-notebook
 npm install
 npm run setup
