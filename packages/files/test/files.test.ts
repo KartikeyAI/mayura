@@ -40,6 +40,14 @@ describe('createFileStore', () => {
     expect(() => createFileStore({} as FileBackend, { maxFileBytes: 1 })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 
+  it('validates media-type parameters and preserves quoted values', async () => {
+    const store = memoryStore();
+    const type = 'text/plain; charset=utf-8; title="Review; \\"draft\\""';
+    await store.put('review', text('draft'), { contentType: type });
+    expect((await store.head('review'))?.contentType).toBe(type);
+    expect(await code(store.put('invalid', text('draft'), { contentType: 'text/plain; title="Draft' }))).toBe('INVALID_INPUT');
+  });
+
   it('refuses preconditions a backend cannot keep, rather than ignore them', async () => {
     const store = createFileStore({ ...memoryFiles(), conditionalWrites: false, conditionalDelete: false }, { maxFileBytes: 64 });
     expect(store.conditionalWrites).toBe(false);

@@ -59,6 +59,25 @@ async function frames(response: Response): Promise<{ id: number; type: string; d
 }
 
 describe('agent runs shared by server replicas through durable run records', () => {
+  it('stops a durable event reader on another replica when its token is revoked', async () => {
+    const database = await sqlite(); const model = waiting();
+    let revoked = false;
+    const a = replica({ runRecords: createAggregateRunRecords(await database.open()) }, model.generate);
+    const b = replica({
+      runRecords: createAggregateRunRecords(await database.open()), authenticate: async () => revoked ? null : identity(),
+    }, model.generate);
+    const { id } = await json(await submit(a)) as { id: string };
+    const runSignal = await model.started.promise;
+    const response = await call(b, `/v1/runs/${id}/events`); expect(response.status).toBe(200);
+    const reader = response.body!.getReader(); const decoder = new TextDecoder();
+    expect(decoder.decode((await reader.read()).value)).toContain('event: run.started');
+    revoked = true;
+    model.release.resolve({ type: 'final', output: 1, usage: { costMicros: 0 } });
+    expect(decoder.decode((await reader.read()).value)).toContain('"code":"AUTH_INVALID"');
+    expect((await reader.read()).done).toBe(true);
+    expect(runSignal.aborted).toBe(false);
+  });
+
   it('lets any replica read, stream, replay and cancel a run that executes on another', async () => {
     const database = await sqlite(); const model = waiting();
     const a = replica({ runRecords: createAggregateRunRecords(await database.open()) }, model.generate);

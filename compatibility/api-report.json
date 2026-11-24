@@ -432,7 +432,7 @@
     "@mayura/auth": {
       "Authenticator": {
         "kind": "interface",
-        "declaration": "6c63035dbcec9790"
+        "declaration": "2ad74043aca5b4c1"
       },
       "chainAuthenticators": {
         "kind": "function",
@@ -3266,7 +3266,7 @@
       },
       "KeyManager": {
         "kind": "interface",
-        "declaration": "65aa695eb1c7df9f"
+        "declaration": "82fb6ae7ec5ee2a5"
       },
       "KeyManagerOptions": {
         "kind": "interface",
@@ -3294,7 +3294,7 @@
       },
       "KeyVerifier": {
         "kind": "interface",
-        "declaration": "f213a26a5d432ba6"
+        "declaration": "8e5300875ca62bbf"
       }
     },
     "@mayura/keys/testing": {
@@ -4938,7 +4938,7 @@
       },
       "AgentServerOptions": {
         "kind": "interface",
-        "declaration": "02c356e703c5a928"
+        "declaration": "e251a4bb27f25b06"
       },
       "ApprovalReconciliationOptions": {
         "kind": "interface",

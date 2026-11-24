@@ -872,6 +872,45 @@ describe('origin and credential transport boundaries', () => {
 });
 
 describe('bounded metadata SSE observations and shutdown', () => {
+  it.each([
+    ['revoked token', (): null => null, 'AUTH_INVALID'],
+    ['different principal', () => identity({ scope: { principalId: 'bob', projectId: 'project' } }), 'AUTHORIZATION_DENIED'],
+    ['different project', () => identity({ scope: { principalId: 'alice', projectId: 'other' } }), 'AUTHORIZATION_DENIED'],
+    ['lost agent access', () => identity({ agentIds: [] }), 'AUTHORIZATION_DENIED'],
+    ['lost read capability', () => identity({ capabilities: ['runs:submit'] }), 'AUTHORIZATION_DENIED'],
+    ['verifier unavailable', () => { throw new Error('PRIVATE_VERIFIER_DETAIL'); }, 'AUTH_UNAVAILABLE'],
+  ] as const)('withholds unread frames after %s and releases the stream slot', async (_reason, nextIdentity, code) => {
+    const waiting = pending(); let verify: () => ServerIdentity | null = () => identity();
+    const value = server({ authenticate: async () => verify(), limits: { maxStreams: 1 },
+      agents: [{ agent: waiting.agent, permissions: { allow: ['model:fixture'] } }] });
+    const id = await admitted(value); const runSignal = await waiting.started.promise;
+    const response = await events(value, id); expect(response.status).toBe(200);
+    verify = nextIdentity;
+    const frames = await response.text();
+    expect(frames).toContain(`event: stream.error\ndata: {"code":"${code}"`);
+    expect(frames).not.toMatch(/^id:|PRIVATE_VERIFIER_DETAIL/mu);
+    expect(runSignal.aborted).toBe(false);
+    verify = () => identity();
+    const replacement = await events(value, id); expect(replacement.status).toBe(200);
+    await replacement.body!.cancel();
+  });
+
+  it('rechecks an idle connection before its next heartbeat', async () => {
+    const waiting = pending(); let revoked = false;
+    const value = server({ authenticate: async () => revoked ? null : identity(), limits: { streamHeartbeatMs: 10 },
+      agents: [{ agent: waiting.agent, permissions: { allow: ['model:fixture'] } }] });
+    const id = await admitted(value); await waiting.started.promise;
+    const reader = (await events(value, id)).body!.getReader(); const decoder = new TextDecoder();
+    let heartbeat = false;
+    for (let i = 0; i < 10 && !heartbeat; i++) {
+      heartbeat = decoder.decode((await reader.read()).value).startsWith(': keep-alive');
+    }
+    expect(heartbeat).toBe(true);
+    revoked = true;
+    expect(decoder.decode((await reader.read()).value)).toContain('"code":"AUTH_INVALID"');
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('streams ordered metadata without raw model content and resumes after the supplied cursor', async () => {
     const value = server(); const id = await admitted(value, 'INPUT_SECRET'); await terminal(value, id);
     const response = await events(value, id); expect(response.headers.get('content-type')).toBe('text/event-stream');

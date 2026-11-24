@@ -518,6 +518,12 @@ describe('client response admission and safe failures', () => {
 });
 
 describe('client SSE parsing and admission', () => {
+  it.each(['AUTH_INVALID', 'AUTHORIZATION_DENIED'])('stops the observation without reconnecting after %s', async code => {
+    const { client, transport } = fakeClient(() => stream([encoder.encode(`event: stream.error\ndata: ${JSON.stringify({ code })}\n\n`)]));
+    await expect(collect(client.run(id).events())).rejects.toMatchObject({ code });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves UTF-8 through one-byte chunks and split CRLF frame boundaries', async () => {
     const first = event(1, 'run.started', { label: 'नमस्ते 🦚' }); const second = event(2, 'run.completed');
     const bytes = encoder.encode(`: heartbeat\r\n\r\n${frame(first, '\r\n')}${frame(second)}`);

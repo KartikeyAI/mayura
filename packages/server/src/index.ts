@@ -249,8 +249,8 @@ export interface AgentServerOptions {
    * `requestTimeoutMs`: keep that under the platform's time limit, and give clients a `requestTimeoutMs` above it.
    */
   readonly runExecution?: 'background' | 'request';
-  /** Verify the token using trusted application authentication; never trust token claims without verification. */
-  readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal }) => Promise<ServerIdentity | null>;
+  /** Verify the token using trusted application authentication. A stream recheck verifies access without admitting another request. */
+  readonly authenticate: (request: { readonly token: string; readonly signal: AbortSignal; readonly purpose?: 'stream-recheck' }) => Promise<ServerIdentity | null>;
   readonly limits?: {
     readonly maxRuns?: number; readonly maxRuntimes?: number; readonly maxRequests?: number;
     readonly maxStreams?: number; readonly maxBodyBytes?: number; readonly maxResponseBytes?: number;
@@ -893,15 +893,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }) } }, failure.status,
     retryAfterMs === undefined ? {} : { 'Retry-After': String(Math.max(1, Math.ceil(retryAfterMs / 1_000))) });
   };
-  const session = async (request: Request, signal: AbortSignal): Promise<ServerIdentity> => {
-    const authorization = request.headers.get('authorization') ?? '';
+  const session = async (authorization: string, signal: AbortSignal, purpose?: 'stream-recheck'): Promise<ServerIdentity> => {
     if (!/^Bearer [\x21-\x7e]{1,8192}$/.test(authorization)) throw new HttpFailure(401, 'AUTH_REQUIRED');
     let supplied: ServerIdentity | null;
     assertActive(signal);
     if (authentications >= limits.maxRequests) throw new HttpFailure(429, 'AUTH_LIMIT');
     authentications++;
     const verification = Promise.resolve().then(() => {
-      assertActive(signal); return authenticate(Object.freeze({ token: authorization.slice(7), signal }));
+      assertActive(signal); return authenticate(Object.freeze({ token: authorization.slice(7), signal, ...(purpose ? { purpose } : {}) }));
     }).finally(() => { authentications--; });
     // A non-cooperative verifier retains its admission until it really completes.
     try { supplied = await bounded(verification, signal); }
@@ -983,9 +982,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   /**
    * One bounded SSE response over a run's events. An idle stream sends a comment every `streamHeartbeatMs` so proxies
    * keep it open and clients can tell a quiet run from a dead connection. The stream ends when the run's events end,
-   * after `streamDurationMs`, or when the identity expires; clients reconnect from their last sequence.
+   * after `streamDurationMs`, or when the identity expires. Each frame requires a fresh verification of the
+   * original bearer token and the same run access, including when a connection is idle.
    */
-  const eventStream = (open: (signal: AbortSignal) => AsyncIterator<RunEvent>, identity: ServerIdentity, request: Request, onDone?: () => void): Response => {
+  const eventStream = (open: (signal: AbortSignal) => AsyncIterator<RunEvent>, identity: ServerIdentity, request: Request,
+    target: { readonly runId: string; readonly agentId: string; readonly bearer: string }, onDone?: () => void): Response => {
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     if (streams.size >= limits.maxStreams) throw new HttpFailure(429, 'STREAM_LIMIT');
     const controller = new AbortController();
@@ -1001,6 +1002,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     };
     const timer = setTimeout(finish, Math.max(0, Math.min(limits.streamDurationMs, identity.expiresAtMs - Date.now())));
     streams.add(finish);
+    // A waiting consumer drives every authorization check. Do not queue authenticated frames for a future reader.
     const stream = new ReadableStream<Uint8Array>({
       start(value) { sink = value; },
       async pull(value) {
@@ -1010,25 +1012,27 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
           if (!pending) { pending = iterator.next(); pending.catch(() => {}); }
           const next = await Promise.race([pending, new Promise<'beat'>(resolve => { beat = setTimeout(resolve, limits.streamHeartbeatMs, 'beat'); })]);
           if (ended) return;
-          if (authorization) {
-            const path = new URL(request.url).pathname; const runId = /^\/v1\/runs\/([a-f0-9-]{36})\/events$/.exec(path)?.[1];
-            if (!runId) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
-            await authorize(identity, 'run', runId, 'read', controller.signal);
-            if (ended) return;
-          }
+          if (next !== 'beat' && next.done) { onDone?.(); finish(); return; }
+          const current = await session(target.bearer, controller.signal, 'stream-recheck');
+          if (current.scope.principalId !== identity.scope.principalId || current.scope.projectId !== identity.scope.projectId
+            || !current.agentIds.includes(target.agentId) || !current.capabilities.includes('runs:read')) throw new HttpFailure(403, 'AUTHORIZATION_DENIED');
+          await authorize(current, 'run', target.runId, 'read', controller.signal);
+          if (ended) return;
+          if (Math.min(identity.expiresAtMs, current.expiresAtMs) <= Date.now()) throw new HttpFailure(401, 'AUTH_EXPIRED');
           if (next === 'beat') { value.enqueue(encoder.encode(': keep-alive\n\n')); return; }
           pending = undefined;
-          if (next.done) { onDone?.(); finish(); return; }
           const event = JSON.stringify(jsonValue(next.value, { maxBytes: 16_384 }));
           value.enqueue(encoder.encode(`id: ${next.value.sequence}\nevent: ${next.value.type}\ndata: ${event}\n\n`));
         } catch (error) {
-          const code: ServerErrorCode = error instanceof HttpFailure && ['RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED'].includes(error.code) ? error.code : 'OBSERVATION_FAILED';
+          const code: ServerErrorCode = error instanceof HttpFailure &&
+            ['RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED', 'AUTH_INVALID', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT'].includes(error.code)
+            ? error.code : 'OBSERVATION_FAILED';
           if (!ended) value.enqueue(encoder.encode(`event: stream.error\ndata: ${JSON.stringify({ code, message: errorMessages[code] })}\n\n`));
           finish();
         } finally { clearTimeout(beat); }
       },
       cancel() { finish(); },
-    }, { highWaterMark: 1 });
+    }, { highWaterMark: 0 });
     request.signal.addEventListener('abort', finish, { once: true });
     if (request.signal.aborted) finish();
     return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Accel-Buffering': 'no' } });
@@ -1341,7 +1345,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': threadDelete ? 'GET, POST, DELETE' : 'GET, POST', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key' } });
     }
     if (request.method === 'GET' && url.pathname === '/healthz' && options.publicLiveness === true) return response({ status: 'ok' });
-    const identity = await session(request, signal);
+    const bearer = request.headers.get('authorization') ?? '';
+    const identity = await session(bearer, signal);
     if (closed) throw new HttpFailure(503, 'SERVER_CLOSED');
     const owner = canonical(identity.scope as unknown as JsonValue);
     const checkRoute = async (): Promise<void> => {
@@ -2009,7 +2014,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         }
         return respond({ id: runId, cancellationRequested: true }, 202);
       }
-      if (action === 'events') return eventStream(stop => recordedEvents(owner, runId, cursor, stop), identity, request);
+      if (action === 'events') return eventStream(stop => recordedEvents(owner, runId, cursor, stop), identity, request, { runId, agentId: record.agentId, bearer });
       const saved = ['running', 'waiting'].includes(record.status) ? await savedRun(runId, identity, signal) : undefined;
       if (saved?.body['waitKind'] === 'frontend' && saved.status === 'waiting') return respond(savedInspection(saved));
       return respond({ ...record.snapshot, ...(record.outcome ? { outcome: record.outcome } : {}) });
@@ -2026,8 +2031,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       const cursor = url.searchParams.get('after') ?? '0';
       if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor))) throw new HttpFailure(400, 'INVALID_CURSOR');
       assertActive(signal);
-      if (entry.eventOffset !== undefined && runRecords) return eventStream(stop => recordedEvents(owner, runId, Number(cursor), stop), identity, request);
-      return eventStream(stop => entry.handle.observe({ after: Number(cursor), signal: stop })[Symbol.asyncIterator](), identity, request,
+      const target = { runId, agentId: entry.agentId, bearer };
+      if (entry.eventOffset !== undefined && runRecords) return eventStream(stop => recordedEvents(owner, runId, Number(cursor), stop), identity, request, target);
+      return eventStream(stop => entry.handle.observe({ after: Number(cursor), signal: stop })[Symbol.asyncIterator](), identity, request, target,
         () => { if (entry.finished) entry.collected = true; });
     }
     requireCapability(identity, 'runs:read');

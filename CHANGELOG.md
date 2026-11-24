@@ -4,6 +4,12 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+- Reverify identity and run access before native event-stream disclosures. Close a revoked observation and preserve
+  its refusal in the client while the underlying run continues.
+- Recheck streamed API-key grants without charging credits or consuming the built-in key manager's request limit.
+- Pin the support starter's local API forwarding to the configured server origin.
+- Parse file media-type parameters in order and bound release slug suffix normalization.
+
 - Audit locked optional runtime profiles and embedded inspector dependencies. Mark the Stagehand and
   CodeSandbox SDK profiles unqualified for production while their advisories remain unresolved.
 

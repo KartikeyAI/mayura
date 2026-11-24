@@ -80,7 +80,7 @@ export interface KeyManager extends KeyVerifier {
   readonly prefix: string;
   /** A new key. Its secret is in the result and nowhere else: show it once. With `grantor`, the key gets no more than the grantor has. */
   create(input: CreateKeyInput, options?: { readonly grantor?: ServerIdentity; readonly signal?: AbortSignal }): Promise<{ readonly key: string; readonly record: KeyRecord }>;
-  verify(key: string, options?: { readonly signal?: AbortSignal; readonly cost?: number }): Promise<KeyVerification & { readonly record?: KeyRecord }>;
+  verify(key: string, options?: Parameters<KeyVerifier['verify']>[1]): Promise<KeyVerification & { readonly record?: KeyRecord }>;
   get(keyId: string): Promise<(KeyRecord & KeyUsage) | undefined>;
   list(owner: { readonly projectId: string; readonly ownerId: string }): Promise<readonly (KeyRecord & KeyUsage)[]>;
   update(keyId: string, changes: { readonly name?: string | null; readonly agentIds?: readonly string[]; readonly capabilities?: readonly ServerCapability[];
@@ -281,7 +281,7 @@ export function createKeyManager(options: KeyManagerOptions): KeyManager {
 
   const refuse = (reason: KeyRefusal, retryAfterMs?: number): KeyVerification => ({ ok: false, reason, ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) });
 
-  const verify = async (key: string, verifyOptions: { readonly signal?: AbortSignal; readonly cost?: number } = {}): Promise<KeyVerification & { readonly record?: KeyRecord }> => {
+  const verify = async (key: string, verifyOptions: NonNullable<Parameters<KeyVerifier['verify']>[1]> = {}): Promise<KeyVerification & { readonly record?: KeyRecord }> => {
     const cost = verifyOptions.cost ?? 1;
     if (!Number.isSafeInteger(cost) || cost < 0 || cost > 1e9) throw invalid('cost is 0 to 1,000,000,000 credits.');
     verifyOptions.signal?.throwIfAborted();
@@ -289,11 +289,13 @@ export function createKeyManager(options: KeyManagerOptions): KeyManager {
     const secretId = keyRecordId(key);
     const now = Date.now();
     let state: KeyState | undefined;
-    const cached = cacheTtlMs > 0 ? cache.get(secretId) : undefined;
+    // A stream has already been admitted. Check its live grant without using the request cache or writing usage.
+    const readCache = cacheTtlMs > 0 && !verifyOptions.checkOnly;
+    const cached = readCache ? cache.get(secretId) : undefined;
     if (cached && cached.until > now) state = cached.state;
     else {
       state = keyState(await store.read(scope, secretId));
-      if (cacheTtlMs > 0 && state) {
+      if (readCache && state) {
         if (cache.size >= 10_000) cache.delete(cache.keys().next().value!);
         cache.set(secretId, { state, until: now + cacheTtlMs });
       }
@@ -304,7 +306,7 @@ export function createKeyManager(options: KeyManagerOptions): KeyManager {
     if (state.expiresAtMs !== null && state.expiresAtMs <= now) return refuse('expired');
     const keyId = state.keyId;
     let remaining: number | null = null;
-    if (state.rateLimit || state.credits) {
+    if (!verifyOptions.checkOnly && (state.rateLimit || state.credits)) {
       // Rate limit first, credits last: a refused request spends nothing.
       const outcome = await retrying(async () => {
         const record = await store.read(scope, usageId(keyId));
@@ -331,7 +333,7 @@ export function createKeyManager(options: KeyManagerOptions): KeyManager {
       });
       if (!outcome.ok) return outcome;
       remaining = outcome.remaining;
-    } else if (now - (lastUsedWritten.get(keyId) ?? 0) >= lastUsedIntervalMs) {
+    } else if (!verifyOptions.checkOnly && now - (lastUsedWritten.get(keyId) ?? 0) >= lastUsedIntervalMs) {
       // When a key was last used, written at most once per interval per process, and never at the cost of the request.
       lastUsedWritten.set(keyId, now);
       if (lastUsedWritten.size > 100_000) lastUsedWritten.delete(lastUsedWritten.keys().next().value!);

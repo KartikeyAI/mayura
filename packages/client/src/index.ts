@@ -506,7 +506,7 @@ const featureNames: readonly string[] = ['humanRequests', 'workflowIndex', 'work
  * RUN_NOT_FOUND, a missing capability or a protocol violation, is final.
  */
 function retryableStream(error: ClientError): boolean {
-  return ['TRANSPORT_FAILED', 'TIMEOUT', 'TRUNCATED_STREAM', 'RUN_RECORDS_UNAVAILABLE', 'AUTH_EXPIRED'].includes(error.code)
+  return ['TRANSPORT_FAILED', 'TIMEOUT', 'TRUNCATED_STREAM', 'RUN_RECORDS_UNAVAILABLE', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT'].includes(error.code)
     || (error.status !== undefined && [408, 429, 502, 503, 504].includes(error.status));
 }
 /** Why a signal ended: the client's own timers abort with a TIMEOUT error; anything else is the caller's cancellation. */
@@ -674,7 +674,7 @@ export function createClient(options: ClientOptions): MayuraClient {
             // Only a known server code and short printable message are taken from the error frame.
             let reported: ClientError | null = null;
             try { reported = serverError({ error: JSON.parse(data.join('\n')) }, 0, null); } catch { /* Not a Mayura error frame. */ }
-            throw reported && ['OBSERVATION_FAILED', 'RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED'].includes(reported.code)
+            throw reported && ['OBSERVATION_FAILED', 'RUN_RECORDS_UNAVAILABLE', 'AUTHORIZATION_DENIED', 'AUTH_INVALID', 'AUTH_EXPIRED', 'AUTH_UNAVAILABLE', 'AUTH_LIMIT'].includes(reported.code)
               ? new ClientError(reported.code, undefined, { message: reported.message, details: reported.details }) : new ClientError('OBSERVATION_FAILED');
           }
           let raw: Record<string, unknown>;
