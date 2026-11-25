@@ -1,0 +1,21 @@
+@theme {
+  --font-sans: "Geist Variable", Geist, system-ui, sans-serif;
+  --color-canvas: #faf9f6;
+  --color-sidebar: #f0eee8;
+  --color-nav-active: #e7e4da;
+  --color-paper: #fffefb;
+  --color-prompt-surface: #fff;
+  --color-wash: #efede6;
+  --color-ink: #22251e;
+  --color-secondary: #41453c;
+  --color-muted: #62655b;
+  --color-line: #d9d7cc;
+  --color-line-strong: #8e9183;
+  --color-composer-line: #d6d6d6;
+  --color-focus: #4e5148;
+  --color-accent: #205540;
+  --color-accent-deep: #163f30;
+  --color-tint-strong: #dce7da;
+  --color-warning: #f6eee0;
+  --color-warning-ink: #684820;
+}

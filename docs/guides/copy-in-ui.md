@@ -62,6 +62,39 @@ The website's `/ui` gallery provides a live preview and source view for each reg
 local fixture state without service credentials. Display components and the voice control render copied source;
 no preview can approve a real operation or start paid inference. Registry tests, framework starter checks and the website build/link checks passed locally. Rendered browser interaction, visual and accessibility checks remain outstanding; see [release validation status](release-readiness.md).
 
+## shadcn registry
+
+For a React 19 project with shadcn initialized, add the Mayura namespace inside the `registries` object in your
+`components.json`.
+
+```json
+{
+  "registries": {
+    "@mayura": "https://mayurajs.com/r/{name}.json"
+  }
+}
+```
+
+Install the full library or choose individual components.
+
+```sh
+pnpm dlx shadcn@latest add @mayura/ui
+pnpm dlx shadcn@latest add @mayura/composer @mayura/thread-history
+```
+
+The other entries are `reply`, `artifacts`, `approvals`, `ag-ui`, and `run-activity`. Each entry includes its
+source dependencies and scoped stylesheet under `mayura` in your configured UI directory. Import
+`styles.css` once and wrap the UI with `UiRoot`. With the full kit and the default Vite aliases, use these imports.
+
+```js
+import { Composer, UiRoot } from '@/components/ui/mayura';
+import '@/components/ui/mayura/styles.css';
+```
+
+Individual entries use direct imports such as `@/components/ui/mayura/composer` and
+`@/components/ui/mayura/ui-root`. The shadcn source runs without Mayura. Supply your own handlers or connect
+the AG-UI hook to a compatible transport.
+
 ## Programmatic plans
 
 ```ts

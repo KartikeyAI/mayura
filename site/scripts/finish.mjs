@@ -3,11 +3,14 @@
 //   - every docs page is also published as Markdown at its repository path (/docs/concepts/agent.md), which is what
 //     "View as Markdown" and the links in llms.txt point to;
 //   - llms.txt and llms-full.txt, generated from docs/ exactly as for the npm package;
+//   - shadcn registry files at /r/, generated from the UI package;
 //   - robots.txt, pointing at the sitemap.
 import { cpSync, existsSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compileUiStyles } from '../../extensions/ui/scripts/build-styles.mjs';
 import { llmsFullTxt, llmsTxt } from '../../scripts/docs-index.mjs';
+import { writeUiRegistry } from '../../scripts/ui-registry.mjs';
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(site, 'dist', 'client');
@@ -24,6 +27,7 @@ cpSync(docs, join(output, 'docs'), { recursive: true });
 
 writeFileSync(join(output, 'llms.txt'), llmsTxt({ full: true }));
 writeFileSync(join(output, 'llms-full.txt'), llmsFullTxt());
+await writeUiRegistry(join(output, 'r'), await compileUiStyles({ toolchainFrom: import.meta.url }));
 
 /** Every prerendered page's route (`docs/concepts/agent/`), from its index.html. */
 const pages = (directory, prefix = '') => readdirSync(directory, { withFileTypes: true }).flatMap(entry =>

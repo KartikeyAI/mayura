@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light;
+  --motion-fast: 140ms;
+  --motion-enter: 200ms;
+  --motion-drawer: 265ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  body { @apply m-0 bg-canvas font-sans text-ink antialiased; }
+  button:not(:disabled) { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  ::selection { color: var(--color-accent-deep); background: var(--color-tint-strong); }
+  textarea { caret-color: var(--color-accent); }
+}
+
+@layer components {
+  .motion-button {
+    transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  }
+  .motion-button:active:not(:disabled) { transform: scale(0.98); }
+
+  .stream-status {
+    @apply flex w-fit items-center gap-2.5 text-[13px] font-medium text-muted;
+  }
+  .stream-dots { @apply inline-flex items-center gap-[3px]; }
+  .stream-dots i {
+    @apply size-1 rounded-full bg-muted;
+    animation: stream-dot 1.15s ease-in-out infinite;
+  }
+  .stream-status[data-thinking="true"] .stream-dots i { @apply size-[5px] bg-accent; }
+  .stream-dots i:nth-child(2) { animation-delay: 110ms; }
+  .stream-dots i:nth-child(3) { animation-delay: 220ms; }
+}
+
+@keyframes stream-dot {
+  0%, 65%, 100% { opacity: 0.5; transform: translateY(0); }
+  32% { opacity: 1; transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms; --motion-enter: 0ms; --motion-drawer: 0ms; }
+  .stream-dots i { animation: none; }
+  .motion-button:active:not(:disabled) { transform: none; }
+}
