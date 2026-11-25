@@ -95,7 +95,8 @@ explicit dist-tag permission. [npm dist-tag permission](https://docs.npmjs.com/t
    Commit the updated package version and the plan under `release-plans/`. Include any core version references and
    changelog changes generated for a core bump. Merge the topic PR into `dev` through the Qualification gate and wait
    for push qualification on `dev`. Open a promotion PR from `dev` to `main`, wait for its checks and squash merge.
-   The pushed `main` commit must pass the full matrix before the rehearsal and publication.
+   The exact `main` commit must pass the full matrix before the rehearsal and publication. If a website-only push
+   moved `main` after qualification, dispatch **Mayura qualification** on the current `main` commit to run the full matrix.
 2. Open **Actions → Mayura release → Run workflow** on `main`. Select `package_set=changed`, enter the plan filename
    without `.json`, and keep `dry_run=true`. The rehearsal checks the full inventory and installs the staged archives
    alongside the exact unchanged versions from npm. Its artifact contains the selected tarballs, plan-bound manifest,
@@ -118,9 +119,13 @@ The explicit `all` and `prerelease-22` inputs are legacy coordinated modes. Use 
 
 ## Qualification layout
 
-Full qualification runs on pull requests (the proposed merge result), pushes to `main`, merge-queue groups and
-manual workflow dispatches. Feature-branch pushes do not also start a duplicate full matrix; open a PR or dispatch
-the workflow manually to qualify a branch before it reaches `main`.
+Pull requests into `dev` or `main` and pushes to either branch classify the exact change with Git. Updates confined
+to `site/` run the website typecheck, build, link checks and secret scan. Changes to `site/content/` or `site/snippets/`
+also type-check documentation examples against the workspace API. GitHub Pages deploys website inputs from `main`.
+
+Framework changes, mixed changes, merge-queue groups and manual dispatches run the full framework matrix. Changes
+to `docs/` also run the full matrix because those docs ship with `mayura`. An unavailable or ambiguous Git comparison
+defaults to full qualification. Merge feature and fix branches through `dev` and promote through `main`.
 
 - Shared checks run once on Linux: secrets, inspector build, CI tooling, provider dry run, API and version reports,
   facade consistency, documentation and the SBOM/license policy.
@@ -135,11 +140,11 @@ the workflow manually to qualify a branch before it reaches `main`.
 - Runtime and container matrices retain their existing coverage. Build outputs and native dependencies are produced
   on each runner; native binaries are never copied between operating systems or Node versions.
 
-The stable required check is **Qualification gate**. It runs after all seven lane groups and rejects failed,
-cancelled, skipped or missing lanes. Configure branch protection to require this check instead of individual matrix
-job names. Automatic release planning continues to require the entire **Mayura qualification** workflow to succeed
-on the exact pushed `main` commit. At the current matrix sizes there are 39 jobs including the gate; release tooling must
-use the gate and workflow conclusion rather than assuming a fixed job count.
+The stable required check is **Qualification gate**. It verifies that website checks passed when required and that
+all seven framework groups have the expected result for the selected scope. Full framework runs require every group to
+pass. Website-only runs require every framework group to be skipped. Both `main` and `dev` use this gate for PRs.
+Publication requires a successful full **Mayura qualification** push or manual run on the exact current `main` commit,
+with successful framework jobs and the aggregate gate.
 
 ## Scoped prereleases for the reviewed 22-package set
 
@@ -148,8 +153,8 @@ version such as `1.2.0-rc.1` and `package_set=prerelease-22`. This mode accepts 
 publishes to `next`. Set `MAYURA_RELEASE=enabled` and approve the **Publish reviewed 22-package prerelease** job in
 the protected `release` environment. The default `all` option retains the normal full-release behavior.
 
-The scoped job uses npm 11.21.1, OIDC and provenance, with no npm token secret. It verifies green push qualification,
-including the aggregate gate, for the exact dispatched main commit before uploading. Every selected archive must
+The scoped job uses npm 11.21.1, OIDC and provenance, with no npm token secret. It verifies full qualification,
+including the aggregate gate, for the exact dispatched `main` commit before uploading. Every selected archive must
 match its checksum, identity, repository and dependency closure. Each package must already have its `rc.0` bootstrap;
 the job snapshots every existing `latest` tag and checks that it stays unchanged. A new package's first publication can
 receive an automatic `latest` tag even with `--tag next`, so this lane cannot introduce unbootstrapped names.

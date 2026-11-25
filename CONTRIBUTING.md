@@ -26,6 +26,9 @@ the topic branch after merge. Wait for the merged `dev` commit to pass push qual
 the `dev` → `main` release pull request. Main's protected linear history uses squash merges. Merge `main`
 back into `dev` after promotion to record the released commit as an ancestor of the next development cycle.
 
+Changes confined to `site/` use the website checks under the same Qualification gate. Framework changes and changes
+to the documentation shipped with the npm package run the full matrix. Website changes deploy from `main`.
+
 1. Open an issue or proposal before substantial public API, persistence, authority or security-boundary work.
 2. Define public contracts and security invariants before changing behavior.
 3. Add regression coverage, including denied paths, cancellation, cost and failure recovery where relevant.
