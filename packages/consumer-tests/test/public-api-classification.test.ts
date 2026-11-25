@@ -33,8 +33,12 @@ describe('public API classification', () => {
     // the workspace; each entry point is listed once as an extension entry point.
     const extensions: string[] = [];
     const extensionsRoot = resolve(root, 'extensions');
-    for (const directory of existsSync(extensionsRoot) ? await readdir(extensionsRoot) : []) {
-      const manifest = JSON.parse(await readFile(resolve(extensionsRoot, directory, 'package.json'), 'utf8')) as { name: string; version: string; private: boolean; exports?: Record<string, unknown> };
+    const extensionDirectories = existsSync(extensionsRoot) ? await readdir(extensionsRoot, { withFileTypes: true }) : [];
+    for (const entry of extensionDirectories) {
+      const directory = entry.name;
+      const manifestPath = resolve(extensionsRoot, directory, 'package.json');
+      if (!entry.isDirectory() || !existsSync(manifestPath)) continue;
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { name: string; version: string; private: boolean; exports?: Record<string, unknown> };
       expect(manifest.name).toBe(`@mayurajs/${directory}`);
       expect(manifest.version).toBe(policy.release);
       expect(manifest.private).toBe(true);
