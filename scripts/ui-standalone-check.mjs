@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compilerPlatform, createPacker, inside, run, workspace } from './local-packages.mjs';
+import { compileConsumerUiCss, verifyConsumerUiCss } from './ui-tailwind-consumer.mjs';
 import { workDirectory } from './work-directory.mjs';
 
 const name = '@mayurajs/ui';
@@ -18,6 +19,7 @@ export async function checkStandaloneUi(packer, output) {
   const closure = await packClosure([
     [name, workspace], ['react-dom', workspace], ['typescript', workspace], ['@types/react', workspace],
     [compilerPlatform, join(workspace, 'node_modules', '.pnpm')],
+    ['tailwindcss', join(workspace, 'extensions', 'ui')],
   ]);
   const ui = packages.get(name);
   assert.equal(ui.manifest.peerDependenciesMeta?.mayura?.optional, true, 'Published UI must make Mayura optional.');
@@ -31,7 +33,7 @@ export async function checkStandaloneUi(packer, output) {
   assert(inside(temporary, await realpath(app)), 'The standalone app must stay in the system temporary directory.');
   const archives = names => Object.fromEntries(names.map(dependency => [dependency, packages.get(dependency).archive]));
   await writeFile(join(app, 'package.json'), JSON.stringify({ name: 'plain-react-ui-consumer', private: true, type: 'module',
-    dependencies: archives(appPackages), devDependencies: archives(compilerPackages), overrides: archives([...closure]) }, null, 2));
+    dependencies: archives(appPackages), devDependencies: archives([...compilerPackages, 'tailwindcss']), overrides: archives([...closure]) }, null, 2));
   const config = join(app, 'empty.npmrc'); await writeFile(config, '');
   await run([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--userconfig', config,
     '--cache', join(output, 'npm-cache')], app, { timeout: 180_000 });
@@ -44,7 +46,10 @@ export async function checkStandaloneUi(packer, output) {
   await copyFile(join(fixtures, 'ui-standalone-app.tsx'), join(app, 'app.tsx'));
   await copyFile(join(fixtures, 'ui-standalone-probe.mjs'), join(app, 'probe.mjs'));
   await copyFile(join(fixtures, 'module-isolation.mjs'), join(app, 'module-isolation.mjs'));
-  await writeFile(join(app, 'styles.ts'), "import '@mayurajs/ui/styles.css';\n");
+  await writeFile(join(app, 'styles.ts'), "import '@mayurajs/ui/styles.css';\nimport '@mayurajs/ui/tailwind.css';\n");
+  const cssEntry = join(app, 'global.css');
+  await writeFile(cssEntry, '@import "tailwindcss" source(none);\n@import "@mayurajs/ui/tailwind.css";\n');
+  verifyConsumerUiCss(await compileConsumerUiCss(app, cssEntry));
   await writeFile(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: {
     target: 'ES2023', module: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
     strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true, noUncheckedSideEffectImports: true,
@@ -59,7 +64,7 @@ export async function checkStandaloneUi(packer, output) {
   const jsdom = createRequire(import.meta.url).resolve('jsdom');
   assert(inside(workspace, jsdom), 'Resolve the DOM test harness from the workspace installation.');
   const { stdout } = await run([join(app, 'probe.mjs'), pathToFileURL(jsdom).href], app);
-  return { name, version: ui.manifest.version, ...JSON.parse(stdout) };
+  return { name, version: ui.manifest.version, hostTailwind: true, ...JSON.parse(stdout) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

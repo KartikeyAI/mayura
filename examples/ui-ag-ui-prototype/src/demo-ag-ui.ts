@@ -1,7 +1,7 @@
 import type { AgUiConversationOptions, AgUiTransport } from '@mayurajs/ui/ag-ui';
 import type { AgUiRunInput as MayuraRunInput } from 'mayura/ag-ui';
-import { fixtureMedia } from './artifact-fixtures.js';
-import { checklistToolId, readChecklistChange } from './change-review.js';
+import { fixtureMedia } from './artifact-fixtures';
+import { checklistToolId, readChecklistChange } from './change-review';
 
 /** The local fixture issues a session token. A real application supplies its own scoped session. */
 async function authorized(path: string, signal: AbortSignal, init?: RequestInit): Promise<Response> {
@@ -17,7 +17,7 @@ async function authorized(path: string, signal: AbortSignal, init?: RequestInit)
 async function history(path: string, signal: AbortSignal): Promise<unknown> {
   const response = await authorized(path, signal);
   if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
-    throw new Error('Thread history is unavailable.');
+    throw Object.assign(new Error('Thread history is unavailable.'), { status: response.status });
   }
   return response.json();
 }
@@ -27,6 +27,9 @@ export const demoTransport: AgUiTransport = {
     method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(input satisfies MayuraRunInput),
   }),
+  observeRun: (binding, signal) => authorized('/ag-ui?' + new URLSearchParams({
+    threadId: binding.threadId, runId: binding.runId,
+  }), signal, { headers: { Accept: 'text/event-stream' } }),
   async cancel(id, signal) {
     const response = await authorized('/v1/runs/' + encodeURIComponent(id) + '/cancel', signal, { method: 'POST' });
     await response.body?.cancel();

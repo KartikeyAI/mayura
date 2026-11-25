@@ -90,6 +90,7 @@ const resumeInput = (interruptId: string, approved = true, extra: Record<string,
 describe('AG-UI scoped run/thread/approval profile (offline)', () => {
   it('requires an explicit serving capability and a fixed origin, agent and interrupt key', () => {
     const f = fixture(); expect(() => f.create({ permissions: { allow: [] } })).toThrow('PERMISSION_DENIED');
+    expect(() => f.create({ observe: true })).toThrow('PERMISSION_DENIED');
     expect(() => f.create({ publicOrigin: 'http://remote.example' })).toThrow('INVALID_ORIGIN');
     expect(() => f.create({ interruptKey: new Uint8Array(31) })).toThrow('INVALID_INTERRUPT_KEY');
     expect(f.serve).not.toHaveBeenCalled();
@@ -168,6 +169,24 @@ describe('AG-UI scoped run/thread/approval profile (offline)', () => {
     const first = await reader.read(); expect(new TextDecoder().decode(first.value)).toContain('RUN_STARTED'); f.deny();
     const second = await reader.read(); const data = new TextDecoder().decode(second.value);
     expect(data).toContain('RUN_ERROR'); expect(data).not.toContain('Refunded'); expect((await reader.read()).done).toBe(true);
+  });
+  it.each([
+    ['AUTH_INVALID', 'NATIVE_401'],
+    ['AUTH_EXPIRED', 'NATIVE_401'],
+    ['AUTHORIZATION_DENIED', 'NATIVE_403'],
+  ])('preserves statusless native %s during read-only observation', async (code, expected) => {
+    const f = fixture(); await paused(f);
+    const fetch = (req: Request) => new URL(req.url).pathname.endsWith('/events')
+      ? Promise.resolve(new Response(`event: stream.error\ndata: ${JSON.stringify({ code })}\n\n`, {
+        headers: { 'content-type': 'text/event-stream' },
+      }))
+      : f.serve(req);
+    const adapter = f.create({ observe: true, permissions: { allow: ['ag-ui:serve', 'ag-ui:observe'] }, server: { fetch } });
+    const stream = await adapter.fetch(new Request(`${origin}/ag-ui?threadId=thread-1&runId=${nativeId}`, {
+      headers: { authorization: 'Bearer alice' },
+    }));
+    expect((await read(stream)).at(-1)).toMatchObject({ type: 'RUN_ERROR', code: expected });
+    expect(f.submits()).toHaveLength(1); expect(f.answers()).toHaveLength(0); expect(f.cancellations()).toHaveLength(0);
   });
   it('fails visibly on event gaps and never reconnects silently', async () => {
     const f = fixture('gap'); const events = await read(await f.create().fetch(request(input())));

@@ -86,6 +86,15 @@ contracts and workspace framework builds/HTTP approval flows. Rendered browser i
 deployments are separate checks; qualify your target before exposing customer data. See
 [release validation status](release-readiness.md) and [deployment](deployment.md).
 
+## Agent Workspace example
+
+The repository also includes `examples/nextjs-agent-workspace`, a runnable App Router example using
+the [Mayura UI Agent Workspace](../integrations/ui.md#agent-workspace). It builds the Tailwind utilities in
+Next.js and streams a deterministic Mayura agent through same-origin route handlers. Run `pnpm build`
+at the repository root, then `pnpm --filter mayura-nextjs-workspace-example dev` and open port 4190.
+Try refreshing while a response is streaming, inspecting an exact citation, and reviewing the proposed
+checklist before approving its save.
+
 ## Continue building
 
 - [Threads and compaction](threads.md): history, recording and bounded summaries.

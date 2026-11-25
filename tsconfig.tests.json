@@ -5,6 +5,7 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
+    "jsx": "react-jsx",
     "types": ["node"]
   },
   "include": ["packages/*/test/**/*.ts", "extensions/*/test/**/*.ts", "vitest.config.ts"],

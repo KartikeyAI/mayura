@@ -98,7 +98,7 @@
       },
       "AgUiAdapterOptions": {
         "kind": "interface",
-        "declaration": "298a7b07ee58c300"
+        "declaration": "5487d4587f2219a1"
       },
       "AgUiContentPart": {
         "kind": "type",
@@ -11634,6 +11634,22 @@
       }
     },
     "@mayurajs/ui": {
+      "AgentWorkspace": {
+        "kind": "function",
+        "declaration": "e8bbf6523a81fdb9"
+      },
+      "AgentWorkspaceMessageProps": {
+        "kind": "interface",
+        "declaration": "b4adf0d49026b750"
+      },
+      "AgentWorkspaceProps": {
+        "kind": "interface",
+        "declaration": "4c67cbd014ab28da"
+      },
+      "AgentWorkspaceSidebarProps": {
+        "kind": "interface",
+        "declaration": "ae74d2692baff4ca"
+      },
       "AnswerText": {
         "kind": "function",
         "declaration": "9c379fa6fbb9336c"
@@ -11674,6 +11690,10 @@
         "kind": "interface",
         "declaration": "68250ced8d2de008"
       },
+      "defineReplyCard": {
+        "kind": "function",
+        "declaration": "c5f2378f57a31db1"
+      },
       "DocumentChange": {
         "kind": "interface",
         "declaration": "5e76812dc9813404"
@@ -11710,6 +11730,10 @@
         "kind": "function",
         "declaration": "11bdfed1b65e82bc"
       },
+      "readReplyCards": {
+        "kind": "function",
+        "declaration": "2140984401b88e41"
+      },
       "ReplyArtifact": {
         "kind": "type",
         "declaration": "ff470bd7cd9d24e6"
@@ -11721,6 +11745,34 @@
       "ReplyArtifactsProps": {
         "kind": "interface",
         "declaration": "4ba62de0f7c52822"
+      },
+      "ReplyCard": {
+        "kind": "interface",
+        "declaration": "b89a7bd3ddb0b7a7"
+      },
+      "ReplyCardAction": {
+        "kind": "interface",
+        "declaration": "d7d1d4146ba60903"
+      },
+      "ReplyCardActionRequest": {
+        "kind": "interface",
+        "declaration": "daf8be8e17c1e0f7"
+      },
+      "ReplyCardComponentProps": {
+        "kind": "interface",
+        "declaration": "04f62c0fb72f8910"
+      },
+      "ReplyCardRenderer": {
+        "kind": "interface",
+        "declaration": "c5c5a5fbf5204a82"
+      },
+      "ReplyCards": {
+        "kind": "function",
+        "declaration": "cbc9d10f7d859346"
+      },
+      "ReplyCardsProps": {
+        "kind": "interface",
+        "declaration": "93a82bec2e9e77b4"
       },
       "RunActivity": {
         "kind": "function",
@@ -11794,7 +11846,7 @@
       },
       "AgUiConversation": {
         "kind": "interface",
-        "declaration": "93b45d23703a0784"
+        "declaration": "8cd9b0860b3e0d04"
       },
       "AgUiConversationOptions": {
         "kind": "interface",
@@ -11840,6 +11892,10 @@
         "kind": "interface",
         "declaration": "85203f65a57031c3"
       },
+      "AgUiRunObservation": {
+        "kind": "interface",
+        "declaration": "b705337c87e92829"
+      },
       "AgUiState": {
         "kind": "type",
         "declaration": "1252d6267cc39f1f"
@@ -11858,7 +11914,7 @@
       },
       "AgUiThreadView": {
         "kind": "interface",
-        "declaration": "ded15467838ef0fa"
+        "declaration": "0c886cd3010efbed"
       },
       "AgUiToolCall": {
         "kind": "interface",
@@ -11866,7 +11922,7 @@
       },
       "AgUiTransport": {
         "kind": "interface",
-        "declaration": "b1ecd613ae68f1a8"
+        "declaration": "4d2700bdcb0f11af"
       },
       "ApprovalInterrupt": {
         "kind": "interface",
@@ -11882,7 +11938,7 @@
       },
       "ConversationState": {
         "kind": "interface",
-        "declaration": "5ec8b712bda29dfe"
+        "declaration": "71c69fab315cd2ea"
       },
       "listThreadHistory": {
         "kind": "function",

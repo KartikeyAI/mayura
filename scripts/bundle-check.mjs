@@ -142,7 +142,7 @@ const agUi = await import('@mayurajs/ui/ag-ui');
 assert.equal(typeof agUi.useAgUiConversation, 'function');
 assert.equal(typeof module.UiRoot, 'function');
 const styles = await readFile(new URL(import.meta.resolve('@mayurajs/ui/styles.css')), 'utf8');
-assert.match(styles, /:where\(\.mayura-ui\)[^{}]*\.rich-composer\b/u, 'The published stylesheet must scope component styles.');
+assert.match(styles, /:where\(\.mayura-ui\)[^{}]*\{[^{}]*field-sizing:content/u, 'The published stylesheet must scope the compiled composer utility.');
 assert.doesNotMatch(styles, /(?:^|[{},])\s*(?:html|body|:root)\s*(?:\{|,)/u, 'The published stylesheet must not reset the host page.');
 ` : '';
   await writeFile(join(directory, 'probe.mjs'), `const module = await import(${JSON.stringify(name)});\n${uiProbe}console.log(JSON.stringify(Object.keys(module).length));\n`);

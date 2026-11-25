@@ -8,9 +8,9 @@ import { createAgentServer } from 'mayura/server';
 import { createAggregateRunRecords } from 'mayura/storage';
 import { createSqliteStore } from 'mayura/storage-sqlite';
 import { defineTool } from 'mayura/tools';
-import { replyArtifactFixtures } from './src/artifact-fixtures.js';
+import { replyArtifactFixtures } from './src/artifact-fixtures';
 import { attachmentContextDivider } from '@mayurajs/ui';
-import { createThreadHistory, historyPath } from './thread-history-server.js';
+import { createThreadHistory, historyPath } from './thread-history-server';
 
 const agentId = 'rollout-assistant';
 const scope = { principalId: 'prototype-user', projectId: 'prototype-workspace' };
@@ -174,13 +174,22 @@ export async function createPrototypeServer(origin: string) {
       },
     });
     server = native;
-    const replyState = { citations: sources, artifacts: replyArtifactFixtures };
+    const replyState = { citations: sources, artifacts: replyArtifactFixtures, replyCards: [
+      { id: 'release-plan', type: 'table', title: 'Rollout checkpoints', data: {
+        columns: ['Stage', 'Check'], rows: [['Canary', '5% of traffic'], ['Observe', '15 minutes'], ['Rollback', 'Error rate above 1%']],
+      } },
+      { id: 'release-runbook', type: 'download', title: 'Release runbook', data: { path: '/runbook.txt', filename: 'mayura-runbook.txt' } },
+      { id: 'release-plan-review', type: 'confirmation', title: 'Checklist review', data: {
+        actionId: 'acknowledge', message: 'Review the rollout checkpoints before handing the plan to the deploy owner.',
+      } },
+    ] } as const;
     const agUi = createAgUiAdapter({
       server: native,
       publicOrigin: origin,
       agentId,
       interruptKey: key,
-      permissions: { allow: ['ag-ui:serve', 'ag-ui:state', 'ag-ui:stream'] },
+      permissions: { allow: ['ag-ui:serve', 'ag-ui:state', 'ag-ui:stream', 'ag-ui:observe'] },
+      observe: true,
       input: message => typeof message.content === 'string' ? message.content : '',
       state: { read: () => ({ revision: 1, state: replyState }) },
       streaming: 'guarded',
@@ -206,7 +215,7 @@ export async function createPrototypeServer(origin: string) {
           return history.read(bearer, historyMatch[1], request.signal);
         }
         if (url.pathname === '/ag-ui') {
-          if (url.search || request.method !== 'POST' || !bearer || !tokenMatches(bearer)) return agUi.fetch(request);
+          if (request.method !== 'POST' || url.search || !bearer || !tokenMatches(bearer)) return agUi.fetch(request);
           const echo = request.clone();
           const response = await agUi.fetch(request);
           if (!response.ok) {

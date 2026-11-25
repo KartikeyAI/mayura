@@ -36,12 +36,14 @@ export interface AgUiAdapterOptions {
   readonly frontendTools?: AgUiFrontendTools;
   /** Explicit irreversible native batch release. Requires ag-ui:stream; batch guards still belong to the agent. */
   readonly streaming?: 'guarded';
+  /** Enable read-only GET observation of existing thread runs. Requires ag-ui:observe. */
+  readonly observe?: boolean;
   /** Project opaque thread image/PDF handles; never fetches media. Requires ag-ui:media. */
   readonly media?: boolean;
   readonly limits?: AgUiLimits;
 }
 export interface AgUiAdapter {
-  /** POST RunAgentInput, returning AG-UI 1.0 SSE. Commands are never automatically retried. */
+  /** POST RunAgentInput or opt in to GET observation. Both return AG-UI 1.0 SSE. */
   fetch(request: Request): Promise<Response>;
   /** Stop adapter observers only. The caller owns the underlying server and its durable runs. */
   close(): void;
@@ -53,6 +55,9 @@ function failure(error: unknown): AgUiFailure {
   if (error instanceof ClientError) {
     // Only native sanitized codes; never return exception text, response bodies or provider diagnostics.
     if (error.status && [401, 403, 404, 409, 413, 429].includes(error.status)) return new AgUiFailure(`NATIVE_${error.status}`, error.status);
+    // A native SSE authorization failure arrives after HTTP 200, without an HTTP status.
+    if (error.code === 'AUTH_INVALID' || error.code === 'AUTH_EXPIRED') return new AgUiFailure('NATIVE_401', 401);
+    if (error.code === 'AUTHORIZATION_DENIED') return new AgUiFailure('NATIVE_403', 403);
     if (error.code === 'ABORTED') return new AgUiFailure('ABORTED', 408);
     if (error.code === 'TIMEOUT') return new AgUiFailure('TIMEOUT', 408);
   }
@@ -118,6 +123,9 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
   if (!/^\/[A-Za-z0-9/_-]+$/.test(path) || path.startsWith('/v1/') || typeof options.input !== 'function' || typeof options.server?.fetch !== 'function') throw new AgUiFailure('INVALID_CONFIG');
   if (options.state !== undefined && !options.permissions.allow.includes('ag-ui:state')) throw new AgUiFailure('PERMISSION_DENIED', 403);
   if (options.streaming !== undefined && (options.streaming !== 'guarded' || !options.permissions.allow.includes('ag-ui:stream'))) throw new AgUiFailure('PERMISSION_DENIED', 403);
+  if (options.observe !== undefined && typeof options.observe !== 'boolean') throw new AgUiFailure('INVALID_CONFIG');
+  const observeEnabled = options.observe === true;
+  if (observeEnabled && !options.permissions.allow.includes('ag-ui:observe')) throw new AgUiFailure('PERMISSION_DENIED', 403);
   if (options.media !== undefined && typeof options.media !== 'boolean') throw new AgUiFailure('INVALID_CONFIG');
   if (options.media && !options.permissions.allow.includes('ag-ui:media')) throw new AgUiFailure('PERMISSION_DENIED', 403);
   const streamText = options.streaming === 'guarded'; const mediaEnabled = options.media === true;
@@ -133,7 +141,8 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
   const load = (client: MayuraClient, threadId: string, signal: AbortSignal) => threadView(client, threadId, limits.maxThreadEntries, limits.maxSnapshotBytes, signal, mediaEnabled);
 
   async function* events(client: MayuraClient, run: RemoteRun, input: AgUiRunInput, session: RemoteSession, signal: AbortSignal,
-    initial: ThreadView, resumed?: { readonly binding: InterruptBinding; readonly approval: RemoteApproval }, frontendResume?: { readonly callId: string; readonly toolId: string; readonly input: ClientJson; readonly turnId: string }): AsyncGenerator<AgUiEvent> {
+    initial: ThreadView, resumed?: { readonly binding: InterruptBinding; readonly approval: RemoteApproval }, frontendResume?: { readonly callId: string; readonly toolId: string; readonly input: ClientJson; readonly turnId: string },
+    observing = false): AsyncGenerator<AgUiEvent> {
     yield { type: 'RUN_STARTED', threadId: input.threadId, runId: input.runId, metadata: { mayura: { runId: run.id } } };
     const originalPending: AgUiMessage | undefined = resumed ? pendingMessage(resumed.binding.turnId, resumed.approval) : frontendResume ? {
       id: proposalId(frontendResume.turnId, frontendResume.callId), role: 'assistant', toolCalls: [{ id: toolCallId(frontendResume.turnId, frontendResume.callId), type: 'function',
@@ -177,9 +186,14 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
         if (event.type === 'approval.requested' || event.type === 'run.paused' || event.type === 'run.completed') {
           current = await run.inspect({ signal });
           if (current.status === 'waiting' && current.approval) {
-            for (const item of streamed.values()) if (item.open) { item.open = false; yield { type: 'TEXT_MESSAGE_END', messageId: item.id }; }
             // Old replayed approval events must not be mistaken for the current pending tool call.
-            if (event.type === 'approval.requested' && (event.metadata['callId'] !== current.approval.callId || event.metadata['digest'] !== current.approval.digest)) continue;
+            if (event.type === 'approval.requested') {
+              if (event.metadata['callId'] !== current.approval.callId || event.metadata['digest'] !== current.approval.digest) continue;
+            } else if (observing) {
+              // An earlier pause may be present in a full replay. Bind the handle to the current request's sequence.
+              continue;
+            }
+            for (const item of streamed.values()) if (item.open) { item.open = false; yield { type: 'TEXT_MESSAGE_END', messageId: item.id }; }
             const view = await load(client, input.threadId, signal); const turnId = runTurn(view, run.id);
             yield* interrupt(run, input, session, current.approval, view, turnId, after, signal);
             return;
@@ -244,11 +258,15 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
   return Object.freeze({
     async fetch(request: Request): Promise<Response> {
       let release: ((error?: AgUiFailure) => void) | undefined;
+      let allow = 'POST';
       try {
         if (closed) throw new AgUiFailure('ADAPTER_CLOSED', 503);
         const url = new URL(request.url);
-        if (url.origin !== origin.origin || (url.pathname !== path && !(frontend && url.pathname === claimPath)) || url.search) throw new AgUiFailure('NOT_FOUND', 404);
-        if (request.method !== 'POST') throw new AgUiFailure('METHOD_NOT_ALLOWED', 405);
+        const canObserve = observeEnabled && url.pathname === path;
+        const observing = canObserve && request.method === 'GET';
+        if (canObserve) allow = 'GET, POST';
+        if (url.origin !== origin.origin || (url.pathname !== path && !(frontend && url.pathname === claimPath)) || (!observing && url.search)) throw new AgUiFailure('NOT_FOUND', 404);
+        if (request.method !== 'POST' && !observing) throw new AgUiFailure('METHOD_NOT_ALLOWED', 405);
         // Same-origin browser profile. Explicit Bearer credentials are still required; cookies are never forwarded.
         const browserOrigin = request.headers.get('origin');
         if (browserOrigin !== null && browserOrigin !== origin.origin) throw new AgUiFailure('ORIGIN_DENIED', 403);
@@ -295,8 +313,15 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
           const claim = { ...await frontend!.claim(command['token'], session.scope, signal), toolCallId: toolCallId(turnId, target.callId) };
           release?.(); return new Response(JSON.stringify(claim), { headers: { ...wireHeaders, 'Content-Type': 'application/json' } });
         }
-        const input = readInput(await bodyJson(request, limits.maxRequestBytes, signal), limits.maxRequestBytes, limits.maxMessages, readState !== undefined, frontend !== undefined, mediaEnabled);
-        await frontend?.advertise(input.tools ?? [], session.scope, signal);
+        let input: AgUiRunInput;
+        if (observing) {
+          const query = url.searchParams;
+          if (query.size !== 2 || !query.has('threadId') || !query.has('runId')) throw new AgUiFailure('INVALID_OBSERVATION');
+          input = { threadId: identifier(query.get('threadId')), runId: identifier(query.get('runId')), messages: [] };
+        } else {
+          input = readInput(await bodyJson(request, limits.maxRequestBytes, signal), limits.maxRequestBytes, limits.maxMessages, readState !== undefined, frontend !== undefined, mediaEnabled);
+          await frontend?.advertise(input.tools ?? [], session.scope, signal);
+        }
         let frontendResume: { callId: string; toolId: string; input: ClientJson; turnId: string } | undefined;
         let run: RemoteRun; let resumed: { binding: InterruptBinding; approval: RemoteApproval } | undefined;
         const resume = input.resume?.[0];
@@ -319,7 +344,15 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
           }
         };
         const frontendContinuation = input.forwardedProps?.mayuraFrontend;
-        if (frontendContinuation) {
+        if (observing) {
+          const thread = await client.thread(input.threadId, { signal });
+          if (thread.status !== 'active' || thread.agentId !== agentId) throw new AgUiFailure('THREAD_AGENT_MISMATCH', 409);
+          initial = await load(client, input.threadId, signal);
+          runTurn(initial, input.runId);
+          run = client.run(input.runId);
+          await run.inspect({ signal });
+          state = await prepareState();
+        } else if (frontendContinuation) {
           const target = await frontend!.inspect(frontendContinuation.token, session.scope, signal, true);
           if (target.threadId !== input.threadId) throw new AgUiFailure('FRONTEND_BINDING_CONFLICT', 409);
           initial = await load(client, input.threadId, signal); const turnId = runTurn(initial, target.nativeRunId);
@@ -362,7 +395,9 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
           // begin() records the association asynchronously before model work. Do not require its marker in the
           // submission reply race; interrupt/terminal projection verifies it once that work has been admitted.
         }
-        iterator = events(client, run, input, session, signal, initial, resumed, frontendResume);
+        iterator = events(client, run, input, session, signal, initial, resumed, frontendResume, observing);
+        // Observation cannot claim or dispatch frontend work, even when this adapter also serves commands.
+        const streamFrontend = observing ? undefined : frontend;
         let bytes = 0; let count = 0; let pending: Promise<IteratorResult<AgUiEvent>> | undefined;
         // Hold at most one native event behind its state update. No producer queue grows with a slow reader.
         let queued: IteratorYieldResult<AgUiEvent> | 'heartbeat' | undefined;
@@ -383,12 +418,12 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
                   if (!pending) { pending = iterator!.next(); void pending.catch(() => {}); }
                   let next: IteratorResult<AgUiEvent> | 'heartbeat' | undefined;
                   while (true) {
-                    const tick = await Promise.race([pending, new Promise<'poll'>(resolve => { beat = setTimeout(resolve, frontend ? 100 : 15_000, 'poll'); })]);
+                    const tick = await Promise.race([pending, new Promise<'poll'>(resolve => { beat = setTimeout(resolve, streamFrontend ? 100 : 15_000, 'poll'); })]);
                     clearTimeout(beat); if (ended) return;
                     if (tick !== 'poll') { next = tick; break; }
-                    if (frontend && await frontend.pending(session.scope, run.id, signal)) {
+                    if (streamFrontend && await streamFrontend.pending(session.scope, run.id, signal)) {
                       const view = await load(client, input.threadId, signal); const turnId = runTurn(view, run.id);
-                      await run.inspect({ signal }); const dispatch = await frontend.dispatch(session.scope, run.id, input.threadId, input.runId, signal);
+                      await run.inspect({ signal }); const dispatch = await streamFrontend.dispatch(session.scope, run.id, input.threadId, input.runId, signal);
                       if (dispatch) {
                         frontendToken = dispatch.token;
                         const id = toolCallId(turnId, dispatch.callId); const parent = proposalId(turnId, dispatch.callId);
@@ -419,7 +454,7 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
               // Recheck disclosure after every wait, including host callbacks and buffered state/message frames.
               await run.inspect({ signal }); await client.thread(input.threadId, { signal });
               if (event?.type === 'STATE_SNAPSHOT' || event?.type === 'STATE_DELTA') await state!.authorize();
-              if (frontendToken) await frontend!.disclose(frontendToken, session.scope, signal);
+              if (frontendToken) await streamFrontend!.disclose(frontendToken, session.scope, signal);
               if (ended) return;
               const frame = event === undefined ? encoder.encode(': keep-alive\n\n')
                 : encoder.encode(`data: ${JSON.stringify({ ...event, timestamp: Date.now() })}\n\n`);
@@ -437,7 +472,7 @@ export function createAgUiAdapter(options: AgUiAdapterOptions): AgUiAdapter {
       } catch (error) {
         release?.(); const safe = failure(error);
         return new Response(JSON.stringify({ error: { code: safe.code, message: 'The AG-UI request could not be completed.' } }),
-          { status: safe.status, headers: { ...wireHeaders, 'Content-Type': 'application/json', ...(safe.status === 405 ? { Allow: 'POST' } : {}) } });
+          { status: safe.status, headers: { ...wireHeaders, 'Content-Type': 'application/json', ...(safe.status === 405 ? { Allow: allow } : {}) } });
       }
     },
     close(): void { closed = true; for (const stop of [...observers]) stop(new AgUiFailure('ADAPTER_CLOSED', 503)); },

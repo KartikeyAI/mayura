@@ -4,6 +4,13 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+- Add an Agent Workspace composition for React and shadcn that connects thread history, chat, citations,
+  artifacts and approval review. Stream typed reply cards with app-registered renderers and actions.
+- Reattach to an existing AG-UI run through scoped read-only observation. Add a runnable Next.js
+  workspace demonstrating thread recovery, sources and an exact tool approval.
+- Put Mayura UI styling in editable Tailwind classes. `shadcn add` merges the shared theme into the
+  app’s stylesheet, and npm Tailwind consumers can build the utilities with `@mayurajs/ui/tailwind.css`.
+
 ## [1.3.0] - 2026-11-25
 
 - Add `@mayurajs/ui`, a standalone React 19 library for agent chat, approvals and change review,
