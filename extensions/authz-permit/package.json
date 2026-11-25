@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/authz-permit",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Scoped Permit.io PDP checks with explicit environment credentials, bounded transport and core audit integration.",
   "type": "module",

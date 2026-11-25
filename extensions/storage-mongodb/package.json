@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/storage-mongodb",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Mayura storage on MongoDB, through the official MongoDB driver.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/provider-anthropic",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Anthropic Claude models for Mayura, through the official Anthropic SDK.",
   "type": "module",

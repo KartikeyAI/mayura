@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/observability-arize",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Arize AX for Mayura's traces, with OpenInference attributes beside the GenAI ones.",
   "type": "module",

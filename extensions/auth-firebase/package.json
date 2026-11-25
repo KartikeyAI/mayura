@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/auth-firebase",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Firebase Authentication ID tokens as Mayura server identities, verified with Google's published keys.",
   "type": "module",
