@@ -1,0 +1,128 @@
+@layer components {
+  .citation-index {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.6875rem;
+  }
+
+  .citation-marker .citation-index {
+    text-decoration: underline;
+    text-underline-offset: .15em;
+  }
+
+  .source-button[aria-expanded="true"] {
+    color: var(--color-accent-deep);
+  }
+
+  .source-button[aria-expanded="true"] .source-title {
+    text-decoration: underline;
+    text-underline-offset: .22em;
+  }
+
+  .approval-action,
+  .approval-disclosure {
+    transition:
+      background-color var(--motion-fast, 130ms) ease,
+      color var(--motion-fast, 130ms) ease,
+      transform var(--motion-fast, 130ms) var(--ease-out, cubic-bezier(.23,1,.32,1));
+  }
+
+  .approval-action:active {
+    transform: scale(.97);
+  }
+
+  .disclosure-chevron {
+    display: inline-flex;
+    transition: transform var(--motion-fast, 130ms) var(--ease-out, cubic-bezier(.23,1,.32,1));
+  }
+
+  [aria-expanded="true"] > .disclosure-chevron {
+    transform: rotate(90deg);
+  }
+
+  /* Disclosed details occupy real document space. Inert prevents interaction while closed. */
+  .chat-disclosure {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows var(--motion-enter, 200ms) var(--ease-out, cubic-bezier(.23,1,.32,1)),
+      opacity var(--motion-fast, 130ms) ease,
+      visibility 0s var(--motion-enter, 200ms);
+  }
+
+  .chat-disclosure[data-expanded="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  .chat-disclosure-inner {
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .approval-card {
+    animation: approval-appear var(--motion-enter, 200ms) var(--ease-out, cubic-bezier(.23,1,.32,1)) both;
+  }
+
+  .approval-input {
+    overflow-wrap: anywhere;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  .approval-input:focus-visible {
+    outline-offset: -1px;
+  }
+
+  @media (pointer: coarse) {
+    .source-button,
+    .approval-disclosure {
+      min-height: 2.75rem;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .citation-marker:hover {
+      color: var(--color-accent-deep);
+    }
+
+    .source-button:hover .source-title,
+    .approval-decline:hover,
+    .approval-disclosure:hover {
+      text-decoration: underline;
+      text-underline-offset: .22em;
+    }
+
+    .approval-confirm:hover {
+      background-color: var(--color-accent-deep);
+    }
+  }
+
+}
+
+@keyframes approval-appear {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .approval-action,
+  .approval-disclosure,
+  .disclosure-chevron,
+  .chat-disclosure {
+    transition: none;
+  }
+
+  .approval-card {
+    animation: none;
+  }
+
+  .approval-action:active {
+    transform: none;
+  }
+}

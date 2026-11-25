@@ -1,0 +1,31 @@
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #191c19;
+  --color-sidebar: #151815;
+  --color-nav-active: #2a3028;
+  --color-paper: #232721;
+  --color-prompt-surface: var(--color-paper);
+  --color-wash: #2e342b;
+  --color-ink: #f2f2ea;
+  --color-secondary: #d7dacf;
+  --color-muted: #a6ad9f;
+  --color-line: #454c41;
+  --color-line-strong: #8b9586;
+  --color-composer-line: #6b7566;
+  --color-focus: #b0bcaa;
+  --color-accent: #97caaa;
+  --color-accent-deep: #b3ddbf;
+  --color-tint-strong: #31483b;
+  --color-warning: #3a3025;
+  --color-warning-ink: #edc08a;
+}
+
+/* Filled actions use a separate pine shade so their white labels stay legible. */
+:root[data-theme="dark"] :is(.composer-submit, .approval-confirm, .voice-primary) {
+  --color-accent: #356248;
+  --color-accent-deep: #3e7053;
+}
+
+:root[data-theme="dark"] .voice-dot {
+  background: #e1967d;
+}

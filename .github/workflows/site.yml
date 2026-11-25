@@ -4,9 +4,27 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'docs/**', 'scripts/docs-index.mjs', 'package.json', '.github/workflows/site.yml']
+    paths:
+      - site/**
+      - docs/**
+      - extensions/ui/**
+      - scripts/docs-index.mjs
+      - scripts/ui-registry.mjs
+      - package.json
+      - LICENSE
+      - NOTICE
+      - .github/workflows/site.yml
   pull_request:
-    paths: ['site/**', 'docs/**', 'scripts/docs-index.mjs', 'package.json', '.github/workflows/site.yml']
+    paths:
+      - site/**
+      - docs/**
+      - extensions/ui/**
+      - scripts/docs-index.mjs
+      - scripts/ui-registry.mjs
+      - package.json
+      - LICENSE
+      - NOTICE
+      - .github/workflows/site.yml
   workflow_dispatch:
 permissions:
   contents: read

@@ -5,6 +5,7 @@
 // Every extension needs its page, docs/integrations/<folder>.md, whose frontmatter names the package and its area.
 // Run it after adding an extension; --check fails when either file is out of date or a page is missing.
 //   node scripts/integrations-index.mjs [--check]
+import { existsSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,8 +36,12 @@ const areas = [
 ];
 
 const packages = []; const problems = [];
-for (const folder of (await readdir(join(root, 'extensions'), { withFileTypes: true })).filter(item => item.isDirectory()).map(item => item.name).sort()) {
-  const manifest = JSON.parse(await readFile(join(root, 'extensions', folder, 'package.json'), 'utf8'));
+const extensionsRoot = join(root, 'extensions');
+const folders = (await readdir(extensionsRoot, { withFileTypes: true }))
+  .filter(item => item.isDirectory() && existsSync(join(extensionsRoot, item.name, 'package.json')))
+  .map(item => item.name).sort();
+for (const folder of folders) {
+  const manifest = JSON.parse(await readFile(join(extensionsRoot, folder, 'package.json'), 'utf8'));
   const area = areas.find(candidate => candidate.prefixes.some(prefix => folder === prefix || folder.startsWith(prefix)));
   if (!area) throw new Error(`extensions/${folder} belongs to no area: add its prefix to scripts/integrations-index.mjs.`);
   if (typeof manifest.description !== 'string' || manifest.description === '') throw new Error(`extensions/${folder} has no description.`);

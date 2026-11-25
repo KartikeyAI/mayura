@@ -2,6 +2,7 @@
 //   - every docs page in docs/README.md's navigation, the home page and 404.html were prerendered;
 //   - every link, script, stylesheet and image on every page resolves to a file under the base path, and every
 //     #anchor exists on the page it points to;
+//   - the shadcn catalog and every advertised item are present;
 //   - every link in llms.txt resolves.
 // Build with the same SITE_BASE first: `pnpm build && pnpm check`.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -36,7 +37,11 @@ const pages = htmlFiles(output);
 const contentRoot = join(site, 'content');
 const articles = ['guides', 'integrations', 'compare', 'research'].flatMap(section => [`${section}/`,
   ...(existsSync(join(contentRoot, section)) ? readdirSync(join(contentRoot, section)).filter(name => name.endsWith('.md')).map(name => `${section}/${name.slice(0, -3)}/`) : [])]);
-const required = ['', 'docs/', '404.html', 'llms.txt', 'llms-full.txt', 'sitemap.xml', 'robots.txt', ...articles,
+const registry = 'r/registry.json';
+const catalog = fileFor(base + registry);
+const registryItems = catalog ? JSON.parse(readFileSync(catalog, 'utf8')).items.map(item => `r/${item.name}.json`) : [];
+const required = ['', 'docs/', '404.html', 'llms.txt', 'llms-full.txt', 'sitemap.xml', 'robots.txt', registry, ...articles,
+  ...registryItems,
   ...navigation().flatMap(section => section.pages.map(page => `${page.relative.replace(/\.md$/u, '')}/`)),
   ...navigation().flatMap(section => section.pages.map(page => page.relative))];
 for (const path of required) if (!fileFor(base + path)) problems.push(`missing: ${base}${path}`);
