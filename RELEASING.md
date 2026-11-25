@@ -122,6 +122,7 @@ The explicit `all` and `prerelease-22` inputs are legacy coordinated modes. Use 
 Pull requests into `dev` or `main` and pushes to either branch classify the exact change with Git. Updates confined
 to `site/` run the website typecheck, build, link checks and secret scan. Changes to `site/content/` or `site/snippets/`
 also type-check documentation examples against the workspace API. GitHub Pages deploys website inputs from `main`.
+The website checks also cover a verified history sync with an identical source tree.
 
 Framework changes, mixed changes, merge-queue groups and manual dispatches run the full framework matrix. Changes
 to `docs/` also run the full matrix because those docs ship with `mayura`. An unavailable or ambiguous Git comparison

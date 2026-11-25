@@ -52,7 +52,7 @@ test('only the standalone website may use the fast path', () => {
     { ...fullWithWebsite, website_docs: true });
   assert.deepEqual(classifyChangedPaths(['site-copy/example.md']), full);
   assert.deepEqual(classifyChangedPaths(['\uFEFFsite/content/guides/new.md']), full);
-  assert.deepEqual(classifyChangedPaths([]), fullWithWebsite);
+  assert.deepEqual(classifyChangedPaths([]), website);
 });
 
 test('push classification includes every commit in the exact push range', t => {
@@ -81,6 +81,19 @@ test('renaming framework source into the website still runs the framework matrix
   git('mv', 'packages/runtime.ts', 'site/runtime.ts');
   const head = commit('Move framework source into the website');
   assert.deepEqual(classifyCiScope('push', push(initial, head), { cwd, expectedHead: head }), fullWithWebsite);
+});
+
+test('a verified history sync with identical files uses the website checks on the PR and push', t => {
+  const { cwd, git, initial } = repository(t);
+  git('switch', '-c', 'release');
+  git('commit', '--no-gpg-sign', '--allow-empty', '-m', 'Release marker');
+  const release = git('rev-parse', 'HEAD');
+  git('switch', 'main');
+  git('merge', '--no-ff', '--no-edit', 'release');
+  const head = git('rev-parse', 'HEAD');
+  const event = { pull_request: { base: { ref: 'dev', sha: initial }, head: { sha: release } } };
+  assert.deepEqual(classifyCiScope('pull_request', event, { cwd, expectedHead: head }), website);
+  assert.deepEqual(classifyCiScope('push', push(initial, head), { cwd, expectedHead: head }), website);
 });
 
 test('a leading UTF-8 marker in a Git path is part of the filename', t => {

@@ -11,12 +11,11 @@ const qualificationBranches = new Set(['main', 'dev']);
 const commitId = value => typeof value === 'string' && /^[a-f0-9]{40}$/u.test(value) && !/^0+$/u.test(value);
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-/** Only a nonempty diff wholly inside the separately installed site can skip the framework matrix. */
+/** A verified diff can skip the matrix when it affects only the site or the commit history. */
 export function classifyChangedPaths(paths) {
-  if (paths.length === 0) return fallback;
   return {
     scope: paths.every(path => path.startsWith('site/')) ? 'website' : 'full',
-    website: paths.some(path => websiteFiles.has(path) || websiteDirectories.some(directory => path.startsWith(directory))),
+    website: paths.length === 0 || paths.some(path => websiteFiles.has(path) || websiteDirectories.some(directory => path.startsWith(directory))),
     website_docs: paths.some(path => path.startsWith('site/content/') || path.startsWith('site/snippets/')),
   };
 }
@@ -31,7 +30,7 @@ function checkedBase(git, eventName, event, head) {
     if (parents.length === 3 && parents[0] === head && parents[1] === base.sha && parents[2] === topic.sha) return base.sha;
     return;
   }
-  if (!(event?.created === false && event.deleted === false && event.forced === false && event.after === head
+  if (!(event?.created === false && event.deleted === false && event.forced === false && event.after === head && event.before !== head
     && commitId(event.before) && typeof event.ref === 'string' && event.ref.startsWith('refs/heads/')
     && qualificationBranches.has(event.ref.slice('refs/heads/'.length)))) return;
   git('merge-base', '--is-ancestor', event.before, head);
@@ -52,6 +51,7 @@ export function classifyCiScope(eventName, event, { cwd, expectedHead } = {}) {
     // Treat moves as a deletion and an addition so a move across the site boundary counts both paths.
     const changed = decoder.decode(git('diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', '--no-textconv',
       '--ignore-submodules=none', base, head, '--'));
+    if (changed === '') return classifyChangedPaths([]);
     if (!changed.endsWith('\0')) return fallback;
     return classifyChangedPaths(changed.slice(0, -1).split('\0'));
   } catch {
