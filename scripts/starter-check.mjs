@@ -86,13 +86,17 @@ if (!skipPacked) {
     const manifestPath = join(directory, 'package.json'); const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const cliVersion = JSON.parse(await readFile(join(workspace, 'packages', 'cli', 'package.json'), 'utf8')).version;
     assert.equal(manifest.dependencies.mayura, cliVersion, `${starter} must pin mayura to the CLI's version.`);
-    if (starter === 'rag-modal-pinecone') assert.equal(manifest.dependencies['@mayurajs/vector-pinecone'], cliVersion);
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      if (!name.startsWith('@mayurajs/')) continue;
+      const extension = JSON.parse(await readFile(join(workspace, 'extensions', name.slice('@mayurajs/'.length), 'package.json'), 'utf8'));
+      assert.equal(version, extension.version, `${starter} must pin the reviewed version of ${name}.`);
+    }
     for (const field of ['dependencies', 'devDependencies']) for (const name of Object.keys(manifest[field] ?? {})) assert(!name.startsWith('@mayura/'), `${starter} still depends on ${name}.`);
     const source = join(workspace, 'packages', 'cli', 'starters', starter);
     // Framework web toolchains are built and booted above. As with existing Vite starters, packed qualification
     // installs the generated server contract offline; it never silently fetches a framework toolchain from npm.
     const framework = isFramework(manifest);
-    if (framework) manifest.dependencies = Object.fromEntries(Object.entries(manifest.dependencies).filter(([name]) => ['mayura', 'better-sqlite3', 'pg', '@mayurajs/storage-d1'].includes(name)));
+    if (framework) manifest.dependencies = Object.fromEntries(Object.entries(manifest.dependencies).filter(([name]) => ['mayura', 'better-sqlite3', 'pg', 'hono', '@mayurajs/storage-d1'].includes(name)));
     const development = framework ? [] : Object.keys(manifest.devDependencies ?? {}).filter(name => packedDevelopment.has(name));
     const allowed = await packClosure([...Object.keys(manifest.dependencies), ...development].map(name => [name, source]).concat(framework ? [] : [[compilerPlatform, join(workspace, 'node_modules', '.pnpm')]]));
     manifest.dependencies = Object.fromEntries(Object.keys(manifest.dependencies).map(name => [name, packages.get(name).archive]));

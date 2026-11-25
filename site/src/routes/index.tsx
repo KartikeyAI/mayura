@@ -14,6 +14,7 @@ import { Accordion } from '../components/Accordion';
 import { Icon, type IconName } from '../components/Icon';
 import { LogoMark } from '../components/Logo';
 import { IntegrationsWall } from '../components/IntegrationsWall';
+import { UiComponentPreview } from '../components/UiComponentPreview';
 import {
   BrowserPreview, CostArt, MemoryArt, ModelsArt, PolicyPreview, RunPreview, SandboxPreview, ServePreview, StreamingArt, TestPreview,
   TraceArt, VisionArt, WorkflowPreview,
@@ -31,12 +32,12 @@ function Home() {
   return (
     <main>
       <Hero />
-      <ProductionRetrieval />
+      <WorkspaceSetup />
       <Guarantees />
-      <IntegrationsWall />
       <Tour />
+      <ProductionRetrieval />
+      <IntegrationsWall />
       <Features />
-      <NewInRelease />
       <FrameworkStarters />
       <GetStarted />
       <Reading />
@@ -97,33 +98,42 @@ const stats = [
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <HeroBackdrop />
-      <div className="relative mx-auto flex max-w-5xl flex-col items-center px-4 pt-20 pb-24 text-center sm:px-6 sm:pt-28 sm:pb-32">
-        <Link {...docs('project/whats-new')}
-          className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-bg/70 px-3 py-1.5 text-xs text-muted backdrop-blur transition hover:text-fg">
-          <span className="font-medium text-primary">v{site.version}</span>
-          <span>Runnable RAG starter and security updates</span>
-          <Icon name="arrow" className="size-3.5 shrink-0" />
-        </Link>
-        <h1 className="mt-8 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] text-balance sm:text-7xl md:text-[5.25rem]">
-          Build AI agents you can put in production
-        </h1>
-        <p className="mt-7 max-w-2xl text-lg leading-relaxed text-pretty text-muted sm:text-xl">
-          Mayura is the TypeScript framework for <strong className="font-medium text-fg">agents, typed tools and durable
-          workflows</strong>, with permissions, budgets and validation enforced by the runtime.
-        </p>
-        <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <PrimaryButton slug="quickstart">Get started</PrimaryButton>
-          <SecondaryButton slug="introduction">Learn Mayura</SecondaryButton>
+    <section aria-labelledby="home-heading" className="px-4 pt-12 pb-10 sm:px-6 sm:pt-16 sm:pb-12">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid items-center gap-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-12">
+          <div>
+            <h1 id="home-heading" className="max-w-xl text-[clamp(2.65rem,5vw,4.6rem)] leading-[1.02] font-semibold tracking-[-0.065em] text-balance">
+              {site.tagline}
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-relaxed text-pretty text-muted sm:text-lg">
+              Mayura is a TypeScript framework for typed tools and durable workflows. Give your agents a React workspace
+              with streaming replies, inspectable citations, and changes people can approve.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <PrimaryButton slug="quickstart">Start building</PrimaryButton>
+              <Link to="/ui/$slug/" params={{ slug: 'chat-workspace' }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-soft px-4 text-sm font-medium transition hover:bg-line">
+                Explore Agent Workspace <Icon name="arrow" className="size-4 shrink-0" />
+              </Link>
+            </div>
+            <Link {...docs('project/whats-new')} className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+              What’s new in v{site.version} <Icon name="arrow" className="size-3.5 shrink-0" />
+            </Link>
+          </div>
+          <figure className="ui-library home-workspace-demo min-w-0 rounded-[1.35rem] bg-soft p-2 sm:p-3">
+            <div className="overflow-hidden rounded-[0.95rem] border border-line">
+              <UiComponentPreview slug="chat-workspace" />
+            </div>
+            <figcaption className="px-2 pt-2.5 pb-0.5 text-xs leading-relaxed text-muted sm:px-3">
+              Local demo. Try the rollout plan, inspect a citation, or review a proposed change.
+            </figcaption>
+          </figure>
         </div>
-        <div className="mt-6"><CopyCommand command="npx mayura init" /></div>
-        <dl className="mt-16 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+        <dl className="mt-10 grid grid-cols-2 gap-5 border-t border-line pt-6 sm:mt-12 sm:grid-cols-4">
           {stats.map(([value, label]) => (
-            <div key={label} className="bg-bg/80 px-4 py-4 backdrop-blur">
-              <dt className="sr-only">{label}</dt>
-              <dd className="text-2xl font-semibold tracking-tight">{value}</dd>
-              <dd className="mt-0.5 text-xs text-muted">{label}</dd>
+            <div key={label} className="flex flex-col-reverse gap-1">
+              <dt className="text-sm text-muted">{label}</dt>
+              <dd className="text-2xl leading-none font-semibold tracking-tight tabular-nums">{value}</dd>
             </div>
           ))}
         </dl>
@@ -164,25 +174,6 @@ function ProductionRetrieval() {
         </dl>
       </div>
     </section>
-  );
-}
-
-/** Frame lines and rings like a blueprint, fading out from the middle. */
-function HeroBackdrop() {
-  return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-      <div className="absolute inset-x-0 top-0 h-[36rem] bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,color-mix(in_srgb,var(--primary)_16%,transparent),transparent)]" />
-      <svg className="absolute top-0 left-1/2 h-full w-[76rem] -translate-x-1/2 [mask-image:radial-gradient(ellipse_65%_60%_at_50%_45%,black,transparent)]" viewBox="0 0 1216 640" fill="none" preserveAspectRatio="xMidYMin slice">
-        <g className="stroke-fg/15" strokeWidth="1">
-          <path d="M128 0v640M1088 0v640M0 96h1216M0 544h1216" />
-          <path d="M288 0v640M928 0v640M0 208h1216M0 432h1216" strokeDasharray="4 6" />
-          <circle cx="128" cy="96" r="30" />
-          <circle cx="1088" cy="544" r="30" />
-        </g>
-        <circle cx="1088" cy="96" r="3" className="fill-gold" />
-        <circle cx="128" cy="544" r="3" className="fill-primary" />
-      </svg>
-    </div>
   );
 }
 
@@ -331,39 +322,37 @@ function Features() {
   );
 }
 
-// ---- New in 1.2 -----------------------------------------------------------------------------------------------------
-
-const additions: { icon: IconName; title: string; body: string; slug: string }[] = [
-  { icon: 'chat', title: 'Persistent conversations', body: 'Scoped thread history, durable run records and compaction with recorded summary provenance.', slug: 'guides/threads' },
-  { icon: 'check', title: 'Exact tool approvals', body: 'Review the proposed input, approve or reject, and resume from a saved checkpoint.', slug: 'guides/approvals-and-human-input' },
-  { icon: 'team', title: 'Agent handoffs', body: 'Transfer a conversation with a continuing budget and separate permissions for each agent.', slug: 'guides/agent-handoffs' },
-  { icon: 'shield', title: 'Fine-grained authorization', body: 'Built-in RBAC and optional OpenFGA, Cedar, Permit.io, Oso and HTTP policy adapters.', slug: 'guides/authorization' },
-  { icon: 'braces', title: 'UI source you own', body: 'React thread history and approval controls, plus headless stores for other frameworks.', slug: 'guides/copy-in-ui' },
-  { icon: 'models', title: 'Six AI gateways', body: 'Vercel, Cloudflare, OpenRouter, Portkey, Helicone and LiteLLM, with explicit budgets and credentials.', slug: 'guides/ai-gateways' },
-  { icon: 'workflow', title: 'Configurable workflow graphs', body: 'Keep the 128-node default or set a per-graph limit that persists across restarts.', slug: 'concepts/workflows' },
-  { icon: 'workflow', title: 'AG-UI adapter', body: 'Experimental: run events, state updates and approval interrupts, with durable frontend-tool claims.', slug: 'guides/ag-ui' },
-];
-
-function NewInRelease() {
+function WorkspaceSetup() {
+  const choices = [
+    { title: 'Copy the source', body: 'Add the workspace through shadcn. Edit the React components and Tailwind classes in your app.', label: 'Install with shadcn', hash: 'shadcn-registry' },
+    { title: 'Install the React package', body: 'Use the workspace or individual components from @mayurajs/ui with your own AG-UI backend.', label: 'Install from npm', hash: 'npm-package' },
+  ];
   return (
-    <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
+    <section aria-labelledby="workspace-setup" className="bg-soft/60 px-4 py-12 sm:px-6 sm:py-16">
       <div className="mx-auto max-w-7xl">
-        <Heading strong="Build the application around your agent." />
-        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
-          {additions.map(item => (
-            <Link key={item.title} {...docs(item.slug)} className="group bg-raised p-7 transition hover:bg-soft">
-              <span className="grid size-10 place-items-center rounded-xl border border-line text-primary"><Icon name={item.icon} /></span>
-              <h3 className="mt-5 font-semibold">{item.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted">{item.body}</p>
-            </Link>
+        <h2 id="workspace-setup" className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Add a workspace to your app.</h2>
+        <ul className="mt-8 grid gap-x-12 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
+          {choices.map(({ title, body, label, hash }) => (
+            <li key={hash}>
+              <h3 className="font-semibold">{title}</h3>
+              <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted">{body}</p>
+              <Link {...docs('integrations/ui')} hash={hash}
+                className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                {label} <Icon name="arrow" className="size-3.5" />
+              </Link>
+            </li>
           ))}
-        </div>
-        <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <Link to="/integrations/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium backdrop-blur transition hover:border-muted/50">
-            Browse the integrations
-          </Link>
-          <SecondaryButton slug="project/whats-new">What’s new in {site.version}</SecondaryButton>
-        </div>
+          <li>
+            <h3 className="font-semibold">Run the Next.js example</h3>
+            <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted">
+              Try streaming, read-only reconnection and exact tool approvals with a scripted agent.
+            </p>
+            <Link {...docs('guides/nextjs')} hash="agent-workspace-example"
+              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+              Open the example setup <Icon name="arrow" className="size-3.5" />
+            </Link>
+          </li>
+        </ul>
       </div>
     </section>
   );
@@ -476,7 +465,7 @@ function GetStarted() {
 // ---- Reading --------------------------------------------------------------------------------------------------------
 
 function Reading() {
-  const featured = ['mayura-1-2-1', 'retrieval-with-citations', 'choose-a-starter']
+  const featured = ['agent-workspace', 'retrieval-with-citations', 'choose-a-starter']
     .flatMap(slug => articles.guides.filter(entry => entry.slug === slug));
   return (
     <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
@@ -501,8 +490,9 @@ function Reading() {
             <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary">See the roadmap <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" /></span>
           </Link>
         </div>
-        <div className="mt-10 flex justify-center">
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
           <Link to="/articles/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium transition hover:border-muted/50">All articles</Link>
+          <Link to="/compare/" className="inline-flex h-11 items-center rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium transition hover:border-muted/50">Compare frameworks</Link>
         </div>
       </div>
     </section>
@@ -519,6 +509,7 @@ const questions: { q: string; a: ReactNode }[] = [
   { q: 'Can agents run code or use a browser?', a: <>Yes, in a sandbox (Docker, or one of twelve hosted providers such as E2B, Daytona and Modal) or a real browser (local Chrome, or one of ten hosted services). Both are off until you grant them, have lifetimes and limits, and keep to the network or origins you allow. See <Link {...docs('guides/sandboxes')} className="text-primary hover:underline">Sandboxes</Link> and <Link {...docs('guides/browsers')} className="text-primary hover:underline">Browsers</Link>.</> },
   { q: 'How does Mayura keep agents in bounds?', a: <>A run can use a model, tool or effect only when you grant it, every run has cost, step, tool-call and time limits, and every input and output is validated. When a side effect may or may not have happened, the run ends <code>outcome_unknown</code> instead of retrying blindly.</> },
   { q: 'Can I test without an API key?', a: <>Yes. Scripted models from <code>mayura/testing</code> replay fixed responses, so agents, tools and workflows run offline in your tests.</> },
+  { q: 'Can I use Mayura UI with another backend?', a: <>Yes. Use <code>@mayurajs/ui</code> in React 19 or copy the source with shadcn. Supply your own callbacks for individual components or connect the workspace to your own AG-UI transport. See the <Link {...docs('integrations/ui')} className="text-primary hover:underline">UI installation guide</Link>.</> },
   { q: 'Where can I deploy Mayura?', a: <>Anywhere Node.js 22 or 24 runs: containers, Kubernetes, managed platforms such as Cloud Run, ECS and Fly.io, your own servers, inside an app you already run, and serverless functions on Vercel (AWS Lambda and Cloud Run functions experimental). It also runs on edge runtimes: Vercel Edge, Cloudflare Workers, Deno and Bun. <code>mayura deploy</code> ships to Docker, Kubernetes and eleven platforms through their own tools. See <Link {...docs('guides/deployment')} className="text-primary hover:underline">Deployment</Link>.</> },
   { q: 'Can I use Mayura RAG in production?', a: <>Yes, within the tested scope of the <Link {...docs('guides/rag-production')} className="text-primary hover:underline">qualified Modal and Pinecone Loki v28 profile</Link>. Mayura returns authorized evidence and citation identities. Evaluate retrieval, citations and answer grounding on your own corpus before making production claims for a different configuration.</> },
   { q: 'Is Mayura ready for production?', a: <>Mayura {site.version} is published under <code>latest</code>. The documented stable APIs follow <Link {...docs('project/versioning')} className="text-primary hover:underline">the versioning policy</Link>. AG-UI and other RAG profiles remain experimental. Read the <Link {...docs('guides/release-readiness')} className="text-primary hover:underline">release evidence and limitations</Link>.</> },

@@ -21,10 +21,10 @@ export function UiCatalog() {
         <div className="ui-gallery-intro-copy">
           <p className="ui-library-package">@mayurajs/ui</p>
           <h1 id="ui-gallery-title">Components for<br className="hidden lg:block" /> agent interfaces.</h1>
-          <p className="ui-gallery-lead">Build the conversation, show what an agent is doing, and let people review what happens next.</p>
+          <p className="ui-gallery-lead">Start with Agent Workspace or compose your own interface. Install the React package or copy editable Tailwind components with shadcn.</p>
           <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <Link to="/ui/$slug/" params={{ slug: 'composer' }} className="ui-library-action ui-library-action-primary">
-              Explore the composer <Icon name="arrow" className="size-4" />
+            <Link to="/ui/$slug/" params={{ slug: 'chat-workspace' }} className="ui-library-action ui-library-action-primary">
+              Explore Agent Workspace <Icon name="arrow" className="size-4" />
             </Link>
             <Link to="/docs/$/" params={{ _splat: 'integrations/ui' }} className="ui-library-text-link">
               Installation guide

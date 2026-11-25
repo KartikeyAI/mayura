@@ -17,7 +17,7 @@ Rules that matter when writing Mayura code:
 - [Introduction](docs/introduction.md): What Mayura is, the ideas behind it, and how its parts fit together.
 - [Quickstart](docs/quickstart.md): Create a Mayura project in one command, or add a first agent to your own project and run it offline or on a real model.
 - [Installation](docs/installation.md): Requirements, the optional packages each part of Mayura needs, and TypeScript settings.
-- [V1.2.2 release validation status](docs/guides/release-readiness.md): Main CI, npm publication, registry verification, production RAG qualification and remaining interoperability limits.
+- [Release validation status](docs/guides/release-readiness.md): Mayura 1.4.0 publication evidence, GitHub qualification, registry verification and profile limits.
 - [Choose a starter](docs/guides/choosing-a-starter.md): Choose among runnable Mayura applications, six framework notebooks and focused templates, then follow the right setup path.
 - [Using Mayura with AI coding agents](docs/ai-agents.md): Point Claude Code, Cursor, Codex and other coding assistants at documentation that matches your installed Mayura version.
 
@@ -39,7 +39,7 @@ Rules that matter when writing Mayura code:
 ## Frameworks and starters
 
 - [Framework starters](docs/guides/framework-starters.md): Generate Next.js, Hono, React Router, TanStack Start, SvelteKit or Nuxt notebooks with scoped threads and in-run approvals.
-- [Mayura with Next.js](docs/guides/nextjs.md): Run the Next.js notebook starter with persistent threads, exact tool approvals, a scoped server and a separate durable worker.
+- [Mayura with Next.js](docs/guides/nextjs.md): Run the Agent Workspace example with Tailwind and AG-UI, or generate a Next.js notebook with persistent threads, exact approvals and a durable worker.
 - [Mayura with Hono](docs/guides/hono.md): Run the Hono notebook starter with persistent threads, exact tool approvals, a scoped server and a separate durable worker.
 - [Mayura with React Router](docs/guides/react-router.md): Run the React Router notebook starter with persistent threads, exact tool approvals, a scoped server and a separate durable worker.
 - [Mayura with TanStack Start](docs/guides/tanstack-start.md): Run the TanStack Start notebook starter with persistent threads, exact tool approvals, a scoped server and a separate durable worker.
@@ -264,7 +264,7 @@ Rules that matter when writing Mayura code:
 
 ## Project
 
-- [What's new in Mayura 1.2.2](docs/project/whats-new.md): A runnable Modal and Pinecone RAG starter, security fixes and release checks for every npm package.
+- [What's new in Mayura 1.4](docs/project/whats-new.md): Agent Workspace, editable Tailwind components, typed reply cards and read-only AG-UI reconnection.
 - [Mayura changelog](docs/project/changelog.md): Release history for Mayura, including the latest changes, upgrade notes and links to published artifacts.
 - [Versioning](docs/project/versioning.md): What Mayura keeps stable, how versions follow SemVer, how APIs are deprecated, and how release candidates and npm tags work.
 - [Support](docs/project/support.md): Supported Node.js versions, platforms and package managers, how to get help with Mayura, and how to report a bug.

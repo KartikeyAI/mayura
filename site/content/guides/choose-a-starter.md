@@ -2,11 +2,11 @@
 title: "Choose your Mayura starter"
 description: "Choose from twelve starter applications, including framework notebooks, standalone services and a cited retrieval agent."
 date: 2026-10-23
-updated: 2026-11-24
+updated: 2026-11-25
 tags: starters, frameworks, Next.js, Hono, SvelteKit, Nuxt
 ---
 
-Mayura 1.2.2 includes twelve runnable applications. Choose a chat notebook, a standalone service, a retrieval
+The Mayura CLI includes twelve runnable applications. Choose a chat notebook, a standalone service, a retrieval
 agent, an event-driven workflow or a terminal assistant. The six notebook starters let
 you try persistent threads and exact tool approvals without a provider credential or a model bill.
 
@@ -25,10 +25,16 @@ Every notebook has the same core flow: connect with a scoped local session, send
 approve or reject it, and let a separate worker index approved notes. The database keeps the thread and run record.
 Your framework controls the application shell; the Mayura host controls identity, capabilities and budgets.
 
+## Try Agent Workspace in Next.js
+
+For the v1.4 React workspace with editable Tailwind, read-only AG-UI reconnection and structured reply cards,
+run the [Agent Workspace example](agent-workspace.md). The `nextjs` CLI starter below generates the persistent
+notebook with an indexing worker.
+
 ## Generate the notebook
 
 ```sh
-npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.4.0 init --starter nextjs --directory ./my-notebook --apply
 cd my-notebook
 npm install
 npm run setup

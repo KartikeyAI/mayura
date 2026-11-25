@@ -1,19 +1,18 @@
 ---
 title: "Mayura vs the Vercel AI SDK"
-description: "The AI SDK and Mayura compared for production agents: a toolkit for models, streaming and chat UI, and a runtime that enforces grants, budgets and durable steps."
+description: "Compare AI SDK's model and chat APIs with Mayura's editable React workspace, server-enforced tool policy, and durable workflows."
 date: 2026-10-12
-updated: 2026-11-23
+updated: 2026-11-25
 tags: comparison, AI SDK, Vercel, TypeScript
 ---
 
-The Vercel AI SDK is the most widely used TypeScript library for working with language models. It gives you one API
+The Vercel AI SDK is a TypeScript toolkit for working with language models. It gives you one API
 over many providers for text, structured output, tools, embeddings, images and speech, streams the result, and has UI
 hooks such as `useChat` for React, Vue and Svelte. On top of that it has agents: `ToolLoopAgent` in the `ai` package,
 and `WorkflowAgent` in `@ai-sdk/workflow`, which runs on Vercel's Workflow SDK so an agent survives restarts.
 
-Mayura is narrower. It is an agent and workflow runtime: you tell it what runs may use, who they act for and how much
-they may spend, then submit agents and durable workflows to it. Nothing is allowed until you grant it, every run has a
-hard budget, and a durable step that may have acted is never run again.
+Mayura's runtime focuses on what agents may use, who they act for, how much they may spend, and how workflow steps
+recover. It applies grants and budgets before dispatch. A durable step that may have acted is held for reconciliation.
 
 The two overlap on the agent loop and much less elsewhere. Many agent frameworks build on the AI SDK's providers;
 Mayura doesn't, and has its own provider packages. We say below where they can be used together.
@@ -22,33 +21,39 @@ We make Mayura, so read this with that in mind. We checked every statement about
 documentation, repository and npm listing, and link the sources at the end. If something here is wrong or out of date,
 please [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Compared on October 12, 2026: the AI SDK (`ai`) 7.0.137, `@ai-sdk/workflow` 2.0.69 and the Workflow SDK (`workflow`)
-5.2.0. Mayura's side is updated for published 1.2.1 on November 23. AI SDK versions, adoption figures and other details
-retain the baseline date; the tool approval documentation was rechecked on October 23.*
+*The October 12, 2026 baseline used the AI SDK (`ai`) 7.0.137, `@ai-sdk/workflow` 2.0.69 and the Workflow SDK
+(`workflow`) 5.2.0. Mayura's side reflects 1.4.0. The AI SDK's chat, generative UI, and tool approval documentation
+were checked on November 25, 2026. Provider catalog counts retain the baseline date.*
 
-## What changes with Mayura 1.2
+## The chat frontend in Mayura 1.4
 
-Mayura now includes persistent threads, approvals inside agent runs, React conversation source and headless stores
-used by six framework notebooks. It also ships explicit gateway adapters, including Vercel AI Gateway, and
-an experimental AG-UI profile. V1.2.1 qualifies the [Modal and Pinecone Loki v28 retrieval profile](../../../docs/guides/rag-production.md).
-See [the release overview](../../../docs/project/whats-new.md).
+AI SDK UI's [`useChat`](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot) manages streaming messages and chat state for
+an interface you design. Its [generative UI guide](https://ai-sdk.dev/docs/ai-sdk-ui/generative-user-interfaces)
+shows how to connect tool results to React components.
 
-The AI SDK documents [tool approval](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling) alongside tool
-execution and streaming. Both can gate a proposed action for review. Compare who verifies identity, where pending
-work is persisted, how spending is bounded and what happens after an uncertain write; neither a UI hook nor an
-approval button establishes all four by itself.
+Mayura 1.4 ships an assembled [Agent Workspace](../../../docs/integrations/ui.md#agent-workspace) with thread history,
+activity, typed reply cards, citation inspection, and change review. The React 19 package can run with your own backend.
+Install editable Tailwind source with the [shadcn registry](../../../docs/integrations/ui.md#shadcn-registry) or use it
+from npm. To keep AI SDK streaming, wire the individual display components to your message and tool data, or map the
+AI SDK stream and server actions to the AG-UI transport the workspace expects.
+
+Both backends can gate tool calls on human approval. With Mayura, the server validates the actor and exact pending
+tool input. A compatible browser transport can observe an existing run without sending another request to start work.
+[AI SDK tool approvals](https://ai-sdk.dev/docs/agents/tool-approvals) and
+[Mayura read-only observation](../../../docs/guides/ag-ui.md#reattach-to-an-existing-run).
 
 ## At a glance
 
 | | AI SDK | Mayura |
 |---|---|---|
-| **Maturity** | Since 2023, version 7 in June 2026; about 27,000 GitHub stars and 31M weekly npm downloads for `ai` | Stable 1.2.1 published November 23, 2026; first 1.0 in September 2026; a new project |
+| **Release** | AI SDK 7.0.137 at the October 12 baseline | Mayura and Mayura UI 1.4.0, published November 25, 2026 |
 | **License** | Apache-2.0 (`ai`, `@ai-sdk/workflow` and `workflow`) | Apache-2.0, all of it |
 | **Models** | A provider specification with more than 40 official provider packages and about 60 listed community providers; the Vercel AI Gateway is the default global provider, with `provider/model` strings | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint |
 | **Scope** | Model calls of many kinds (text, structured output, embeddings, images, video, speech, transcription, reranking), streaming, chat UI hooks, agents | Agents, typed tools, durable workflows, memory, guardrails, an HTTP server and client, plus voice, vision, files, sandboxes, browsers, sign-in and API keys |
 | **Tool access** | Tools run when the model calls them; `toolApproval` can approve, deny or ask a person per call, and `@ai-sdk/policy-opa` moves those rules into OPA policies | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | Stop conditions checked after each step: `ToolLoopAgent` stops after 20 steps by default, `WorkflowAgent` has no default limit; a custom condition can estimate cost from token usage | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
 | **Human approval** | `user-approval` through `toolApproval` on `ToolLoopAgent`; `needsApproval` on `WorkflowAgent` tools survives suspension | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
+| **Frontend** | Chat hooks, a UI message stream, and application-defined component rendering for tool results | Standalone React Agent Workspace, typed reply cards, and an AG-UI transport boundary |
 | **Durable execution** | `ToolLoopAgent` runs in memory and loses progress on a crash; `WorkflowAgent` makes each tool call a durable step with automatic retries | Every step recorded before and after it runs; at-most-once dispatch; abandoned steps settled as unknown, never re-run; pinned definitions |
 | **Workflows** | Patterns written in code (sequential, parallel, routing, orchestrator-worker, evaluator loops); durable functions with the Workflow SDK's `'use workflow'` and `'use step'` | Durable graphs declared as data, with approvals, human requests, timers, signals, sagas and loops |
 | **Memory** | Provider memory tools (such as Anthropic's), memory providers (Letta, Mem0, Supermemory, Hindsight, MongoDB) or a tool you write | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
@@ -121,15 +126,14 @@ it means someone occasionally reconciles a run.
 
 - **Models.** Far more providers out of the box, one interface across them, and the AI Gateway for reaching many
   through one key.
-- **User interfaces.** `useChat` and related hooks for React, Vue and Svelte, a stream protocol, resumable streams and
-  generative UI. Mayura 1.2 includes React thread history/approval source and headless stores for other frameworks;
-  it does not provide the AI SDK's full generative UI and modality surface.
+- **Frontend frameworks.** AI SDK UI offers chat hooks for React, Vue and Svelte. The standalone `@mayurajs/ui`
+  workspace uses React 19. Mayura's headless stores remain available for building a different frontend.
 - **Modalities.** Image and video generation, reranking and realtime, besides text, speech and transcription. Mayura
   has voice and vision, and no image or video generation.
 - **Conversation UI.** Agents work on message arrays, with chat hooks across frameworks. Mayura now has scoped
   persistent threads, compaction and notebook interfaces, with a deliberately bounded conversation contract.
-- **Approval inside an agent.** `toolApproval` pauses an ordinary `ToolLoopAgent` before selected tool calls. In
-  Mayura 1.2, an agent run can pause for an exact-input approval and resume from a stored checkpoint. Workflow
+- **Approval inside an agent.** `toolApproval` pauses an ordinary `ToolLoopAgent` before selected tool calls. A
+  Mayura agent run can pause for an exact-input approval and resume from a stored checkpoint. Workflow
   approvals remain available for a longer business process, as in [the refund guide](../guides/refund-approval.md).
 - **Reach.** Harnesses that run Claude Code or Codex behind the same interface, a much larger community, and a longer
   track record. Other agent frameworks build on its providers, so what you learn carries over.

@@ -1,9 +1,10 @@
 name: Mayura qualification
 on:
-  # PRs qualify their merge result; a second full branch-push run duplicates that work.
+  # Qualify PR merge results and the exact integrated commits on both permanent branches.
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+    branches: [main, dev]
   merge_group:
   workflow_dispatch:
 permissions:
@@ -36,7 +37,7 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example build
       - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example test
       - run: node scripts/ci-step.mjs -- pnpm console:check
-      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/production-audit.test.mjs
+      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/package-release-plan.test.mjs scripts/production-audit.test.mjs
       - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
       - run: node scripts/ci-step.mjs -- pnpm api:report
       - run: node scripts/ci-step.mjs -- node scripts/version.mjs check
@@ -294,3 +295,14 @@ jobs:
         env:
           MAYURA_QUALIFICATION_NEEDS: ${{ toJSON(needs) }}
         run: node scripts/ci-qualification.mjs
+      - name: Require the repository's dev branch for promotion to main
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_BRANCH" != dev ] || [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then
+            echo 'Open feature and fix pull requests against dev. Promote dev to main after qualification.' >&2
+            exit 1
+          fi

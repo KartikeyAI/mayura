@@ -15,7 +15,11 @@ for (const [starter, route] of Object.entries(routes)) it(`plans ${starter} sour
   expect((await readProject(join(target, 'mayura.project.json'))).definitions).toContainEqual({ kind: 'agent', id: 'notebook.assistant', version: '1', source: 'server/application.mjs' });
   const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'));
   const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
-  expect(manifest.dependencies.mayura).toBe(version); if (starter === 'hono') expect(manifest.dependencies['@mayurajs/storage-d1']).toBe(version);
+  expect(manifest.dependencies.mayura).toBe(version);
+  if (starter === 'hono') {
+    const storageD1 = JSON.parse(await readFile(new URL('../../../extensions/storage-d1/package.json', import.meta.url), 'utf8'));
+    expect(manifest.dependencies['@mayurajs/storage-d1']).toBe(storageD1.version);
+  }
   if (!['sveltekit', 'nuxt'].includes(starter)) expect(plan.changes.map(change => change.path)).toContain('src/components/mayura/approval.tsx');
   const replace = await planStarter(starter as StarterName, target); await writeFile(join(target, route), 'changed after plan');
   await expect(applyProjectPlan(replace)).rejects.toMatchObject({ code: 'CONFLICT' });

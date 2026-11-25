@@ -1,11 +1,11 @@
 ---
 title: "Mayura with Next.js"
-description: "Run the Next.js notebook starter with persistent threads, exact tool approvals, a scoped server and a separate durable worker."
+description: "Run the Agent Workspace example with Tailwind and AG-UI, or generate a Next.js notebook with persistent threads, exact approvals and a durable worker."
 ---
 
 Use the `nextjs` starter to build a Next.js application with a working approval flow before adding a paid model.
 It includes persistent scoped chat, a deterministic note agent, an explicit approve/reject interface and a separate
-durable indexing worker. This is runnable application source, not a hosted service.
+durable indexing worker. To try the v1.4 Agent Workspace, jump to the [workspace example](#agent-workspace-example).
 
 ## Generate and run
 
@@ -13,7 +13,7 @@ Use Node 24.14.1 or a later supported 24.x version. Run the initializer from a d
 inspect its plan before applying it to an existing project.
 
 ```sh
-npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.4.0 init --starter nextjs --directory ./my-notebook --apply
 cd my-notebook
 npm install
 npm run setup
@@ -88,12 +88,21 @@ deployments are separate checks; qualify your target before exposing customer da
 
 ## Agent Workspace example
 
-The repository also includes `examples/nextjs-agent-workspace`, a runnable App Router example using
-the [Mayura UI Agent Workspace](../integrations/ui.md#agent-workspace). It builds the Tailwind utilities in
-Next.js and streams a deterministic Mayura agent through same-origin route handlers. Run `pnpm build`
-at the repository root, then `pnpm --filter mayura-nextjs-workspace-example dev` and open port 4190.
-Try refreshing while a response is streaming, inspecting an exact citation, and reviewing the proposed
-checklist before approving its save.
+In v1.4, the repository includes `examples/nextjs-agent-workspace`, a runnable App Router example using
+the [Mayura UI Agent Workspace](../integrations/ui.md#agent-workspace). It builds Tailwind utilities in
+Next.js and streams a deterministic agent through same-origin route handlers. From the repository root on the
+`v1.4.0` tag, run:
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm build
+pnpm --filter mayura-nextjs-workspace-example dev
+```
+
+Open `http://127.0.0.1:4190`. Refresh during a streamed reply, open a citation to inspect its exact excerpt,
+and review the checklist before approving its save. This example uses in-memory SQLite and demo credentials
+held server-side. Connect your application's user identity and durable store before deploying it. See
+[read-only AG-UI observation](ag-ui.md#reattach-to-an-existing-run) for the transport and authorization details.
 
 ## Continue building
 

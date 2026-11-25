@@ -29,10 +29,13 @@ contract. Choose the framework your team already operates; choosing a framework 
 Use [Next.js](nextjs.md), [Hono](hono.md), [React Router](react-router.md), [TanStack Start](tanstack-start.md),
 [SvelteKit](sveltekit.md) or [Nuxt](nuxt.md) for exact setup and generated file locations.
 
+To try the v1.4 React chat workspace with Tailwind and AG-UI, run the [Next.js Agent Workspace example](nextjs.md#agent-workspace-example).
+For your own React application, see the [Mayura UI install options](../integrations/ui.md#npm-package).
+
 ## Generate a reviewed directory
 
 ```sh
-npx mayura@1.2.2 init --starter nextjs --directory ./my-notebook --apply
+npx mayura@1.4.0 init --starter nextjs --directory ./my-notebook --apply
 ```
 
 Replace `nextjs` with the selected starter ID. The [initializer](../cli/init.md) supports a plan before writing and

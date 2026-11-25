@@ -87,7 +87,9 @@ The original Mayura 1.2 starter suite passed locally for all 11 starters availab
 It builds and boots each framework in the workspace, exercises its mounted approval flow,
 and generates, packs, installs and tests each server contract offline. Like the existing Vite starters, framework toolchains
 are qualified in the workspace; generated packed installs qualify the Mayura server contract separately.
-The shared runtime checks passed on Bun, Deno, workerd and Vercel Edge; they do not qualify the Hono-specific Bun/Deno entry points or a deployed Workers/D1 application. Those profiles and rendered browser interaction checks remain outstanding.
+The shared runtime checks passed on Bun, Deno, workerd and Vercel Edge. A separate
+[live Workers and D1 smoke test](hono.md#cloudflare-workers-with-d1) passed for the Hono starter with the
+request-scoped Worker fix. Hono-specific Bun/Deno and rendered browser interaction checks remain outstanding.
 
 Tests, type checks, framework builds and mounted HTTP approval/worker flows passed locally on Windows using Node 24.15.0 for framework qualification. The final V1.2 main qualification passed all 39 jobs, including Linux/macOS/Windows Node 22/24 consumer lanes. This does not establish rendered browser or live deployment qualification. TanStack's Node adapter uses a pinned Nitro beta; framework compiler integrations use TypeScript 6 tooling. Keep the starter's declared Node version and repeat qualification on the target deployment. See [release validation status](release-readiness.md).
 
