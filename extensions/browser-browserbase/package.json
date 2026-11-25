@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/browser-browserbase",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Browserbase browsers for mayura/browser, over its sessions API.",
   "type": "module",

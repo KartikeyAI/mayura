@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/vector-pinecone",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Scoped native vector storage for pinecone.",
   "type": "module",

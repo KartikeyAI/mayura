@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/gateway-vercel",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Vercel AI Gateway models for Mayura, with explicit credentials, bounded calls and gateway cost accounting.",
   "type": "module",

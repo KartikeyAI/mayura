@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/ui",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Tailwind React components for agent chat, thread history, artifacts, citations and AG-UI approvals.",
   "type": "module",

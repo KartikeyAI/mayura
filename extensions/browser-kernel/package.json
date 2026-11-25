@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/browser-kernel",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Kernel browsers for mayura/browser, over its browsers API.",
   "type": "module",

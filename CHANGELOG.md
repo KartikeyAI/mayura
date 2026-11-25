@@ -4,6 +4,8 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-25
+
 - Add `@mayurajs/ui`, a standalone React 19 library for agent chat, approvals and change review,
   thread history, run activity, citations, and artifacts. The AG-UI hook accepts a caller-owned transport.
 - Publish the `@mayura` shadcn registry at mayurajs.com and add a runnable AG-UI example.
