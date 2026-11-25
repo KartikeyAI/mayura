@@ -8,13 +8,15 @@ await import('./module-isolation.mjs');
 
 await assert.rejects(import('mayura'), { code: 'ERR_MODULE_NOT_FOUND' });
 const css = await readFile(new URL(import.meta.resolve('@mayurajs/ui/styles.css')), 'utf8');
-assert.match(css, /:where\(\.mayura-ui\)[^{}]*\.rich-composer\b/u, 'The published stylesheet must scope component styles.');
+assert.match(css, /field-sizing:\s*content/u, 'The composer utility must be compiled.');
+assert.match(css, /--mayura-workspace-height/u, 'Tailwind must compile the Agent Workspace frame.');
 
 const { act, createElement } = await import('react');
 const { renderToString } = await import('react-dom/server');
-const { App, prompt, reply, requests } = await import('./build/app.js');
+const { App, prompt, reply, requests, tableValue, workspacePrompt } = await import('./build/app.js');
 const html = renderToString(createElement(App));
 assert.match(html, /Plain React chat/u);
+assert.match(html, /Standalone Agent Workspace/u);
 assert.match(html, /class="mayura-ui"/u);
 assert.equal(requests.length, 0, 'Mounting the app must not send a run.');
 
@@ -39,9 +41,16 @@ try {
   assert.equal(requests[0].messages.at(-1)?.content, prompt);
   assert.equal(root.querySelector('output[aria-label="Run status"]')?.textContent, 'complete');
   assert([...root.querySelectorAll('p')].some(message => message.textContent === reply), 'Both response deltas must render in the app.');
+  const workspaceSend = [...root.querySelectorAll('button')].find(button => button.textContent === workspacePrompt);
+  assert(workspaceSend, 'The hydrated Agent Workspace must expose its suggested prompt.');
+  await act(async () => { workspaceSend.click(); });
+  assert.equal(requests.length, 2, 'The workspace must submit exactly one request.');
+  assert.equal(requests[1].messages.at(-1)?.content, workspacePrompt);
+  assert.equal(root.querySelector('table tbody td:last-child')?.textContent, tableValue,
+    'The workspace must render a table from the streamed reply card state.');
   assert.deepEqual(hydrationErrors, []);
 } finally {
   if (app) await act(async () => { app.unmount(); });
   dom.window.close();
 }
-console.log(JSON.stringify({ mayuraInstalled: false, strictTypes: true, hydrated: true, streamed: true }));
+console.log(JSON.stringify({ mayuraInstalled: false, strictTypes: true, hydrated: true, streamed: true, workspace: true, replyCards: true }));

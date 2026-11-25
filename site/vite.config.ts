@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import { content } from './plugins/content.ts';
 import { docs } from './plugins/docs.ts';
+import { uiCatalog } from './src/lib/ui-catalog.ts';
 
 // The path the site is served under: "/" on mayurajs.com, "/mayura/" on kartikeyai.github.io. The Pages workflow sets
 // SITE_BASE from the repository's Pages settings, so the same build works before and after the custom domain.
@@ -17,7 +18,7 @@ export default defineConfig({
   // Prerendering fetches Vite's preview URL. Pin the loopback family so Windows does not alternate
   // between IPv6 localhost and an IPv4 listener while crawling pages concurrently.
   preview: { host: '127.0.0.1' },
-  // The gallery compiles ../packages/cli/ui source. Resolve its React imports from this site's installation,
+  // The gallery compiles package and copy-in UI source. Resolve its React imports from this site's installation,
   // matching tsconfig's type paths, without depending on workspace packages or loading a second React instance.
   resolve: { dedupe: ['react', 'react-dom'] },
   define: {
@@ -32,11 +33,11 @@ export default defineConfig({
     tanstackStart({
       prerender: {
         enabled: true, crawlLinks: true, failOnError: true,
-        // Links to files that scripts/finish.mjs adds after the build (llms.txt, docs/*.md) aren't pages, and a link
+        // Links to files that scripts/finish.mjs adds after the build aren't pages, and a link
         // to a section (#anchor) is the page it's on.
-        filter: ({ path }) => !path.includes('#') && !/\.(?:txt|md|xml)$/u.test(path),
+        filter: ({ path }) => !path.includes('#') && !/\.(?:txt|md|xml|json)$/u.test(path),
       },
-      pages: [{ path: '/' }, { path: '/not-found' }],
+      pages: [{ path: '/' }, { path: '/not-found' }, ...uiCatalog.map(({ slug }) => ({ path: `/ui/${slug}/` }))],
     }),
     react(),
   ],

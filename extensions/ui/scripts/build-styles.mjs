@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exampleTheme, renderUiCss, uiFoundation } from '../styles/foundation.mjs';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 const styleRoot = join(packageRoot, 'styles');
@@ -22,9 +23,9 @@ export async function compileUiStyles({ toolchainFrom = import.meta.url, example
     ? `@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
-@import "./tokens.css";
-@import "../../../examples/ui-ag-ui-prototype/src/shell.css";`
-    : await readFile(input, 'utf8');
+@import "../../../examples/ui-ag-ui-prototype/src/shell.css";
+${renderUiCss(exampleTheme)}`
+    : (await readFile(input, 'utf8')) + '\n' + renderUiCss(uiFoundation);
   const compiler = await compile(source, {
     base: styleRoot,
     from: input,
@@ -56,7 +57,7 @@ function namespaceSheet(sheet) {
   const keyframes = new Map();
   sheet.walkAtRules('keyframes', rule => {
     const key = rule.params.trim();
-    const renamed = 'mayura-ui-' + key;
+    const renamed = key.startsWith('mayura-ui-') ? key : 'mayura-ui-' + key;
     keyframes.set(key, renamed);
     rule.params = renamed;
   });
@@ -70,6 +71,7 @@ function namespaceSheet(sheet) {
       if (ancestor.type === 'rule' || (ancestor.type === 'atrule' && ancestor.name.endsWith('keyframes'))) return;
     }
     rule.selectors = [...new Set(rule.selectors.map(selector => {
+      if (/^\.mayura-ui(?![-\w])/u.test(selector)) return selector;
       if (originalRoot.test(selector)) return selector.replace(originalRoot, ':where(.mayura-ui)');
       if (selector === '*') return ':where(.mayura-ui, .mayura-ui *)';
       return ':where(.mayura-ui) ' + selector;
@@ -85,6 +87,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const css = await compileUiStyles({ example });
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, css);
-  if (!example) await writeFile(output + '.d.ts', 'export {};\n');
+  if (!example) {
+    const tailwind = join(packageRoot, 'dist', 'tailwind.css');
+    await Promise.all([
+      writeFile(output + '.d.ts', 'export {};\n'),
+      writeFile(tailwind, '@source "../src";\n\n' + renderUiCss(uiFoundation)),
+      writeFile(tailwind + '.d.ts', 'export {};\n'),
+    ]);
+  }
   console.log('Built ' + (example ? 'the Mayura UI example stylesheet.' : '@mayurajs/ui styles.css.'));
 }

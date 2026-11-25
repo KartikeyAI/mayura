@@ -1,5 +1,6 @@
 // Checks the built site in dist/client the way GitHub Pages will serve it:
 //   - every docs page in docs/README.md's navigation, the home page and 404.html were prerendered;
+//   - every UI component detail page was prerendered;
 //   - every link, script, stylesheet and image on every page resolves to a file under the base path, and every
 //     #anchor exists on the page it points to;
 //   - the shadcn catalog and every advertised item are present;
@@ -9,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { navigation } from '../../scripts/docs-index.mjs';
+import { uiCatalog } from '../src/lib/ui-catalog.ts';
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(site, 'dist', 'client');
@@ -42,6 +44,7 @@ const catalog = fileFor(base + registry);
 const registryItems = catalog ? JSON.parse(readFileSync(catalog, 'utf8')).items.map(item => `r/${item.name}.json`) : [];
 const required = ['', 'docs/', '404.html', 'llms.txt', 'llms-full.txt', 'sitemap.xml', 'robots.txt', registry, ...articles,
   ...registryItems,
+  ...uiCatalog.map(({ slug }) => `ui/${slug}/`),
   ...navigation().flatMap(section => section.pages.map(page => `${page.relative.replace(/\.md$/u, '')}/`)),
   ...navigation().flatMap(section => section.pages.map(page => page.relative))];
 for (const path of required) if (!fileFor(base + path)) problems.push(`missing: ${base}${path}`);

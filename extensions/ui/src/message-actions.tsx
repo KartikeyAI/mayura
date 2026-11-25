@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useState, type ReactNode } from 'react';
 
 type Feedback = 'helpful' | 'unhelpful';
@@ -57,7 +59,7 @@ function Action({ label, icon, onClick, pressed }: {
   pressed?: boolean;
 }) {
   return <button type="button" aria-label={label} title={label} aria-pressed={pressed} onClick={onClick}
-    className="motion-button grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-wash hover:text-ink aria-pressed:bg-tint-strong aria-pressed:text-accent-deep [@media(pointer:coarse)]:size-11">
+    className="motion-button grid size-8 shrink-0 place-items-center rounded-md text-[color:var(--color-muted)] hover:bg-[var(--color-wash)] hover:text-[color:var(--color-ink)] aria-pressed:bg-[var(--color-tint-strong)] aria-pressed:text-[color:var(--color-accent-deep)] motion-safe:[transition:transform_var(--motion-fast)_var(--ease-out),background-color_var(--motion-fast)_ease,color_var(--motion-fast)_ease] motion-safe:enabled:active:[transform:scale(.98)] [@media(pointer:coarse)]:size-11">
     <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round">{glyphs[icon]}</svg>
   </button>;
@@ -96,7 +98,7 @@ function ReplyActions({ content, feedbackKey, onQuote, onRetry }: MessageActions
       <Action label="Helpful" icon="helpful" pressed={feedback === 'helpful'} onClick={() => rate('helpful')} />
       <Action label="Not helpful" icon="unhelpful" pressed={feedback === 'unhelpful'} onClick={() => rate('unhelpful')} />
     </div>
-    <span role="status" className="text-xs text-muted">{notice}</span>
+    <span role="status" className="text-xs text-[color:var(--color-muted)]">{notice}</span>
   </div>;
 }
 

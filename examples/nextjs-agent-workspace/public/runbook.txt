@@ -1,0 +1,5 @@
+Mayura release runbook
+
+1. Name the deploy owner and verify CI, migrations and staging smoke tests.
+2. Start with a 5% canary. Watch errors and p95 latency for 15 minutes.
+3. Roll back if errors exceed 1% or p95 rises 20% above baseline.

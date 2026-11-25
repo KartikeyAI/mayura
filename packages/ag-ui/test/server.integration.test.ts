@@ -50,7 +50,7 @@ it('continues the native budget, executes the approved write once and records th
       capabilities: ['runs:read', 'runs:submit', 'runs:approve', 'threads:read', 'threads:write'], expiresAtMs: Date.now() + 60_000 }),
     limits: { runRecordPollMs: 10 } });
   adapter = createAgUiAdapter({ server, publicOrigin: origin, agentId: 'support', interruptKey: new Uint8Array(32).fill(3),
-    permissions: { allow: ['ag-ui:serve', 'ag-ui:state'] }, input: message => ({ message: message.content }),
+    permissions: { allow: ['ag-ui:serve', 'ag-ui:state', 'ag-ui:observe'] }, observe: true, input: message => ({ message: message.content }),
     state: { read: context => { expect(context.scope).toEqual({ principalId: 'alice', projectId: 'shop' });
       return { revision: stateRevision, state: { refunded: stateRevision > 0 } }; } } });
   const firstInput = { threadId: 'thread-7', runId: 'ui-1', messages: [{ id: 'user-1', role: 'user', content: 'Refund order 7' }] };
@@ -61,7 +61,24 @@ it('continues the native budget, executes the approved write once and records th
   expect(write).not.toHaveBeenCalled();
   const client = createClient({ baseUrl: origin, token: () => 'local-fixture', fetch: (target, init) => server!.fetch(new Request(target, init)) });
   expect(BigInt((await client.run(nativeId).inspect()).budget.spentMicros)).toBe(1n);
-  const resume = { threadId: 'thread-7', runId: 'ui-2', messages: [], resume: [{ interruptId: last.outcome.interrupts[0]!.id, status: 'resolved', payload: { approved: true } }] };
+  const observation = (threadId: string, authenticated = true, signal?: AbortSignal) =>
+    new Request(`${origin}/ag-ui?${new URLSearchParams({ threadId, runId: nativeId })}`,
+      { headers: authenticated ? { authorization: 'Bearer local-fixture' } : {}, signal: signal ?? null });
+  expect((await adapter.fetch(observation('thread-7', false))).status).toBe(401);
+  await client.createThread({ id: 'another-thread', agentId: 'support' });
+  expect((await adapter.fetch(observation('another-thread'))).status).toBe(409);
+  const disconnect = new AbortController();
+  const abandoned = await adapter.fetch(observation('thread-7', true, disconnect.signal));
+  expect(abandoned.status).toBe(200);
+  disconnect.abort();
+  await abandoned.body?.cancel();
+  const recovered = await events(await adapter.fetch(observation('thread-7')));
+  expect(recovered[0]).toMatchObject({ type: 'RUN_STARTED', runId: nativeId, threadId: 'thread-7' });
+  expect(recovered.find(event => event.type === 'TOOL_CALL_ARGS')).toMatchObject({ delta: '{"order":7}' });
+  const recoveredFinish = recovered.at(-1);
+  if (recoveredFinish?.type !== 'RUN_FINISHED' || recoveredFinish.outcome.type !== 'interrupt') throw new Error('Expected observed approval');
+  expect(write).not.toHaveBeenCalled();
+  const resume = { threadId: 'thread-7', runId: 'ui-2', messages: [], resume: [{ interruptId: recoveredFinish.outcome.interrupts[0]!.id, status: 'resolved', payload: { approved: true } }] };
   const nextResponse = await adapter.fetch(request(resume)); expect(nextResponse.headers.get('x-mayura-run-id')).toBe(nativeId);
   const resumedEvents = await events(nextResponse);
   expect(resumedEvents[1]).toMatchObject({ type: 'STATE_SNAPSHOT', snapshot: { refunded: false } });
@@ -70,6 +87,11 @@ it('continues the native budget, executes the approved write once and records th
   expect(write).toHaveBeenCalledTimes(1); expect(BigInt((await client.run(nativeId).inspect()).budget.spentMicros)).toBe(2n);
   expect((await adapter.fetch(request({ ...resume, runId: 'ui-3' }))).status).toBe(409);
   const replay = await adapter.fetch(request(firstInput)); expect(replay.headers.get('x-mayura-run-id')).toBe(nativeId); await events(replay);
+  const settled = await events(await adapter.fetch(observation('thread-7')));
+  expect(settled.at(-1)).toMatchObject({ type: 'RUN_FINISHED', runId: nativeId, outcome: { type: 'success' } });
+  expect(settled.find(event => event.type === 'MESSAGES_SNAPSHOT')).toMatchObject({
+    messages: expect.arrayContaining([expect.objectContaining({ role: 'assistant', content: '{"reply":"Refunded"}' })]),
+  });
   expect(write).toHaveBeenCalledTimes(1);
   const entries = await client.threadEntries('thread-7');
   expect(entries.filter(entry => entry.kind === 'user')).toHaveLength(1);

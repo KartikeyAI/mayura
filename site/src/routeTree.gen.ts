@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as NotFoundRouteImport } from './routes/not-found'
-import { Route as UiRouteImport } from './routes/ui'
 import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
 import { Route as CompareIndexRouteImport } from './routes/compare/index'
 import { Route as CompareSlugRouteImport } from './routes/compare/$slug'
@@ -25,6 +24,9 @@ import { Route as IntegrationsSlugRouteImport } from './routes/integrations/$slu
 import { Route as ResearchIndexRouteImport } from './routes/research/index'
 import { Route as ResearchSlugRouteImport } from './routes/research/$slug'
 import { Route as RoadmapIndexRouteImport } from './routes/roadmap/index'
+import { Route as UiIndexRouteImport } from './routes/ui/index'
+import { Route as UiSlugRouteImport } from './routes/ui/$slug'
+import { Route as UiCopyInRouteImport } from './routes/ui/copy-in'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -39,11 +41,6 @@ const DocsRouteRoute = DocsRouteRouteImport.update({
 const NotFoundRoute = NotFoundRouteImport.update({
   id: '/not-found',
   path: '/not-found',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UiRoute = UiRouteImport.update({
-  id: '/ui',
-  path: '/ui',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArticlesIndexRoute = ArticlesIndexRouteImport.update({
@@ -106,17 +103,33 @@ const RoadmapIndexRoute = RoadmapIndexRouteImport.update({
   path: '/roadmap/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UiIndexRoute = UiIndexRouteImport.update({
+  id: '/ui/',
+  path: '/ui/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UiSlugRoute = UiSlugRouteImport.update({
+  id: '/ui/$slug',
+  path: '/ui/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UiCopyInRoute = UiCopyInRouteImport.update({
+  id: '/ui/copy-in',
+  path: '/ui/copy-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
-  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
   '/integrations/$slug': typeof IntegrationsSlugRoute
   '/research/$slug': typeof ResearchSlugRoute
+  '/ui/$slug': typeof UiSlugRoute
+  '/ui/copy-in': typeof UiCopyInRoute
   '/articles/': typeof ArticlesIndexRoute
   '/compare/': typeof CompareIndexRoute
   '/docs/': typeof DocsIndexRoute
@@ -124,16 +137,18 @@ export interface FileRoutesByFullPath {
   '/integrations/': typeof IntegrationsIndexRoute
   '/research/': typeof ResearchIndexRoute
   '/roadmap/': typeof RoadmapIndexRoute
+  '/ui/': typeof UiIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/not-found': typeof NotFoundRoute
-  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
   '/integrations/$slug': typeof IntegrationsSlugRoute
   '/research/$slug': typeof ResearchSlugRoute
+  '/ui/$slug': typeof UiSlugRoute
+  '/ui/copy-in': typeof UiCopyInRoute
   '/articles': typeof ArticlesIndexRoute
   '/compare': typeof CompareIndexRoute
   '/docs': typeof DocsIndexRoute
@@ -141,18 +156,20 @@ export interface FileRoutesByTo {
   '/integrations': typeof IntegrationsIndexRoute
   '/research': typeof ResearchIndexRoute
   '/roadmap': typeof RoadmapIndexRoute
+  '/ui': typeof UiIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/not-found': typeof NotFoundRoute
-  '/ui': typeof UiRoute
   '/compare/$slug': typeof CompareSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/guides/$slug': typeof GuidesSlugRoute
   '/integrations/$slug': typeof IntegrationsSlugRoute
   '/research/$slug': typeof ResearchSlugRoute
+  '/ui/$slug': typeof UiSlugRoute
+  '/ui/copy-in': typeof UiCopyInRoute
   '/articles/': typeof ArticlesIndexRoute
   '/compare/': typeof CompareIndexRoute
   '/docs/': typeof DocsIndexRoute
@@ -160,6 +177,7 @@ export interface FileRoutesById {
   '/integrations/': typeof IntegrationsIndexRoute
   '/research/': typeof ResearchIndexRoute
   '/roadmap/': typeof RoadmapIndexRoute
+  '/ui/': typeof UiIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,12 +185,13 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/not-found'
-    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
     | '/integrations/$slug'
     | '/research/$slug'
+    | '/ui/$slug'
+    | '/ui/copy-in'
     | '/articles/'
     | '/compare/'
     | '/docs/'
@@ -180,16 +199,18 @@ export interface FileRouteTypes {
     | '/integrations/'
     | '/research/'
     | '/roadmap/'
+    | '/ui/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/not-found'
-    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
     | '/integrations/$slug'
     | '/research/$slug'
+    | '/ui/$slug'
+    | '/ui/copy-in'
     | '/articles'
     | '/compare'
     | '/docs'
@@ -197,17 +218,19 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/research'
     | '/roadmap'
+    | '/ui'
   id:
     | '__root__'
     | '/'
     | '/docs'
     | '/not-found'
-    | '/ui'
     | '/compare/$slug'
     | '/docs/$'
     | '/guides/$slug'
     | '/integrations/$slug'
     | '/research/$slug'
+    | '/ui/$slug'
+    | '/ui/copy-in'
     | '/articles/'
     | '/compare/'
     | '/docs/'
@@ -215,23 +238,26 @@ export interface FileRouteTypes {
     | '/integrations/'
     | '/research/'
     | '/roadmap/'
+    | '/ui/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
   NotFoundRoute: typeof NotFoundRoute
-  UiRoute: typeof UiRoute
   CompareSlugRoute: typeof CompareSlugRoute
   GuidesSlugRoute: typeof GuidesSlugRoute
   IntegrationsSlugRoute: typeof IntegrationsSlugRoute
   ResearchSlugRoute: typeof ResearchSlugRoute
+  UiSlugRoute: typeof UiSlugRoute
+  UiCopyInRoute: typeof UiCopyInRoute
   ArticlesIndexRoute: typeof ArticlesIndexRoute
   CompareIndexRoute: typeof CompareIndexRoute
   GuidesIndexRoute: typeof GuidesIndexRoute
   IntegrationsIndexRoute: typeof IntegrationsIndexRoute
   ResearchIndexRoute: typeof ResearchIndexRoute
   RoadmapIndexRoute: typeof RoadmapIndexRoute
+  UiIndexRoute: typeof UiIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -255,13 +281,6 @@ declare module '@tanstack/react-router' {
       path: '/not-found'
       fullPath: '/not-found'
       preLoaderRoute: typeof NotFoundRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ui': {
-      id: '/ui'
-      path: '/ui'
-      fullPath: '/ui'
-      preLoaderRoute: typeof UiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/articles/': {
@@ -348,6 +367,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoadmapIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ui/': {
+      id: '/ui/'
+      path: '/ui'
+      fullPath: '/ui/'
+      preLoaderRoute: typeof UiIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ui/$slug': {
+      id: '/ui/$slug'
+      path: '/ui/$slug'
+      fullPath: '/ui/$slug'
+      preLoaderRoute: typeof UiSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ui/copy-in': {
+      id: '/ui/copy-in'
+      path: '/ui/copy-in'
+      fullPath: '/ui/copy-in'
+      preLoaderRoute: typeof UiCopyInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -369,17 +409,19 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
   NotFoundRoute: NotFoundRoute,
-  UiRoute: UiRoute,
   CompareSlugRoute: CompareSlugRoute,
   GuidesSlugRoute: GuidesSlugRoute,
   IntegrationsSlugRoute: IntegrationsSlugRoute,
   ResearchSlugRoute: ResearchSlugRoute,
+  UiSlugRoute: UiSlugRoute,
+  UiCopyInRoute: UiCopyInRoute,
   ArticlesIndexRoute: ArticlesIndexRoute,
   CompareIndexRoute: CompareIndexRoute,
   GuidesIndexRoute: GuidesIndexRoute,
   IntegrationsIndexRoute: IntegrationsIndexRoute,
   ResearchIndexRoute: ResearchIndexRoute,
   RoadmapIndexRoute: RoadmapIndexRoute,
+  UiIndexRoute: UiIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

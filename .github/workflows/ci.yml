@@ -33,6 +33,8 @@ jobs:
       - run: node scripts/ci-step.mjs -- node scripts/rag-modal-production-release-v1.mjs --verify-report
       - run: node scripts/ci-step.mjs -- pnpm typecheck
       - run: node scripts/ci-step.mjs -- pnpm --filter mayura-ui-ag-ui-example build
+      - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example build
+      - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example test
       - run: node scripts/ci-step.mjs -- pnpm console:check
       - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/production-audit.test.mjs
       - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run

@@ -1,0 +1,87 @@
+.ui-component-preview {
+  min-inline-size: 0;
+  inline-size: 100%;
+  color: var(--color-ink);
+}
+
+.ui-library .ui-component-preview {
+  background: transparent;
+}
+
+.ui-component-preview .composer-toolbar > .composer-actions {
+  grid-column: -2 / -1;
+}
+
+.ui-preview-workspace {
+  --mayura-workspace-height: 34rem;
+}
+
+.ui-preview-history {
+  max-inline-size: 24rem;
+}
+
+.ui-preview-history > section {
+  margin-block-start: 0;
+}
+
+.ui-preview-status {
+  margin-block-start: 0.75rem;
+  color: var(--color-secondary);
+  font-size: 0.875rem;
+}
+
+.ui-preview-inspection {
+  display: flex;
+  align-items: stretch;
+  gap: 1.25rem;
+}
+
+.ui-preview-inspection-body {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.ui-preview-inspection .inspector-rail {
+  flex-basis: min(48%, 22rem);
+  border-radius: 0.75rem;
+}
+
+.ui-preview-ag-ui {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.ui-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.ui-preview-controls button {
+  padding: 0.375rem 0.6875rem;
+  border-radius: 0.5rem;
+  background: var(--color-wash);
+  color: var(--color-ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ui-preview-controls button:hover:enabled {
+  background: var(--color-tint-strong);
+}
+
+.ui-preview-controls button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ui-preview-controls output {
+  margin-inline-start: auto;
+  color: var(--color-secondary);
+}
+
+.ui-component-preview--thumbnail .approval-card {
+  padding: 0.75rem;
+}

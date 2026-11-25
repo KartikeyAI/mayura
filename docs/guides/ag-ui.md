@@ -85,6 +85,20 @@ retry the same action. The native server rejects a changed input under the same 
 native run-record/idempotency retention period; it is not permanent deduplication after those records are removed.
 The host input mapper must stay deterministic for in-flight idempotency keys across deployments.
 
+## Reattach to an existing run
+
+In Mayura v1.4, set `observe: true` and grant `ag-ui:observe` on the adapter. Then GET the same path with
+`threadId` and `runId` query parameters. Here `runId` is the native run ID from
+`X-Mayura-Run-Id` or an authorized thread-history response. Use the same Bearer authentication as POST.
+The native policies must allow reading both resources, and the run must be recorded in that thread.
+
+The stream uses the native run ID in its boundaries and begins with an authoritative message
+snapshot. Replace your provisional transcript with that snapshot when reconnecting. A settled
+run returns its recorded outcome and messages. A pending approval can be presented again for a fresh
+decision. Observation creates no run, resolves no approval and dispatches no frontend tool.
+For the React workspace, implement `AgUiTransport.observeRun` with this GET and expose the active
+run as `activeRunId` in authenticated thread history.
+
 ## Events and stored messages
 
 The response is `text/event-stream`, with one JSON event in each `data:` frame. No AG-UI SDK is installed or required.

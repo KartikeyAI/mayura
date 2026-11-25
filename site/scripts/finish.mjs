@@ -8,7 +8,6 @@
 import { cpSync, existsSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileUiStyles } from '../../extensions/ui/scripts/build-styles.mjs';
 import { llmsFullTxt, llmsTxt } from '../../scripts/docs-index.mjs';
 import { writeUiRegistry } from '../../scripts/ui-registry.mjs';
 
@@ -27,7 +26,7 @@ cpSync(docs, join(output, 'docs'), { recursive: true });
 
 writeFileSync(join(output, 'llms.txt'), llmsTxt({ full: true }));
 writeFileSync(join(output, 'llms-full.txt'), llmsFullTxt());
-await writeUiRegistry(join(output, 'r'), await compileUiStyles({ toolchainFrom: import.meta.url }));
+await writeUiRegistry(join(output, 'r'));
 
 /** Every prerendered page's route (`docs/concepts/agent/`), from its index.html. */
 const pages = (directory, prefix = '') => readdirSync(directory, { withFileTypes: true }).flatMap(entry =>

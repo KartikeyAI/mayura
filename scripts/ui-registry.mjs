@@ -1,19 +1,22 @@
-// Build the public shadcn registry from the standalone UI sources and scoped stylesheet.
+// Build source-owned shadcn items with editable Tailwind utilities and shared theme rules.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { uiFoundation } from '../extensions/ui/styles/foundation.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const sourceDirectory = join(root, 'extensions', 'ui', 'src');
 const schema = 'https://ui.shadcn.com/schema/';
 
 const modules = [
-  'ag-ui-protocol.ts', 'ag-ui.ts', 'artifacts.tsx', 'composer.tsx', 'draft-context.ts', 'index.ts',
-  'inspector.tsx', 'message-actions.tsx', 'run-activity.tsx', 'thread-history.tsx', 'ui-root.tsx', 'ui.tsx', 'voice.tsx',
+  'ag-ui-protocol.ts', 'ag-ui.ts', 'agent-workspace.tsx', 'artifacts.tsx', 'composer.tsx', 'draft-context.ts', 'index.ts',
+  'inspector.tsx', 'message-actions.tsx', 'reply-cards.tsx', 'run-activity.tsx', 'thread-history.tsx', 'ui-root.tsx', 'ui.tsx', 'voice.tsx',
 ];
 
 const entries = [
   { name: 'ui', title: 'Mayura UI', description: 'The full agent interface kit with the AG-UI React hook and scoped styles.', roots: modules },
+  { name: 'chat-workspace', title: 'Agent Workspace', description: 'Compose, reconnect, open sources, and review exact changes in one customizable chat.', roots: ['agent-workspace.tsx'] },
+  { name: 'reply-cards', title: 'Reply Cards', description: 'Render tables, downloads, confirmations, and application-registered React cards.', roots: ['reply-cards.tsx'] },
   { name: 'composer', title: 'Composer', description: 'Agent input with editable quotes, file context, and voice controls.', roots: ['composer.tsx'] },
   { name: 'thread-history', title: 'Thread history', description: 'Search and reopen threads, with visible pending approvals.', roots: ['thread-history.tsx'] },
   { name: 'reply', title: 'Reply and sources', description: 'Render reply text, exact citation excerpts, and message actions.', roots: ['ui.tsx', 'message-actions.tsx', 'inspector.tsx'] },
@@ -43,15 +46,12 @@ function registryFile(name, content, path = 'extensions/ui/src/' + name) {
 }
 
 /** Publish independently installable items. The shadcn CLI chooses the project's configured UI directory. */
-export async function writeUiRegistry(outputDirectory, css) {
-  if (typeof css !== 'string' || !css.trim()) throw new Error('The Mayura UI registry needs its compiled stylesheet.');
+export async function writeUiRegistry(outputDirectory) {
   const files = new Map(await Promise.all(modules.map(async name => {
     const content = await readFile(join(sourceDirectory, name), 'utf8');
     return [name, { file: registryFile(name, content), imports: dependenciesOf(name, content) }];
   })));
   const shared = [
-    registryFile('styles.css', css, 'extensions/ui/dist/styles.css'),
-    registryFile('styles.d.css.ts', 'export {};\n', 'extensions/ui/dist/styles.d.css.ts'),
     ...await Promise.all(['LICENSE', 'NOTICE'].map(async name => registryFile(name, await readFile(join(root, name), 'utf8'), name))),
   ];
   const items = entries.map(({ roots, ...entry }) => {
@@ -63,7 +63,7 @@ export async function writeUiRegistry(outputDirectory, css) {
     }
     for (const name of ['ui-root.tsx', ...roots]) visit(name);
     return {
-      ...entry, type: 'registry:block',
+      ...entry, type: 'registry:block', css: uiFoundation,
       files: [...[...selected].sort().map(name => files.get(name).file), ...shared],
     };
   });
@@ -85,7 +85,6 @@ export async function writeUiRegistry(outputDirectory, css) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 3) throw new Error('Usage: node scripts/ui-registry.mjs <output-directory>');
-  const css = await readFile(join(root, 'extensions', 'ui', 'dist', 'styles.css'), 'utf8');
-  const result = await writeUiRegistry(resolve(process.argv[2]), css);
+  const result = await writeUiRegistry(resolve(process.argv[2]));
   console.log(JSON.stringify(result));
 }

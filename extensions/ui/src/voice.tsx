@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { maxPromptLength } from './draft-context.js';
 import { Icon } from './ui.js';
@@ -15,6 +17,19 @@ const maxRecordingMs = 30_000;
 const maxRecordingBytes = 4 * 1024 * 1024;
 const maxHoldingMs = 120_000;
 const language = 'en-US';
+const voicePanel = 'voice-panel px-[0.15rem] py-1 text-[color:var(--color-secondary)]';
+const voiceMain = 'voice-main flex flex-wrap items-center justify-between gap-x-4 gap-y-2';
+const voiceStatus = 'voice-status flex min-w-0 flex-[1_1_13rem] items-center gap-[0.4rem] text-[0.8rem] leading-[1.45]';
+const voiceActions = 'voice-actions flex flex-wrap items-center gap-[0.4rem]';
+const recordingDot = 'voice-dot size-[0.43rem] shrink-0 rounded-full bg-[var(--color-recording)] '
+  + 'motion-safe:data-[recording=true]:animate-[mayura-ui-voice-recording_1.3s_ease-in-out_infinite_alternate]';
+const voiceButton = 'voice-action inline-flex min-h-8 items-center justify-center gap-[0.3rem] rounded-lg px-[0.6rem] py-1 '
+  + 'text-xs font-semibold whitespace-nowrap transition-colors duration-[var(--motion-fast,140ms)] enabled:cursor-pointer disabled:opacity-55 '
+  + 'motion-reduce:transition-none [@media(pointer:coarse)]:min-h-10';
+const voiceSecondary = voiceButton + ' pointer-fine:enabled:hover:bg-[var(--color-wash)]';
+const voicePrimary = voiceButton + ' voice-primary bg-[var(--color-action)] text-white pointer-fine:enabled:hover:bg-[var(--color-action-hover)]';
+const voiceMessage = 'voice-message mt-2 text-xs text-[color:var(--color-warning-ink)]';
+
 const voiceCapture = () => typeof MediaRecorder !== 'undefined' && typeof navigator !== 'undefined'
   && typeof navigator.mediaDevices?.getUserMedia === 'function';
 
@@ -184,27 +199,27 @@ function VoiceNote({ onClose, onRecord }: Pick<VoiceInputProps, 'onClose' | 'onR
   }[phase];
   const showTimer = phase === 'recording' || phase === 'paused';
 
-  return <section className="voice-panel" aria-label="Voice note">
-    <div className="voice-main">
-      <div className="voice-status">
-        {showTimer && <span className="voice-dot" data-recording={phase === 'recording'} aria-hidden="true" />}
+  return <section className={voicePanel} aria-label="Voice note">
+    <div className={voiceMain}>
+      <div className={voiceStatus}>
+        {showTimer && <span className={recordingDot} data-recording={phase === 'recording'} aria-hidden="true" />}
         <span role="status">{available ? phaseText : 'Audio recording is unavailable in this browser.'}</span>
-        {showTimer && <span className="voice-clock" aria-label="Elapsed time">{timeLabel(elapsed)}</span>}
+        {showTimer && <span className="voice-clock tabular-nums text-[color:var(--color-muted)]" aria-label="Elapsed time">{timeLabel(elapsed)}</span>}
       </div>
-      <div className="voice-actions">
-        <button type="button" className="voice-action" onClick={discard}>{phase === 'idle' ? 'Cancel' : 'Discard'}</button>
-        {phase === 'idle' && available && <button type="button" className="voice-action voice-primary" onClick={() => void start()}>Record</button>}
+      <div className={voiceActions}>
+        <button type="button" className={voiceSecondary} onClick={discard}>{phase === 'idle' ? 'Cancel' : 'Discard'}</button>
+        {phase === 'idle' && available && <button type="button" className={voicePrimary} onClick={() => void start()}>Record</button>}
         {showTimer && <>
-          <button type="button" className="voice-action" onClick={togglePause}>{phase === 'paused' ? 'Resume' : 'Pause'}</button>
-          <button type="button" className="voice-action voice-primary" onClick={() => {
+          <button type="button" className={voiceSecondary} onClick={togglePause}>{phase === 'paused' ? 'Resume' : 'Pause'}</button>
+          <button type="button" className={voicePrimary} onClick={() => {
             if (captureRef.current) finish(captureRef.current);
           }}>Review</button>
         </>}
-        {phase === 'preview' && <button type="button" className="voice-action voice-primary" onClick={attach}><Icon name="check" size={14} /> Add note</button>}
+        {phase === 'preview' && <button type="button" className={voicePrimary} onClick={attach}><Icon name="check" size={14} /> Add note</button>}
       </div>
     </div>
-    {phase === 'preview' && previewRef.current && <audio className="voice-preview" aria-label="Play voice note" controls preload="metadata" src={previewRef.current.url} />}
-    {error && <p role="alert" className="voice-message">{error}</p>}
+    {phase === 'preview' && previewRef.current && <audio className="voice-preview mt-2 block h-10 w-full max-w-[22rem]" aria-label="Play voice note" controls preload="metadata" src={previewRef.current.url} />}
+    {error && <p role="alert" className={voiceMessage}>{error}</p>}
   </section>;
 }
 
@@ -392,22 +407,22 @@ function SpeechConversation({ onClose, onTranscript, busy, assistantReply }: Omi
     : !voice ? 'No local English voice is available. You can still type or record a note.'
     : 'Speak in English (US). Mayura’s reply will play aloud.';
 
-  return <section className="voice-panel" aria-label="Voice conversation">
-    <div className="voice-main">
-      <div className="voice-status">
-        {listening && <span className="voice-dot" data-recording="true" aria-hidden="true" />}
+  return <section className={voicePanel} aria-label="Voice conversation">
+    <div className={voiceMain}>
+      <div className={voiceStatus}>
+        {listening && <span className={recordingDot} data-recording="true" aria-hidden="true" />}
         <span role="status">{status}</span>
       </div>
-      <div className="voice-actions">
-        <button type="button" className="voice-action" onClick={onClose}>Close</button>
-        {speaking && <button type="button" className="voice-action" onClick={stopSpeech}>Mute reply</button>}
+      <div className={voiceActions}>
+        <button type="button" className={voiceSecondary} onClick={onClose}>Close</button>
+        {speaking && <button type="button" className={voiceSecondary} onClick={stopSpeech}>Mute reply</button>}
         {!speaking && !listening && !busy && assistantReply && voice &&
-          <button type="button" className="voice-action" onClick={() => { setMessage(''); speak(assistantReply.content); }}>Play reply</button>}
-        {listening ? <button type="button" className="voice-action voice-primary" onClick={stopListening}>Stop listening</button> :
-          availability === 'available' && voice && <button type="button" className="voice-action voice-primary" disabled={busy} onClick={listen}>Talk</button>}
+          <button type="button" className={voiceSecondary} onClick={() => { setMessage(''); speak(assistantReply.content); }}>Play reply</button>}
+        {listening ? <button type="button" className={voicePrimary} onClick={stopListening}>Stop listening</button> :
+          availability === 'available' && voice && <button type="button" className={voicePrimary} disabled={busy} onClick={listen}>Talk</button>}
       </div>
     </div>
-    {message && <p role="status" className="voice-message">{message}</p>}
+    {message && <p role="status" className={voiceMessage}>{message}</p>}
   </section>;
 }
 

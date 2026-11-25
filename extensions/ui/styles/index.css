@@ -1,9 +1,1 @@
 @import "tailwindcss" source(none);
-@import "./tokens.css";
-@import "./base.css";
-@import "./interactions.css";
-@import "./artifacts.css";
-@import "./composer.css";
-@import "./inspector.css";
-@import "./voice.css";
-@import "./dark.css";

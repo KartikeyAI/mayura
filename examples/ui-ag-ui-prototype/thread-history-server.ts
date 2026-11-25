@@ -56,7 +56,7 @@ export function createThreadHistory(options: {
   readonly origin: string;
   readonly agentId: string;
   readonly nativeFetch: (request: Request) => Promise<Response>;
-  readonly replyState: { readonly citations: unknown; readonly artifacts: unknown };
+  readonly replyState: { readonly citations: unknown; readonly artifacts: unknown; readonly replyCards?: unknown };
 }) {
   // The sealed handle is only useful with the current process key and matching scoped native approval.
   const pending = new Map<string, HeldApproval>();
@@ -77,7 +77,8 @@ export function createThreadHistory(options: {
       && held.interruption.toolName === approval.toolId
       && held.interruption.arguments === JSON.stringify(approval.input)
       && Date.parse(held.interruption.expiresAt) === approval.expiresAtMs;
-    return { pendingApproval, busy: !matches, ...(matches ? { held } : {}) };
+    return { pendingApproval, busy: !matches, ...(matches ? { held } : {}),
+      ...((snapshot.status === 'running' || snapshot.status === 'waiting') ? { activeRunId: tail.runId } : {}) };
   }
 
   function capture(response: Response, input: AgUiRunInput): Response {
@@ -171,8 +172,10 @@ export function createThreadHistory(options: {
         if (messages.length > 500) return new Response(null, { status: 413, headers: noStore });
         const latest = await client.thread(id, { signal });
         if (!isLocalThread(latest) || latest.lastSequence !== thread.lastSequence) return new Response(null, { status: 409, headers: noStore });
-        const { held, busy } = await currentApproval(client, latest, entries.at(-1), signal);
+        const marker = entries.findLast(entry => entry.turnId === latest.activeTurnId && runMarker(entry));
+        const { held, busy, activeRunId } = await currentApproval(client, latest, marker, signal);
         return Response.json({ messages, ...options.replyState, interruption: held?.interruption ?? null, busy,
+          ...(activeRunId ? { activeRunId } : {}),
           ...(held ? { nativeRunId: held.nativeRunId, pendingPrompt: held.prompt } : {}) }, { headers: noStore });
       } catch (error) {
         const status = error instanceof ClientError && (error.status === 404 || error.status === 403 || error.status === 401)

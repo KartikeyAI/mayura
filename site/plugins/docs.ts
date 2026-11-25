@@ -5,24 +5,38 @@
 //   virtual:mayura-doc/<slug>      one rendered page: { slug, file, title, description, html, headings }
 //   virtual:mayura-snippet/<name>  a highlighted file from site/snippets/, for the landing page
 //   virtual:mayura-ui-sources      original UI source and highlighted TSX/CSS/install commands for the gallery
-// Everything is rendered at build time; in development an edit under docs/ or snippets/ reloads the page.
+//   virtual:mayura-ui-detail-code  highlighted examples and package source for component details
+//   virtual:mayura-ui-package.css  the scoped stylesheet used by the published package
+// Everything is rendered at build time; development watches repository source and Markdown.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { format } from 'prettier';
 import type { Plugin } from 'vite';
+import { compileUiStyles } from '../../extensions/ui/scripts/build-styles.mjs';
 import { navigation as readNavigation, readPage } from '../../scripts/docs-index.mjs';
+import { uiCatalog } from '../src/lib/ui-catalog.ts';
 import { codeBlock, getHighlighter, highlight, renderMarkdown, textOf, type Heading } from './markdown.ts';
 
 const site = resolve(import.meta.dirname, '..');
 const docsRoot = resolve(site, '../docs');
 const snippetsRoot = resolve(site, 'snippets');
 const uiRoot = resolve(site, '../packages/cli/ui');
+const legacyStylesId = join(uiRoot, 'ui.css').split(sep).join('/');
+const packageUiRoot = resolve(site, '../extensions/ui');
+const packageSourceRoot = join(packageUiRoot, 'src');
+const packageStyleRoot = join(packageUiRoot, 'styles');
 
 const INDEX = 'virtual:mayura-docs';
 const SEARCH = 'virtual:mayura-search';
 const PAGE = 'virtual:mayura-doc/';
 const SNIPPET = 'virtual:mayura-snippet/';
 const UI_SOURCES = 'virtual:mayura-ui-sources';
+const UI_DETAIL_CODE = 'virtual:mayura-ui-detail-code';
+const UI_PACKAGE_STYLE = 'virtual:mayura-ui-package.css';
+const uiFormat = { printWidth: 90, tabWidth: 2, singleQuote: true, trailingComma: 'all', semi: true, endOfLine: 'lf' } as const;
+
+/** Both libraries use `.mayura-ui`. Keep their site previews isolated even after route styles are loaded together. */
+const scopeUiStyles = (css: string, gallery: string) => css.replace(/\.mayura-ui(?![-\w])/gu, `${gallery} .mayura-ui`);
 
 // scripts/docs-index.mjs is plain JavaScript; this is the shape its navigation() returns.
 const navigation = readNavigation as () => { title: string; pages: { path: string; title: string; description: string }[] }[];
@@ -56,6 +70,7 @@ function searchSections(page: Page) {
 
 export function docs({ base }: { base: string }): Plugin {
   const cache = new Map<string, Promise<Page>>();
+  let packageStyles: Promise<string> | undefined;
 
   const page = (slug: string): Promise<Page> => {
     let rendered = cache.get(slug);
@@ -94,12 +109,36 @@ export function docs({ base }: { base: string }): Plugin {
     return `export default ${JSON.stringify(entries.flat())};`;
   };
 
+  const detailCode = async (watchFile: (path: string) => void) => {
+    const shiki = await getHighlighter();
+    const sources = await Promise.all([...new Set(uiCatalog.map(entry => entry.sourceFile))].map(async file => {
+      const path = join(packageSourceRoot, file);
+      watchFile(path);
+      const source = readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
+      const formatted = await format(source, { ...uiFormat, filepath: path, parser: 'typescript' });
+      return [file, { source, sourceHtml: highlight(shiki, formatted, file.endsWith('.tsx') ? 'tsx' : 'ts') }];
+    }));
+    const snippets = await Promise.all(uiCatalog.map(async ({ slug, sourceFile, usage, registryImports }) => {
+      const [formattedUsage, formattedImports] = await Promise.all([
+        format(usage, { ...uiFormat, parser: 'typescript' }),
+        format(registryImports, { ...uiFormat, parser: 'typescript' }),
+      ]);
+      return [slug, sourceFile, highlight(shiki, formattedUsage, 'tsx'), highlight(shiki, formattedImports, 'tsx')];
+    }));
+    // A component file can back multiple detail pages. Serialize its highlighted source only once.
+    return `const sources = ${JSON.stringify(Object.fromEntries(sources))};\n`
+      + `const snippets = ${JSON.stringify(snippets)};\n`
+      + 'export default Object.fromEntries(snippets.map(([slug, file, usageHtml, registryImportsHtml]) => '
+      + '[slug, { ...sources[file], usageHtml, registryImportsHtml }]));';
+  };
+
   return {
     name: 'mayura-docs',
     resolveId(id) {
-      if (id === INDEX || id === SEARCH || id === UI_SOURCES || id.startsWith(PAGE) || id.startsWith(SNIPPET)) return `\0${id}`;
+      if ([INDEX, SEARCH, UI_SOURCES, UI_DETAIL_CODE, UI_PACKAGE_STYLE].includes(id) || id.startsWith(PAGE) || id.startsWith(SNIPPET)) return `\0${id}`;
     },
     async load(id) {
+      if (id === legacyStylesId) return scopeUiStyles(readFileSync(id, 'utf8'), ':where(.ui-gallery)');
       if (!id.startsWith('\0virtual:mayura-')) return;
       const name = id.slice(1);
       if (name === UI_SOURCES) {
@@ -110,15 +149,23 @@ export function docs({ base }: { base: string }): Plugin {
           this.addWatchFile(path);
           const source = readFileSync(path, 'utf8');
           const language = file.endsWith('.css') ? 'css' : 'tsx';
-          const formatted = await format(source, {
-            filepath: path, parser: language === 'css' ? 'css' : 'typescript',
-            printWidth: 90, tabWidth: 2, singleQuote: true, trailingComma: 'all', semi: true, endOfLine: 'lf',
-          });
+          const formatted = await format(source, { ...uiFormat, filepath: path, parser: language === 'css' ? 'css' : 'typescript' });
           const command = `mayura add ui ${file.slice(0, -4)} --directory ./my-app --apply`;
           return [file, { source, html: highlight(shiki, formatted, language),
             commandHtml: language === 'tsx' ? highlight(shiki, command, 'bash') : '' }];
         }));
         return `export default ${JSON.stringify(Object.fromEntries(entries))};`;
+      }
+      if (name === UI_DETAIL_CODE) return detailCode(path => this.addWatchFile(path));
+      if (name === UI_PACKAGE_STYLE) {
+        for (const root of [packageSourceRoot, packageStyleRoot]) {
+          for (const file of readdirSync(root, { encoding: 'utf8', recursive: true })) {
+            if (/\.(?:tsx?|css|mjs)$/u.test(file)) this.addWatchFile(join(root, file));
+          }
+        }
+        packageStyles ??= compileUiStyles({ toolchainFrom: join(site, 'package.json') })
+          .then(css => scopeUiStyles(css, '.ui-library'));
+        return packageStyles;
       }
       if (name === INDEX) {
         this.addWatchFile(join(docsRoot, 'README.md'));
@@ -141,10 +188,12 @@ export function docs({ base }: { base: string }): Plugin {
       }
     },
     configureServer(server) {
-      server.watcher.add([docsRoot, snippetsRoot, uiRoot]);
+      const watchedRoots = [docsRoot, snippetsRoot, uiRoot, packageSourceRoot, packageStyleRoot];
+      server.watcher.add(watchedRoots);
       server.watcher.on('all', (_event, file) => {
         const path = resolve(file);
-        if (!path.startsWith(docsRoot + sep) && !path.startsWith(snippetsRoot + sep) && !path.startsWith(uiRoot + sep)) return;
+        if (!watchedRoots.some(root => path.startsWith(root + sep))) return;
+        if (path.startsWith(packageUiRoot + sep)) packageStyles = undefined;
         cache.clear();
         for (const environment of Object.values(server.environments)) {
           for (const [id, module] of environment.moduleGraph.idToModuleMap) {

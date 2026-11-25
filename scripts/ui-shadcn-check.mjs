@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { compilerPlatform, createPacker, inside, run, workspace } from './local-packages.mjs';
 import { writeUiRegistry } from './ui-registry.mjs';
+import { compileConsumerUiCss, verifyConsumerUiCss } from './ui-tailwind-consumer.mjs';
 import { workDirectory } from './work-directory.mjs';
 
 const shadcnVersion = '4.23.0';
@@ -19,7 +20,8 @@ const tooling = join(workspace, '.artifacts', `ui-shadcn-tooling-${shadcnVersion
 const reactPackages = ['react', 'react-dom'];
 const compilerPackages = ['typescript', compilerPlatform, '@types/react'];
 const uiDirectory = 'src/features/design-system';
-const originals = ['package.json', 'package-lock.json', 'src/global.css'];
+const originals = ['package.json', 'package-lock.json'];
+const globalCss = '@import "tailwindcss";\n\nbody { margin: 0; }\n:root { --host-brand: teal; }\n';
 const fixture = name => join(workspace, 'consumer-tests', name);
 const installedUi = filename => `./${uiDirectory}/mayura/${filename}`;
 
@@ -77,28 +79,46 @@ async function verifyPublicRegistry(directory, items) {
 async function verifyPlainReact(app, fullKit) {
   // Reuse the plain React wire and hydration test with local source imports in place of package exports.
   const components = fullKit
-    ? `import { Composer, UiRoot, ThreadHistory, RunActivity } from '${installedUi('index.js')}';`
-    : `import { Composer } from '${installedUi('composer.js')}';
+    ? `import { AgentWorkspace, Composer, UiRoot, ThreadHistory, RunActivity } from '${installedUi('index.js')}';`
+    : `import { AgentWorkspace } from '${installedUi('agent-workspace.js')}';
+import { Composer } from '${installedUi('composer.js')}';
 import { UiRoot } from '${installedUi('ui-root.js')}';
 import { ThreadHistory } from '${installedUi('thread-history.js')}';
 import { RunActivity } from '${installedUi('run-activity.js')}';`;
   const appSource = (await readFile(fixture('ui-standalone-app.tsx'), 'utf8'))
-    .replace("import { Composer, UiRoot } from '@mayurajs/ui';", components)
+    .replace("import { AgentWorkspace, Composer, UiRoot } from '@mayurajs/ui';", components)
     .replace("from '@mayurajs/ui/ag-ui'", `from '${installedUi('ag-ui.js')}'`)
     .replace('<h1>Plain React chat</h1>', `<h1>Plain React chat</h1>
       <ThreadHistory threads={[]} activeId={null} error={null} loading={false} locked={false} onOpen={() => {}} onRefresh={() => {}} />
       <RunActivity items={[]} status="complete" streamingLabel="Working" />`);
   const probe = (await readFile(fixture('ui-standalone-probe.mjs'), 'utf8'))
-    .replace("new URL(import.meta.resolve('@mayurajs/ui/styles.css'))", `new URL('${installedUi('styles.css')}', import.meta.url)`)
+    .replace("new URL(import.meta.resolve('@mayurajs/ui/styles.css'))", "new URL('./built.css', import.meta.url)")
     .replace("await assert.rejects(import('mayura'), { code: 'ERR_MODULE_NOT_FOUND' });", "$&\nawait assert.rejects(import('@mayurajs/ui'), { code: 'ERR_MODULE_NOT_FOUND' });")
     .replace('assert.match(html, /Plain React chat/u);', '$&\nassert.match(html, /Thread history/u);\nassert.match(html, /Run activity/u);');
   await Promise.all([
     writeFile(join(app, 'app.tsx'), appSource),
-    writeFile(join(app, 'styles.ts'), `import '${installedUi('styles.css')}';\n`),
+    writeFile(join(app, 'styles.ts'), "import './src/global.css';\n"),
     writeFile(join(app, 'probe.mjs'), probe),
     copyFile(fixture('module-isolation.mjs'), join(app, 'module-isolation.mjs')),
   ]);
 
+  const cssEntry = join(app, 'src', 'global.css');
+  const css = await compileConsumerUiCss(app, cssEntry);
+  verifyConsumerUiCss(css);
+  if (fullKit) {
+    const composer = join(app, uiDirectory, 'mayura', 'composer.tsx');
+    const source = await readFile(composer, 'utf8');
+    const customized = source.replace('className="rich-composer ', 'className="rich-composer outline-offset-[11px] ');
+    assert.notEqual(customized, source, 'Find the installed composer className to customize.');
+    await writeFile(composer, customized);
+    try {
+      assert.match(await compileConsumerUiCss(app, cssEntry), /outline-offset:\s*11px/u,
+        'Tailwind must pick up an edited className from the installed source.');
+    } finally {
+      await writeFile(composer, source);
+    }
+  }
+  await writeFile(join(app, 'built.css'), css);
   const types = await run([join(app, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tsconfig.json', '--pretty', 'false', '--listFiles'], app);
   for (const file of types.stdout.split(/\r?\n/u).filter(Boolean)) {
     assert(inside(app, await realpath(file)), `TypeScript resolved an external declaration: ${file}`);
@@ -119,7 +139,8 @@ async function createApp(packer, output, closure) {
   await Promise.all([
     writeFile(join(app, 'package.json'), JSON.stringify({ name: 'plain-react-shadcn-consumer', private: true, type: 'module',
       dependencies: archives(reactPackages), devDependencies: archives([...compilerPackages, 'tailwindcss']), overrides: archives([...closure]) })),
-    writeFile(join(app, 'src', 'global.css'), '@import "tailwindcss";\n\nbody { margin: 0; }\n'),
+    writeFile(join(app, 'src', 'global.css'), globalCss),
+    writeFile(join(app, 'src', 'global.d.css.ts'), 'export {};\n'),
     writeFile(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: {
       target: 'ES2023', module: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'], paths: { '@/*': ['./src/*'] },
       strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true, noUncheckedSideEffectImports: true,
@@ -142,7 +163,11 @@ async function checkInstall(app, shadcnEntry, { itemBase, cliBase }, items) {
   await run([shadcnEntry, 'add', ...items, '--yes'], app, { env: { CI: '1', REGISTRY_URL: cliBase,
     npm_config_offline: 'true', npm_config_userconfig: join(tooling, 'user.npmrc'), npm_config_globalconfig: join(tooling, 'global.npmrc') } });
   assert.deepEqual(await Promise.all(originals.map(file => readFile(join(app, file)))), baseline,
-    'The registry must preserve the consumer manifest, lockfile and global CSS.');
+    'The registry must preserve the consumer manifest and lockfile.');
+  const stylesheet = await readFile(join(app, 'src', 'global.css'), 'utf8');
+  assert.match(stylesheet, /--host-brand:\s*teal;/u, 'The registry must preserve host rules while adding the theme.');
+  assert.match(stylesheet, /body\s*\{\s*margin:\s*0;\s*\}/u);
+  assert.doesNotMatch(stylesheet, /@import[^;]*mayura/u, 'The registry must not add another stylesheet import.');
 }
 
 async function checkShadcn(live) {
@@ -160,13 +185,12 @@ async function checkShadcn(live) {
   await mkdir(tarballs);
   const packer = createPacker({ output, tarballs });
   const uiExtension = join(workspace, 'extensions', 'ui');
-  const css = await readFile(join(uiExtension, 'dist', 'styles.css'), 'utf8');
   const closure = await packer.packClosure([
     ['react-dom', workspace], ['typescript', workspace], ['@types/react', workspace],
     [compilerPlatform, join(workspace, 'node_modules', '.pnpm')], ['tailwindcss', uiExtension],
   ]);
   assert(!closure.has('mayura') && !closure.has('@mayurajs/ui'), 'The React test dependencies must exclude both Mayura packages.');
-  const { items } = await writeUiRegistry(published, css);
+  const { items } = await writeUiRegistry(published);
   if (live) await verifyPublicRegistry(published, items);
   const local = await serveRegistry(live ? undefined : published);
   const endpoints = { itemBase: live ? publicRegistry : local.url, cliBase: local.url };
@@ -174,8 +198,10 @@ async function checkShadcn(live) {
     const partial = await createApp(packer, output, closure);
     await checkInstall(partial, shadcnEntry, endpoints, ['@mayura/composer', '@mayura/thread-history', '@mayura/ag-ui']);
     await checkInstall(partial, shadcnEntry, endpoints, [`${endpoints.itemBase}/run-activity.json`]);
+    await checkInstall(partial, shadcnEntry, endpoints, [
+      '@mayura/reply', '@mayura/artifacts', '@mayura/approvals', '@mayura/chat-workspace', '@mayura/reply-cards',
+    ]);
     const individual = await verifyPlainReact(partial, false);
-    await checkInstall(partial, shadcnEntry, endpoints, ['@mayura/reply', '@mayura/artifacts', '@mayura/approvals']);
     const kit = await createApp(packer, output, closure);
     await checkInstall(kit, shadcnEntry, endpoints, ['@mayura/ui']);
     const fullKit = await verifyPlainReact(kit, true);
@@ -183,6 +209,7 @@ async function checkShadcn(live) {
       assert(local.requests.has(`/r/${item}.json`), `The official CLI must request the ${item} registry item.`);
     }
     const installed = await readdir(join(partial, uiDirectory, 'mayura'));
+    assert(!installed.some(file => /\.css(?:\.|$)/u.test(file)), 'The registry must not install a separate CSS file.');
     for (const file of installed) {
       assert.deepEqual(await readFile(join(partial, uiDirectory, 'mayura', file)), await readFile(join(kit, uiDirectory, 'mayura', file)),
         `${file} must match whether installed individually or with the full kit.`);

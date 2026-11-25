@@ -5,6 +5,13 @@ declare module 'virtual:mayura-ui-sources' {
   export default sources;
 }
 
+declare module 'virtual:mayura-ui-detail-code' {
+  const details: Readonly<Record<string, { usageHtml: string; sourceHtml: string; registryImportsHtml: string; source: string }>>;
+  export default details;
+}
+
+declare module 'virtual:mayura-ui-package.css' {}
+
 declare module 'virtual:mayura-docs' {
   /** From an integration page's frontmatter (docs/integrations/*.md). */
   export interface Integration { package: string; vendor: string; logo: string; website: string; area: string }

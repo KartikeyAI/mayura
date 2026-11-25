@@ -4,12 +4,13 @@
   "private": true,
   "description": "Tailwind React components for agent chat, thread history, artifacts, citations and AG-UI approvals.",
   "type": "module",
-  "sideEffects": ["./dist/styles.css"],
+  "sideEffects": ["./dist/styles.css", "./dist/tailwind.css"],
   "files": ["dist", "src/**/*.ts", "src/**/*.tsx", "README.md"],
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./ag-ui": { "types": "./dist/ag-ui.d.ts", "import": "./dist/ag-ui.js" },
-    "./styles.css": { "types": "./dist/styles.css.d.ts", "default": "./dist/styles.css" }
+    "./styles.css": { "types": "./dist/styles.css.d.ts", "default": "./dist/styles.css" },
+    "./tailwind.css": { "types": "./dist/tailwind.css.d.ts", "default": "./dist/tailwind.css" }
   },
   "engines": { "node": ">=22.12.0 <23 || >=24.14.1 <25" },
   "peerDependencies": { "mayura": "workspace:^", "react": ">=19 <20" },
