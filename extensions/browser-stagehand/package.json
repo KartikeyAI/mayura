@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/browser-stagehand",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Stagehand's act, extract and observe as tools on a mayura/browser browser.",
   "type": "module",

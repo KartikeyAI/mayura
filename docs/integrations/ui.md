@@ -31,7 +31,7 @@ For other CSS toolchains, import the compiled fallback `@mayurajs/ui/styles.css`
 
 ### Compiled CSS for existing components
 
-Use v1.3 if your app only needs the existing composer, thread history, citations, artifacts, or approval components.
+Apps on v1.3 can use the compiled stylesheet with the composer, thread history, citations, artifacts, and approvals.
 
 ```bash
 npm install @mayurajs/ui@1.3 react@19 react-dom@19

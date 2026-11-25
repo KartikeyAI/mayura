@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/provider-mistral",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Mistral models for Mayura, through the official Mistral SDK.",
   "type": "module",

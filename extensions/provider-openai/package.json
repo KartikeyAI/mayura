@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/provider-openai",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "OpenAI models for Mayura, through the official OpenAI SDK.",
   "type": "module",

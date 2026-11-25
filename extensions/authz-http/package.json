@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/authz-http",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Bounded HTTP authorization policies with scoped fail-closed decisions and core audit integration.",
   "type": "module",

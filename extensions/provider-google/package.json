@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/provider-google",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Google Gemini models for Mayura, through the official Google Gen AI SDK.",
   "type": "module",

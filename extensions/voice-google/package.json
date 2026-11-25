@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/voice-google",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Google Cloud Speech-to-Text and Text-to-Speech for Mayura's voice registry, over Google's HTTP APIs.",
   "type": "module",

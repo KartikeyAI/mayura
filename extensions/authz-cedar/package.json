@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/authz-cedar",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Scoped local Cedar authorization with pinned policies, trusted attributes and core audit integration.",
   "type": "module",

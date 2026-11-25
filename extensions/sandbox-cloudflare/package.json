@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/sandbox-cloudflare",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Cloudflare Sandboxes for mayura/sandbox, through the sandbox bridge Worker.",
   "type": "module",

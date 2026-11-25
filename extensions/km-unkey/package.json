@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/km-unkey",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "API keys issued by Unkey as Mayura server identities, verified with Unkey's API.",
   "type": "module",

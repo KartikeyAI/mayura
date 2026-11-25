@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/auth-google",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Google ID tokens as Mayura server identities, and a least-privilege preset for better-auth's Google sign-in.",
   "type": "module",

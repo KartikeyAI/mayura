@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/voice-azure",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Azure Speech transcription and text-to-speech for Mayura's voice registry, over Azure's HTTP APIs.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/observability-langfuse",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Langfuse for Mayura's traces: agent runs, model calls and tool calls over Langfuse's OpenTelemetry endpoint.",
   "type": "module",

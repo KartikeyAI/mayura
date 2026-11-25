@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/reranker-cohere",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Bounded indexed-result reranking with cohere.",
   "type": "module",

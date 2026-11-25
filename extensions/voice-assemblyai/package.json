@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/voice-assemblyai",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "AssemblyAI speech-to-text for Mayura's voice registry, over AssemblyAI's HTTP API.",
   "type": "module",
