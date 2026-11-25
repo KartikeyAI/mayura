@@ -49,6 +49,8 @@ pnpm test:starters               # every starter generated, installed and tested
 
 ## Rules
 
+- Branch from `dev` with `feature/<name>`, `fix/<name>` or `docs/<name>` and target `dev` with pull requests.
+  Promote the qualified `dev` branch to `main` through a release PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - Public code, docs and examples import from `mayura` or `mayura/<subpath>`. Inside `packages/*/src`, packages import
   each other as `@mayura/<name>`.
 - Entry points run on Node, Bun, Deno, Cloudflare Workers and Vercel Edge unless `scripts/edge-check.mjs` lists them
@@ -66,6 +68,6 @@ pnpm test:starters               # every starter generated, installed and tested
   `pnpm docs:check`.
 - A new extension needs a `description` in its `package.json`; run `node scripts/integrations-index.mjs` to add it to
   `docs/reference/integrations.md` (`pnpm docs:check` fails until it is there).
-- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`); releases are versioned
-  from them (see [RELEASING.md](RELEASING.md)).
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). Choose package versions
+  in a reviewed release plan (see [RELEASING.md](RELEASING.md)).
 - Never print, log or commit secrets. `.env` files are ignored.

@@ -547,8 +547,9 @@ Since 1.1, Mayura runs on Cloudflare Workers, Vercel Edge Functions, Deno and Bu
 
 - **Tested:** every runtime in CI, with results equal to Node's; Vercel Edge also on a preview deployment, with
   PostgreSQL through Neon's WebSocket pool.
-- **Experimental: deployed Cloudflare Workers and Deno Deploy.** They run the same code as CI's workerd and Deno but
-  have not yet run as deployments, and their setup may change in any release.
+- **Cloudflare Workers:** the [Hono starter with D1](hono.md#cloudflare-workers-with-d1) passed a live smoke test with
+  the request-scoped Worker fix. Broader deployment profiles remain experimental.
+- **Deno Deploy:** experimental. Shared Deno runtime checks cover local execution.
 
 An edge function is a serverless function with a tighter budget, so the [four settings above](#serverless-functions)
 hold: runs finish inside their request (`runExecution: 'request'`), workflows advance from a scheduled invocation of

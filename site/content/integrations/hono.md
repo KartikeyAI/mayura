@@ -34,7 +34,9 @@ The bridge lives at `server/hono-node.mjs`; the view starts at `src/`. Start wit
 
 ## Before a deployment
 
-The starter also ships Bun and Deno entry points using PostgreSQL, and Workers source with a D1 binding, assets and a scheduled handler. Those application-specific profiles still need qualification on the target host; shared runtime CI is not a live Workers deployment check.
+The [Hono starter passed a live Workers and D1 smoke test](../../../docs/guides/hono.md#cloudflare-workers-with-d1)
+with the request-scoped Worker fix. The test covered approval, durable streaming and scheduled note indexing.
+The Bun and Deno entry points use PostgreSQL and still need target-host checks.
 
 Replace the demonstration identity with verified tenant sessions, supply secrets only on the server and keep model
 and worker permissions separate. The six framework starters passed workspace build and mounted HTTP flow checks;

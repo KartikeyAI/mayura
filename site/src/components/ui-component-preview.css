@@ -16,6 +16,10 @@
   --mayura-workspace-height: 34rem;
 }
 
+.home-workspace-demo .ui-preview-workspace {
+  --mayura-workspace-height: clamp(26rem, 60vw, 30rem);
+}
+
 .ui-preview-history {
   max-inline-size: 24rem;
 }

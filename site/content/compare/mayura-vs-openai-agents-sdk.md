@@ -1,8 +1,8 @@
 ---
 title: "Mayura vs the OpenAI Agents SDK"
-description: "The OpenAI Agents SDK for TypeScript and Mayura compared: handoffs, sessions and built-in tracing, versus grants, hard budgets and durable steps that never run twice."
+description: "Compare OpenAI Agents SDK handoffs, sessions, and streamed events with Mayura's scoped runtime, durable approvals, and standalone React workspace."
 date: 2026-10-12
-updated: 2026-11-23
+updated: 2026-11-25
 tags: comparison, OpenAI, Agents SDK, TypeScript
 ---
 
@@ -19,37 +19,37 @@ We make Mayura, so read this with that in mind. We checked every statement about
 documentation, repository and npm listing, and link the sources at the end. If something here is wrong or out of date,
 please [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Baseline compared October 12, 2026: the OpenAI Agents SDK (`@openai/agents`) 0.20.0. Mayura's side is updated for
-published 1.2.1 on November 23. The SDK version and adoption figures below retain their baseline date; handoff,
-session and human-in-the-loop documentation was rechecked on October 23.*
+*The October 12, 2026 baseline used the OpenAI Agents SDK (`@openai/agents`) 0.20.0. Mayura's side reflects 1.4.0.
+OpenAI's streaming and human-in-the-loop documentation were checked on November 25, 2026.*
 
-## What changes with Mayura 1.2
+## The chat frontend in Mayura 1.4
 
-Mayura now supports [handoffs](../../../docs/guides/agent-handoffs.md), persistent
-[threads](../../../docs/guides/threads.md), journaled compaction and approvals inside agent runs. A handoff keeps
-one run and budget while replacing the active agent's permissions with the host-declared target policy. The initial
-profile is buffered text-only, non-speculative root runs; conversation branching is not included.
+The OpenAI Agents SDK streams run events for rendering text, tool calls, handoffs, and interruptions. Resolve a
+pending tool approval on the run state, which your app can serialize, and use that state to continue the same run.
+[Streaming](https://openai.github.io/openai-agents-js/guides/streaming/) and
+[approval flow](https://openai.github.io/openai-agents-js/guides/human-in-the-loop/).
 
-Mayura V1.2.1 qualifies [scoped retrieval on the registered Modal and Pinecone profile](../../../docs/guides/rag-production.md).
-The application binds retrieval to a verified scope and returns evidence with exact citation identities.
+Mayura's [Agent Workspace](../../../docs/integrations/ui.md#agent-workspace) includes the chat, thread selection,
+run activity, source inspection and change review UI. Install it from npm or copy editable Tailwind source with
+[shadcn](../../../docs/integrations/ui.md#shadcn-registry). To keep an existing backend, map its events and authorized
+actions to a compatible AG-UI transport or give individual `@mayurajs/ui` components your own data and handlers.
 
-The OpenAI SDK's [handoffs](https://openai.github.io/openai-agents-js/guides/handoffs/),
-[sessions](https://openai.github.io/openai-agents-js/guides/sessions/) and
-[approval flow](https://openai.github.io/openai-agents-js/guides/human-in-the-loop/) remain first-class parts of its
-conversation model. Choose between the actual execution and policy contracts; a handoff checkbox alone does not
-describe budget continuity, storage ownership or the treatment of uncertain effects.
+On Mayura's runtime, [handoffs](../../../docs/guides/agent-handoffs.md) keep one run and budget while applying
+the receiving agent's configured permissions. Its [read-only AG-UI route](../../../docs/guides/ag-ui.md#reattach-to-an-existing-run)
+lets the UI reconnect to an existing run. Pending tool calls remain subject to server-side scope and exact-input approval checks.
 
 ## At a glance
 
 | | OpenAI Agents SDK | Mayura |
 |---|---|---|
-| **Maturity** | Since June 2025, still 0.x; about 3,900 GitHub stars and 2.3M weekly npm downloads | Stable 1.2.1 published November 23, 2026; first 1.0 in September 2026; a new project |
+| **Release** | OpenAI Agents SDK 0.20.0 at the October 12 baseline | Mayura and Mayura UI 1.4.0, published November 25, 2026 |
 | **License** | MIT | Apache-2.0, all of it |
 | **Models** | OpenAI models through the Responses API or Chat Completions; other providers through the AI SDK adapter in `@openai/agents-extensions` (in beta) or your own `ModelProvider` | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint |
 | **Tools** | Function tools; OpenAI hosted tools (web search, file search, code interpreter, image generation, tool search); computer use, shell and apply_patch; agents as tools; MCP servers; sandbox capabilities | Typed tools with declared effects and capabilities; Code Mode; sandboxes and browsers; MCP tools wrapped one at a time |
 | **Tool access** | A tool on an agent can be called; `needsApproval` and tool guardrails check individual calls | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | `maxTurns` (10 by default) stops a run; token usage is reported; no spending limit | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
 | **Human approval** | `needsApproval` pauses the run with `interruptions`; the serialized `RunState` resumes later, including approvals in nested agents | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
+| **Frontend** | Streamed text and typed run events for the app to render | Standalone React Agent Workspace, typed reply cards, and an AG-UI transport boundary |
 | **Multi-agent** | Handoffs (another agent takes over the conversation) and agents as tools | Continuing-budget handoffs with separate target permissions; child agents, spawned children and speculative branches under bounded delegation. Initial handoffs are buffered text-only, non-speculative root runs |
 | **Durable execution** | No workflow engine; a paused run's state serializes with `toString()` and resumes with `RunState.fromString()`, stored where you choose | Durable graphs persisted at every step; at-most-once dispatch; automatic recovery of abandoned steps; pinned definitions and reviewed migrations |
 | **Memory** | Sessions keep conversation history: OpenAI's Conversations API, in-memory, or your own `Session`; sandbox agents can keep lessons from earlier runs | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
@@ -104,7 +104,7 @@ started before its tool is called, and never called again: if the process dies m
 step as unknown once its deadline has passed, and the run ends `outcome_unknown` for a person to reconcile rather than
 paying twice. [Never twice](../research/side-effects-never-twice.md) covers the mechanism and its limits.
 
-For an in-run decision, Mayura 1.2 pauses at the exact pending tool call and can persist a checkpoint for another
+For an in-run decision, Mayura pauses at the exact pending tool call and can persist a checkpoint for another
 host to resume. Use a durable workflow when the business process also needs timers, signals or multiple human
 steps, as in [the refund guide](../guides/refund-approval.md). Neither path treats an ambiguous write as permission
 to run that write again.
@@ -127,7 +127,7 @@ explicit endpoint. Mayura's OpenAI adapter calls the Responses API with `store: 
   use, the Conversations API and server-side compaction, all first-class.
 - **Voice and realtime.** Realtime voice agents over WebRTC or WebSocket. Mayura's voice support transcribes speech and
   speaks text; it has no realtime sessions.
-- **Conversation breadth.** SDK sessions integrate with OpenAI's Conversations API and handoff model. Mayura 1.2
+- **Conversation breadth.** SDK sessions integrate with OpenAI's Conversations API and handoff model. Mayura
   supplies its own scoped threads, compaction and bounded handoff profile; it does not implement conversation branching.
 - **Approval anywhere.** Any agent run can pause for a person, nested agents included, and resume from a serialized
   state.

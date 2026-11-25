@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "packages": [
+    {
+      "name": "mayura",
+      "version": "1.4.1"
+    }
+  ],
+  "notes": "## Mayura 1.4.1\n\n- Fix the Hono Cloudflare Workers starter so chat, approvals and observation use request-local server state with durable D1 storage.\n- Publish the Mayura SDK and CLI through an independent release plan. Generated starters use the compatible versions of their optional adapters.\n- Refresh the website, starter guides and integration comparisons for Mayura 1.4."
+}

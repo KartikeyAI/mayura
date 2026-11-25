@@ -34,7 +34,7 @@ safely without a database) and requires every result to equal Node's.
 |---|---|
 | Bun 1.4 | Tested in CI. |
 | Deno 2.9 (`npm:` packages) | Tested in CI. |
-| Cloudflare Workers | Tested in CI on workerd, the Workers runtime, at an old compatibility date without `nodejs_compat`. Not yet run on a deployed Worker. |
+| Cloudflare Workers | Tested in CI on workerd without `nodejs_compat`. The [Hono starter with D1](../guides/hono.md#cloudflare-workers-with-d1) also passed a live smoke test with the request-scoped Worker fix. |
 | Vercel Edge Functions | Tested in CI on the Edge runtime, and on a Vercel preview deployment with PostgreSQL through Neon's WebSocket pool. |
 
 The Node-only entry points need Node.js because they start processes, open native modules, use the filesystem or

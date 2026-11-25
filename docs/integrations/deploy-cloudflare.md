@@ -18,8 +18,8 @@ area: "deploy"
   workflows.
 
 The package has no dependencies besides `mayura`. It runs inside the `mayura` CLI on Node.js 22 or 24, on your machine
-or in CI. Mayura on deployed Workers is **experimental**: it runs the same code as CI's workerd but has not yet run as a
-deployment (see [Edge runtimes](../guides/deployment.md#edge-runtimes)).
+or in CI. This Workers deployment target remains **experimental**. The separate
+[Hono starter smoke test](../guides/hono.md#cloudflare-workers-with-d1) uses Wrangler directly with D1.
 
 ## Install
 

@@ -1,11 +1,41 @@
 ---
-title: "What's new in Mayura 1.2.2"
-description: "A runnable Modal and Pinecone RAG starter, security fixes and release checks for every npm package."
+title: "What's new in Mayura 1.4"
+description: "Agent Workspace, editable Tailwind components, typed reply cards and read-only AG-UI reconnection."
 ---
 
-Mayura **1.2.2 is available on npm** for `mayura` and all 105 optional
-[integration packages](../reference/integrations.md). Upgrade Mayura and the extensions your application uses
-to the same version. See the [changelog](changelog.md) and [release evidence](../guides/release-readiness.md).
+## Mayura 1.4
+
+Mayura **1.4.0 is available on npm**. The release includes the framework, its optional integrations
+and the standalone `@mayurajs/ui` package. See the [changelog](changelog.md) and
+[publication evidence](../guides/release-readiness.md#v140-publication).
+
+- **Start with a workspace.** [Agent Workspace](../integrations/ui.md#agent-workspace) assembles chat,
+  thread history, activity, exact approval review, citations and artifacts. Use it with an app-owned AG-UI
+  transport on React 19, with or without the Mayura framework.
+- **Install the source or the npm package.** The [shadcn registry](../integrations/ui.md#shadcn-registry)
+  copies the components with editable Tailwind v4 classes and merges the shared theme into your app stylesheet.
+  The npm package offers both a [Tailwind entry point and compiled CSS](../integrations/ui.md#npm-package).
+  The existing [CLI copy-in UI](../guides/copy-in-ui.md) still works.
+- **Resume viewing an existing run.** An authorized [read-only AG-UI connection](../guides/ag-ui.md#reattach-to-an-existing-run)
+  can restore the transcript and a pending approval after a dropped stream. The read does not resubmit the prompt or the decision.
+- **Show structured results.** [Typed reply cards](../integrations/ui.md#reply-cards) render tables,
+  allowlisted downloads and confirmations, with custom renderers supplied by your app. The server still
+  authorizes actions that write.
+
+Run the [Next.js workspace example](../guides/nextjs.md#agent-workspace-example) to try the full flow locally
+without provider credentials. To upgrade a Mayura backend, run `npm install mayura@1.4.0` and upgrade the
+framework integrations your app uses to 1.4.0. The Mayura AG-UI adapter remains experimental.
+
+## Mayura 1.3
+
+Mayura 1.3 launched [`@mayurajs/ui`](../integrations/ui.md) for React 19 and the Mayura
+[shadcn registry](../integrations/ui.md#shadcn-registry). It introduced standalone composable chat,
+thread history, approvals, citations, artifacts and activity components.
+
+## Mayura 1.2.2
+
+Mayura 1.2.2 shipped the framework and 105 optional integrations.
+See the [release evidence](../guides/release-readiness.md#v122-publication).
 
 - **Run a retrieval agent locally.** Generate the [Modal + Pinecone RAG starter](../guides/rag-modal-pinecone-starter.md)
   with the published CLI. Its credential-free demo ingests Markdown and produces an answer with exact citations.
@@ -73,9 +103,8 @@ outside the completed qualification.
 
 ## Upgrade and qualification
 
-Install the coordinated release with `npm install mayura@1.2.2`. Select matching `@mayurajs/*@1.2.2` packages only
-where needed. Review [versioning](versioning.md), [support](support.md) and the
-[release validation status](../guides/release-readiness.md) before changing a production host. The 1.2.2
+Review [versioning](versioning.md), [support](support.md) and the
+[1.2.2 validation status](../guides/release-readiness.md#v122-publication). The 1.2.2
 qualification included an upgrade from a 1.2.1 database. Check the qualification scope for the external services you use.
 
 ## Mayura 1.1

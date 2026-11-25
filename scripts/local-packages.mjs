@@ -161,12 +161,11 @@ export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3
     if (packages.has(name)) return packages.get(name);
     const { extensions, stageExtension } = await import('./extensions.mjs');
     const found = extensions().find(entry => `@mayurajs/${entry.name}` === name); assert(found, `No extension named ${name}.`);
-    const version = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8')).version;
-    const staging = await mkdtemp(join(output, 'extension-')); const manifest = await stageExtension(found, staging, version);
+    const staging = await mkdtemp(join(output, 'extension-')); const manifest = await stageExtension(found, staging);
     const packing = await mkdtemp(join(output, 'npm-pack-'));
     await run([npm, 'pack', staging, '--ignore-scripts', '--offline', '--pack-destination', packing], workspace);
     const [archive] = await readdir(packing); assert(archive?.endsWith('.tgz'));
-    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${version}.tgz`); await rename(join(packing, archive), destination);
+    const destination = join(tarballs, `${name.replace(/[^A-Za-z0-9]/gu, '-')}-${manifest.version}.tgz`); await rename(join(packing, archive), destination);
     const entry = { archive: pathToFileURL(destination).href, manifest, directory: found.directory }; packages.set(name, entry); return entry;
   };
   const packClosure = async (roots, { optional = false } = {}) => {

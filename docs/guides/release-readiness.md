@@ -1,7 +1,26 @@
 ---
-title: "V1.2.2 release validation status"
-description: "Main CI, npm publication, registry verification, production RAG qualification and remaining interoperability limits."
+title: "Release validation status"
+description: "Mayura 1.4.0 publication evidence, GitHub qualification, registry verification and profile limits."
 ---
+
+## V1.4.0 publication
+
+**1.4.0 was published on November 25, 2026.** All 39 checks, including the Qualification gate, passed in the
+[main qualification run](https://github.com/KartikeyAI/mayura/actions/runs/45616225799) at
+`6231c1a7bfffb51f096da9cfb9b14ade2a3622ca`. The
+[full release rehearsal](https://github.com/KartikeyAI/mayura/actions/runs/45621245787) ran on that commit
+with `version=1.4.0`, `package_set=all` and `dry_run=true`.
+
+The [protected publication](https://github.com/KartikeyAI/mayura/actions/runs/45622877816) published 107
+packages under `latest` through npm trusted publishing, including `@mayurajs/ui`. All 107 archives
+matched the rehearsal byte for byte. The workflow verified registry signatures, provenance and clean
+installation, including installed-package RAG acceptance. All 23 existing `next` tags were preserved.
+The [annotated source tag and GitHub Release](https://github.com/KartikeyAI/mayura/releases/tag/v1.4.0)
+retain the release manifest, SBOM and validation receipts.
+
+The [Agent Workspace](../integrations/ui.md#agent-workspace) supports read-only reconnect when the authorized
+transport implements observation. The [Mayura AG-UI adapter](ag-ui.md) remains experimental. The
+[registered Modal and Pinecone Loki v28 profile](rag-production.md) retains its scoped production qualification.
 
 ## V1.2.2 publication
 

@@ -68,7 +68,7 @@ Code Mode adapter (`mayura/adapter-code-docker`) needs a Docker engine at run ti
 
 Services beyond the core come as separate `@mayurajs/*` packages: model providers, voice, more databases and file
 stores, observability services, hosted sandboxes and browsers, identity providers, API key services and deploy
-targets. Each is released with `mayura` at the same version, so install the same version of both:
+targets. Extensions have their own versions. Install each with a Mayura version allowed by its peer dependency:
 
 ```bash
 npm install mayura @mayurajs/provider-anthropic

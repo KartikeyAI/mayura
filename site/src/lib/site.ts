@@ -1,8 +1,8 @@
 export const site = {
   name: 'Mayura',
-  tagline: 'Build AI agents you can put in production',
-  description: 'Build TypeScript agents with scoped retrieval, persistent conversations, tool approvals and durable workflows. '
-    + 'Explore the qualified Modal and Pinecone RAG profile, 105 integration packages and six framework starters.',
+  tagline: 'Build agents with a workspace',
+  description: 'Build TypeScript agents with typed tools and durable workflows. Add a React and AG-UI workspace with '
+    + 'streaming replies, inspectable citations and tool approvals.',
   origin: import.meta.env.SITE_ORIGIN,
   version: import.meta.env.MAYURA_VERSION,
   repository: 'https://github.com/KartikeyAI/mayura',

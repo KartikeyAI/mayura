@@ -1,18 +1,17 @@
 # Releasing Mayura
 
-Releases are automated and come from `main` only. Mayura is published as **one npm package, `mayura`**, built from
-every workspace package by `scripts/bundle-package.mjs`. `mayura` is the SDK; `mayura/workflows`,
+Releases come from `main`. The **`mayura`** npm package bundles the private framework packages through
+`scripts/bundle-package.mjs`. `mayura` is the SDK; `mayura/workflows`,
 `mayura/workflows/lifecycle`, `mayura/server-node` and the other subpaths mirror the workspace packages; and `mayura`
 is also the CLI command. The package also carries the public documentation (`docs/`), `llms.txt` and `llms-full.txt`.
 Native SQLite, PostgreSQL, QuickJS and React are optional peers, installed only by projects that use them.
 `pnpm test:bundle` installs the package offline with and without those peers, loads every entry point, type-checks a
 strict consumer and runs the CLI.
 
-Beside it, the **`@mayurajs/*` extensions** in `extensions/` (provider packages built on vendor SDKs, and later storage,
-RAG and voice) are published as separate npm packages from the same release, in lockstep: the same version as
-`mayura`, with `mayura@^<version>` as their peer. `scripts/extensions.mjs` stages each one, and its third-party
-dependencies must be listed there, reviewed, before a release accepts them. `pnpm test:bundle` also installs each
-extension offline next to the bundle and type-checks it, and `mayura` is published first.
+The **`@mayurajs/*` extensions** in `extensions/` have independent npm versions. Each extension declares a
+compatible Mayura peer range. Third-party dependencies are reviewed in `scripts/extensions.mjs`. Release plans list
+the packages whose source, dependencies or compatibility changed. The core package includes the SDK, CLI and
+starters. CI stages and checks the full inventory, including an offline install and strict type check per extension.
 
 ## V1.2 released
 
@@ -85,52 +84,37 @@ explicit dist-tag permission. [npm dist-tag permission](https://docs.npmjs.com/t
 
 ### Release sequence
 
-1. A push to `main` runs the **Mayura qualification** workflow: every test on Linux, Windows and macOS, Node.js 22 and
-   24, SQLite and PostgreSQL.
-2. When it passes, **Mayura release** (`.github/workflows/release.yml`) works out the next version from the commits
-   since the last `v*` tag, following [Conventional Commits](https://www.conventionalcommits.org/):
+1. Prepare a release plan on a topic branch from `dev`. Choose a SemVer bump for each package with changes. Use `mayura` for
+   CLI or bundled starter fixes and the extension name for an adapter-only update. Include multiple packages when a
+   change spans their dependency boundary.
 
-   | Commit | Release |
-   |---|---|
-   | `feat: …` | minor (1.2.0 → 1.3.0) |
-   | `fix: …`, `perf: …` | patch (1.2.0 → 1.2.1) |
-   | `feat!: …`, or a `BREAKING CHANGE:` footer | major (1.2.0 → 2.0.0; before 1.0, a minor) |
-   | `docs:`, `test:`, `chore:`, `ci:` and anything else | no release |
+   ```sh
+   node scripts/version.mjs prepare storage-d1-1-4-1 --notes release-notes.md @mayurajs/storage-d1@1.4.1
+   ```
 
-   From a prerelease such as `1.0.0-rc.1`, releases continue the prerelease (`1.0.0-rc.2`); release the final version
-   explicitly.
-3. For a full publication, the version must already be committed through a reviewed PR. Until then planning performs
-   a dry run, even when publishing is enabled. On a clean release branch, run `node scripts/version.mjs set 1.2.0`:
-   this updates the coordinated manifests, version references and changelog. Commit without `[skip ci]`, open a PR,
-   require its qualification, merge through normal branch protection and require the pushed `main` commit to pass.
-   The publisher never commits, rebases or pushes `main`; no branch-protection bypass is needed.
-4. Dispatch the explicit version with `package_set=all` and `dry_run=true` to rehearse the complete release without
-   changing `MAYURA_RELEASE`. The `release-rehearsal-<version>` artifact holds the archives, manifest, SBOM and notes
-   for review. After a successful rehearsal and review, dispatch the same qualified main commit with
-   `dry_run=false` and approve the protected `release` job. Automatic planning can also offer that job once the
-   coordinated version is committed. Do not approve an older waiting job from an earlier workflow revision.
-5. The live job checks the committed version, builds, runs upgrade compatibility, stages all archives and the SBOM,
-   then independently requires complete successful push qualification for the exact current main commit. It validates
-   the complete repository inventory, dependency order and every archive before uploading:
-   - npm uses OIDC only and provenance, with npm 11.21.1 pinned; stable versions publish to `latest`, prereleases to
-     `next`, and the other channel is preserved;
-   - existing versions must match SHA-512 integrity; an existing version with different bytes stops publication;
-   - each upload's intent/result is saved before/after npm runs, and registry visibility, provenance and tags are
-     verified for every package before the receipt is marked published;
-   - only then is the qualified version commit tagged `vX.Y.Z`; a conflicting existing tag is rejected;
-   - the GitHub Release carries the frozen archives, manifest, SBOM, qualification evidence and publication receipt.
+   Commit the updated package version and the plan under `release-plans/`. Include any core version references and
+   changelog changes generated for a core bump. Merge the topic PR into `dev` through the Qualification gate and wait
+   for push qualification on `dev`. Open a promotion PR from `dev` to `main`, wait for its checks and squash merge.
+   The pushed `main` commit must pass the full matrix before the rehearsal and publication.
+2. Open **Actions → Mayura release → Run workflow** on `main`. Select `package_set=changed`, enter the plan filename
+   without `.json`, and keep `dry_run=true`. The rehearsal checks the full inventory and installs the staged archives
+   alongside the exact unchanged versions from npm. Its artifact contains the selected tarballs, plan-bound manifest,
+   mixed-version compatibility result, SBOM and release notes.
+3. After reviewing the rehearsal, dispatch the same qualified commit and plan with `dry_run=false`. Approve the job
+   in the protected `release` environment. It verifies the exact main commit and mixed-version install before npm
+   OIDC can upload the selected archives. Stable versions use `latest` and prereleases use `next`.
+4. The publisher reconciles each upload against SHA-512, verifies provenance, and checks distribution tags. It then
+   clean-installs the resulting package mix and verifies registry signatures and attestations. The workflow tags the
+   exact qualified commit as `vX.Y.Z` for core and `release/<extension>/vX.Y.Z` for each selected extension. The GitHub
+   Release carries the selected archives, manifest, plan, SBOM, and qualification and publication evidence.
 
-The `release-all-<version>` Actions artifact keeps immutable recovery evidence for 30 days, including on failure.
-Use **Re-run jobs on the original workflow run** to recover it; do not start a new dispatch after a partial or
-uncertain publication. Accepted uploads are never replayed, and uncertain uploads must become visible with the
-expected integrity before further writes. Registry scanning can delay visibility; reconciliation waits up to 20
-minutes after submission. Every poll rechecks all packages. Recovery fails closed if the artifact is missing,
-archives/commit differ, main moved, or distribution tags changed unexpectedly. Investigate such failures before any
-new operation. A dry run or a newly generated archive is not a recovery receipt. Existing GitHub Release notes are
-preserved when a completed publication only needs its assets attached again.
+The `release-plan-<id>` Actions artifact keeps recovery evidence for 30 days, including on failure.
+Use **Re-run jobs on the original workflow run** after a partial or uncertain publication. An accepted write is
+never replayed. An uncertain write must become visible with the expected integrity before publication continues.
+Each registry poll verifies the selected packages. Recovery stops if evidence is missing, archives differ, main
+moved, or distribution tags changed unexpectedly.
 
-The first release, or any exact version, is started by hand: **Actions → Mayura release → Run workflow** on `main`,
-with the version (for example `1.0.0-rc.1`). With no `v*` tag yet, automatic runs release nothing.
+The explicit `all` and `prerelease-22` inputs are legacy coordinated modes. Use a package plan for new releases.
 
 ## Qualification layout
 
@@ -199,10 +183,10 @@ pushed, tagged or published.
    (npm 11.5.1; Node 22.14.0). Keep the runner's npm version at or above that minimum.
 2. **Protected environment.** Create the `release` environment (Settings → Environments) with required reviewers and
    the `main` branch only. The release job waits there for approval before it publishes anything.
-3. **Version PR and tag permission.** Merge the coordinated version/changelog PR through the required
+3. **Version PR and tag permission.** Merge the package plan PR through the required
    **Qualification gate**, without a skip-CI marker, and qualify main. The release job's token only needs to create
    the version tag and GitHub Release, not bypass main's rules. If tag rules exist, allow the intended release actor
-   to create `v*` tags. `RELEASE_GIT_COMMITTER_NAME` and `RELEASE_GIT_COMMITTER_EMAIL` name the tagger, falling back to
+   to create `v*` and `release/**` tags. `RELEASE_GIT_COMMITTER_NAME` and `RELEASE_GIT_COMMITTER_EMAIL` name the tagger, falling back to
    `RELEASE_GIT_NAME`/`RELEASE_GIT_EMAIL`, then `github-actions[bot]`. The version commit uses the PR author's normal
    Git identity; the publisher does not author a replacement commit.
 4. **Enable publishing:** set the repository variable `MAYURA_RELEASE=enabled`.
@@ -250,8 +234,8 @@ Release carries the same archive.
 - `pnpm docs:check`: every documentation snippet type-checks against the real entry points and every link resolves.
 - `pnpm release:artifacts` stages the package without changing source manifests, adds the exact Apache-2.0 `LICENSE`
   and `NOTICE`, disables lifecycle scripts, verifies archive paths, content and metadata, and writes SHA-256 checksums
-  bound to the source commit. `scripts/publish-staged.mjs` requires an explicit manifest, the complete extension
-  inventory, committed version, exact-main qualification and matching archives. Registry errors never imply that a
+  bound to the source commit. `scripts/publish-staged.mjs` requires the archive manifest, committed package plan,
+  exact-main qualification, a mixed-version install check and matching selected archives. Registry errors never imply that a
   version is absent. Both live writes and recovery verify distribution tags, integrity and provenance.
 
 Source packages stay `private: true`, so an ordinary workspace command cannot publish them. Never overwrite a published
@@ -260,9 +244,8 @@ version; a failed verification stops the release.
 ## Locally
 
 ```text
-node scripts/version.mjs check              # every file names the same version (CI runs this)
-node scripts/version.mjs next               # what an automatic release would be now
+node scripts/version.mjs check              # core version consistency and valid extension versions
 pnpm build && pnpm release:artifacts        # stage and verify the archive
-node scripts/publish-staged.mjs --manifest .artifacts/release-XXXX/release-manifest.json --tag latest
+node scripts/publish-staged.mjs --manifest .artifacts/release-XXXX/release-manifest.json --plan release-plans/storage-d1-1-4-1.json --tag latest
 # Offline dry run for a stable version; use --tag next for a prerelease. Live writes require release.yml.
 ```

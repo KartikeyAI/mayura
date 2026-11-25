@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error The release scripts are plain JavaScript modules without declarations.
+import { parseReleaseVersion } from '../../../scripts/package-release-plan.mjs';
 
 describe('public API classification', () => {
   it('classifies every workspace entry point exactly once as stable or trusted-host, with a reviewed API report', async () => {
@@ -29,8 +31,8 @@ describe('public API classification', () => {
     const tiers = [...policy.stableEntryPoints, ...policy.trustedHostEntryPoints, ...policy.experimentalEntryPoints];
     expect(new Set(tiers).size).toBe(tiers.length);
     expect([...classified].sort()).toEqual([...tiers].sort());
-    // The @mayurajs extensions are separate npm packages (not subpaths of mayura), released in lockstep and private in
-    // the workspace; each entry point is listed once as an extension entry point.
+    // Each published extension has its own npm version and stays private in the workspace.
+    // Each public export must be listed once as an extension entry point.
     const extensions: string[] = [];
     const extensionsRoot = resolve(root, 'extensions');
     const extensionDirectories = existsSync(extensionsRoot) ? await readdir(extensionsRoot, { withFileTypes: true }) : [];
@@ -40,7 +42,7 @@ describe('public API classification', () => {
       if (!entry.isDirectory() || !existsSync(manifestPath)) continue;
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { name: string; version: string; private: boolean; exports?: Record<string, unknown> };
       expect(manifest.name).toBe(`@mayurajs/${directory}`);
-      expect(manifest.version).toBe(policy.release);
+      expect(() => parseReleaseVersion(manifest.version)).not.toThrow();
       expect(manifest.private).toBe(true);
       for (const [path, target] of Object.entries(manifest.exports ?? {})) {
         const asset = typeof target === 'string' ? target : (target as { default?: string }).default;

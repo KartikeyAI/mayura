@@ -3,8 +3,8 @@ title: "Integration packages"
 description: "Every @mayurajs package: UI, model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."
 ---
 
-Beside `mayura`, 106 optional `@mayurajs/*` packages add UI and integrations. Each is published with every Mayura
-release at the same version. The standalone UI library can run with a compatible AG-UI transport and makes Mayura an optional peer:
+Beside `mayura`, 106 optional `@mayurajs/*` packages add UI and integrations. They have their own versions and
+declare compatible Mayura versions through peer dependencies. The standalone UI library makes Mayura an optional peer:
 
 ```bash
 npm install mayura @mayurajs/storage-mysql

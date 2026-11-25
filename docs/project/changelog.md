@@ -3,9 +3,47 @@ title: Mayura changelog
 description: Release history for Mayura, including the latest changes, upgrade notes and links to published artifacts.
 ---
 
-Mayura and its optional [integration packages](../reference/integrations.md) ship at coordinated versions.
+Mayura and its optional [integration packages](../reference/integrations.md) have their own npm versions.
 See the [versioning policy](versioning.md) for compatibility and the [GitHub changelog](https://github.com/KartikeyAI/mayura/blob/main/CHANGELOG.md)
 for the complete change history.
+
+## 1.4.1
+
+- The [Hono Cloudflare Workers starter](../guides/hono.md) gives each invocation its own agent server and
+  persists state in D1 so chat, approvals and observation can continue across requests.
+- `mayura` and the optional extensions release independently. The CLI pins generated starters to their
+  compatible adapter releases. See the [versioning policy](versioning.md).
+
+## 1.4.0 · November 25, 2026
+
+- **Agent Workspace.** A ready-to-compose React 19 workspace brings together conversation, thread history,
+  run activity, exact approval review, citations and artifacts. Supply your own transport and customize the
+  sidebar, composer or message rendering. See the [Mayura UI guide](../integrations/ui.md#agent-workspace).
+- **Reconnect to a running agent.** With authorized AG-UI observation, reconnecting restores the current
+  transcript and pending approval. The observation sends no new prompt, approval decision or tool call.
+  The [Mayura AG-UI adapter](../guides/ag-ui.md#reattach-to-an-existing-run) remains experimental.
+- **Reply cards.** Render tables, allowlisted downloads and confirmations. Applications can register custom
+  renderers and keep authorization for any write at their own endpoint. See [reply cards](../integrations/ui.md#reply-cards).
+- **Editable Tailwind v4 source.** Install workspace components through the
+  [shadcn registry](../integrations/ui.md#shadcn-registry), or use the npm package with your app's Tailwind build.
+  The compiled fallback and [`mayura add ui`](../guides/copy-in-ui.md) remain available.
+- **Runnable example.** Try streaming, reconnecting to the same run and reviewing a proposed write in the
+  [Next.js Agent Workspace example](../guides/nextjs.md#agent-workspace-example) with no provider credentials.
+
+Published all 107 packages to npm under `latest`, with all 23 existing `next` tags preserved.
+
+[Release artifacts](https://github.com/KartikeyAI/mayura/releases/tag/v1.4.0) ·
+[Validation results](../guides/release-readiness.md#v140-publication)
+
+## 1.3.0 · November 25, 2026
+
+- Introduced [`@mayurajs/ui`](../integrations/ui.md) as a standalone React 19 component library with
+  chat, threads, activity, citations, artifacts and exact approval review. The AG-UI hook accepts an app-owned transport.
+- Opened the [shadcn registry](../integrations/ui.md#shadcn-registry) for installing source into React apps.
+- Rechecked identity and run access before native event-stream disclosures. Revoked observations close while
+  the underlying run continues.
+
+[Release artifacts](https://github.com/KartikeyAI/mayura/releases/tag/v1.3.0)
 
 ## 1.2.2 · November 23, 2026
 
