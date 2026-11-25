@@ -1,5 +1,5 @@
-/** Published V1.2 facts shared by the marketing surfaces. Historical release copy stays dated. */
-export const integrationPackageCount = 105;
+/** Extension packages in the release inventory. Historical release copy stays dated. */
+export const integrationPackageCount = 106;
 
 /** Matches the public initializer's six framework starters; docs own the full setup instructions. */
 export const frameworkStarters = [

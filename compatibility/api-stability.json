@@ -175,6 +175,8 @@
     "@mayurajs/storage-libsql",
     "@mayurajs/storage-mongodb",
     "@mayurajs/storage-mysql",
+    "@mayurajs/ui",
+    "@mayurajs/ui/ag-ui",
     "@mayurajs/vector-chroma",
     "@mayurajs/vector-libsql",
     "@mayurajs/vector-pgvector",
