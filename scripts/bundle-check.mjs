@@ -13,6 +13,7 @@ import { compilerPlatform, createPacker, run, workspace } from './local-packages
 import { workDirectory } from './work-directory.mjs';
 import { bundleExtensions, bundleShard } from './ci-shards.mjs';
 import { packageSize } from './package-size.mjs';
+import { checkStandaloneUi } from './ui-standalone-check.mjs';
 
 const args = process.argv.slice(2);
 const coreOnly = args.length === 1 && args[0] === '--core-only';
@@ -106,6 +107,7 @@ const coreMs = shard.index === 1 ? Math.round(performance.now() - coreStarted) :
 const { extensions } = await import('./extensions.mjs');
 const extensionResults = {};
 const extensionMs = {};
+let standaloneUi;
 const inventory = extensions();
 const selected = new Set(coreOnly ? [] : bundleExtensions(inventory.map(extension => extension.name), shard));
 for (const extension of inventory.filter(extension => selected.has(extension.name))) {
@@ -113,27 +115,73 @@ for (const extension of inventory.filter(extension => selected.has(extension.nam
   const name = `@mayurajs/${extension.name}`;
   const directory = join(output, `extension-${extension.name}`); await mkdir(directory);
   // Optional dependencies installed here come along: a driver's native binary for this platform (libSQL's) is one.
-  const closure = await packClosure([[name, workspace]], { optional: true });
-  const typescript = await packClosure([['typescript', workspace], [compilerPlatform, join(workspace, 'node_modules', '.pnpm')], ['@types/node', workspace]]);
+  const closure = await packClosure([[name, workspace], ['mayura', workspace]], { optional: true });
+  const { manifest: published, archive: extensionArchive } = packages.get(name);
+  const requiredPeers = Object.keys(published.peerDependencies ?? {})
+    .filter(peer => peer !== 'mayura' && !published.peerDependenciesMeta?.[peer]?.optional);
+  const typePackages = ['typescript', compilerPlatform, '@types/node'];
+  const compilerRoots = [['typescript', workspace], [compilerPlatform, join(workspace, 'node_modules', '.pnpm')], ['@types/node', workspace]];
+  if (requiredPeers.includes('react')) {
+    typePackages.push('@types/react');
+    compilerRoots.push(['@types/react', resolveFrom('@types/react')]);
+  }
+  const typescript = await packClosure(compilerRoots);
   const overrides = Object.fromEntries([...closure, ...typescript].filter(entry => entry !== 'mayura' && entry !== name).map(entry => [entry, packages.get(entry).archive]));
   await writeFile(join(directory, 'package.json'), JSON.stringify({ name: `extension-${extension.name}`, private: true, type: 'module',
-    dependencies: { mayura: pathToFileURL(archive).href, [name]: packages.get(name).archive },
-    devDependencies: Object.fromEntries([...typescript].filter(entry => ['typescript', compilerPlatform, '@types/node'].includes(entry)).map(entry => [entry, packages.get(entry).archive])), overrides }, null, 2));
+    dependencies: { mayura: pathToFileURL(archive).href, [name]: extensionArchive,
+      ...Object.fromEntries(requiredPeers.map(peer => [peer, packages.get(peer).archive])) },
+    devDependencies: Object.fromEntries(typePackages.map(entry => [entry, packages.get(entry).archive])), overrides }, null, 2));
   const config = join(directory, 'empty.npmrc'); await writeFile(config, '');
   await run([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--userconfig', config, '--cache', join(output, 'npm-cache')], directory, { timeout: 600_000 });
-  await writeFile(join(directory, 'probe.mjs'), `const module = await import(${JSON.stringify(name)}); console.log(JSON.stringify(Object.keys(module).length));\n`);
+  const ui = name === '@mayurajs/ui';
+  const uiProbe = ui ? String.raw`
+const { default: assert } = await import('node:assert/strict');
+const { readFile } = await import('node:fs/promises');
+const agUi = await import('@mayurajs/ui/ag-ui');
+assert.equal(typeof agUi.useAgUiConversation, 'function');
+assert.equal(typeof module.UiRoot, 'function');
+const styles = await readFile(new URL(import.meta.resolve('@mayurajs/ui/styles.css')), 'utf8');
+assert.match(styles, /:where\(\.mayura-ui\)[^{}]*\.rich-composer\b/u, 'The published stylesheet must scope component styles.');
+assert.doesNotMatch(styles, /(?:^|[{},])\s*(?:html|body|:root)\s*(?:\{|,)/u, 'The published stylesheet must not reset the host page.');
+` : '';
+  await writeFile(join(directory, 'probe.mjs'), `const module = await import(${JSON.stringify(name)});\n${uiProbe}console.log(JSON.stringify(Object.keys(module).length));\n`);
   const exported = JSON.parse((await run([join(directory, 'probe.mjs')], directory)).stdout);
   assert(exported > 0, `${name} did not load next to the bundle.`);
-  await writeFile(join(directory, 'consumer.ts'), `import * as extension from '${name}';\nimport { createModels } from 'mayura';\nexport const used = [extension, createModels];\n`);
+  const consumer = ui ? 'consumer.tsx' : 'consumer.ts';
+  await writeFile(join(directory, consumer), ui ? `
+import { ArtifactPanel, ReplyArtifacts, UiRoot } from '@mayurajs/ui';
+import { listThreadHistory, useAgUiConversation, type AgUiEvent, type AgUiRunInput, type AgUiTransport } from '@mayurajs/ui/ag-ui';
+import type { AgUiEvent as MayuraAgUiEvent, AgUiRunInput as MayuraAgUiRunInput } from 'mayura/ag-ui';
+
+declare const sendRun: (input: MayuraAgUiRunInput, signal: AbortSignal) => Promise<Response>;
+export const requestFitsUi = (input: MayuraAgUiRunInput): AgUiRunInput => input;
+export const eventFitsUi = (event: MayuraAgUiEvent): AgUiEvent => event;
+const transport = {
+  run: sendRun,
+  async listThreads() { return { threads: [] }; },
+} satisfies AgUiTransport;
+
+export const readHistory = (signal: AbortSignal) => listThreadHistory(transport, signal);
+export function Consumer() {
+  const { artifacts } = useAgUiConversation({ transport, mediaPaths: ['/media/answer.wav'] });
+  const first = artifacts[0];
+  return <UiRoot theme="dark">
+    <ReplyArtifacts items={artifacts} panelId="reply-inspector" active={null} mobile={false} onOpen={() => {}} />
+    {first && <ArtifactPanel artifact={first} />}
+  </UiRoot>;
+}
+` : `import * as extension from '${name}';\nimport { createModels } from 'mayura';\nexport const used = [extension, createModels];\n`);
   await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM', 'DOM.Iterable'],
-    strict: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'] }, include: ['consumer.ts'] }, null, 2));
+    strict: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, skipLibCheck: false, noEmit: true, types: ['node'],
+    ...(ui ? { jsx: 'react-jsx', noUncheckedIndexedAccess: true } : {}) }, include: [consumer] }, null, 2));
   await run([join(directory, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(directory, 'tsconfig.json'), '--pretty', 'false'], directory, { timeout: 300_000 });
   extensionResults[name] = exported;
+  if (ui) standaloneUi = await checkStandaloneUi(packer, output);
   extensionMs[name] = Math.round(performance.now() - extensionStarted);
 }
 
 const files = (await readdir(join(staged, 'lib'))).length;
 console.log(JSON.stringify({ status: 'passed', package: `${manifest.name}@${manifest.version}`, tarballBytes: size.compressedBytes, unpackedBytes: size.unpackedBytes,
   archiveFiles: packed[0].entryCount, packagesBundled: files, entryPoints: subpaths.length, withoutPeers: lightResults === null ? null : Object.keys(lightResults).length,
-  rewritten: summary.rewritten, coreChecked: shard.index === 1, shard, totalExtensions: inventory.length, extensions: extensionResults,
+  rewritten: summary.rewritten, coreChecked: shard.index === 1, shard, totalExtensions: inventory.length, extensions: extensionResults, standaloneUi,
   timings: { totalMs: Math.round(performance.now() - started), coreMs, extensions: extensionMs }, output }));

@@ -29,6 +29,9 @@
       "path": "packages/mayura"
     },
     {
+      "path": "extensions/ui"
+    },
+    {
       "path": "extensions/provider-openai"
     },
     {

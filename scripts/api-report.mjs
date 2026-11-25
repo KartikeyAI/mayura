@@ -107,6 +107,8 @@ const report = {};
 for (const [name, { directory, manifest }] of [...packageDirectories].sort(([a], [b]) => a.localeCompare(b))) {
   if (policy.internalPackages.includes(name)) continue;
   for (const [path, entry] of Object.entries(manifest.exports ?? {})) {
+    const asset = typeof entry === 'string' ? entry : entry.default;
+    if (path.endsWith('.css') && typeof asset === 'string' && asset.endsWith('.css')) continue;
     assert(typeof entry === 'object' && typeof entry.types === 'string', `${name}${path.slice(1)} has no types entry.`);
     const symbols = await exportsOf(join(directory, entry.types));
     report[path === '.' ? name : `${name}${path.slice(1)}`] = Object.fromEntries([...symbols].sort(([a], [b]) => a.localeCompare(b)).map(([symbol, value]) =>

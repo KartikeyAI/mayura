@@ -106,6 +106,10 @@ Rules that matter when writing Mayura code:
 - [Deploy with mayura deploy](docs/cli/deploy.md): Write a target's deployment files, plan a release and run it with the tools you already use: Docker, Docker Compose, Kubernetes, or a platform package.
 - [Operate a server](docs/cli/operations.md): Inspect and control a running Mayura server from the CLI: health, tools, runs, human requests, workflows and the fleet.
 
+## Integrations: user interface
+
+- [Mayura UI](docs/integrations/ui.md): Use standalone Tailwind React components with a backend of your choice or connect them to Mayura through AG-UI.
+
 ## Integrations: vector stores
 
 - [Chroma vectors](docs/integrations/vector-chroma.md): Scoped native vector storage for chroma.
@@ -256,7 +260,7 @@ Rules that matter when writing Mayura code:
 ## Reference
 
 - [Entry points](docs/reference/entry-points.md): Every public entry point of the mayura package: what it is for, its key exports and the optional packages it needs.
-- [Integration packages](docs/reference/integrations.md): Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets.
+- [Integration packages](docs/reference/integrations.md): Every @mayurajs package: UI, model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets.
 
 ## Project
 

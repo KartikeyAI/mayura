@@ -21,6 +21,17 @@ export const reviewedPeers = {
   'browser-stagehand': { '@browserbasehq/stagehand': '>=3.7.4 <4' },
 };
 
+export const reviewedRequiredPeers = {
+  ui: { react: '>=19 <20' },
+};
+
+/** These extensions can be installed without Mayura. */
+export const standaloneExtensions = new Set(['ui']);
+
+const reviewedBuildDependencies = {
+  ui: { '@tailwindcss/node': '4.3.3', '@tailwindcss/oxide': '4.3.3', postcss: '8.5.28', tailwindcss: '4.3.3' },
+};
+
 /**
  * The third-party dependencies each extension may have, by extension. Vendor SDKs are exactly what a release must
  * review, so a new one fails the release checks until it is listed here.
@@ -165,10 +176,16 @@ export function checkSource({ name, manifest }, version) {
   assert.equal(manifest.private, true, `extensions/${name} must stay private in the workspace; staging publishes it.`);
   assert.equal(manifest.version, version, `extensions/${name} is at ${manifest.version}, not ${version}.`);
   assert.equal(manifest.peerDependencies?.mayura, 'workspace:^', `extensions/${name} must have mayura as its peer (workspace:^).`);
+  const standalone = standaloneExtensions.has(name);
+  assert.equal(manifest.peerDependenciesMeta?.mayura?.optional === true, standalone,
+    `extensions/${name} changed the optional status of mayura.`);
   const peers = Object.fromEntries(Object.entries(manifest.peerDependencies).filter(([peer]) => peer !== 'mayura'));
-  assert.deepEqual(peers, reviewedPeers[name] ?? {}, `extensions/${name} has unreviewed peers; list them in scripts/extensions.mjs.`);
-  for (const peer of Object.keys(peers)) assert.equal(manifest.peerDependenciesMeta?.[peer]?.optional, true, `extensions/${name} must take ${peer} as an optional peer.`);
-  assert.deepEqual(Object.keys(manifest.devDependencies ?? {}), ['mayura'], `extensions/${name} may only have mayura as a development dependency.`);
+  assert.deepEqual(peers, { ...reviewedPeers[name], ...reviewedRequiredPeers[name] },
+    `extensions/${name} has unreviewed peers; list them in scripts/extensions.mjs.`);
+  for (const peer of Object.keys(peers)) assert.equal(manifest.peerDependenciesMeta?.[peer]?.optional === true,
+    Object.hasOwn(reviewedPeers[name] ?? {}, peer), `extensions/${name} changed the optional status of ${peer}.`);
+  assert.deepEqual(manifest.devDependencies ?? {}, { ...(standalone ? {} : { mayura: 'workspace:*' }), ...reviewedBuildDependencies[name] },
+    `extensions/${name} has unreviewed development dependencies.`);
   const dependencies = Object.keys(manifest.dependencies ?? {}).sort();
   assert.deepEqual(dependencies, [...(reviewedDependencies[name] ?? [])].sort(), `extensions/${name} has unreviewed dependencies; list them in scripts/extensions.mjs.`);
   for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
@@ -193,29 +210,36 @@ function sources(folder) {
  */
 export async function stageExtension(extension, output, version) {
   const { name, directory, manifest } = extension;
+  const standalone = standaloneExtensions.has(name);
   const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8'));
   checkSource(extension, version);
   assert(existsSync(join(directory, 'dist')), `Build extensions/${name} first (pnpm build).`);
   for (const file of sources(join(directory, 'dist'))) {
     const text = readFileSync(file, 'utf8');
     assert(!/(?:from|import)\s*\(?\s*['"]@mayura\//u.test(text), `extensions/${name} imports an internal @mayura package: ${file}`);
+    if (standalone) {
+      assert(!/(?:from|import)\s*\(?\s*['"]mayura(?:\/|['"])/u.test(text),
+        `extensions/${name} imports mayura from a standalone entry point: ${file}`);
+    }
   }
   await mkdir(output, { recursive: true });
   await cp(join(directory, 'dist'), join(output, 'dist'), { recursive: true });
   await cp(join(directory, 'src'), join(output, 'src'), { recursive: true });
   for (const file of ['LICENSE', 'NOTICE']) await cp(join(workspace, file), join(output, file));
   if (existsSync(join(directory, 'README.md'))) await cp(join(directory, 'README.md'), join(output, 'README.md'));
+  const optionalPeers = Object.keys(reviewedPeers[name] ?? {});
+  if (standalone) optionalPeers.push('mayura');
   const published = {
     name: manifest.name, version, description: manifest.description, keywords: manifest.keywords,
     author: root.author, license: 'Apache-2.0',
     repository: { ...root.repository, directory: `extensions/${name}` }, homepage: root.homepage, bugs: root.bugs,
     type: 'module', sideEffects: manifest.sideEffects ?? false, engines: manifest.engines, exports: manifest.exports,
-    files: ['dist', 'src/**/*.ts', 'README.md', 'LICENSE', 'NOTICE'],
+    files: ['dist', 'src/**/*.ts', ...(standalone ? ['src/**/*.tsx'] : []), 'README.md', 'LICENSE', 'NOTICE'],
     // Other extensions are released with this one: pin them to this release.
     dependencies: Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([dependency, range]) => [dependency, dependency.startsWith('@mayurajs/') ? version : range])),
     // Lockstep: an extension works with the mayura it was released with and later minors of the same major.
-    peerDependencies: { mayura: `^${version}`, ...reviewedPeers[name] },
-    ...(reviewedPeers[name] ? { peerDependenciesMeta: Object.fromEntries(Object.keys(reviewedPeers[name]).map(peer => [peer, { optional: true }])) } : {}),
+    peerDependencies: { mayura: `^${version}`, ...reviewedPeers[name], ...reviewedRequiredPeers[name] },
+    ...(optionalPeers.length ? { peerDependenciesMeta: Object.fromEntries(optionalPeers.map(peer => [peer, { optional: true }])) } : {}),
     publishConfig: { access: 'public', provenance: true },
   };
   await writeFile(join(output, 'package.json'), `${JSON.stringify(published, null, 2)}\n`);

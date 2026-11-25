@@ -19,6 +19,7 @@ const END = '<!-- integrations:end -->';
 
 /** Each area: its key (the `area` of its pages), the package name prefixes it holds, its guide, and one line about it. */
 const areas = [
+  { key: 'ui', title: 'User interface', prefixes: ['ui'], guide: 'guides/copy-in-ui.md#shadcn-registry', about: 'Standalone React components for agent interfaces and AG-UI.' },
   { key: 'vectors', title: 'Vector stores', prefixes: ['vector-'], guide: 'guides/rag.md', about: 'Scoped vector storage beside built-in memory and native-memory adapters.' },
   { key: 'rerankers', title: 'Rerankers', prefixes: ['reranker-'], guide: 'guides/rag.md', about: 'Bounded reranking of authorized evidence by original document index.' },
   { key: 'gateways', title: 'AI gateways', prefixes: ['gateway-'], guide: 'guides/ai-gateways.md', about: 'Registry providers for explicitly configured gateways, with bounded calls and reported-cost accounting.' },
@@ -57,11 +58,11 @@ if (problems.length) { console.error(problems.join('\n')); process.exit(1); }
 const lines = [
   '---',
   'title: "Integration packages"',
-  'description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."',
+  'description: "Every @mayurajs package: UI, model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."',
   '---',
   '',
-  `Beside \`mayura\`, ${packages.length} optional \`@mayurajs/*\` packages connect it to other services. Each is published with every Mayura`,
-  'release at the same version, takes `mayura` as a peer, and is installed only if you use it:',
+  `Beside \`mayura\`, ${packages.length} optional \`@mayurajs/*\` packages add UI and integrations. Each is published with every Mayura`,
+  'release at the same version. The standalone UI library can run with a compatible AG-UI transport and makes Mayura an optional peer:',
   '',
   '```bash',
   'npm install mayura @mayurajs/storage-mysql',

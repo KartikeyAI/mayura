@@ -11,6 +11,7 @@ coverage/
 .artifacts/
 .claude/
 internal-docs/
+examples/ui-ag-ui-prototype/.generated/
 
 # Framework build outputs produced by workspace starter qualification.
 packages/cli/starters/*/.next/
