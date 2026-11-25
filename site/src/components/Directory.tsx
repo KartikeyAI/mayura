@@ -26,8 +26,8 @@ export function Directory() {
           Connect Mayura to the services you already use
         </h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
-          {packages} optional <code className="font-mono text-[0.9em]">@mayurajs</code> packages, released with every
-          version of Mayura, plus what <code className="font-mono text-[0.9em]">mayura</code> connects to on its own. Every
+          {packages} optional <code className="font-mono text-[0.9em]">@mayurajs</code> packages, plus what
+          <code className="mx-1 font-mono text-[0.9em]">mayura</code> connects to on its own. Every
           package takes its credentials from you, reads nothing from the environment, and works under the same
           permissions and budgets as the rest of your app.
         </p>

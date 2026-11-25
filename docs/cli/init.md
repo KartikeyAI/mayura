@@ -6,8 +6,9 @@ description: "Create a Mayura project from a starter or a template with mayura i
 `mayura init` creates a new project. You choose between two kinds of starting point:
 
 - A **starter** is a complete application you can run, test and ship: configuration read from the environment,
-  tests and CI. Choose four server applications, six framework notebooks with persistent chat and exact approvals,
-  or the `cli-agent` command-line assistant. See [Choose a starter](../guides/choosing-a-starter.md).
+  tests and CI. Choose among server applications, six framework notebooks with persistent chat and exact approvals,
+  the `rag-modal-pinecone` retrieval starter, and the `cli-agent` command-line assistant.
+  See [Choose a starter](../guides/choosing-a-starter.md).
 - A **template** is one small file that shows one feature, with a `package.json` and `tsconfig.json` around it. Start
   here to learn a single idea.
 

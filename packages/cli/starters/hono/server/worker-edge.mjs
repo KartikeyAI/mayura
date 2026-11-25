@@ -1,13 +1,18 @@
 import { Hono } from 'hono';
 import { createD1Store } from '@mayurajs/storage-d1';
 import { createApplication } from './application.mjs';
-let ready; let pinned;
-function application(env) {
+import { recoverConversationPage } from './recovery-cursor.mjs';
+let pinned;
+function application(env, scheduled = false) {
   if (!env.MAYURA_SESSIONS_JSON || env.MAYURA_SESSIONS_JSON.length > 16384) return Promise.reject(new Error('Identity configuration required.'));
   const identity = JSON.stringify([env.MAYURA_PUBLIC_ORIGIN, env.MAYURA_PROJECT_ID, env.MAYURA_SESSIONS_JSON]);
   if (pinned && pinned !== identity) return Promise.reject(new Error('Restart the isolate after changing identity configuration.'));
   pinned = identity;
-  return ready ??= createApplication({ store: createD1Store({ database: env.DB }), publicOrigin: env.MAYURA_PUBLIC_ORIGIN, projectId: env.MAYURA_PROJECT_ID, sessions: JSON.parse(env.MAYURA_SESSIONS_JSON) }).catch(error => { ready = undefined; throw error; });
+  // The server owns abort signals, run observers and other request-local I/O.
+  // D1 carries run and conversation state between fetch and scheduled invocations.
+  const store = createD1Store({ database: env.DB });
+  return createApplication({ store, publicOrigin: env.MAYURA_PUBLIC_ORIGIN, projectId: env.MAYURA_PROJECT_ID, sessions: JSON.parse(env.MAYURA_SESSIONS_JSON),
+    ...(scheduled ? { recoverPage: recover => recoverConversationPage(store, env.MAYURA_PROJECT_ID, recover) } : {}) });
 }
 const router = new Hono();
 router.all('/api/mayura/*', async context => {
@@ -15,4 +20,4 @@ router.all('/api/mayura/*', async context => {
   catch { return Response.json({ error: { code: 'SERVICE_UNAVAILABLE' } }, { status: 503 }); }
 });
 router.get('*', context => context.env.ASSETS.fetch(context.req.raw));
-export default { fetch: router.fetch, scheduled(_event, env, context) { context.waitUntil(application(env).then(app => app.runOnce())); } };
+export default { fetch: router.fetch, scheduled(_event, env, context) { context.waitUntil(application(env, true).then(app => app.runOnce())); } };

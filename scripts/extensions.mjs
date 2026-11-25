@@ -1,12 +1,14 @@
-// The @mayurajs/* packages in extensions/: published to npm separately from `mayura`, in lockstep with it (the same
-// version), with `mayura` as a peer. Each is a private workspace package; stageExtension() turns one into the package
-// that is published.
+// The @mayurajs/* packages in extensions/ publish separately from `mayura`, which they use as a peer.
+// Each is a private workspace package; stageExtension() turns one into the package that is published.
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The workflow reads the extension inventory before installing dependencies.
+const require = createRequire(import.meta.url);
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const extensionsRoot = join(workspace, 'extensions');
 
@@ -24,6 +26,11 @@ export const reviewedPeers = {
 export const reviewedRequiredPeers = {
   ui: { react: '>=19 <20' },
 };
+
+// The last coordinated release is the compatibility baseline. Review a higher floor when an extension adopts
+// newer core APIs. Releasing another version of Mayura alone must not raise an existing extension's minimum.
+const defaultMayuraPeer = '^1.4.0';
+const reviewedMayuraPeers = {};
 
 /** These extensions can be installed without Mayura. */
 export const standaloneExtensions = new Set(['ui']);
@@ -149,11 +156,12 @@ export const reviewedDependencies = {
  * Every extension: its folder name, directory and source manifest, with each extension after the extensions it
  * depends on (so publishing in this order never publishes a package before its dependencies), otherwise by name.
  */
-export function extensions() {
-  if (!existsSync(extensionsRoot)) return [];
-  const all = readdirSync(extensionsRoot, { withFileTypes: true })
-    .filter(entry => entry.isDirectory() && existsSync(join(extensionsRoot, entry.name, 'package.json')))
-    .map(entry => ({ name: entry.name, directory: join(extensionsRoot, entry.name), manifest: JSON.parse(readFileSync(join(extensionsRoot, entry.name, 'package.json'), 'utf8')) }))
+export function extensions(root = workspace) {
+  const directory = join(root, 'extensions');
+  if (!existsSync(directory)) return [];
+  const all = readdirSync(directory, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && existsSync(join(directory, entry.name, 'package.json')))
+    .map(entry => ({ name: entry.name, directory: join(directory, entry.name), manifest: JSON.parse(readFileSync(join(directory, entry.name, 'package.json'), 'utf8')) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const ordered = []; const placed = new Set(); const visiting = new Set();
   const place = extension => {
@@ -170,11 +178,32 @@ export function extensions() {
   return ordered;
 }
 
-/** Checks a source manifest: private, at the release version, named after its folder, with `mayura` only as a peer. */
-export function checkSource({ name, manifest }, version) {
+/** Published dependency ranges. The historical reviewed RC uses its original coordinated manifest format. */
+export function releaseDependencyRanges({ name, directory, manifest }, { legacyVersion } = {}) {
+  const semver = require('semver');
+  const mayura = legacyVersion === undefined ? reviewedMayuraPeers[name] ?? defaultMayuraPeer : `^${legacyVersion}`;
+  const dependencies = Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([dependency, range]) => {
+    if (!dependency.startsWith('@mayurajs/')) return [dependency, range];
+    assert(/^@mayurajs\/[a-z0-9-]+$/u.test(dependency), `Invalid extension dependency: ${dependency}.`);
+    const relative = dependency.slice('@mayurajs/'.length);
+    const target = JSON.parse(readFileSync(join(directory, '..', relative, 'package.json'), 'utf8'));
+    assert.equal(target.name, dependency);
+    assert(typeof target.version === 'string' && semver.valid(target.version) === target.version, `Invalid version for ${dependency}.`);
+    if (legacyVersion === undefined) return [dependency, `^${target.version}`];
+    assert.equal(target.version, legacyVersion, `The coordinated release requires ${dependency}@${legacyVersion}.`);
+    return [dependency, legacyVersion];
+  }));
+  return { mayura, dependencies };
+}
+
+/** Checks source identities, reviewed permissions to depend on other packages, and core compatibility. */
+export function checkSource(extension, coreVersion, { legacyVersion } = {}) {
+  const semver = require('semver');
+  const { name, directory, manifest } = extension;
   assert.equal(manifest.name, `@mayurajs/${name}`, `extensions/${name} must be named @mayurajs/${name}.`);
   assert.equal(manifest.private, true, `extensions/${name} must stay private in the workspace; staging publishes it.`);
-  assert.equal(manifest.version, version, `extensions/${name} is at ${manifest.version}, not ${version}.`);
+  assert(typeof manifest.version === 'string' && semver.valid(manifest.version) === manifest.version, `extensions/${name} must have an exact semantic version.`);
+  if (legacyVersion !== undefined) assert.equal(manifest.version, legacyVersion, `extensions/${name} must be at coordinated version ${legacyVersion}.`);
   assert.equal(manifest.peerDependencies?.mayura, 'workspace:^', `extensions/${name} must have mayura as its peer (workspace:^).`);
   const standalone = standaloneExtensions.has(name);
   assert.equal(manifest.peerDependenciesMeta?.mayura?.optional === true, standalone,
@@ -191,11 +220,15 @@ export function checkSource({ name, manifest }, version) {
   for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
     assert(!dependency.startsWith('@mayura/') && dependency !== 'mayura', `extensions/${name} must not depend on ${dependency}.`);
     if (dependency.startsWith('@mayurajs/')) {
-      // Another extension, released in lockstep: linked in the workspace, pinned to the release version when staged.
+      // A workspace link resolves to the sibling's independently versioned release when staged.
       assert.equal(range, 'workspace:*', `extensions/${name} must depend on ${dependency} as workspace:*.`);
-      assert(existsSync(join(extensionsRoot, dependency.slice('@mayurajs/'.length), 'package.json')), `extensions/${name} depends on ${dependency}, which is not an extension.`);
+      assert(existsSync(join(directory, '..', dependency.slice('@mayurajs/'.length), 'package.json')), `extensions/${name} depends on ${dependency}, which is not an extension.`);
     } else assert(/^\d+\.\d+\.\d+$/u.test(range), `extensions/${name} must pin ${dependency} to one exact version.`);
   }
+  const release = releaseDependencyRanges(extension, { legacyVersion });
+  assert(semver.satisfies(coreVersion, release.mayura, { includePrerelease: true }),
+    `extensions/${name} requires mayura@${release.mayura}, but the workspace provides ${coreVersion}.`);
+  return release;
 }
 
 /** Every JavaScript and declaration file under a folder. */
@@ -208,11 +241,11 @@ function sources(folder) {
  * Writes the publishable package for one extension into `output`: its built `dist`, sources for source maps, README,
  * the repository's LICENSE and NOTICE, and a manifest with the release's metadata. Run `pnpm build` first.
  */
-export async function stageExtension(extension, output, version) {
+export async function stageExtension(extension, output, { legacyVersion } = {}) {
   const { name, directory, manifest } = extension;
   const standalone = standaloneExtensions.has(name);
   const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8'));
-  checkSource(extension, version);
+  const { mayura, dependencies } = checkSource(extension, root.version, { legacyVersion });
   assert(existsSync(join(directory, 'dist')), `Build extensions/${name} first (pnpm build).`);
   for (const file of sources(join(directory, 'dist'))) {
     const text = readFileSync(file, 'utf8');
@@ -230,15 +263,13 @@ export async function stageExtension(extension, output, version) {
   const optionalPeers = Object.keys(reviewedPeers[name] ?? {});
   if (standalone) optionalPeers.push('mayura');
   const published = {
-    name: manifest.name, version, description: manifest.description, keywords: manifest.keywords,
+    name: manifest.name, version: manifest.version, description: manifest.description, keywords: manifest.keywords,
     author: root.author, license: 'Apache-2.0',
     repository: { ...root.repository, directory: `extensions/${name}` }, homepage: root.homepage, bugs: root.bugs,
     type: 'module', sideEffects: manifest.sideEffects ?? false, engines: manifest.engines, exports: manifest.exports,
     files: ['dist', 'src/**/*.ts', ...(standalone ? ['src/**/*.tsx'] : []), 'README.md', 'LICENSE', 'NOTICE'],
-    // Other extensions are released with this one: pin them to this release.
-    dependencies: Object.fromEntries(Object.entries(manifest.dependencies ?? {}).map(([dependency, range]) => [dependency, dependency.startsWith('@mayurajs/') ? version : range])),
-    // Lockstep: an extension works with the mayura it was released with and later minors of the same major.
-    peerDependencies: { mayura: `^${version}`, ...reviewedPeers[name], ...reviewedRequiredPeers[name] },
+    dependencies,
+    peerDependencies: { mayura, ...reviewedPeers[name], ...reviewedRequiredPeers[name] },
     ...(optionalPeers.length ? { peerDependenciesMeta: Object.fromEntries(optionalPeers.map(peer => [peer, { optional: true }])) } : {}),
     publishConfig: { access: 'public', provenance: true },
   };

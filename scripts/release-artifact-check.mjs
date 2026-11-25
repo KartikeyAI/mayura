@@ -8,15 +8,19 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { bundle } from './bundle-package.mjs';
-import { extensions, reviewedDependencies, reviewedPeers, reviewedRequiredPeers, stageExtension, standaloneExtensions } from './extensions.mjs';
+import { extensions, releaseDependencyRanges, reviewedPeers, reviewedRequiredPeers, stageExtension, standaloneExtensions } from './extensions.mjs';
 import { packageSize } from './package-size.mjs';
 
 const exec = promisify(execFile);
 const workspace = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 // Internal packages (test harnesses, the console source embedded in @mayura/server) are never packed or published.
 const internalPackages = new Set(JSON.parse(await readFile(join(workspace, 'compatibility', 'api-stability.json'), 'utf8')).internalPackages);
-// The release version is the workspace version; scripts/version.mjs keeps every package in step with it.
+// The envelope records the core version. Every extension entry carries its own version.
 const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8')); const version = root.version;
+const args = process.argv.slice(2);
+assert(args.length === 0 || (args.length === 1 && args[0] === '--legacy-lockstep'),
+  'Use release-artifact-check.mjs [--legacy-lockstep].');
+const extensionOptions = { legacyVersion: args[0] === '--legacy-lockstep' ? version : undefined };
 assert(typeof root.repository?.url === 'string' && root.homepage && root.bugs?.url, 'The root package.json must name the repository, homepage and issue tracker.');
 assert(typeof root.author?.name === 'string' && root.author.name && typeof root.author.email === 'string', 'The root package.json must name the author.');
 
@@ -112,10 +116,9 @@ for (const [path, content] of files) {
 }
 const reports = [{ name: 'mayura', version, filename: packed[0].filename, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, files: files.size, unpackedBytes: size.unpackedBytes,
   bundled: bundled.packages, entryPoints: bundled.entryPoints }];
-// Every @mayurajs extension: staged, packed and checked like mayura, and published after it (publish order follows
-// the manifest).
+// Pack all extensions for CI. Publication selects rows from this dependency-first inventory.
 for (const extension of extensions()) {
-  const staged = join(stagingRoot, extension.name); await stageExtension(extension, staged, version);
+  const staged = join(stagingRoot, extension.name); await stageExtension(extension, staged, extensionOptions);
   const { stdout: extensionPack } = await exec(process.execPath, [npmCli(), 'pack', staged, '--pack-destination', tarballs, '--ignore-scripts', '--json'], {
     cwd: workspace, timeout: 120_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
     env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', HOME: process.env.HOME ?? '', USERPROFILE: process.env.USERPROFILE ?? '',
@@ -123,15 +126,17 @@ for (const extension of extensions()) {
   });
   const [entry] = JSON.parse(extensionPack); assert(typeof entry?.filename === 'string');
   const extensionBytes = await readFile(join(tarballs, entry.filename)); const extensionFiles = archiveFiles(extensionBytes);
-  const name = `@mayurajs/${extension.name}`; const published = JSON.parse(extensionFiles.get('package.json').toString('utf8'));
+  const name = extension.manifest.name; const extensionVersion = extension.manifest.version;
+  const published = JSON.parse(extensionFiles.get('package.json').toString('utf8'));
+  const releaseRanges = releaseDependencyRanges(extension, extensionOptions);
   assert(extensionFiles.get('LICENSE')?.equals(license) && extensionFiles.get('NOTICE')?.equals(notice), `${name} omitted exact legal notices.`);
-  assert(published.name === name && published.version === version && published.license === 'Apache-2.0' && published.private === undefined, `${name} identity is not release-safe.`);
+  assert(published.name === name && published.version === extensionVersion && published.license === 'Apache-2.0' && published.private === undefined, `${name} identity is not release-safe.`);
   assert(published.publishConfig?.access === 'public' && published.publishConfig?.provenance === true, `${name} must publish publicly with provenance.`);
   assert(published.repository?.url === root.repository.url && published.repository?.directory === `extensions/${extension.name}`, `${name} must name its repository directory for provenance.`);
   assert.deepEqual(published.author, root.author, `${name} must name its author.`);
   assert(!published.scripts && !published.devDependencies, `${name} gained lifecycle scripts or development dependencies.`);
-  assert.deepEqual(published.peerDependencies, { mayura: `^${version}`, ...reviewedPeers[extension.name], ...reviewedRequiredPeers[extension.name] },
-    `${name} must have mayura as its peer, at this release, and only reviewed additional peers.`);
+  assert.deepEqual(published.peerDependencies, { mayura: releaseRanges.mayura, ...reviewedPeers[extension.name], ...reviewedRequiredPeers[extension.name] },
+    `${name} must use its reviewed compatibility range and reviewed additional peers.`);
   assert.equal(published.peerDependenciesMeta?.mayura?.optional === true, standaloneExtensions.has(extension.name),
     `${name} changed the optional status of mayura.`);
   for (const peer of Object.keys(reviewedPeers[extension.name] ?? {})) assert.equal(published.peerDependenciesMeta?.[peer]?.optional, true, `${name} must take ${peer} as an optional peer.`);
@@ -144,16 +149,13 @@ for (const extension of extensions()) {
       if (target.types) assert(extensionFiles.has(target.types.slice(2)), `${name} is missing ${target.types}.`);
     }
   }
-  assert.deepEqual(Object.keys(published.dependencies).sort(), [...(reviewedDependencies[extension.name] ?? [])].sort(), `${name} gained an unreviewed dependency.`);
-  for (const [dependency, range] of Object.entries(published.dependencies)) {
-    if (dependency.startsWith('@mayurajs/')) assert.equal(range, version, `${name} must depend on ${dependency} at exactly this release.`);
-  }
+  assert.deepEqual(published.dependencies, releaseRanges.dependencies, `${name} changed its reviewed dependencies.`);
   for (const [path, content] of extensionFiles) {
     assert(!/(?:^|\/)(?:node_modules|test|tests|__tests__|\.git|\.env)(?:\/|\.|$)/.test(path), `Development/private content in ${name}: ${path}`);
     assert(!content.includes(Buffer.from('-----BEGIN PRIVATE KEY-----')), `Private key marker in ${name}: ${path}`);
     if (/^dist\/.*\.(?:js|d\.ts)$/u.test(path)) assert(!/(?:from|import)\s*\(?\s*['"]@mayura\//u.test(content.toString('utf8')), `${path} in ${name} imports an internal @mayura package.`);
   }
-  reports.push({ name, version, filename: entry.filename, sha256: createHash('sha256').update(extensionBytes).digest('hex'), bytes: extensionBytes.length, files: extensionFiles.size });
+  reports.push({ name, version: extensionVersion, filename: entry.filename, sha256: createHash('sha256').update(extensionBytes).digest('hex'), bytes: extensionBytes.length, files: extensionFiles.size });
 }
 const { stdout: commit } = await exec('git', ['-c', `safe.directory=${workspace.replaceAll('\\', '/')}`, 'rev-parse', 'HEAD'], { cwd: workspace, windowsHide: true });
 const report = { format: 1, status: 'passed', version, sourceCommit: commit.trim(), license: 'Apache-2.0', noticeSha256: createHash('sha256').update(notice).digest('hex'), packages: reports };

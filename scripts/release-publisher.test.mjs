@@ -3,27 +3,31 @@ import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { assertPreparedRelease, publishRelease, selectFullRelease } from './release-publisher.mjs';
+import { assertPlannedPreflight, assertPreparedRelease, publicationIdentities, publishRelease, selectFullRelease, selectPlannedRelease } from './release-publisher.mjs';
 import { assertPublishContext, sha256 } from './release-safety.mjs';
 import { assertReleaseReceipt } from './release-finalize.mjs';
 import { extensions } from './extensions.mjs';
 
 const names = ['mayura', ...extensions().map(e => e.manifest.name)];
 const sourceCommit = 'a'.repeat(40); const version = '1.2.0';
-function fixture(at = version, change = () => {}) {
+function archiveFixture(inventory, at, change) {
   const archives = new Map();
-  const packages = names.map(name => {
-    const pkg = { name, version: at, repository: { url: 'git+https://github.com/KartikeyAI/mayura.git' },
+  const packages = inventory.map(({ name, version }) => {
+    const pkg = { name, version, repository: { url: 'git+https://github.com/KartikeyAI/mayura.git' },
       publishConfig: { access: 'public', provenance: true }, ...(name === 'mayura' ? {} : { peerDependencies: { mayura: '^' + at } }) };
     change(pkg);
     const content = Buffer.from(JSON.stringify(pkg)); const header = Buffer.alloc(512);
     header.write('package/package.json'); header.write(content.length.toString(8).padStart(11, '0') + '\0', 124); header.write('0', 156);
     const bytes = gzipSync(Buffer.concat([header, content, Buffer.alloc((512 - content.length % 512) % 512 + 1024)]));
-    const filename = name.replace(/[@/]/gu, '') + '.tgz'; archives.set(filename, bytes);
-    return { name, version: at, filename, sha256: sha256(bytes) };
+    const filename = `${name.replace(/^@/u, '').replace('/', '-')}-${version}.tgz`; archives.set(filename, bytes);
+    return { name, version, filename, sha256: sha256(bytes) };
   });
   const manifest = { format: 1, status: 'passed', version: at, sourceCommit, packages };
   const read = filename => archives.get(filename);
+  return { manifest, read };
+}
+function fixture(at = version, change = () => {}) {
+  const { manifest, read } = archiveFixture(names.map(name => ({ name, version: at })), at, change);
   return { manifest, read, entries: () => selectFullRelease(manifest, names, at, sourceCommit, read) };
 }
 
@@ -33,7 +37,10 @@ function registryFixture(entries, at = version) {
   const uploads = []; let receipt;
   const f = { versions, tags, uploads,
     registry: { version: async name => versions.get(name) ?? null, tags: async name => structuredClone(tags.get(name)) },
-    reveal(entry) { versions.set(entry.name, { name: entry.name, version: at, dist: { integrity: entry.integrity, attestations: { provenance: {} } } }); tags.get(entry.name)[tag] = at; },
+    reveal(entry) {
+      versions.set(entry.name, { name: entry.name, version: entry.version, dist: { integrity: entry.integrity, attestations: { provenance: {} } } });
+      tags.get(entry.name)[tag] = entry.version;
+    },
     upload: async entry => { uploads.push(entry.name); },
     save: value => { receipt = structuredClone(value); }, get receipt() { return receipt; },
     run: options => publishRelease({ entries, version: at, sourceCommit, tag, registry: f.registry, upload: f.upload,
@@ -70,6 +77,14 @@ test('the CLI denies local publication before reading archives or invoking npm',
     { encoding: 'utf8', windowsHide: true, env: { ...process.env, GITHUB_ACTIONS: 'false', NODE_AUTH_TOKEN: '', NPM_TOKEN: '' } });
   assert.equal(result.status, 1); assert.match(result.stderr, /Live publication requires GitHub Actions/u);
   assert.doesNotMatch(result.stderr, /ENOENT/u);
+});
+
+test('only a dry run can select a different artifact output directory', () => {
+  const args = ['scripts/publish-staged.mjs', '--manifest', 'nonexistent-manifest.json', '--tag', 'latest', '--output'];
+  const live = spawnSync(process.execPath, [...args, '.artifacts/fresh-rehearsal', '--publish'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(live.status, 1); assert.match(live.stderr, /Only a dry run/u);
+  const escape = spawnSync(process.execPath, [...args, '.artifacts/../escape'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(escape.status, 1); assert.match(escape.stderr, /directly under .artifacts/u);
 });
 
 test('manual and automatic releases require green exact-main push CI and the complete aggregate gate', () => {
@@ -165,7 +180,88 @@ test('tagging requires the complete source-bound published receipt and qualifica
   assert.throws(() => assertReleaseReceipt(receipt, entries, version, sourceCommit, { ...qualification, gate: 'failure' }));
 });
 
-test('full release workflow preserves immutable recovery and never commits, rebases or pushes main', () => {
+const planDigest = 'd'.repeat(64);
+const gateway = '@mayurajs/gateway-openrouter';
+const provider = '@mayurajs/provider-openai';
+const releaseInventory = [{ name: 'mayura', version: '1.4.1' }, { name: provider, version: '1.4.0' }, { name: gateway, version: '1.5.2' }];
+function plannedFixture(change = () => {}) {
+  const plan = { format: 1, packages: [releaseInventory[0], releaseInventory[2]], notes: 'Independent updates.' };
+  const { manifest, read } = archiveFixture(releaseInventory, '1.4.1', pkg => {
+    if (pkg.name !== 'mayura') pkg.peerDependencies.mayura = '^1.4.0';
+    if (pkg.name === gateway) pkg.dependencies = { [provider]: '^1.4.0' };
+    change(pkg);
+  });
+  const select = (document = manifest, requested = plan, digest = planDigest) =>
+    selectPlannedRelease(document, requested, releaseInventory, sourceCommit, read, digest);
+  return { plan, manifest, select };
+}
+
+test('a heterogeneous plan freezes only selected packages and resolves separately released dependencies', () => {
+  const { plan, manifest, select } = plannedFixture();
+  const entries = select();
+  assert.deepEqual(entries.map(({ name, version }) => ({ name, version })), plan.packages);
+  assert.deepEqual(entries[1].externalDependencies, [releaseInventory[1]]);
+  assert.deepEqual(select({ ...manifest, planDigest, packages: entries }), entries);
+  const gatewayOnly = { ...plan, packages: [releaseInventory[2]] };
+  assert.deepEqual(select(manifest, gatewayOnly)[0].externalDependencies, [releaseInventory[1], releaseInventory[0]]);
+  for (const invalid of [
+    { ...manifest, planDigest, packages: [...entries, manifest.packages[1]] },
+    { ...manifest, planDigest: 'e'.repeat(64), packages: entries },
+    { ...manifest, planDigest, packages: entries.map(e => ({ ...e, sha256: '0'.repeat(64) })) },
+    { ...manifest, packages: manifest.packages.slice(1) },
+  ]) assert.throws(() => select(invalid));
+  assert.throws(() => select(manifest, { ...plan, packages: [...plan.packages].reverse() }), /dependency order/u);
+  assert.throws(() => select(manifest, { ...plan, packages: [{ name: gateway, version: '1.4.0' }] }), /identities/u);
+  assert.throws(() => plannedFixture(pkg => {
+    if (pkg.name === gateway) pkg.peerDependencies.mayura = '^1.5.0';
+  }).select(), /does not admit/u);
+  assert.doesNotThrow(() => plannedFixture(pkg => {
+    if (pkg.name === gateway) pkg.peerDependencies.mayura = '^1.4.0-rc.1';
+  }).select());
+  assert.throws(() => plannedFixture(pkg => {
+    if (pkg.name === 'mayura') pkg.optionalDependencies = { [gateway]: '^1.5.2' };
+  }).select(), /dependency must be published first/u);
+});
+
+test('a mixed-install preflight belongs to the exact source plan and package archives', () => {
+  const entries = plannedFixture().select();
+  const report = { status: 'passed', sourceCommit, planDigest, identities: publicationIdentities(entries, planDigest), cleanInstall: true,
+    mixedImports: true, ragAcceptance: true, registrySignaturesAndAttestations: 'pending-publication' };
+  assertPlannedPreflight(report, entries, sourceCommit, planDigest);
+  assert.throws(() => assertPlannedPreflight({ ...report, identities: report.identities.slice(1) }, entries, sourceCommit, planDigest));
+  assert.throws(() => assertPlannedPreflight({ ...report, ragAcceptance: false }, entries, sourceCommit, planDigest));
+  assert.throws(() => assertPlannedPreflight(report, entries, 'b'.repeat(40), planDigest));
+});
+
+test('planned retries bind package versions, preserve tags and refuse to replay an uncertain upload', async () => {
+  const entries = plannedFixture().select();
+  const f = registryFixture(entries, '1.4.1');
+  const run = options => f.run({ planDigest, ...options });
+  await assert.rejects(run(), /Missing published dependency/u);
+  assert.deepEqual(f.uploads, []);
+  f.versions.set(provider, { ...releaseInventory[1], dist: { integrity: 'sha512-previous-archive' } });
+  f.tags.set(provider, { latest: '1.4.0', next: '1.4.1-rc.1' });
+  await assert.rejects(run({ upload: async entry => {
+    f.uploads.push(entry.name);
+    throw new Error('uncertain');
+  } }), /uncertain/u);
+  assert.deepEqual(f.receipt.identities, publicationIdentities(entries, planDigest));
+  assert.equal(f.receipt.uploads.mayura, 'uncertain');
+  const previous = f.receipt;
+  await assert.rejects(run({ previous }), /Uncertain upload/u);
+  assert.deepEqual(f.uploads, ['mayura']);
+  await assert.rejects(run({ previous: { ...previous, planDigest: 'e'.repeat(64) } }), /different release plan/u);
+  f.reveal(entries[0]);
+  const receipt = await run({ previous });
+  assert.deepEqual(f.uploads, ['mayura', gateway]);
+  assert.deepEqual(f.tags.get(provider), { latest: '1.4.0', next: '1.4.1-rc.1' });
+  assert.deepEqual(f.tags.get(gateway), { latest: '1.5.2', next: '1.2.0-rc.1' });
+  const qualification = { sourceCommit, planDigest, gate: 'success', run: 123 };
+  assertReleaseReceipt(receipt, entries, '1.4.1', sourceCommit, qualification, planDigest, 'latest');
+  assert.throws(() => assertReleaseReceipt(receipt, entries, '1.4.1', sourceCommit, { ...qualification, planDigest: undefined }, planDigest, 'latest'));
+});
+
+test('the default planned release rehearses first and preserves the protected publication boundary', () => {
   const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   const full = workflow.split(/^  release:\s*$/mu)[1].split(/^  prerelease-22:/mu)[0];
   assert.match(full, /environment: release/u); assert.match(full, /id-token: write/u); assert.match(full, /actions: read/u);
@@ -173,6 +269,14 @@ test('full release workflow preserves immutable recovery and never commits, reba
   assert.match(full, /run-id: \$\{\{ github\.run_id \}\}/u);
   assert.match(full, /if: always\(\)/u); assert.match(full, /full-release\/receipt\.json/u);
   assert.match(full, /steps\.recover\.outcome == 'success'/u);
+  assert.match(workflow, /default: changed/u);
+  assert.match(workflow, /dry_run:[\s\S]*?default: true/u);
+  assert.doesNotMatch(workflow, /^  workflow_run:/mu);
+  assert.match(full, /release-finalize\.mjs --prepared-plan/u);
+  assert.match(full, /release-finalize\.mjs --published-plan/u);
+  assert(full.indexOf('--staged') > 0 && full.indexOf('--staged') < full.indexOf('--publish'));
+  assert.match(full, /\$staged\/mixed-install-verification\.json/u);
+  assert.match(full, /--latest=false/u);
   assert.doesNotMatch(full, /version\.mjs set|git commit|git rebase|HEAD:main|git push origin main|secrets\.NPM|full-release\/\*\*/u);
   assert.match(workflow, /dry_run:/u); assert.match(workflow, /current" = "\$VERSION/u);
 });

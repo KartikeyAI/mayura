@@ -4,6 +4,11 @@ All notable changes to Mayura are recorded here. The format follows Keep a Chang
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-25
+
+- Give each Cloudflare Workers Hono invocation its own agent server and keep state in D1. This fixes cross-request
+  I/O errors when submitting, approving or observing a saved run.
+
 ## [1.4.0] - 2026-11-25
 
 - Add `AgentWorkspace` for React 19 and shadcn. Use a caller-owned transport to connect chat, thread history,

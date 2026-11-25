@@ -1,8 +1,8 @@
 ---
 title: "Mayura vs LangGraph.js"
-description: "LangGraph.js and Mayura compared for production TypeScript agents: graphs and checkpoints, versus grants, hard budgets and steps that never run twice."
+description: "Compare graph control, checkpoints, and Agent Chat UI in LangGraph.js with Mayura's scoped workflows, budgets, and standalone React workspace."
 date: 2026-10-12
-updated: 2026-11-23
+updated: 2026-11-25
 tags: comparison, LangGraph, durable workflows, TypeScript
 ---
 
@@ -19,20 +19,23 @@ We make Mayura, so read this with that in mind. We checked every statement about
 documentation, repository and npm listing, and link the sources at the end. If something here is wrong or out of date,
 please [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Baseline compared October 12, 2026: LangGraph.js (`@langchain/langgraph`) 1.4.21. Mayura's side is updated for
-published 1.2.1 on November 23. Version/adoption figures and other LangGraph details retain the baseline date;
-its persistence and interrupt documentation was rechecked on October 23.*
+*The October 12, 2026 baseline used LangGraph.js (`@langchain/langgraph`) 1.4.21. Mayura's side reflects 1.4.0.
+LangGraph's Agent Chat UI, persistence, and interrupt documentation were checked on November 25, 2026.*
 
-## What changes with Mayura 1.2
+## The chat frontend in Mayura 1.4
 
-Mayura adds scoped [threads and compaction](../../../docs/guides/threads.md), exact approvals inside agent runs,
-[handoffs](../../../docs/guides/agent-handoffs.md) and resource authorization across execution and data access.
-It now ships six framework notebooks and an experimental bounded AG-UI adapter. It still does not offer time travel
-or conversation branching, and experimental client interoperability remains unqualified.
+[Agent Workspace](../../../docs/integrations/ui.md#agent-workspace) packages streaming chat, thread history, activity,
+citations, and change review in `@mayurajs/ui`. Install the React 19 package or copy editable Tailwind source through
+the [shadcn registry](../../../docs/integrations/ui.md#shadcn-registry). The workspace uses the AG-UI transport your app
+supplies. On Mayura, a compatible transport can reattach to an authorized in-progress run using the
+[read-only observation route](../../../docs/guides/ag-ui.md#reattach-to-an-existing-run). Observation restores the current
+view of the run. The server still decides who can approve and execute an exact pending tool call.
 
-V1.2.1 adds [configurable graph limits](../../../docs/concepts/workflows.md#configuring-graph-size). Durable
-graphs keep the 128-node default, and a host can configure a larger bound per definition. The
-[Loki v28 RAG qualification](../../../docs/guides/rag-production.md) covers the registered Modal and Pinecone workload.
+LangGraph documents [Agent Chat UI](https://docs.langchain.com/oss/javascript/langgraph/ui), an open-source Next.js
+app with tool visualization, interrupted threads, time-travel debugging, and state forks. Use it when inspecting or
+revising graph state is part of the workflow. Mayura Workspace focuses on resuming conversation and reviewing proposed
+actions under the backend's policy. To use it with a different runtime, supply a compatible transport or wire the
+individual components to your own data and callbacks.
 
 LangGraph's [persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence) distinguishes
 thread checkpoints from cross-thread stores; [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts)
@@ -43,13 +46,14 @@ person. Their graph expressiveness and handling of side-effect replay remain the
 
 | | LangGraph.js | Mayura |
 |---|---|---|
-| **Maturity** | Since January 2024, 1.0 in October 2025; about 3,300 GitHub stars on the JavaScript repository and 3.8M weekly npm downloads; an equivalent Python library | Stable 1.2.1 published November 23, 2026; first 1.0 in September 2026; a new project |
+| **Release** | LangGraph.js 1.4.21 at the October 12 baseline | Mayura and Mayura UI 1.4.0, published November 25, 2026 |
 | **License** | MIT. LangSmith (tracing, evaluation, Studio and managed deployment) is a separate LangChain platform | Apache-2.0, all of it |
 | **Models** | Any model you call from a node; the docs use LangChain's chat model integrations, and `@langchain/core` is a peer dependency | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint |
-| **Graph shape** | Nodes are arbitrary code; edges may loop; conditional edges, `Send` fan-out and subgraphs | A fixed graph declared as data: at most 128 nodes, no cycles, no code between steps; parallel slots, conditions, and sagas and loops as separate constructs |
+| **Graph shape** | Arbitrary code in nodes, cycles, conditional edges, `Send` fan-out and subgraphs | Acyclic graphs declared as data with a configurable 128-node default, parallel slots, and conditions. Sagas and loops are separate constructs. |
 | **Tool access** | No permission model: a tool you give the model can be called. LangChain's `createAgent` adds middleware for approvals and call limits | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | No spending limit. `recursionLimit` caps super-steps (25 by default); LangChain middleware caps the number of model and tool calls | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
 | **Human approval** | `interrupt()` anywhere in a node, resumed with a `Command`; needs a checkpointer and a thread id | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
+| **Frontend** | Agent Chat UI for LangGraph-powered chat, tool visualization, and state inspection | Standalone React Agent Workspace, typed reply cards, and an AG-UI transport boundary |
 | **Durability** | A checkpoint after every super-step, in three durability modes; a resumed node restarts from its beginning; retries are opt-in per node | Every step recorded before and after it runs; at-most-once dispatch; abandoned steps settled as unknown, never re-run; no automatic retries |
 | **Versions** | The latest graph code applies to every thread, new or resumed | Each run is pinned to the definition it started with; reviewed migrations move runs to a new version |
 | **Memory** | Threads hold conversation state; time travel; a store for long-term memory with optional semantic search | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
@@ -69,9 +73,9 @@ as dynamic as you need.
 Mayura splits this into two things. An [agent run](../../../docs/concepts/agent.md) is the loop: the model decides which
 tools to call, within the run's limits. A [workflow](../../../docs/concepts/workflows.md) is a fixed graph declared as
 data: each step is a typed [tool](../../../docs/concepts/tools.md) with declared effects and its own permission, steps
-are ordered by `dependsOn`, and no code runs between them. A workflow has at most 128 nodes and no cycles. Repetition is
-an explicit construct, a [loop](../../../docs/guides/sagas-and-loops.md) that repeats a durable workflow up to a fixed
-number of times.
+are ordered by `dependsOn`, and no code runs between them. A workflow has no cycles and a
+[configurable node limit](../../../docs/concepts/workflows.md#configuring-graph-size) that defaults to 128. A
+[loop](../../../docs/guides/sagas-and-loops.md) repeats a durable workflow up to a fixed number of times.
 
 Mayura's form is less expressive, and that is deliberate: because every step is a declared tool call, the engine knows
 which steps may have changed something outside, and can refuse to repeat them.
@@ -131,7 +135,7 @@ refused until you set a limit at all. See [Permissions](../../../docs/concepts/p
   thread from an earlier checkpoint. Mayura has persistent threads and journaled compaction, but no time travel or
   conversation branching.
 - **Approval inside an agent.** `interrupt()` works in any node, and LangChain's human-in-the-loop middleware pauses an
-  ordinary agent before selected tool calls, with approve, edit and reject. Mayura 1.2 can pause agent runs directly
+  ordinary agent before selected tool calls, with approve, edit and reject. Mayura can pause agent runs directly
   for exact-input approval as well as use durable workflow approvals; changing the proposed input requires a new
   bound proposal rather than editing an approved call.
 - **Ecosystem.** LangChain's integrations, Deep Agents, prebuilt chat UI, LangSmith Studio and evaluations, a Python

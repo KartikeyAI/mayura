@@ -51,6 +51,9 @@ Within a major version:
 | Adding an entry point, an export, an optional field, an event type or a capability | minor |
 | A fix that restores documented behaviour | patch |
 
+The `mayura` version covers the SDK, CLI and bundled starters. Optional `@mayurajs/*` packages have their own SemVer
+versions and declare which versions of Mayura they support. See [integration packages](../reference/integrations.md).
+
 Strict clients reject event types they do not know. When a release adds a new run event type, the changelog says so,
 and `mayura/client` and `mayura/observability` accept it in that same release. Upgrade your clients together with your
 server.

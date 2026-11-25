@@ -20,13 +20,19 @@ Other checks: `pnpm test:consumer:optional` (clean browser, host and workflow in
 
 ## Change requirements
 
+`dev` is the integration branch and `main` is the release branch. Start `feature/<name>`, `fix/<name>` or
+`docs/<name>` from `dev` and open the pull request against `dev`. Wait for the Qualification gate and remove
+the topic branch after merge. Wait for the merged `dev` commit to pass push qualification before opening
+the `dev` → `main` release pull request. Main's protected linear history uses squash merges. Merge `main`
+back into `dev` after promotion to record the released commit as an ancestor of the next development cycle.
+
 1. Open an issue or proposal before substantial public API, persistence, authority or security-boundary work.
 2. Define public contracts and security invariants before changing behavior.
 3. Add regression coverage, including denied paths, cancellation, cost and failure recovery where relevant.
 4. Keep public exports small and documented. No mandatory provider, native storage, server or UI dependency in the basic SDK. A change to the public API updates `compatibility/api-report.json` (`pnpm api:report`).
 5. Run tests against emitted and packed artifacts; passing monorepo imports alone is insufficient.
 6. Update the documentation in `docs/` (see below) and add a `CHANGELOG.md` entry under Unreleased.
-7. Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:` …): releases are versioned from them. See [RELEASING.md](RELEASING.md).
+7. Write [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:` …) and use the reviewed changes to choose the appropriate package versions. See [RELEASING.md](RELEASING.md).
 
 Generated dependency/build files are produced by their tools. Source edits require review. Security-sensitive changes should be isolated and described without including live secrets or exploitable private data.
 

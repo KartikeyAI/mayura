@@ -109,7 +109,7 @@ function projectName(directory: string): string {
   return /^[a-z0-9][a-z0-9-]{0,63}$/u.test(name) ? name : 'mayura-agent';
 }
 
-/** This CLI's own version: generated projects pin every Mayura package to exactly it. */
+/** This CLI's own version: generated projects pin the core package to it. */
 const cliVersion = (): string => (JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string }).version;
 
 function packageManifest(name: string, template: TemplateName): string {
@@ -213,15 +213,31 @@ async function collectStarter(name: StarterName): Promise<Map<string, string>> {
   return new Map([...files].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
 }
 
-/** The repository copy links Mayura packages with `workspace:*`; a generated project pins this CLI's exact release. */
+/** The repository copy uses workspace links, so generated projects use the exact published versions instead. */
 async function starterManifest(content: string, name: string): Promise<string> {
-  const { version } = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
+  const cli = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string; name?: string; private?: boolean; starterDependencyVersions?: Record<string, string>;
+  };
   const manifest = JSON.parse(content) as Record<string, unknown>; manifest['name'] = name;
   for (const field of ['dependencies', 'devDependencies']) {
     const entries = manifest[field] as Record<string, string> | undefined;
     for (const [dependency, range] of Object.entries(entries ?? {})) {
-      if (range === 'workspace:*' && starterWorkspaceDependencies.has(dependency)) entries![dependency] = version;
-      else if (range.startsWith('workspace:')) throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may only link to reviewed Mayura packages.');
+      if (!range.startsWith('workspace:')) continue;
+      if (range !== 'workspace:*' || !starterWorkspaceDependencies.has(dependency)) {
+        throw new MayuraError('INTEGRITY_VIOLATION', 'Starter manifests may only link to reviewed Mayura packages.');
+      }
+      let version = dependency === 'mayura' ? cli.version : cli.starterDependencyVersions?.[dependency];
+      if (dependency !== 'mayura' && cli.name === '@mayura/cli' && cli.private === true) {
+        const extension = dependency.slice('@mayurajs/'.length);
+        const source = JSON.parse(await readFile(new URL(`../../../extensions/${extension}/package.json`, import.meta.url), 'utf8')) as {
+          name?: string; version?: string;
+        };
+        if (source.name === dependency) version = source.version;
+      }
+      if (typeof version !== 'string' || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?$/u.test(version)) {
+        throw new MayuraError('INTEGRITY_VIOLATION', `Starter is missing its published dependency version for ${dependency}.`);
+      }
+      entries![dependency] = version;
     }
   }
   return `${JSON.stringify(manifest, null, 2)}\n`;

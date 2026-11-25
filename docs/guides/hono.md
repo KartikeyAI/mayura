@@ -57,6 +57,16 @@ Hono mounts the native Fetch handler while Vite builds the React notebook. The N
 The API is mounted at `/api/mayura/*`; the browser's origin-pinned transport preserves the native Mayura route
 contract while adding that prefix. Start with the Node path before selecting another runtime. Review the generated start:bun, start:deno, dev:workers and deploy:workers scripts rather than reusing Node SQLite imports at the edge. Workers needs a configured D1 binding and secret identity directory; serve only built frontend assets.
 
+## Cloudflare Workers with D1
+
+On November 25, 2026, the Hono starter passed a smoke test on a deployed Worker with real D1 and compatibility date
+`2026-10-20`. The test used the published Mayura and D1 adapter 1.4.0 packages with the request-scoped Worker fix in
+the starter source. The published npm 1.4.0 starter predates that fix.
+
+The test loaded the built assets, verified authenticated access and isolation between two users, submitted and resumed
+an approval-required run, and replayed saved events from an SSE cursor. A Cloudflare Cron Trigger indexed the approved
+note exactly once. The rejected note produced no D1 write. Cloudflare confirmed deletion of the test Worker and database.
+
 ## Customize identity, tools and storage
 
 Replace the single-user demonstration authenticator with verified application identity before opening the app to
@@ -67,7 +77,8 @@ The note agent and indexing worker have separate grants. If you replace the fixt
 prices, finite per-call cost cap and run budget. A gateway subscription does not remove those limits. See
 [AI gateways](ai-gateways.md) and [authorization](authorization.md).
 
-The starter also ships Bun and Deno entry points using PostgreSQL, and Workers source with a D1 binding, assets and a scheduled handler. Those application-specific profiles still need qualification on the target host; shared runtime CI is not a live Workers deployment check.
+The starter also ships Bun and Deno entry points using PostgreSQL. Qualify the identity, storage and workload on
+your chosen host before deploying your own application.
 
 A note write and workflow submission are separate operations. If scheduling is unconfirmed after the note was saved,
 reconcile the missing index job using the note's identity; never replay the browser write to repair scheduling.

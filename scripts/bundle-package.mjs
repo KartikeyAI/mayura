@@ -14,6 +14,8 @@ import { cp, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promise
 import { existsSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import semver from 'semver';
+import { extensions } from './extensions.mjs';
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8'));
@@ -56,6 +58,25 @@ function parseSpecifier(specifier) {
   return { name: match[1], key: match[2] ? `./${match[2]}` : '.' };
 }
 const target = (value, condition) => typeof value === 'string' ? value : value?.[condition] ?? value?.default;
+
+/** Record the exact published extension versions used by the bundled CLI's starter manifests. */
+async function starterDependencyVersions(directory) {
+  const inventory = new Map(extensions().map(({ manifest }) => [manifest.name, manifest.version]));
+  const versions = {};
+  const starters = join(directory, 'starters');
+  for (const entry of (await readdir(starters, { withFileTypes: true })).filter(item => item.isDirectory())) {
+    const manifest = JSON.parse(await readFile(join(starters, entry.name, 'package.json'), 'utf8'));
+    for (const field of ['dependencies', 'devDependencies']) {
+      for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+        if (range !== 'workspace:*' || !name.startsWith('@mayurajs/')) continue;
+        const version = inventory.get(name);
+        assert(typeof version === 'string' && semver.valid(version) === version, `The CLI starter requires a publishable ${name} version.`);
+        versions[name] = version;
+      }
+    }
+  }
+  return Object.fromEntries(Object.entries(versions).sort());
+}
 
 /** Keep one copy of identical starter files at the same relative path. Init restores the exact bytes. */
 async function shareStarterFiles(cli) {
@@ -108,8 +129,10 @@ export async function bundle(output) {
     for (const item of [...roots].sort()) if (!['README.md', 'LICENSE', 'NOTICE', 'package.json'].includes(item) && existsSync(join(directory, item))) {
       await cp(join(directory, item), join(output, 'lib', name, item), { recursive: true, filter: kept });
     }
-    // Relative files keep ESM semantics and let the CLI read its own version, as in the workspace.
-    await writeFile(join(output, 'lib', name, 'package.json'), `${JSON.stringify({ type: 'module', version: root.version, private: true }, null, 2)}\n`);
+    // Relative files keep ESM semantics and let the CLI read its own version and reviewed starter pins.
+    const metadata = { type: 'module', version: root.version, private: true,
+      ...(name === 'cli' ? { starterDependencyVersions: await starterDependencyVersions(directory) } : {}) };
+    await writeFile(join(output, 'lib', name, 'package.json'), `${JSON.stringify(metadata, null, 2)}\n`);
     for (const [key, value] of Object.entries(manifest.exports ?? {})) {
       const subpath = key === '.' ? `./${name}` : `./${name}/${key.slice(2)}`;
       exportsMap[subpath] = { types: `./lib/${name}/${target(value, 'types').replace(/^\.\//u, '')}`, import: `./lib/${name}/${target(value, 'import').replace(/^\.\//u, '')}` };

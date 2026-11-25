@@ -14,12 +14,14 @@ const columns = [
   ] },
   { title: 'Build', links: [
     { label: 'Model providers', slug: 'guides/model-providers' },
+    { label: 'Mayura UI installation', slug: 'integrations/ui' },
     { label: 'RAG quickstart', slug: 'guides/rag-quickstart' },
     { label: 'Server and client', slug: 'guides/server-and-client' },
     { label: 'Deployment', slug: 'guides/deployment' },
     { label: 'CLI', slug: 'cli/overview' },
   ] },
   { title: 'Project', links: [
+    { label: 'What’s new', slug: 'project/whats-new' },
     { label: 'Changelog', slug: 'project/changelog' },
     { label: 'Versioning', slug: 'project/versioning' },
     { label: 'Security model', slug: 'project/security' },
@@ -48,6 +50,7 @@ export function Footer() {
           <h2 className="mb-3 text-sm font-semibold text-fg">Resources</h2>
           <ul className="space-y-2 text-sm">
             <li><Link to="/articles/" className="text-muted hover:text-fg">Articles</Link></li>
+            <li><Link to="/ui/" className="text-muted hover:text-fg">UI gallery</Link></li>
             <li><Link to="/integrations/" className="text-muted hover:text-fg">Integrations</Link></li>
             <li><Link to="/roadmap/" className="text-muted hover:text-fg">Roadmap</Link></li>
             {sectionOrder.filter(section => section !== 'integrations').map(section => (

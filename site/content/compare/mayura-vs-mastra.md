@@ -1,8 +1,8 @@
 ---
 title: "Mayura vs Mastra"
-description: "Two TypeScript frameworks for AI agents and workflows, compared: what each is designed for, how they differ on permissions, budgets and durability, and when to choose which."
+description: "Compare Mastra's agent platform, Studio, and UI integrations with Mayura's editable React components, permissions, budgets, and durable workflows."
 date: 2026-09-29
-updated: 2026-11-23
+updated: 2026-11-25
 tags: comparison, Mastra, TypeScript
 ---
 
@@ -16,33 +16,35 @@ We make Mayura, so read this with that in mind. We checked every statement about
 repository and npm listing, and link the sources at the end. If something here is wrong or out of date, please
 [tell us](https://github.com/KartikeyAI/mayura/issues).
 
-*Baseline compared September 29, 2026: Mastra (`@mastra/core`) 1.71.0. Mayura's side is updated for published 1.2.1
-on November 23, 2026. Mastra version, adoption and catalog counts below are historical baseline figures, not current
-measurements. Its approval and memory documentation was rechecked on October 23; other Mastra details retain the baseline date.*
+*The September 29, 2026 baseline used Mastra (`@mastra/core`) 1.71.0. Mayura's side reflects 1.4.0. Mastra's Studio,
+AI SDK UI, and approval documentation were checked on November 25, 2026. Catalog counts retain the baseline date.*
 
-## What changes with Mayura 1.2
+## The chat frontend in Mayura 1.4
 
-Mayura now includes scoped persistent threads, exact approvals inside agent runs, continuing-budget handoffs,
-fine-grained RBAC/external authorization and six framework notebooks. Its 105 extensions include AI gateways,
-vector adapters and rerankers. [Mayura's production RAG qualification](../../../docs/guides/rag-production.md)
-covers the registered Modal and Pinecone Loki profile. Other Mayura RAG profiles remain experimental.
-See [what shipped in V1.2.1](../../../docs/project/whats-new.md).
+Mayura 1.4 adds [Agent Workspace](../../../docs/integrations/ui.md#agent-workspace), a React 19 chat surface with
+thread history, run activity, source inspection, and approval controls. Use `@mayurajs/ui` from npm or install editable
+Tailwind components through the [shadcn registry](../../../docs/integrations/ui.md#shadcn-registry). With the Mayura
+runtime, the workspace can show the exact proposed change and reattach to a run through a
+[read-only observation route](../../../docs/guides/ag-ui.md#reattach-to-an-existing-run). The server authorizes each
+approval and tool dispatch.
 
-Both support conversations and human review: Mastra documents
-[tool approval/suspension](https://mastra.ai/docs/agents/human-in-the-loop) and
-[message history](https://mastra.ai/docs/memory/overview). The useful comparison is how authority, spending and
-uncertain effects are enforced, rather than whether one framework has a chat history feature.
+Mastra [Studio](https://mastra.ai/docs/studio/overview) lets teams build and inspect agents and workflows. For a
+customer-facing app, Mastra documents [streaming into AI SDK UI](https://mastra.ai/integrations/agentic-ui/ai-sdk-ui),
+including data parts for rendering tool output and workflow progress. You can also keep a Mastra backend and use
+Mayura's individual React components with your own data and callbacks. The assembled workspace expects a compatible
+AG-UI transport. Check the transport's history, approval and observation support before relying on those features.
 
 ## At a glance
 
 | | Mastra | Mayura |
 |---|---|---|
-| **Maturity** | Since 2024, 1.0 in January 2026; about 28k GitHub stars and 2M weekly npm downloads | Stable 1.2.1 published November 23, 2026; first 1.0 in September 2026; a new project |
+| **Release** | Mastra 1.71.0 at the September 29 baseline | Mayura and Mayura UI 1.4.0, published November 25, 2026 |
 | **License** | Apache-2.0, except `ee/` directories under a source-available enterprise license that requires an agreement for production use | Apache-2.0, all of it |
 | **Models** | Built-in router with `provider/model` strings (the docs list 212 providers), fallbacks, and AI SDK providers | A model registry with `provider/model` strings, dated prices, retries and fallback chains; packages for OpenAI, Anthropic, Google Gemini, Bedrock, Azure OpenAI, Mistral, Groq and Ollama, plus any OpenAI-compatible endpoint (DeepSeek, xAI, OpenRouter and others) |
 | **Tool access** | An agent can use the tools you give it; per-call `activeTools`; fine-grained authorization is an enterprise feature | Explicit model/tool/effect grants plus optional resource-level RBAC or external policy authorization; denied by default |
 | **Cost limits** | `TokenCostControl` processor, documented as approximate (a run may briefly exceed it) | Hard per-run budget: each call's maximum cost is reserved before it starts, and a call that doesn't fit never starts |
 | **Human approval** | Tool-call approval (`requireApproval`), and suspend and resume | Exact-input approvals inside agent runs and durable workflows; stored checkpoints and typed human requests |
+| **Frontend** | Studio for development and operations, plus an AI SDK UI integration for application frontends | Standalone React Agent Workspace, typed reply cards, and an AG-UI transport boundary |
 | **Workflows** | `createWorkflow` with `.then`, `.branch`, `.parallel` and loops; suspend and resume; snapshots; retries; Inngest and Temporal integrations | Durable graphs persisted at every step; at-most-once dispatch; automatic recovery of abandoned steps; pinned definitions and reviewed migrations |
 | **Memory** | Message history, observational and working memory, semantic recall, threads | Scoped conversation threads, journaled compaction and native long-term memory with provenance/sensitivity; lexical, semantic and hybrid search |
 | **Storage** | 21 providers, from libSQL and PostgreSQL to DynamoDB and Cloudflare D1 | SQLite, PostgreSQL, libSQL (Turso), MySQL, MongoDB, Cloudflare D1 and DynamoDB |
@@ -95,8 +97,9 @@ someone occasionally reconciles an `outcome_unknown` run.
 
 ## Where Mastra is ahead
 
-- **Breadth.** A studio, general agent evals and a broad storage/integration ecosystem. Mayura 1.2 adds experimental
-  RAG and retrieval-specific offline evaluation; real vector/reranker interoperability remains unqualified.
+- **Breadth.** A studio, general agent evals and a broad storage/integration ecosystem. Mayura offers retrieval-specific
+  offline evaluation and a [production-qualified Modal + Pinecone profile](../../../docs/guides/rag-production.md).
+  The qualification covers the registered stack and workload.
 - **Models.** Mastra's router reaches far more providers out of the box.
 - **Edge deployments.** Both run on Bun, Deno and Cloudflare. Mayura is tested on them in CI and on a Vercel Edge
   deployment, but deployed Cloudflare Workers and Deno Deploy are still experimental.

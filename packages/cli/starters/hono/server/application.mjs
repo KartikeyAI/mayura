@@ -5,7 +5,7 @@ import { identityDirectory, agentId } from './auth.mjs';
 import { workflowServices } from './workflows.mjs';
 
 /** All adapters, including edge hosts, receive the same persistent store and host-verified identity directory. */
-export async function createApplication({ store, publicOrigin, projectId, sessions, modelOverride }) {
+export async function createApplication({ store, publicOrigin, projectId, sessions, modelOverride, recoverPage }) {
   const origin = new URL(publicOrigin);
   if (origin.origin !== publicOrigin || !(origin.protocol === 'https:' || origin.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname))) throw new Error('Invalid public origin.');
   const directory = identityDirectory(projectId, sessions);
@@ -45,6 +45,11 @@ export async function createApplication({ store, publicOrigin, projectId, sessio
     limits: { maxRuns: 128, maxRuntimes: 32, maxRequests: 32, maxStreams: 16, maxBodyBytes: 16384, maxResponseBytes: 1048576,
       requestTimeoutMs: 15000, streamDurationMs: 5000, runRecordPollMs: 100 } });
   let recoveryCursor; let closed = false; let recovering;
+  const recoverOnce = recoverPage ?? (async recover => {
+    const report = await recover(recoveryCursor);
+    recoveryCursor = report.next ?? undefined;
+    return report;
+  });
   return Object.freeze({ server, store, workflows,
     async fetch(request) {
       const url = new URL(request.url); const prefix = '/api/mayura';
@@ -56,8 +61,7 @@ export async function createApplication({ store, publicOrigin, projectId, sessio
       if (closed) throw new Error('Application closed.');
       if (recovering) return recovering;
       recovering = (async () => {
-        const recovery = await server.recoverConversations({ limit: 25, ...(recoveryCursor ? { after: recoveryCursor } : {}) });
-        recoveryCursor = recovery.next ?? undefined;
+        const recovery = await recoverOnce(after => server.recoverConversations({ limit: 25, ...(after === undefined ? {} : { after }) }));
         const reports = []; for (const item of workflows) reports.push(await item.worker.runOnce({ budgetMs: 1000 }));
         if (recovery.outcomes.some(item => item.status === 'retry') || reports.some(item => item.failures.length)) throw new Error('Background work needs attention.');
         return { recovered: recovery.outcomes.length, scopes: reports.length };

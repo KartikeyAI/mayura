@@ -2,9 +2,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
+import { satisfies } from 'semver';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export const archiveIntegrity = bytes => 'sha512-' + createHash('sha512').update(bytes).digest('base64');
+const publicPackage = name => name === 'mayura' || /^@mayurajs\/[a-z0-9-]+$/u.test(name);
+const identities = entries => entries.map(({ name, version }) => ({ name, version }));
 
 /** Read one package manifest from a bounded regular-file archive without extracting or executing it. */
 function packageManifest(bytes) {
@@ -30,31 +33,42 @@ function packageManifest(bytes) {
   return manifest;
 }
 
-/** Validate all selected archives and their internal dependency closure before any registry write. */
-export function selectReleaseArchives(manifest, names, version, sourceCommit, archiveBytes) {
-  assert(names.length > 0 && new Set(names).size === names.length, 'Invalid release inventory.');
-  assert(names.every(name => name === 'mayura' || /^@mayurajs\/[a-z0-9-]+$/u.test(name)));
+/** Validate a reviewed package identity, archive and immutable npm publication metadata. */
+function validatedArchive(entry, name, version, archiveBytes, filenames) {
+  assert(entry, `Missing selected archive: ${name}`);
+  assert.equal(entry.version, version, `Wrong archive version: ${name}`);
+  assert(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.tgz$/u.test(entry.filename), 'Unsafe archive filename.');
+  assert(!filenames.has(entry.filename), 'Duplicate archive filename.'); filenames.add(entry.filename);
+  assert(/^[a-f0-9]{64}$/u.test(entry.sha256));
+  const bytes = archiveBytes(entry.filename);
+  assert.equal(sha256(bytes), entry.sha256, `Archive changed: ${name}`);
+  const pkg = packageManifest(bytes);
+  assert.equal(pkg.name, name); assert.equal(pkg.version, version);
+  assert.equal(pkg.repository?.url, 'git+https://github.com/KartikeyAI/mayura.git');
+  assert.equal(pkg.private, undefined); assert.equal(pkg.scripts, undefined);
+  assert.deepEqual(pkg.publishConfig, { access: 'public', provenance: true }, 'Archive cannot override the registry, tag or publication settings.');
+  return { pkg, integrity: archiveIntegrity(bytes) };
+}
+
+function manifestInventory(manifest, version, sourceCommit) {
   assert.equal(manifest.format, 1);
   assert.equal(manifest.status, 'passed');
   assert.equal(manifest.version, version);
   assert.equal(manifest.sourceCommit, sourceCommit, 'Archives do not belong to this source commit.');
   const inventory = new Map(manifest.packages.map(entry => [entry.name, entry]));
   assert.equal(inventory.size, manifest.packages.length, 'Duplicate archive identities.');
+  return inventory;
+}
+
+/** Validate all selected archives and their internal dependency closure before any registry write. */
+export function selectReleaseArchives(manifest, names, version, sourceCommit, archiveBytes) {
+  assert(names.length > 0 && new Set(names).size === names.length, 'Invalid release inventory.');
+  assert(names.every(publicPackage));
+  const inventory = manifestInventory(manifest, version, sourceCommit);
   const filenames = new Set();
   return names.map((name, index) => {
     const entry = inventory.get(name);
-    assert(entry, `Missing selected archive: ${name}`);
-    assert.equal(entry.version, version);
-    assert(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.tgz$/u.test(entry.filename), 'Unsafe archive filename.');
-    assert(!filenames.has(entry.filename), 'Duplicate archive filename.'); filenames.add(entry.filename);
-    assert(/^[a-f0-9]{64}$/u.test(entry.sha256));
-    const bytes = archiveBytes(entry.filename);
-    assert.equal(sha256(bytes), entry.sha256, `Archive changed: ${name}`);
-    const pkg = packageManifest(bytes);
-    assert.equal(pkg.name, name); assert.equal(pkg.version, version);
-    assert.equal(pkg.repository?.url, 'git+https://github.com/KartikeyAI/mayura.git');
-    assert.equal(pkg.private, undefined); assert.equal(pkg.scripts, undefined);
-    assert.deepEqual(pkg.publishConfig, { access: 'public', provenance: true }, 'Archive cannot override the registry, tag or publication settings.');
+    const { pkg, integrity } = validatedArchive(entry, name, version, archiveBytes, filenames);
     for (const kind of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
       for (const [dependency, range] of Object.entries(pkg[kind] ?? {})) {
         if (dependency === 'mayura' || dependency.startsWith('@mayurajs/')) {
@@ -66,7 +80,54 @@ export function selectReleaseArchives(manifest, names, version, sourceCommit, ar
         }
       }
     }
-    return { ...entry, integrity: archiveIntegrity(bytes) };
+    return { ...entry, integrity };
+  });
+}
+
+/** Admit the selected package versions from a reviewed plan and the exact commit's archive inventory. */
+export function selectPlannedRelease(manifest, plan, inventory, sourceCommit, archiveBytes, planDigest) {
+  assert.equal(plan.format, 1);
+  assert(/^[a-f0-9]{64}$/u.test(planDigest), 'Package release plan digest is required.');
+  assert.equal(inventory[0]?.name, 'mayura', 'Source package inventory must start with mayura.');
+  const source = new Map(inventory.map(({ name, version }) => [name, version]));
+  assert.equal(source.size, inventory.length, 'Duplicate source package identities.');
+  const selected = new Map(plan.packages.map(({ name, version }, index) => [name, { version, index }]));
+  assert(selected.size > 0 && selected.size === plan.packages.length, 'Invalid planned release inventory.');
+  assert.deepEqual(plan.packages, inventory.filter(({ name }) => selected.has(name)),
+    'Planned release identities must match the reviewed source inventory in dependency order.');
+  const archives = manifestInventory(manifest, source.get('mayura'), sourceCommit);
+  if (manifest.planDigest === undefined) {
+    assert.deepEqual(identities(manifest.packages), inventory, 'Staged archives differ from the source inventory.');
+  } else {
+    assert.equal(manifest.planDigest, planDigest, 'Frozen archives belong to a different release plan.');
+    assert.deepEqual(identities(manifest.packages), plan.packages, 'Frozen archives differ from the release plan.');
+  }
+  const filenames = new Set();
+  return plan.packages.map(({ name, version }, index) => {
+    assert(publicPackage(name));
+    const entry = archives.get(name);
+    const { pkg, integrity } = validatedArchive(entry, name, version, archiveBytes, filenames);
+    assert.equal(entry.filename, `${name.replace(/^@/u, '').replace('/', '-')}-${version}.tgz`,
+      'Archive filename differs from the planned package identity.');
+    const external = new Map();
+    for (const kind of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      for (const [dependency, range] of Object.entries(pkg[kind] ?? {})) {
+        if (dependency !== 'mayura' && !dependency.startsWith('@mayurajs/')) continue;
+        const dependencyVersion = source.get(dependency);
+        assert(dependencyVersion, `Unknown release dependency: ${dependency}`);
+        const admitsSource = dependency === 'mayura' && kind === 'peerDependencies'
+          ? typeof range === 'string' && satisfies(dependencyVersion, range)
+          : [dependencyVersion, '^' + dependencyVersion].includes(range);
+        assert(admitsSource,
+          `Wrong dependency version: ${dependency}@${range} does not admit ${dependencyVersion}.`);
+        if (selected.has(dependency)) {
+          assert(selected.get(dependency).index < index, `Release dependency must be published first: ${dependency}`);
+        } else {
+          external.set(dependency, dependencyVersion);
+        }
+      }
+    }
+    return { ...entry, integrity, externalDependencies: [...external].map(([name, version]) => ({ name, version })) };
   });
 }
 

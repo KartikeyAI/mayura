@@ -4,7 +4,7 @@ import { pageMeta, site } from '../../lib/site';
 export const Route = createFileRoute('/roadmap/')({
   head: () => pageMeta({
     title: 'Roadmap · Mayura',
-    description: 'What Mayura has shipped, what comes next and what is planned later. Themes, not dates: plans may change.',
+    description: 'See what shipped in Mayura 1.4 and what we plan to qualify next across agent UI, retrieval and deployment.',
     path: '/roadmap/',
   }),
   component: Roadmap,
@@ -63,12 +63,31 @@ const stages: Stage[] = [
     ],
   },
   {
+    label: '1.3', title: 'Standalone agent components', status: 'shipped',
+    summary: 'Mayura UI became a standalone React 19 package and gained a public shadcn registry.',
+    items: [
+      { title: 'Composable UI', text: 'Build chat with a composer, thread history, run activity, exact approval review, citations and artifact inspection.' },
+      { title: 'Your app owns the transport', text: 'Use the components with your own data and callbacks, or connect them to a compatible AG-UI backend.' },
+    ],
+  },
+  {
+    label: '1.4', title: 'Agent Workspace', status: 'shipped',
+    summary: 'Published November 25, 2026. Build on the assembled workspace or install the individual React components.',
+    items: [
+      { title: 'A ready-to-compose workspace', text: 'Chat, threads, run activity, exact approval review, citations and artifacts share one workspace. Replace the sidebar, composer or message rendering.' },
+      { title: 'Editable Tailwind', text: 'Copy workspace source through shadcn and let your app build its utility classes. The npm package also offers a Tailwind v4 entry point and compiled CSS.' },
+      { title: 'Reconnect to a run', text: 'Authorized read-only AG-UI observation restores the transcript and pending approval. The Mayura AG-UI adapter remains experimental.' },
+      { title: 'Typed reply cards', text: 'Show tables, allowlisted downloads and confirmations, or register your own renderer. Your server authorizes actions that write.' },
+    ],
+  },
+  {
     label: 'Next', title: 'Qualify more real-world paths', status: 'next',
     summary: 'Priorities for broader qualification, without promised delivery dates.',
     items: [
-      { title: 'External services', text: 'Paid providers and gateways, real authorization policies, and vector/reranker services under deployment conditions.' },
-      { title: 'Browser and client interoperability', text: 'Rendered starter flows, accessibility, AG-UI reference clients and CopilotKit compatibility.' },
-      { title: 'Deployment profiles', text: 'Live framework deployments and the Hono-specific Bun, Deno and Workers/D1 application paths.' },
+      { title: 'Broader retrieval qualification', text: 'Measure quality, latency and recovery for more embedding, vector store and reranker combinations.' },
+      { title: 'Browser and client interoperability', text: 'Expand rendered workspace coverage for accessibility and reconnection, and verify AG-UI reference clients and CopilotKit compatibility.' },
+      { title: 'External services', text: 'Qualify more model providers, gateways and authorization policies under real deployment conditions.' },
+      { title: 'Deployment profiles', text: 'Extend live testing beyond the Hono and D1 smoke test to more framework setups and workloads.' },
     ],
   },
   {
@@ -88,6 +107,13 @@ const badge: Record<Stage['status'], string> = {
 };
 const badgeText: Record<Stage['status'], string> = { shipped: 'Shipped', next: 'Next', later: 'Later' };
 
+const shipped = stages.filter(stage => stage.status === 'shipped').reverse();
+const groups = [
+  { id: 'latest-release', title: 'Latest release', stages: shipped.slice(0, 1) },
+  { id: 'planned-work', title: 'Planned work', stages: stages.filter(stage => stage.status !== 'shipped') },
+  { id: 'earlier-releases', title: 'Earlier releases', stages: shipped.slice(1) },
+];
+
 function Roadmap() {
   return (
     <main className="px-4 py-16 sm:px-6 sm:py-20">
@@ -95,53 +121,23 @@ function Roadmap() {
         <p className="text-sm font-medium text-primary">Roadmap</p>
         <h1 className="mt-3 text-4xl font-semibold tracking-[-0.035em] text-balance sm:text-5xl">Where Mayura is going</h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
-          What has shipped, what comes next and what is planned after that. These are themes, not promises or dates:
-          plans change as we learn. Every release keeps the same rules: nothing allowed by default, a hard budget on
-          every run, and semantic versioning for documented stable APIs. Experimental profiles keep their stated limits.
+          See what you can build with today’s release and where we plan to expand qualification. Releases keep
+          explicit permissions, a hard budget on every run, and semantic versioning for documented stable APIs.
         </p>
 
-        <ol className="relative mt-14 space-y-12 border-l border-line pl-8">
-          {stages.map(stage => (
-            <li key={stage.label} className="relative">
-              <span aria-hidden="true" className={`absolute top-1.5 -left-[2.4rem] size-3.5 rounded-full border-2 border-bg ${stage.status === 'shipped' ? 'bg-primary' : stage.status === 'next' ? 'bg-fg' : 'bg-line'}`} />
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-sm text-muted">{stage.label}</span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${badge[stage.status]}`}>{badgeText[stage.status]}</span>
-              </div>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">{stage.title}</h2>
-              <p className="mt-1 text-muted">{stage.summary}</p>
-              <ul className="mt-5 grid gap-3 sm:grid-cols-2">
-                {stage.items.map(item => (
-                  <li key={item.title} className="rounded-2xl border border-line bg-raised p-5">
-                    <h3 className="font-semibold tracking-tight">{item.title}</h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-pretty text-muted">{item.text}</p>
-                  </li>
-                ))}
-              </ul>
-              {stage.label === '1.1' && (
-                <p className="mt-4 text-sm">
-                  <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-11" className="font-medium text-primary hover:underline">Mayura 1.1 history</Link>
-                  <span className="text-muted"> · </span>
-                  <Link to="/integrations/" className="font-medium text-primary hover:underline">Browse the integrations</Link>
-                </p>
-              )}
-              {stage.label === '1.2.1' && (
-                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-121" className="font-medium text-primary hover:underline">What’s new in 1.2.1</Link>
-                  <span className="text-muted"> · </span><Link to="/docs/$/" params={{ _splat: 'guides/release-readiness' }} className="font-medium text-primary hover:underline">Release evidence and limits</Link></p>
-              )}
-              {stage.label === '1.2.2' && (
-                <p className="mt-4 text-sm"><Link to="/docs/$/" params={{ _splat: 'project/changelog' }} className="font-medium text-primary hover:underline">Read the changelog</Link>
-                  <span className="text-muted"> · </span><Link to="/docs/$/" params={{ _splat: 'guides/rag-modal-pinecone-starter' }} className="font-medium text-primary hover:underline">Run the RAG starter</Link></p>
-              )}
-            </li>
-          ))}
-        </ol>
+        {groups.map(group => (
+          <section key={group.id} aria-labelledby={group.id} className="mt-14">
+            <h2 id={group.id} className="mb-6 text-lg font-semibold tracking-tight">{group.title}</h2>
+            <ol className="relative space-y-12 border-l border-line pl-6 sm:pl-8">
+              {group.stages.map(stage => <RoadmapStage key={stage.label} stage={stage} />)}
+            </ol>
+          </section>
+        ))}
 
         <div className="mt-16 rounded-2xl border border-line bg-soft/60 p-6 sm:p-8">
           <h2 className="text-lg font-semibold tracking-tight">Tell us what you need</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-            The roadmap follows what people build with Mayura. Open an issue for an integration, a feature or a problem
-            you hit, or comment on one that is already there.
+            Open an issue for an integration, a feature or a problem you hit, or comment on one that is already there.
           </p>
           <a href={`${site.repository}/issues`} target="_blank" rel="noopener noreferrer"
             className="mt-4 inline-flex rounded-lg bg-fg px-3.5 py-2 text-sm font-medium text-bg transition hover:opacity-85">
@@ -150,5 +146,52 @@ function Roadmap() {
         </div>
       </div>
     </main>
+  );
+}
+
+function RoadmapStage({ stage }: { stage: Stage }) {
+  return (
+    <li className="relative">
+      <span aria-hidden="true" className={`absolute top-1.5 -left-[1.9rem] size-3.5 rounded-full border-2 border-bg sm:-left-[2.4rem] ${stage.status === 'shipped' ? 'bg-primary' : stage.status === 'next' ? 'bg-fg' : 'bg-line'}`} />
+      <div className="flex flex-wrap items-center gap-3">
+        {stage.status === 'shipped' && <span className="font-mono text-sm text-muted">v{stage.label}</span>}
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${badge[stage.status]}`}>{badgeText[stage.status]}</span>
+      </div>
+      <h3 className="mt-2 text-2xl font-semibold tracking-tight">{stage.title}</h3>
+      <p className="mt-1 text-muted">{stage.summary}</p>
+      <ul className="mt-5 grid gap-3 sm:grid-cols-2">
+        {stage.items.map(item => (
+          <li key={item.title} className="rounded-2xl border border-line bg-raised p-5">
+            <h4 className="font-semibold tracking-tight">{item.title}</h4>
+            <p className="mt-1.5 text-sm leading-relaxed text-pretty text-muted">{item.text}</p>
+          </li>
+        ))}
+      </ul>
+      {stage.label === '1.1' && (
+        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-11" className="font-medium text-primary hover:underline">Mayura 1.1 history</Link>
+          <Link to="/integrations/" className="font-medium text-primary hover:underline">Browse the integrations</Link>
+        </p>
+      )}
+      {stage.label === '1.2.1' && (
+        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-121" className="font-medium text-primary hover:underline">What’s new in 1.2.1</Link>
+          <Link to="/docs/$/" params={{ _splat: 'guides/release-readiness' }} hash="v121-publication" className="font-medium text-primary hover:underline">Release evidence and limits</Link>
+        </p>
+      )}
+      {stage.label === '1.2.2' && (
+        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link to="/docs/$/" params={{ _splat: 'project/changelog' }} className="font-medium text-primary hover:underline">Read the changelog</Link>
+          <Link to="/docs/$/" params={{ _splat: 'guides/rag-modal-pinecone-starter' }} className="font-medium text-primary hover:underline">Run the RAG starter</Link>
+        </p>
+      )}
+      {stage.label === '1.4' && (
+        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link to="/docs/$/" params={{ _splat: 'project/whats-new' }} hash="mayura-14" className="font-medium text-primary hover:underline">What’s new in 1.4</Link>
+          <Link to="/ui/" className="font-medium text-primary hover:underline">Explore the UI gallery</Link>
+          <Link to="/docs/$/" params={{ _splat: 'guides/nextjs' }} hash="agent-workspace-example" className="font-medium text-primary hover:underline">Run the Next.js example</Link>
+        </p>
+      )}
+    </li>
   );
 }

@@ -98,7 +98,7 @@ export function IntegrationsWall() {
     <section className="border-b border-line px-4 py-20 sm:px-6">
       <div className="mx-auto max-w-6xl">
         <h2 className="mx-auto max-w-3xl text-center text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-[2.6rem] sm:leading-[1.1]">
-          Works with what you already use. <span className="text-muted">{integrationPackageCount} integration packages, released with every version.</span>
+          Works with what you already use. <span className="text-muted">{integrationPackageCount} optional integration packages.</span>
         </h2>
         <div className="mt-12 space-y-6">
           {rows.map(row => (

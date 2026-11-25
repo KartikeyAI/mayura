@@ -15,11 +15,11 @@ durable workflows are advanced by a Cron Trigger, and storage is opened through 
 This guide builds that setup with D1 as the store, then shows the PostgreSQL alternative through Hyperdrive. Before you
 start, know where it stands:
 
-| | Status in Mayura 1.1 |
+| | Validation status |
 |---|---|
 | Mayura on workerd, the Workers runtime | Tested in CI without `nodejs_compat`: an agent run with a tool, the server's handler and a durable workflow give the same results as on Node |
-| A deployed Worker | **Experimental.** The same code as CI's workerd, but not yet run as a deployment; the setup may change in any release |
-| `@mayurajs/storage-d1` | Passes every storage, memory and workflow conformance suite on its own D1 code, and races writers on Cloudflare's D1 in Miniflare; its live check has not yet passed against a real account |
+| A deployed Worker | The [Hono starter with D1](../../../docs/guides/hono.md#cloudflare-workers-with-d1) passed a live smoke test with the request-scoped Worker fix. Broader Workers setups remain experimental |
+| `@mayurajs/storage-d1` | Storage and workflow conformance in Miniflare, plus the Hono smoke test with a real D1 binding and Cron Trigger |
 | PostgreSQL through Hyperdrive | Experimental and untested: `pg` needs `nodejs_compat`, which CI's workerd run does not use |
 
 If you need a supported target today, run the same agents on [Vercel](vercel.md) or in containers; see
