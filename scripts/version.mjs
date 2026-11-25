@@ -60,7 +60,7 @@ export function nextVersion(last, bump) {
  * otherwise, saying why.
  */
 export function requestedRelease(requested, { tags, current: at }) {
-  parse(requested);
+  assert(isVersion(requested), 'Not a semantic version.');
   const released = tags.filter(tag => tag.startsWith('v')).map(tag => tag.slice(1)).filter(isVersion);
   if (released.includes(requested)) {
     assert.equal(at, requested, `v${requested} already exists and the code is at ${at}: resume a release only from code at its version.`);
