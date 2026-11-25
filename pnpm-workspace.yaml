@@ -2,6 +2,7 @@ packages:
   - packages/*
   - packages/cli/starters/*
   - extensions/*
+  - examples/ui-ag-ui-prototype
 minimumReleaseAge: 1440
 strictDepBuilds: true
 onlyBuiltDependencies:

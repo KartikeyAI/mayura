@@ -1,10 +1,10 @@
 ---
 title: "Integration packages"
-description: "Every @mayurajs package: model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."
+description: "Every @mayurajs package: UI, model providers, voice, storage, files, observability, sandboxes, browsers, authorization, sign-in, API keys and deploy targets."
 ---
 
-Beside `mayura`, 105 optional `@mayurajs/*` packages connect it to other services. Each is published with every Mayura
-release at the same version, takes `mayura` as a peer, and is installed only if you use it:
+Beside `mayura`, 106 optional `@mayurajs/*` packages add UI and integrations. Each is published with every Mayura
+release at the same version. The standalone UI library can run with a compatible AG-UI transport and makes Mayura an optional peer:
 
 ```bash
 npm install mayura @mayurajs/storage-mysql
@@ -13,6 +13,14 @@ npm install mayura @mayurajs/storage-mysql
 The packages read no environment variables themselves: you pass credentials in as options, and deploy targets use
 the platform's own command-line tool, signed in as you. Each package has its own page, and each area's guide shows
 how the packages fit together.
+
+## User interface
+
+Standalone React components for agent interfaces and AG-UI. See [User interface](../guides/copy-in-ui.md#shadcn-registry).
+
+| Package | What it does |
+| --- | --- |
+| [`@mayurajs/ui`](../integrations/ui.md) | Tailwind React components for agent chat, thread history, artifacts, citations and AG-UI approvals. |
 
 ## Vector stores
 

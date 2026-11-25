@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/storage-mysql",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Mayura storage on MySQL 8, through mysql2.",
   "type": "module",

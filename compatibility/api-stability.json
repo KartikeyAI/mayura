@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "release": "1.2.2",
+  "release": "1.3.0",
   "targetRelease": "1.0.0",
   "stableEntryPoints": [
     "@mayura/adapter-code-docker",
@@ -175,6 +175,8 @@
     "@mayurajs/storage-libsql",
     "@mayurajs/storage-mongodb",
     "@mayurajs/storage-mysql",
+    "@mayurajs/ui",
+    "@mayurajs/ui/ag-ui",
     "@mayurajs/vector-chroma",
     "@mayurajs/vector-libsql",
     "@mayurajs/vector-pgvector",

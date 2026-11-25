@@ -5,7 +5,7 @@ description: "Install versioned React source components with reviewed file plans
 
 The `mayura add ui` registry copies React source and shared CSS into `src/components/mayura/`. Your application owns
 that source. Existing [React runtime components](react.md) remain available in 1.x; hooks/controllers still enforce
-bounded subscription and command behavior. The registry introduces no new runtime UI package.
+bounded subscription and command behavior. You can also install the standalone [@mayurajs/ui library](../integrations/ui.md).
 
 ## Choose and copy
 
@@ -22,9 +22,8 @@ Mayura versions are refused. The CLI does not install dependencies, modify packa
 run installation hooks.
 
 Install React and Mayura first and configure TypeScript JSX (`react-jsx`) and CSS imports in your application.
-The initial registry requires Mayura 1.2.x or a compatible 1.2 release candidate, and refuses 1.1 installations. During
-release-1.2 development the repository manifest is still 1.1; installation becomes usable against an installed 1.2
-build after release versioning. The CLI reads the target's installed Mayura manifest, not a claimed model version.
+The CLI checks the target project's installed Mayura manifest. The copy-in components support stable Mayura
+releases from 1.2 through 1.x and compatible release candidates.
 Registry entries include source version, supported Mayura range, dependencies and all copied files. Shared `ui.css`
 uses overridable `--ui-*` variables and no external stylesheet/font service.
 

@@ -61,6 +61,7 @@ test('includes embedded browser dependencies and resolved optional peers in sepa
   const { lock, workspace, extensions } = fixture();
   workspace[0].manifest.peerDependencies = { react: '^19.0.0' };
   extensions[0].manifest.peerDependencies = { mayura: 'workspace:^', 'vendor-sdk': '^2.0.0' };
+  extensions[0].manifest.peerDependenciesMeta = { 'vendor-sdk': { optional: true } };
   lock.importers['.'] = { devDependencies: { react: { version: '19.0.1' }, 'vendor-sdk': { version: '2.0.1' } } };
   lock.importers['packages/inspector-ui'] = { dependencies: { 'browser-widget': { specifier: '1.0.0', version: '1.0.0' } } };
   for (const key of ['react@19.0.1', 'vendor-sdk@2.0.1', 'browser-widget@1.0.0', 'browser-child@1.0.0']) {
@@ -76,6 +77,21 @@ test('includes embedded browser dependencies and resolved optional peers in sepa
   assert(!inventory.roots.get('@mayurajs/shared').has('vendor-sdk@2.0.1'));
   delete lock.importers['.'].devDependencies['vendor-sdk'];
   assert.throws(() => productionInventory(lock, workspace, extensions, { 'browser-widget': '1.0.0' }), /No locked runtime peer/u);
+});
+
+test('audits React in standalone UI installs and includes Mayura only in its optional profile', () => {
+  const { lock, workspace, extensions } = fixture();
+  extensions.push({ name: 'ui', manifest: { name: '@mayurajs/ui',
+    peerDependencies: { mayura: 'workspace:^', react: '>=19 <20' },
+    peerDependenciesMeta: { mayura: { optional: true } },
+  } });
+  lock.importers['extensions/ui'] = { dependencies: { react: { specifier: '>=19 <20', version: '19.0.1' } } };
+  lock.packages['react@19.0.1'] = {};
+  lock.snapshots['react@19.0.1'] = {};
+  const { roots, optionalExtensionProfiles } = productionInventory(lock, workspace, extensions);
+  assert.deepEqual([...roots.get('@mayurajs/ui')], ['react@19.0.1']);
+  assert.deepEqual([...roots.get('@mayurajs/ui (optional peers)')].sort(), ['react@19.0.1', 'zod@4.6.7']);
+  assert(!optionalExtensionProfiles.has('@mayurajs/ui'), 'Required React cannot qualify for an optional vendor SDK exclusion.');
 });
 
 test('reports unqualified SDK matches and retains the release gate for shared findings', async () => {

@@ -11633,6 +11633,270 @@
         "declaration": "5238cca3c0083103"
       }
     },
+    "@mayurajs/ui": {
+      "AnswerText": {
+        "kind": "function",
+        "declaration": "9c379fa6fbb9336c"
+      },
+      "ApprovalCard": {
+        "kind": "function",
+        "declaration": "e2b1d93ac9f5aa18"
+      },
+      "ApprovalCardProps": {
+        "kind": "interface",
+        "declaration": "2032b829a380c462"
+      },
+      "ArtifactPanel": {
+        "kind": "function",
+        "declaration": "63004f9fcf263d6b"
+      },
+      "ArtifactReadOptions": {
+        "kind": "interface",
+        "declaration": "2e1f1a3a7f47fca0"
+      },
+      "attachmentContextDivider": {
+        "kind": "const",
+        "declaration": "8ebe8ade7e23736b"
+      },
+      "ChangeReview": {
+        "kind": "function",
+        "declaration": "97a2e2d298bbae2e"
+      },
+      "Citation": {
+        "kind": "interface",
+        "declaration": "768754140b9c6a9e"
+      },
+      "Composer": {
+        "kind": "function",
+        "declaration": "1503ca5d0643485b"
+      },
+      "ComposerProps": {
+        "kind": "interface",
+        "declaration": "68250ced8d2de008"
+      },
+      "DocumentChange": {
+        "kind": "interface",
+        "declaration": "5e76812dc9813404"
+      },
+      "Icon": {
+        "kind": "function",
+        "declaration": "3467fb01a0afa795"
+      },
+      "Inspector": {
+        "kind": "function",
+        "declaration": "1e17a733caa3bd3d"
+      },
+      "InspectorProps": {
+        "kind": "interface",
+        "declaration": "de539fb6c9584490"
+      },
+      "maxPromptLength": {
+        "kind": "const",
+        "declaration": "cf62dacd4e9f0912"
+      },
+      "maxQuoteLength": {
+        "kind": "const",
+        "declaration": "37a70e5b1c553eb0"
+      },
+      "MessageActions": {
+        "kind": "function",
+        "declaration": "cced8a181fe43eec"
+      },
+      "MessageActionsProps": {
+        "kind": "interface",
+        "declaration": "377b5832e85543fc"
+      },
+      "readArtifacts": {
+        "kind": "function",
+        "declaration": "11bdfed1b65e82bc"
+      },
+      "ReplyArtifact": {
+        "kind": "type",
+        "declaration": "ff470bd7cd9d24e6"
+      },
+      "ReplyArtifacts": {
+        "kind": "function",
+        "declaration": "d945e98a2e74ed2d"
+      },
+      "ReplyArtifactsProps": {
+        "kind": "interface",
+        "declaration": "4ba62de0f7c52822"
+      },
+      "RunActivity": {
+        "kind": "function",
+        "declaration": "d1b925afe940000d"
+      },
+      "RunActivityItem": {
+        "kind": "interface",
+        "declaration": "2a45993e76c5500b"
+      },
+      "RunActivityProps": {
+        "kind": "interface",
+        "declaration": "498d867ce1c5d1c1"
+      },
+      "SourceControls": {
+        "kind": "interface",
+        "declaration": "c76364e4f2851515"
+      },
+      "SourceInspector": {
+        "kind": "function",
+        "declaration": "2c3be0be04df2d38"
+      },
+      "Sources": {
+        "kind": "function",
+        "declaration": "462c48ca6bff5944"
+      },
+      "ThreadHistory": {
+        "kind": "function",
+        "declaration": "025e302a294feaaa"
+      },
+      "ThreadHistoryProps": {
+        "kind": "interface",
+        "declaration": "47e97b44a126278a"
+      },
+      "ThreadSummary": {
+        "kind": "interface",
+        "declaration": "c8938853193a9588"
+      },
+      "UiRoot": {
+        "kind": "function",
+        "declaration": "1d868ca2b194a732"
+      },
+      "UiRootProps": {
+        "kind": "interface",
+        "declaration": "a7dd416fe8c08d15"
+      },
+      "VoiceInput": {
+        "kind": "function",
+        "declaration": "d861c4abe98a16f0"
+      },
+      "VoiceInputProps": {
+        "kind": "interface",
+        "declaration": "30f6878d54a6c8ee"
+      }
+    },
+    "@mayurajs/ui/ag-ui": {
+      "ActivityTrace": {
+        "kind": "interface",
+        "declaration": "454031c5ae586192"
+      },
+      "AG_UI_PROTOCOL_VERSION": {
+        "kind": "const",
+        "declaration": "217520517db9428b"
+      },
+      "AgUiApprovalOptions": {
+        "kind": "interface",
+        "declaration": "57f44be7eecd799b"
+      },
+      "AgUiContentPart": {
+        "kind": "type",
+        "declaration": "27ee67351984aa4c"
+      },
+      "AgUiConversation": {
+        "kind": "interface",
+        "declaration": "93b45d23703a0784"
+      },
+      "AgUiConversationOptions": {
+        "kind": "interface",
+        "declaration": "63ef919dd14103fd"
+      },
+      "AgUiConversationStatus": {
+        "kind": "type",
+        "declaration": "47c994b15a891e57"
+      },
+      "AgUiEvent": {
+        "kind": "type",
+        "declaration": "34f46094b092e438"
+      },
+      "AgUiFrontendContinuation": {
+        "kind": "interface",
+        "declaration": "a7c34a836ba7ca26"
+      },
+      "AgUiFrontendDispatchMetadata": {
+        "kind": "interface",
+        "declaration": "51e94b7a868d57af"
+      },
+      "AgUiFrontendTool": {
+        "kind": "interface",
+        "declaration": "3a35bcb4905ad096"
+      },
+      "AgUiInterrupt": {
+        "kind": "interface",
+        "declaration": "63bf405c5e80aa8b"
+      },
+      "AgUiJson": {
+        "kind": "type",
+        "declaration": "1da19b5e4c9bbf35"
+      },
+      "AgUiMessage": {
+        "kind": "type",
+        "declaration": "90c62106df9e422b"
+      },
+      "AgUiResume": {
+        "kind": "type",
+        "declaration": "4acb4e98d0590e17"
+      },
+      "AgUiRunInput": {
+        "kind": "interface",
+        "declaration": "85203f65a57031c3"
+      },
+      "AgUiState": {
+        "kind": "type",
+        "declaration": "1252d6267cc39f1f"
+      },
+      "AgUiStateMetadata": {
+        "kind": "interface",
+        "declaration": "0876b19997a6f897"
+      },
+      "AgUiStatePatchOperation": {
+        "kind": "type",
+        "declaration": "9aeb11b37470b164"
+      },
+      "AgUiThreadList": {
+        "kind": "interface",
+        "declaration": "b830f6c5e355cf0e"
+      },
+      "AgUiThreadView": {
+        "kind": "interface",
+        "declaration": "ded15467838ef0fa"
+      },
+      "AgUiToolCall": {
+        "kind": "interface",
+        "declaration": "3c5db827ff8ec6bc"
+      },
+      "AgUiTransport": {
+        "kind": "interface",
+        "declaration": "b1ecd613ae68f1a8"
+      },
+      "ApprovalInterrupt": {
+        "kind": "interface",
+        "declaration": "fad09070908373cf"
+      },
+      "Citation": {
+        "kind": "interface",
+        "declaration": "768754140b9c6a9e"
+      },
+      "ConversationMessage": {
+        "kind": "interface",
+        "declaration": "393b403c16bc43c9"
+      },
+      "ConversationState": {
+        "kind": "interface",
+        "declaration": "5ec8b712bda29dfe"
+      },
+      "listThreadHistory": {
+        "kind": "function",
+        "declaration": "375be44b4516823a"
+      },
+      "maxPromptLength": {
+        "kind": "const",
+        "declaration": "cf62dacd4e9f0912"
+      },
+      "useAgUiConversation": {
+        "kind": "function",
+        "declaration": "7e00aaf3c914fc3a"
+      }
+    },
     "@mayurajs/vector-chroma": {
       "ChromaOptions": {
         "kind": "interface",

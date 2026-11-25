@@ -42,7 +42,11 @@ describe('public API classification', () => {
       expect(manifest.name).toBe(`@mayurajs/${directory}`);
       expect(manifest.version).toBe(policy.release);
       expect(manifest.private).toBe(true);
-      for (const path of Object.keys(manifest.exports ?? {})) extensions.push(path === '.' ? manifest.name : `${manifest.name}${path.slice(1)}`);
+      for (const [path, target] of Object.entries(manifest.exports ?? {})) {
+        const asset = typeof target === 'string' ? target : (target as { default?: string }).default;
+        if (path.endsWith('.css') && asset?.endsWith('.css')) continue; // Checked as a packaged asset in release qualification.
+        extensions.push(path === '.' ? manifest.name : `${manifest.name}${path.slice(1)}`);
+      }
     }
     expect([...extensions].sort()).toEqual([...policy.extensionEntryPoints].sort());
     const report = JSON.parse(await readFile(resolve(root, policy.apiReport), 'utf8')) as { entryPoints: Record<string, Record<string, unknown>> };

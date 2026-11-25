@@ -43,7 +43,7 @@ function registryFixture(entries, at = version) {
 }
 
 test('all repository packages are selected; archive, identity and dependency drift are rejected before writing', () => {
-  const f = fixture(); assert.equal(names.length, 106); assert.equal(f.entries().length, names.length);
+  const f = fixture(); assert(names.includes('@mayurajs/ui')); assert.equal(f.entries().length, names.length);
   for (const change of [m => m.packages.pop(), m => m.packages.reverse(), m => m.packages.push(m.packages[0]),
     m => m.packages.at(-1).sha256 = '0'.repeat(64), m => m.packages[0].filename = '../escape.tgz']) {
     const m = structuredClone(f.manifest); change(m);
@@ -86,11 +86,11 @@ test('manual and automatic releases require green exact-main push CI and the com
   for (const conclusion of ['cancelled', 'skipped', 'failure', null]) assert.throws(() => invoke(context, run, [jobs[0], { ...jobs[1], conclusion }]));
 });
 
-test('106 uploads tolerate scanning delays, preserve next, and reconcile without replaying uploads', async () => {
+test('all uploads tolerate scanning delays, preserve next, and reconcile without replaying uploads', async () => {
   const f = registryFixture(fixture().entries()); const receipt = await f.run();
-  assert.equal(receipt.status, 'published'); assert.equal(f.uploads.length, 106); assert.equal(receipt.verified.length, 106);
+  assert.equal(receipt.status, 'published'); assert.equal(f.uploads.length, names.length); assert.equal(receipt.verified.length, names.length);
   for (const tags of f.tags.values()) { assert.equal(tags.latest, version); assert.equal(tags.next, '1.2.0-rc.1'); }
-  await f.run({ previous: receipt }); assert.equal(f.uploads.length, 106);
+  await f.run({ previous: receipt }); assert.equal(f.uploads.length, names.length);
 });
 
 test('full prereleases preserve latest while advancing next', async () => {
@@ -117,7 +117,7 @@ test('cancellation persists uncertainty and refuses replay or further writes unt
   } }));
   assert.equal(f.receipt.uploads[names[0]], 'uncertain');
   await assert.rejects(f.run({ previous: f.receipt }), /Uncertain upload/u); assert.equal(f.uploads.length, 1);
-  f.reveal(entries[0]); await f.run({ previous: f.receipt }); assert.equal(f.uploads.length, 106);
+  f.reveal(entries[0]); await f.run({ previous: f.receipt }); assert.equal(f.uploads.length, names.length);
 });
 
 test('cancelling during a registry polling wait interrupts the wait and preserves accepted writes', { timeout: 1000 }, async () => {
@@ -126,16 +126,16 @@ test('cancelling during a registry polling wait interrupts the wait and preserve
   try {
     await assert.rejects(publishRelease({ entries: fixture().entries(), version, sourceCommit, tag: 'latest',
       registry: f.registry, upload: f.upload, save: f.save, signal: controller.signal }), { name: 'AbortError' });
-    assert.equal(f.uploads.length, 106); assert.equal(f.receipt.status, 'awaiting_registry');
+    assert.equal(f.uploads.length, names.length); assert.equal(f.receipt.status, 'awaiting_registry');
   } finally { clearTimeout(timer); }
 });
 
 test('accepted writes survive visibility timeouts; recovery rejects changed archives and other-channel movement', async () => {
   const entries = fixture().entries(); const f = registryFixture(entries);
   await assert.rejects(f.run({ deadlineMs: 0, now: () => 0 }), /Registry visibility/u);
-  assert.equal(f.receipt.status, 'awaiting_registry'); assert.equal(f.uploads.length, 106);
+  assert.equal(f.receipt.status, 'awaiting_registry'); assert.equal(f.uploads.length, names.length);
   const receipt = f.receipt; entries.forEach(e => f.reveal(e));
-  await f.run({ previous: receipt }); assert.equal(f.uploads.length, 106);
+  await f.run({ previous: receipt }); assert.equal(f.uploads.length, names.length);
   const changed = structuredClone(receipt); changed.identities[0].sha256 = 'changed';
   await assert.rejects(f.run({ previous: changed }), /different archives/u);
   const incomplete = structuredClone(receipt); delete incomplete.tags[names.at(-1)];

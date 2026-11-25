@@ -174,10 +174,12 @@ export function createPacker({ output, tarballs, allowScripts = ['better-sqlite3
     while (queue.length) {
       const { name, parent, required } = queue.shift(); if (closure.has(name)) continue;
       if (name.startsWith('@mayurajs/')) {
-        // Its peer is the mayura bundle; its dependencies (vendor SDKs) come from the extension's own installation.
+        // Use the mayura bundle when required and resolve other dependencies/peers from the extension's installation.
         closure.add(name); const { manifest, directory } = await extension(name);
-        queue.push({ name: 'mayura', parent: workspace, required: true });
         for (const dependency of Object.keys(manifest.dependencies ?? {})) queue.push({ name: dependency, parent: directory, required: true });
+        for (const peer of Object.keys(manifest.peerDependencies ?? {})) {
+          if (!manifest.peerDependenciesMeta?.[peer]?.optional) queue.push({ name: peer, parent: peer === 'mayura' ? workspace : directory, required: true });
+        }
         continue;
       }
       if (name === 'mayura') {

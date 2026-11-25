@@ -1,0 +1,25 @@
+{
+  "name": "mayura-ui-ag-ui-example",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "node ../../extensions/ui/scripts/build-styles.mjs --example && vite",
+    "build": "node ../../extensions/ui/scripts/build-styles.mjs --example && tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "5.3.0",
+    "@mayurajs/ui": "workspace:*",
+    "mayura": "workspace:*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}

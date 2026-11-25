@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { bundle } from './bundle-package.mjs';
-import { extensions, reviewedDependencies, reviewedPeers, stageExtension } from './extensions.mjs';
+import { extensions, reviewedDependencies, reviewedPeers, reviewedRequiredPeers, stageExtension, standaloneExtensions } from './extensions.mjs';
 import { packageSize } from './package-size.mjs';
 
 const exec = promisify(execFile);
@@ -130,8 +130,20 @@ for (const extension of extensions()) {
   assert(published.repository?.url === root.repository.url && published.repository?.directory === `extensions/${extension.name}`, `${name} must name its repository directory for provenance.`);
   assert.deepEqual(published.author, root.author, `${name} must name its author.`);
   assert(!published.scripts && !published.devDependencies, `${name} gained lifecycle scripts or development dependencies.`);
-  assert.deepEqual(published.peerDependencies, { mayura: `^${version}`, ...reviewedPeers[extension.name] }, `${name} must have mayura as its peer, at this release, and only reviewed vendor SDKs besides.`);
+  assert.deepEqual(published.peerDependencies, { mayura: `^${version}`, ...reviewedPeers[extension.name], ...reviewedRequiredPeers[extension.name] },
+    `${name} must have mayura as its peer, at this release, and only reviewed additional peers.`);
+  assert.equal(published.peerDependenciesMeta?.mayura?.optional === true, standaloneExtensions.has(extension.name),
+    `${name} changed the optional status of mayura.`);
   for (const peer of Object.keys(reviewedPeers[extension.name] ?? {})) assert.equal(published.peerDependenciesMeta?.[peer]?.optional, true, `${name} must take ${peer} as an optional peer.`);
+  for (const peer of Object.keys(reviewedRequiredPeers[extension.name] ?? {})) assert.notEqual(published.peerDependenciesMeta?.[peer]?.optional, true,
+    `${name} must require its ${peer} peer.`);
+  for (const target of Object.values(published.exports ?? {})) {
+    const asset = typeof target === 'string' ? target : target.default;
+    if (typeof asset === 'string' && asset.endsWith('.css')) {
+      assert(extensionFiles.has(asset.slice(2)), `${name} is missing ${asset}.`);
+      if (target.types) assert(extensionFiles.has(target.types.slice(2)), `${name} is missing ${target.types}.`);
+    }
+  }
   assert.deepEqual(Object.keys(published.dependencies).sort(), [...(reviewedDependencies[extension.name] ?? [])].sort(), `${name} gained an unreviewed dependency.`);
   for (const [dependency, range] of Object.entries(published.dependencies)) {
     if (dependency.startsWith('@mayurajs/')) assert.equal(range, version, `${name} must depend on ${dependency} at exactly this release.`);

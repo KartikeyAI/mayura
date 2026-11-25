@@ -1,6 +1,6 @@
 {
   "name": "mayura-workspace",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "author": {
     "name": "Aryabh",
     "email": "dev@rokad.co"
@@ -21,8 +21,8 @@
     "node": ">=22.12.0 <23 || >=24.14.1 <25"
   },
   "scripts": {
-    "build": "node node_modules/typescript/bin/tsc --build",
-    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json && node node_modules/typescript/bin/tsc --project extensions/provider-mistral/tsconfig.test.json && node node_modules/typescript/bin/tsc --project packages/auth/tsconfig.better-auth.json && node node_modules/typescript/bin/tsc --project packages/inspector-ui/tsconfig.json",
+    "build": "node node_modules/typescript/bin/tsc --build && node extensions/ui/scripts/build-styles.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc --build --pretty false && node node_modules/typescript/bin/tsc --project tsconfig.tests.json && node node_modules/typescript/bin/tsc --project extensions/provider-mistral/tsconfig.test.json && node node_modules/typescript/bin/tsc --project packages/auth/tsconfig.better-auth.json && node node_modules/typescript/bin/tsc --project packages/inspector-ui/tsconfig.json && node extensions/ui/scripts/build-styles.mjs",
     "test": "node node_modules/vitest/vitest.mjs run",
     "check": "pnpm typecheck && pnpm test",
     "test:consumer": "node scripts/consumer-check.mjs",
@@ -30,6 +30,8 @@
     "test:consumer:storage": "node scripts/storage-consumer-check.mjs",
     "test:templates": "node scripts/template-check.mjs",
     "test:starters": "node scripts/starter-check.mjs",
+    "test:ui-standalone": "node scripts/ui-standalone-check.mjs",
+    "test:ui-shadcn": "node scripts/ui-shadcn-check.mjs",
     "local:init": "node scripts/local-init.mjs",
     "test:bundle": "node scripts/bundle-check.mjs",
     "docs:check": "node scripts/integrations-index.mjs --check && node scripts/docs-check.mjs",
@@ -167,6 +169,7 @@
     "@mayurajs/voice-azure": "workspace:*",
     "@mayurajs/voice-cartesia": "workspace:*",
     "@mayurajs/voice-deepgram": "workspace:*",
+    "@mayurajs/ui": "workspace:*",
     "@mayurajs/voice-elevenlabs": "workspace:*",
     "@mayurajs/voice-google": "workspace:*",
     "@mayurajs/voice-openai": "workspace:*",

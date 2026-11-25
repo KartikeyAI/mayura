@@ -86,19 +86,22 @@ export function productionInventory(lock, packages, releaseExtensions, inspector
   const browserDependencies = Object.fromEntries(Object.entries(inspector).filter(([name]) => !name.startsWith('@mayura/')));
   for (const [name, resolved] of edges('packages/inspector-ui', browserDependencies)) visit(name, resolved, baseSeen, base);
   roots.set('mayura', base);
-  const addOptionalProfile = (packageName, peers, dependencies) => {
+  const addOptionalProfile = (packageName, peers, dependencies, includesMayura = false) => {
     const optional = peerEdges(lock, peers);
-    if (!optional.length) return;
+    if (!optional.length && !includesMayura) return;
     const inventory = new Set(dependencies);
     const seen = new Set();
+    if (includesMayura) for (const entry of base) inventory.add(entry);
     for (const [name, resolved] of optional) visit(name, resolved, seen, inventory);
     roots.set(optionalProfile(packageName), inventory);
   };
   addOptionalProfile('mayura', mayuraManifest.peers, base);
   for (const extension of releaseExtensions) {
     const importer = `extensions/${extension.name}`;
-    const inventory = new Set(base); // The installed Mayura peer has the same release version.
-    const seen = new Set(baseSeen);
+    const manifest = extension.manifest;
+    const optionalMayura = manifest.peerDependenciesMeta?.mayura?.optional === true;
+    const inventory = new Set(optionalMayura ? [] : base);
+    const seen = new Set(optionalMayura ? [] : baseSeen);
     for (const [name, resolved] of edges(importer, extension.manifest.dependencies ?? {})) {
       if (name.startsWith('@mayurajs/')) {
         const directory = name.slice('@mayurajs/'.length);
@@ -107,10 +110,17 @@ export function productionInventory(lock, packages, releaseExtensions, inspector
         for (const entry of roots.get(name)) inventory.add(entry);
       } else visit(name, resolved, seen, inventory);
     }
-    roots.set(extension.manifest.name, inventory);
-    const peers = Object.fromEntries(Object.entries(extension.manifest.peerDependencies ?? {}).filter(([name]) => name !== 'mayura'));
-    addOptionalProfile(extension.manifest.name, peers, inventory);
-    if (Object.keys(peers).length) optionalExtensionProfiles.add(extension.manifest.name);
+    const requiredPeers = {};
+    const optionalPeers = {};
+    for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+      if (name === 'mayura') continue;
+      const peers = manifest.peerDependenciesMeta?.[name]?.optional ? optionalPeers : requiredPeers;
+      peers[name] = range;
+    }
+    for (const [name, resolved] of peerEdges(lock, requiredPeers)) visit(name, resolved, seen, inventory);
+    roots.set(manifest.name, inventory);
+    addOptionalProfile(manifest.name, optionalPeers, inventory, optionalMayura);
+    if (Object.keys(optionalPeers).length) optionalExtensionProfiles.add(manifest.name);
   }
   return { roots, versions, optionalExtensionProfiles };
 }

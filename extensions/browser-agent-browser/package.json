@@ -1,6 +1,6 @@
 {
   "name": "@mayurajs/browser-agent-browser",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "description": "Vercel Labs' agent-browser CLI as tools on a mayura/browser browser.",
   "type": "module",
