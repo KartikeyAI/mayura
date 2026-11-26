@@ -74,3 +74,4 @@ app code, and allowlist same-origin download paths explicitly.
 Follow [AG-UI reconnection](../../../docs/guides/ag-ui.md#reattach-to-an-existing-run),
 [approval handling](../../../docs/guides/approvals-and-human-input.md) and the
 [Mayura UI reference](../../../docs/integrations/ui.md#reply-cards) for the server and card contracts.
+
