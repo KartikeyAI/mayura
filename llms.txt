@@ -15,6 +15,7 @@ Rules that matter when writing Mayura code:
 ## Get started
 
 - [Introduction](docs/introduction.md): What Mayura is, the ideas behind it, and how its parts fit together.
+- [Mayura philosophy](docs/project/philosophy.md): How Mayura handles model proposals, application authority, human decisions, and uncertain outcomes.
 - [Quickstart](docs/quickstart.md): Create a Mayura project in one command, or add a first agent to your own project and run it offline or on a real model.
 - [Installation](docs/installation.md): Requirements, the optional packages each part of Mayura needs, and TypeScript settings.
 - [Release validation status](docs/guides/release-readiness.md): Mayura 1.4.0 publication evidence, GitHub qualification, registry verification and profile limits.
