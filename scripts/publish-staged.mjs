@@ -7,7 +7,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSy
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extensions } from './extensions.mjs';
-import { assertPublishContext, sha256 } from './release-safety.mjs';
+import { findPublishQualification, sha256 } from './release-safety.mjs';
 import { readReleasePlan } from './package-release-plan.mjs';
 import { assertPlannedPreflight, assertPreparedRelease, publicationIdentities, selectFullRelease, selectPlannedRelease, publishRelease } from './release-publisher.mjs';
 
@@ -110,16 +110,11 @@ async function main() {
   if (publish) {
     const api = 'https://api.github.com/repos/KartikeyAI/mayura';
     const headers = { authorization: 'Bearer ' + process.env.GITHUB_TOKEN, accept: 'application/vnd.github+json' };
-    const runs = await json(`${api}/actions/runs?head_sha=${sourceCommit}&event=push&per_page=100`, headers);
-    const run = runs?.workflow_runs.find(r => r.name === 'Mayura qualification' && r.path === '.github/workflows/ci.yml' && r.conclusion === 'success');
-    assert(run, 'No green push qualification exists for this commit.');
-    const jobs = await json(`${api}/actions/runs/${run.id}/jobs?per_page=100`, headers);
-    assert.equal(jobs.jobs.length, jobs.total_count, 'Qualification jobs were truncated.');
-    assertPublishContext({ event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF,
-      workflowRef: process.env.GITHUB_WORKFLOW_REF, sha: sourceCommit }, run, jobs.jobs,
-    await json(`${api}/commits/main`, headers), reviewedPlan ? ['workflow_dispatch'] : ['workflow_dispatch', 'workflow_run']);
+    const run = await findPublishQualification({ event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF,
+      workflowRef: process.env.GITHUB_WORKFLOW_REF, sha: sourceCommit }, path => json(`${api}${path}`, headers),
+    reviewedPlan ? ['workflow_dispatch'] : ['workflow_dispatch', 'workflow_run']);
     writeFileSync(join(output, 'qualification.json'), JSON.stringify({
-      run: run.id, sourceCommit, gate: 'success', ...(reviewedPlan ? { planDigest: reviewedPlan.digest } : {}),
+      run: run.id, event: run.event, sourceCommit, gate: 'success', ...(reviewedPlan ? { planDigest: reviewedPlan.digest } : {}),
     }, null, 2));
   }
   const npmCli = [process.env.MAYURA_NPM_CLI, join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),

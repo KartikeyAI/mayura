@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { assertPublishContext, publishPrerelease, selectPrerelease } from './publish-prerelease.mjs';
+import { FULL_QUALIFICATION_JOBS } from './release-safety.mjs';
 
 const scope = JSON.parse(readFileSync(new URL('../compatibility/prerelease-22.json', import.meta.url)));
 const version = '1.2.0-rc.1'; const sourceCommit = 'a'.repeat(40);
@@ -41,21 +42,22 @@ test('the complete reviewed set is selected and archive or dependency drift fail
   }
 });
 
-test('a manual release requires exact-main push qualification and every gate/job to pass', () => {
+test('a manual prerelease requires exact-main qualification and every framework job to pass', () => {
   const context = { event: 'workflow_dispatch', ref: 'refs/heads/main', sha: sourceCommit,
     workflowRef: 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main' };
   const run = { name: 'Mayura qualification', path: '.github/workflows/ci.yml', event: 'push', head_branch: 'main', head_sha: sourceCommit,
     head_repository: { full_name: 'KartikeyAI/mayura' }, status: 'completed', conclusion: 'success' };
-  const jobs = [{ name: 'Qualification gate', conclusion: 'success' }, { name: 'Tests', conclusion: 'success' }];
+  const jobs = FULL_QUALIFICATION_JOBS.map(name => ({ name, conclusion: 'success' }));
   assert.doesNotThrow(() => assertPublishContext(context, run, jobs, { sha: sourceCommit }));
+  assert.doesNotThrow(() => assertPublishContext(context, { ...run, event: 'workflow_dispatch' }, jobs, { sha: sourceCommit }));
   assert.throws(() => assertPublishContext({ ...context, ref: 'refs/heads/other' }, run, jobs, { sha: sourceCommit }));
   assert.throws(() => assertPublishContext(context, run, jobs, { sha: 'moved' }));
   assert.throws(() => assertPublishContext(context, { ...run, event: 'pull_request' }, jobs, { sha: sourceCommit }));
   assert.throws(() => assertPublishContext(context, { ...run, path: '.github/workflows/other.yml' }, jobs, { sha: sourceCommit }));
   for (const conclusion of ['failure', 'skipped', 'cancelled', null]) {
-    assert.throws(() => assertPublishContext(context, run, [jobs[0], { ...jobs[1], conclusion }], { sha: sourceCommit }));
+    assert.throws(() => assertPublishContext(context, run, [{ ...jobs[0], conclusion }, ...jobs.slice(1)], { sha: sourceCommit }));
   }
-  assert.throws(() => assertPublishContext(context, run, [], { sha: sourceCommit }));
+  assert.throws(() => assertPublishContext(context, run, [{ name: 'Qualification gate', conclusion: 'success' }], { sha: sourceCommit }));
 });
 
 function registryFixture(selected) {

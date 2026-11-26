@@ -131,17 +131,58 @@ export function selectPlannedRelease(manifest, plan, inventory, sourceCommit, ar
   });
 }
 
-/** Publishing requires the exact pushed main commit and a complete, successful qualification run. */
-export function assertPublishContext(context, run, jobs, main, events = ['workflow_dispatch']) {
+// Keep the publication contract tied to each matrix member, even when a website-only run passes the same PR gate.
+const ciPlatforms = ['ubuntu-latest', 'windows-latest', 'macos-latest'];
+const ciNodeVersions = ['22.23.2', '24.14.1'];
+const ciShards = [1, 2];
+export const FULL_QUALIFICATION_JOBS = Object.freeze([
+  'Shared checks', 'runtimes', 'Qualification gate', 'container (22)', 'container (24)',
+  ...ciNodeVersions.flatMap(node => ciShards.map(shard => `postgres (${node}, ${shard})`)),
+  ...ciPlatforms.flatMap(os => ciNodeVersions.flatMap(node => [
+    `consumers (${os}, ${node})`,
+    ...ciShards.flatMap(shard => [`Tests (${os}, ${node}, ${shard}/2)`, `Bundle (${os}, ${node}, ${shard}/2)`]),
+  ])),
+]);
+
+function assertPublishSource(context, events) {
   assert(events.includes(context.event), 'Unsupported publishing event.');
   assert.equal(context.ref, 'refs/heads/main');
   assert.equal(context.workflowRef, 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main');
+}
+
+function matchesMainQualification(run, sourceCommit) {
+  return run?.name === 'Mayura qualification' && run.path === '.github/workflows/ci.yml'
+    && ['push', 'workflow_dispatch'].includes(run.event) && run.head_branch === 'main' && run.head_sha === sourceCommit
+    && run.head_repository?.full_name === 'KartikeyAI/mayura' && run.status === 'completed' && run.conclusion === 'success';
+}
+
+function hasFullQualification(jobs) {
+  if (!Array.isArray(jobs)) return false;
+  const results = new Map(jobs.map(job => [job?.name, job?.conclusion]));
+  return results.size === jobs.length && FULL_QUALIFICATION_JOBS.every(name => results.get(name) === 'success')
+    && jobs.every(job => job?.conclusion === 'success' || (job?.name === 'Website checks' && job.conclusion === 'skipped'));
+}
+
+/** Publishing requires the exact current main commit and a complete, successful qualification run. */
+export function assertPublishContext(context, run, jobs, main, events = ['workflow_dispatch']) {
+  assertPublishSource(context, events);
   assert.equal(main.sha, context.sha, 'Main moved before publication.');
-  assert.equal(run.name, 'Mayura qualification'); assert.equal(run.path, '.github/workflows/ci.yml');
-  assert.equal(run.event, 'push'); assert.equal(run.head_branch, 'main'); assert.equal(run.head_sha, context.sha);
-  assert.equal(run.head_repository?.full_name, 'KartikeyAI/mayura');
-  assert.equal(run.status, 'completed'); assert.equal(run.conclusion, 'success');
-  const gates = jobs.filter(job => job.name === 'Qualification gate');
-  assert.equal(gates.length, 1); assert.equal(gates[0].conclusion, 'success');
-  assert(jobs.every(job => job.conclusion === 'success'), 'A qualification job did not pass.');
+  assert(matchesMainQualification(run, context.sha), 'The qualification run must be an exact-main push or manual run.');
+  assert(hasFullQualification(jobs), 'The full framework qualification matrix and gate must pass before publication.');
+}
+
+/** Website-only pushes may pass the PR gate; look for a full push or manual run on the same source. */
+export async function findPublishQualification(context, github, events = ['workflow_dispatch']) {
+  assertPublishSource(context, events);
+  const runs = await github(`/actions/workflows/ci.yml/runs?branch=main&head_sha=${context.sha}&status=success&per_page=100`);
+  for (const run of runs?.workflow_runs ?? []) {
+    if (!matchesMainQualification(run, context.sha)) continue;
+    assert(Number.isSafeInteger(run.id) && run.id > 0, 'Invalid qualification run ID.');
+    const jobs = await github(`/actions/runs/${run.id}/jobs?per_page=100`);
+    assert(Array.isArray(jobs?.jobs) && jobs.jobs.length === jobs.total_count, 'Qualification jobs were truncated or unavailable.');
+    if (!hasFullQualification(jobs.jobs)) continue;
+    assertPublishContext(context, run, jobs.jobs, await github('/commits/main'), events);
+    return run;
+  }
+  throw new Error('No full framework qualification passed for this commit. Run Mayura qualification manually on main before releasing.');
 }

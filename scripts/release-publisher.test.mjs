@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { parse } from 'yaml';
 import { assertPlannedPreflight, assertPreparedRelease, publicationIdentities, publishRelease, selectFullRelease, selectPlannedRelease } from './release-publisher.mjs';
-import { assertPublishContext, sha256 } from './release-safety.mjs';
+import { assertPublishContext, findPublishQualification, FULL_QUALIFICATION_JOBS, sha256 } from './release-safety.mjs';
 import { assertReleaseReceipt } from './release-finalize.mjs';
 import { extensions } from './extensions.mjs';
 
@@ -87,18 +88,76 @@ test('only a dry run can select a different artifact output directory', () => {
   assert.equal(escape.status, 1); assert.match(escape.stderr, /directly under .artifacts/u);
 });
 
-test('manual and automatic releases require green exact-main push CI and the complete aggregate gate', () => {
-  const context = { event: 'workflow_run', ref: 'refs/heads/main', sha: sourceCommit,
-    workflowRef: 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main' };
-  const run = { name: 'Mayura qualification', path: '.github/workflows/ci.yml', event: 'push', head_branch: 'main', head_sha: sourceCommit,
-    head_repository: { full_name: 'KartikeyAI/mayura' }, status: 'completed', conclusion: 'success' };
-  const jobs = [{ name: 'Qualification gate', conclusion: 'success' }, { name: 'Tests', conclusion: 'success' }];
+const publishContext = { event: 'workflow_dispatch', ref: 'refs/heads/main', sha: sourceCommit,
+  workflowRef: 'KartikeyAI/mayura/.github/workflows/release.yml@refs/heads/main' };
+const mainQualification = { id: 12, name: 'Mayura qualification', path: '.github/workflows/ci.yml', event: 'push',
+  head_branch: 'main', head_sha: sourceCommit, head_repository: { full_name: 'KartikeyAI/mayura' },
+  status: 'completed', conclusion: 'success' };
+const fullJobs = FULL_QUALIFICATION_JOBS.map(name => ({ name, conclusion: 'success' }));
+const scopeJob = { name: 'Change scope', conclusion: 'success' };
+const websiteJob = { name: 'Website checks', conclusion: 'success' };
+const websiteOnlyJobs = [scopeJob, websiteJob, { name: 'Qualification gate', conclusion: 'success' }];
+
+test('release qualification names match every framework job and matrix member in CI', () => {
+  const { jobs } = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  const gate = jobs.qualification;
+  const actual = [...gate.needs, 'qualification'].flatMap(id => {
+    const job = jobs[id];
+    if ([scopeJob.name, websiteJob.name].includes(job.name)) return [];
+    if (!job.strategy?.matrix) return [job.name ?? id];
+
+    // Expand the declared matrices in dimension order, matching Actions' default display names.
+    const dimensions = Object.entries(job.strategy.matrix);
+    assert(dimensions.every(([key, values]) => !['include', 'exclude'].includes(key) && Array.isArray(values)),
+      'Update the release job inventory for non-cartesian matrices.');
+    return dimensions.reduce((rows, [key, values]) => rows.flatMap(row => values.map(value => ({ ...row, [key]: value }))), [{}])
+      .map(row => job.name?.replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/gu, (_, key) => {
+        assert(Object.hasOwn(row, key));
+        return String(row[key]);
+      }) ?? `${id} (${Object.values(row).join(', ')})`);
+  });
+  assert.deepEqual(actual.sort(), [...FULL_QUALIFICATION_JOBS].sort());
+});
+
+test('publishing requires the full exact-main matrix on a push or manual qualification', () => {
+  const context = { ...publishContext, event: 'workflow_run' };
+  const run = mainQualification;
+  const jobs = [...fullJobs, scopeJob, { ...websiteJob, conclusion: 'skipped' }];
   const invoke = (c = context, r = run, j = jobs, main = { sha: sourceCommit }) => assertPublishContext(c, r, j, main, ['workflow_dispatch', 'workflow_run']);
-  invoke(); invoke({ ...context, event: 'workflow_dispatch' });
+  invoke(); invoke(publishContext, { ...run, event: 'workflow_dispatch' });
+  invoke(context, run, fullJobs); // Historical full qualification before the website lane existed.
+  invoke(context, run, [...fullJobs, scopeJob, websiteJob]);
   assert.throws(() => invoke({ ...context, event: 'pull_request' }));
+  assert.throws(() => invoke({ ...context, ref: 'refs/heads/dev' }));
   assert.throws(() => invoke(context, run, jobs, { sha: 'moved' }));
   assert.throws(() => invoke(context, { ...run, event: 'pull_request' }));
-  for (const conclusion of ['cancelled', 'skipped', 'failure', null]) assert.throws(() => invoke(context, run, [jobs[0], { ...jobs[1], conclusion }]));
+  assert.throws(() => invoke(context, { ...run, head_branch: 'dev' }));
+  assert.throws(() => invoke(context, { ...run, head_repository: { full_name: 'SomeoneElse/mayura' } }));
+  for (const conclusion of ['cancelled', 'skipped', 'failure', null]) {
+    assert.throws(() => invoke(context, run, [{ ...jobs[0], conclusion }, ...jobs.slice(1)]));
+  }
+  assert.throws(() => invoke(context, run, jobs.slice(1)), /full framework qualification/u);
+  assert.throws(() => invoke(context, run, [...jobs, jobs[0]]), /full framework qualification/u);
+  assert.throws(() => invoke(context, run, websiteOnlyJobs), /full framework qualification/u);
+  assert.throws(() => invoke(context, run, [...fullJobs, { ...websiteJob, conclusion: 'failure' }]));
+});
+
+test('qualification lookup skips a green website run and finds a manual full run for the same SHA', async () => {
+  const manual = { ...mainQualification, id: 13, event: 'workflow_dispatch' };
+  const listPath = `/actions/workflows/ci.yml/runs?branch=main&head_sha=${sourceCommit}&status=success&per_page=100`;
+  const replies = new Map([
+    [listPath, { workflow_runs: [mainQualification, manual] }],
+    ['/actions/runs/12/jobs?per_page=100', { jobs: websiteOnlyJobs, total_count: websiteOnlyJobs.length }],
+    ['/actions/runs/13/jobs?per_page=100', { jobs: fullJobs, total_count: fullJobs.length }],
+    ['/commits/main', { sha: sourceCommit }],
+  ]);
+  const github = async path => { assert(replies.has(path)); return replies.get(path); };
+  assert.equal(await findPublishQualification(publishContext, github), manual);
+  replies.set(listPath, { workflow_runs: [mainQualification, { ...manual, head_sha: 'b'.repeat(40) }] });
+  await assert.rejects(findPublishQualification(publishContext, github), /No full framework qualification/u);
+  replies.set(listPath, { workflow_runs: [manual] });
+  replies.set('/actions/runs/13/jobs?per_page=100', { jobs: fullJobs, total_count: fullJobs.length + 1 });
+  await assert.rejects(findPublishQualification(publishContext, github), /truncated/u);
 });
 
 test('all uploads tolerate scanning delays, preserve next, and reconcile without replaying uploads', async () => {
