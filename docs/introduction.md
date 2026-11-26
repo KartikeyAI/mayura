@@ -34,6 +34,9 @@ Start with one of the [six framework notebooks](guides/framework-starters.md), o
 
 ## Ideas behind Mayura
 
+The [Mayura philosophy](project/philosophy.md) connects these ideas to decisions your application makes about
+authority, human review and recovery.
+
 **Nothing is allowed by default.** A run can use a model, a tool or an effect only when the runtime grants it
 (`model:openai.responses`, `tool:orders.refund`, `effect:write`). Registering a tool does not grant it. Child agents
 and workflow steps can only narrow what they inherit, never widen it. See [Permissions](concepts/permissions.md).
