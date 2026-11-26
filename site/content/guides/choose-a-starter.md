@@ -10,6 +10,9 @@ The Mayura CLI includes twelve runnable applications. Choose a chat notebook, a 
 agent, an event-driven workflow or a terminal assistant. The six notebook starters let
 you try persistent threads and exact tool approvals without a provider credential or a model bill.
 
+If you use Next.js, [run your first agent approval](first-approval.md) to review a proposed note and recover it
+after reloading the notebook.
+
 ## Use your team's framework
 
 | Framework | Server boundary | Interface | Setup guide |

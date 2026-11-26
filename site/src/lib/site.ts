@@ -1,8 +1,8 @@
 export const site = {
   name: 'Mayura',
-  tagline: 'Build agents with a workspace',
-  description: 'Build TypeScript agents with typed tools and durable workflows. Add a React and AG-UI workspace with '
-    + 'streaming replies, inspectable citations and tool approvals.',
+  tagline: 'Build TypeScript agents that ask before they act',
+  description: 'Build TypeScript agents with typed tools and durable workflows. Let people inspect cited sources, '
+    + 'review exact tool changes, and approve writes in a React workspace.',
   origin: import.meta.env.SITE_ORIGIN,
   version: import.meta.env.MAYURA_VERSION,
   repository: 'https://github.com/KartikeyAI/mayura',

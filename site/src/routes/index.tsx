@@ -48,6 +48,7 @@ function Home() {
 }
 
 const docs = (slug: string) => ({ to: '/docs/$/' as const, params: { _splat: slug } });
+const firstApprovalGuide = { to: '/guides/$slug/' as const, params: { slug: 'first-approval' } };
 
 /** A heading in two tones: the claim in full colour, the explanation muted. */
 function Heading({ strong, soft }: { strong: string; soft?: string }) {
@@ -89,54 +90,43 @@ function CopyCommand({ command }: { command: string }) {
 
 // ---- Hero -----------------------------------------------------------------------------------------------------------
 
-const stats = [
-  [String(integrationPackageCount), 'integration packages'],
-  ['6', 'framework starters'],
-  ['7', 'databases for durable state'],
-  ['5', 'runtimes, edge included'],
-];
-
 function Hero() {
   return (
     <section aria-labelledby="home-heading" className="px-4 pt-12 pb-10 sm:px-6 sm:pt-16 sm:pb-12">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-12">
           <div>
-            <h1 id="home-heading" className="max-w-xl text-[clamp(2.65rem,5vw,4.6rem)] leading-[1.02] font-semibold tracking-[-0.065em] text-balance">
-              {site.tagline}
+            <h1 id="home-heading" className="max-w-xl text-[clamp(2.4rem,4.8vw,4.25rem)] leading-[1.02] font-semibold tracking-[-0.06em] text-balance">
+              {site.tagline}.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-relaxed text-pretty text-muted sm:text-lg">
-              Mayura is a TypeScript framework for typed tools and durable workflows. Give your agents a React workspace
-              with streaming replies, inspectable citations, and changes people can approve.
+              Give your Next.js app an agent workspace where people can inspect a source, review exactly what will
+              change, and approve a write. Mayura runs typed tools and durable workflows behind it.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
-              <PrimaryButton slug="quickstart">Start building</PrimaryButton>
-              <Link to="/ui/$slug/" params={{ slug: 'chat-workspace' }}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-soft px-4 text-sm font-medium transition hover:bg-line">
-                Explore Agent Workspace <Icon name="arrow" className="size-4 shrink-0" />
+              <a href="#approval-demo"
+                className="group inline-flex min-h-11 items-center gap-2 rounded-lg bg-fg px-5 text-sm font-medium text-bg transition hover:opacity-85">
+                Try an approval <Icon name="arrow" className="size-4 shrink-0 transition group-hover:translate-x-0.5" />
+              </a>
+              <Link {...firstApprovalGuide}
+                className="inline-flex min-h-11 items-center rounded-lg bg-soft px-4 text-sm font-medium transition hover:bg-line">
+                Run locally — no API key
               </Link>
             </div>
             <Link {...docs('project/whats-new')} className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
               What’s new in v{site.version} <Icon name="arrow" className="size-3.5 shrink-0" />
             </Link>
           </div>
-          <figure className="ui-library home-workspace-demo min-w-0 rounded-[1.35rem] bg-soft p-2 sm:p-3">
+          <figure id="approval-demo" tabIndex={-1} className="ui-library home-workspace-demo min-w-0 scroll-mt-20 rounded-[1.35rem] bg-soft p-2 sm:p-3">
+            <figcaption className="px-2 pt-1 pb-2.5 text-sm leading-relaxed text-muted sm:px-3">
+              Select <strong className="font-medium text-fg">Save the release checklist</strong> to review and decide on
+              a proposed write. This demo uses sample data in your browser.
+            </figcaption>
             <div className="overflow-hidden rounded-[0.95rem] border border-line">
               <UiComponentPreview slug="chat-workspace" />
             </div>
-            <figcaption className="px-2 pt-2.5 pb-0.5 text-xs leading-relaxed text-muted sm:px-3">
-              Local demo. Try the rollout plan, inspect a citation, or review a proposed change.
-            </figcaption>
           </figure>
         </div>
-        <dl className="mt-10 grid grid-cols-2 gap-5 border-t border-line pt-6 sm:mt-12 sm:grid-cols-4">
-          {stats.map(([value, label]) => (
-            <div key={label} className="flex flex-col-reverse gap-1">
-              <dt className="text-sm text-muted">{label}</dt>
-              <dd className="text-2xl leading-none font-semibold tracking-tight tabular-nums">{value}</dd>
-            </div>
-          ))}
-        </dl>
       </div>
     </section>
   );
@@ -332,6 +322,16 @@ function WorkspaceSetup() {
       <div className="mx-auto max-w-7xl">
         <h2 id="workspace-setup" className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Add a workspace to your app.</h2>
         <ul className="mt-8 grid gap-x-12 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
+          <li>
+            <h3 className="font-semibold">Run the Next.js starter</h3>
+            <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted">
+              Review a note before saving it, then reopen your saved thread. The starter runs with a scripted agent.
+            </p>
+            <Link {...firstApprovalGuide}
+              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+              Follow the walkthrough <Icon name="arrow" className="size-3.5" />
+            </Link>
+          </li>
           {choices.map(({ title, body, label, hash }) => (
             <li key={hash}>
               <h3 className="font-semibold">{title}</h3>
@@ -342,16 +342,6 @@ function WorkspaceSetup() {
               </Link>
             </li>
           ))}
-          <li>
-            <h3 className="font-semibold">Run the Next.js example</h3>
-            <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted">
-              Try streaming, read-only reconnection and exact tool approvals with a scripted agent.
-            </p>
-            <Link {...docs('guides/nextjs')} hash="agent-workspace-example"
-              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-              Open the example setup <Icon name="arrow" className="size-3.5" />
-            </Link>
-          </li>
         </ul>
       </div>
     </section>
@@ -465,7 +455,7 @@ function GetStarted() {
 // ---- Reading --------------------------------------------------------------------------------------------------------
 
 function Reading() {
-  const featured = ['agent-workspace', 'retrieval-with-citations', 'choose-a-starter']
+  const featured = ['first-approval', 'agent-workspace', 'retrieval-with-citations']
     .flatMap(slug => articles.guides.filter(entry => entry.slug === slug));
   return (
     <section className="border-t border-line px-4 py-24 sm:px-6 sm:py-32">
@@ -552,7 +542,10 @@ function Closing() {
         <LogoMark className="size-12" />
         <h2 className="mt-8 text-4xl font-semibold tracking-[-0.04em] text-balance sm:text-6xl">Start building with Mayura today</h2>
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <PrimaryButton slug="quickstart">Get started</PrimaryButton>
+          <Link {...firstApprovalGuide}
+            className="group inline-flex h-11 items-center gap-2 rounded-lg bg-fg px-5 text-sm font-medium text-bg transition hover:opacity-85">
+            Run locally — no API key <Icon name="arrow" className="size-4 transition group-hover:translate-x-0.5" />
+          </Link>
           <button type="button"
             onClick={() => void navigator.clipboard?.writeText(agentPrompt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); })}
             className="inline-flex h-11 items-center gap-2 rounded-lg border border-line bg-bg/60 px-5 text-sm font-medium backdrop-blur transition hover:border-muted/50">
