@@ -13,8 +13,52 @@ concurrency:
   group: mayura-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.detect.outputs.scope }}
+      website: ${{ steps.detect.outputs.website }}
+      website_docs: ${{ steps.detect.outputs.website_docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.1
+      - id: detect
+        run: node scripts/ci-scope.mjs
+  website:
+    name: Website checks
+    needs: scope
+    if: needs.scope.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-site
+        env:
+          SITE_BASE: /
+          SITE_ORIGIN: https://mayurajs.com
+      - name: Scan website changes for secrets
+        if: needs.scope.outputs.scope == 'website'
+        run: node scripts/secret-scan.mjs
+      # The site build renders these code samples as text. Type-check them against the workspace API.
+      - name: Install workspace dependencies for documentation snippets
+        if: needs.scope.outputs.scope == 'website' && needs.scope.outputs.website_docs == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Type-check documentation snippets
+        if: needs.scope.outputs.scope == 'website' && needs.scope.outputs.website_docs == 'true'
+        run: pnpm build && pnpm docs:check
   checks:
     name: Shared checks
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -37,7 +81,7 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example build
       - run: node scripts/ci-step.mjs -- pnpm --filter mayura-nextjs-workspace-example test
       - run: node scripts/ci-step.mjs -- pnpm console:check
-      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/package-release-plan.test.mjs scripts/production-audit.test.mjs
+      - run: node scripts/ci-step.mjs -- node --test scripts/ci-shards.test.mjs scripts/ci-scope.test.mjs scripts/ci-qualification.test.mjs scripts/publish-prerelease.test.mjs scripts/release-publisher.test.mjs scripts/package-release-plan.test.mjs scripts/production-audit.test.mjs
       - run: node scripts/ci-step.mjs -- node scripts/provider-live-check.mjs --dry-run
       - run: node scripts/ci-step.mjs -- pnpm api:report
       - run: node scripts/ci-step.mjs -- node scripts/version.mjs check
@@ -45,6 +89,8 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm docs:check
       - run: node scripts/ci-step.mjs -- node scripts/sbom.mjs
   consumers:
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +132,8 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm release:artifacts
   tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.node }}, ${{ matrix.shard }}/2)
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +154,8 @@ jobs:
       # previously exercised by `pnpm test` must not disappear from OS coverage.
       - run: node scripts/ci-step.mjs --timeout-minutes 40 -- pnpm test --shard=${{ matrix.shard }}/2
   bundle:
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     name: Bundle (${{ matrix.os }}, ${{ matrix.node }}, ${{ matrix.shard }}/2)
     strategy:
       fail-fast: false
@@ -125,6 +175,8 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm build
       - run: node scripts/ci-step.mjs --timeout-minutes 35 -- pnpm test:bundle --shard ${{ matrix.shard }}/2
   postgres:
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -235,6 +287,8 @@ jobs:
   # workflows, memory, storage) passes on Bun, Deno, Cloudflare's workerd without nodejs_compat and Vercel's Edge VM,
   # with every result equal to Node's.
   runtimes:
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -256,6 +310,8 @@ jobs:
       - run: node scripts/ci-step.mjs -- pnpm edge:check
       - run: node scripts/ci-step.mjs -- pnpm test:runtimes --require bun,deno,workerd,edge
   container:
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -281,7 +337,7 @@ jobs:
   qualification:
     name: Qualification gate
     if: ${{ always() }}
-    needs: [checks, consumers, tests, bundle, postgres, runtimes, container]
+    needs: [scope, website, checks, consumers, tests, bundle, postgres, runtimes, container]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -291,7 +347,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.14.1
-      - name: Require every qualification lane
+      - name: Require the checks for the detected change scope
         env:
           MAYURA_QUALIFICATION_NEEDS: ${{ toJSON(needs) }}
         run: node scripts/ci-qualification.mjs

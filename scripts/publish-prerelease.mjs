@@ -2,7 +2,7 @@
 // Dry run: node scripts/publish-prerelease.mjs --manifest <path> --version <prerelease>
 // Publishing additionally requires --publish, qualified main, and GitHub Actions OIDC credentials.
 import assert from 'node:assert/strict';
-import { selectReleaseArchives, assertPublishContext } from './release-safety.mjs';
+import { findPublishQualification, selectReleaseArchives } from './release-safety.mjs';
 export { assertPublishContext } from './release-safety.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -151,15 +151,9 @@ async function main() {
   };
   const api = 'https://api.github.com/repos/KartikeyAI/mayura';
   const headers = { authorization: 'Bearer ' + process.env.GITHUB_TOKEN, accept: 'application/vnd.github+json' };
-  const runs = await json(`${api}/actions/runs?head_sha=${sourceCommit}&event=push&per_page=100`, headers);
-  const run = runs?.workflow_runs.find(item => item.name === 'Mayura qualification' && item.path === '.github/workflows/ci.yml' && item.conclusion === 'success');
-  assert(run, 'No green push qualification exists for this commit.');
-  const jobs = await json(`${api}/actions/runs/${run.id}/jobs?per_page=100`, headers);
-  assert.equal(jobs.jobs.length, jobs.total_count, 'Qualification jobs were truncated.');
-  const mainCommit = await json(`${api}/commits/main`, headers);
-  assertPublishContext({ event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF,
-    workflowRef: process.env.GITHUB_WORKFLOW_REF, sha: sourceCommit }, run, jobs.jobs, mainCommit);
-  writeFileSync(join(output, 'qualification.json'), JSON.stringify({ run: run.id, sourceCommit, gate: 'success' }, null, 2));
+  const run = await findPublishQualification({ event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF,
+    workflowRef: process.env.GITHUB_WORKFLOW_REF, sha: sourceCommit }, path => json(`${api}${path}`, headers));
+  writeFileSync(join(output, 'qualification.json'), JSON.stringify({ run: run.id, event: run.event, sourceCommit, gate: 'success' }, null, 2));
   const registry = {
     version: (name, at) => json(`https://registry.npmjs.org/${encodeURIComponent(name)}/${at}?verify=${Date.now()}`),
     tags: name => json(`https://registry.npmjs.org/-/package/${encodeURIComponent(name)}/dist-tags?verify=${Date.now()}`),
